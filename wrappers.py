@@ -124,9 +124,9 @@ class ProcessFrame64(gym.ObservationWrapper):
         
         return np.expand_dims(cropped, axis=2) 
 
-class ImageToTF(gym.ObservationWrapper):
+class ImageToTorch(gym.ObservationWrapper):
     def __init__(self, env):
-        super(ImageToTF, self).__init__(env)
+        super(ImageToTorch, self).__init__(env)
         old_shape = self.observation_space.shape
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(old_shape[-1], old_shape[0], old_shape[1]),
                                                 dtype=np.float32)
@@ -165,7 +165,7 @@ def make_env(env_name):
     #env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
-    env = ImageToTF(env)
+    env = ImageToTorch(env)
     env = BufferWrapper(env, 4)
     return ScaledFloatFrame(env)
 
@@ -178,6 +178,6 @@ def make_env_with_monitor(env_name, folder):
     #env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
-    env = ImageToTF(env)
+    env = ImageToTorch(env)
     env = BufferWrapper(env, 4)
     return ScaledFloatFrame(env)

@@ -1,4 +1,5 @@
 from networks import dqn_network
+from networks import dueling_dqn_network
 import tensorflow as tf
 import numpy as np
 import collections
@@ -15,7 +16,9 @@ default_config = {
     'NUM_EPOCHS' : 3 * 10**5,
     'EPS_DECAY_RATE' : 0.99,
     'NAME' : 'DQN',
-    'IS_DDQN' : False
+    'IS_DOUBLE' : False,
+    'IS_DUELING' : False,
+    'DUELING_TYPE' : 'AVERAGE'
     }
 
 
@@ -57,17 +60,25 @@ class DQNAgent:
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.env_name = env_name
-        self.qvalues = dqn_network('agent', self.obs_ph, actions_num)
-        self.target_qvalues = dqn_network('target', self.next_obs_ph, actions_num)
-        
+        if self.config['IS_DUELING'] == True:
+            self.qvalues = dueling_dqn_network('agent', self.obs_ph, actions_num, False, self.config['DUELING_TYPE'])
+            self.target_qvalues = dueling_dqn_network('target', self.next_obs_ph, actions_num, False, self.config['DUELING_TYPE'])
+            if self.config['IS_DOUBLE'] == True:
+                self.next_qvalues = dueling_dqn_network('agent', self.next_obs_ph, actions_num, reuse=True, dueling_type = self.config['DUELING_TYPE'])
+        else:
+            self.qvalues = dqn_network('agent', self.obs_ph, actions_num)
+            self.target_qvalues = dqn_network('target', self.next_obs_ph, actions_num)
+            if self.config['IS_DOUBLE'] == True:
+                self.next_qvalues = dqn_network('agent', self.next_obs_ph, actions_num, reuse=True)
+
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
 
         self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, axis=1)
-
-        if self.config['IS_DDQN'] == True:
-            self.next_q_values_agent = tf.stop_gradient(dqn_network('agent', self.next_obs_ph, actions_num, reuse=True))
+        
+        if self.config['IS_DOUBLE'] == True:
+            self.next_q_values_agent = tf.stop_gradient(self.next_qvalues)
             self.next_selected_actions = tf.argmax(self.next_q_values_agent, dimension=1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
