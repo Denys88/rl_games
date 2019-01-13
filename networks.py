@@ -8,7 +8,6 @@ def dqn_network(name, inputs, actions_num, reuse=False):
         NUM_FILTERS_2 = 64
         NUM_FILTERS_3 = 64
         NUM_HIDDEN_NODES = 512
-        N_OUTPUTS = 225
 
         conv1 = tf.layers.conv2d(inputs=inputs,
                              filters=NUM_FILTERS_1,
