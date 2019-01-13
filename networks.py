@@ -62,23 +62,19 @@ def dueling_dqn_network(name, inputs, actions_num, reuse=False, dueling_type = '
                              data_format='channels_first',
                              activation=tf.nn.relu)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
-        hidden_value = tf.layers.dense(inputs=flatten, 
-                                 units=NUM_HIDDEN_NODES,
-                             activation=tf.nn.relu)
-        hidden_advantage = tf.layers.dense(inputs=flatten, 
-                                 units=NUM_HIDDEN_NODES,
-                             activation=tf.nn.relu)
-        value =  tf.layers.dense(inputs=hidden_value, 
-                                 units=1,
-                             activation=tf.nn.relu)
 
+        hidden_value = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
+        hidden_advantage = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
+
+        value =  tf.layers.dense(inputs=hidden_value, units=1)
         advantage = tf.layers.dense(inputs=hidden_advantage, units=actions_num)
+
         outputs = None
         if dueling_type == 'SIMPLE':
             outputs = value + advantage
         if dueling_type == 'AVERAGE':
-            outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keep_dims=True)
-        if dueling_type == 'MAX':
             outputs = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keep_dims=True)
+        if dueling_type == 'MAX':
+            outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keep_dims=True)
         return outputs
     
