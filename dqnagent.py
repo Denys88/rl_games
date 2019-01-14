@@ -11,9 +11,11 @@ default_config = {
     'GAMMA' : 0.99,
     'LEARNING_RATE' : 1e-3,
     'STEPS_PER_EPOCH' : 20,
+    'BATCH_SIZE' : 64,
     'EPSILON' : 0.8,
     'MIN_EPSILON' : 0.02,
     'NUM_EPOCHS' : 3 * 10**5,
+    'NUM_EPOCHS_TO_COPY' : 1000,
     'EPS_DECAY_RATE' : 0.99,
     'NAME' : 'DQN',
     'IS_DOUBLE' : False,
@@ -79,7 +81,7 @@ class DQNAgent:
         
         if self.config['IS_DOUBLE'] == True:
             self.next_q_values_agent = tf.stop_gradient(self.next_qvalues)
-            self.next_selected_actions = tf.argmax(self.next_q_values_agent, dimension=1)
+            self.next_selected_actions = tf.argmax(self.next_q_values_agent, axis=1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
         else:
@@ -90,8 +92,8 @@ class DQNAgent:
         
         LEARNING_RATE = self.config['LEARNING_RATE']
         self.reference_qvalues = self.rewards_ph + self.is_not_done * GAMMA * self.next_state_values_target
-
-        td_loss = (self.current_action_qvalues - self.reference_qvalues) ** 2
+        td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues)
+        #td_loss = (self.current_action_qvalues - self.reference_qvalues) ** 2
         self.td_loss = tf.reduce_mean(td_loss)
 
         self.train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.td_loss, var_list=self.weights)
@@ -154,7 +156,7 @@ class DQNAgent:
                     action = self.env.action_space.sample()
                 else:
                     qvalues = self.get_qvalues([s])
-                    max_qvals = np.max(qvalues);
+                    max_qvals = np.max(qvalues)
                     action = np.argmax(qvalues)
                 s, r, done, _ = env.step(action)
                 reward += r
@@ -174,12 +176,14 @@ class DQNAgent:
         STEPS_PER_EPOCH = self.config['STEPS_PER_EPOCH']
         MIN_EPSILON = self.config['MIN_EPSILON']
         EPS_DECAY_RATE = self.config['EPS_DECAY_RATE']
+        NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
+        BATCH_SIZE = self.config['BATCH_SIZE']
         for i in range(NUM_EPOCHS):
             for k in range(0, STEPS_PER_EPOCH):
                 self.play_step(self.epsilon)
             # train
 
-            _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=64))
+            _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
             if i % 500 == 0:
                 print(i)
                 mean_reward, mean_steps, mean_qvals = self.evaluate(make_env(self.env_name))
@@ -190,11 +194,13 @@ class DQNAgent:
                 self.writer.add_scalar('mean_qvals', mean_qvals, i)
                 self.writer.add_scalar('loss', loss_t, i)
                 
-                self.load_weigths_into_target_network()
+                
                 self.writer.add_scalar('epsilon', self.epsilon, i)
                 self.epsilon = max(self.epsilon * EPS_DECAY_RATE, MIN_EPSILON)
                 #clear_output(True)
             # adjust agent parameters
+            if i % NUM_EPOCHS_TO_COPY == 0:
+                self.load_weigths_into_target_network()
             if i % 5000 == 0:
                 self.save("./nn/" + self.config['NAME'] + self.env_name)
 

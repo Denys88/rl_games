@@ -26,27 +26,41 @@ class FireResetEnv(gym.Wrapper):
             self.env.reset()
         return obs
 
-class AtariResetLive(gym.Wrapper):
-    """
-    Wraps an Atari environment to end an episode when a life is lost.
-    """
-    def __init__(self, env=None):
-        super(AtariResetLive, self).__init__(env)
-        self.step_info = None
-
-    def lives(self):
-        if self.step_info is None:
-            return 0
-        else:
-            return self.step_info['ale.lives']
+class EpisodicLifeEnv(gym.Wrapper):
+    def __init__(self, env):
+        """Make end-of-life == end-of-episode, but only reset on true game over.
+        Done by DeepMind for the DQN and co. since it helps value estimation.
+        """
+        gym.Wrapper.__init__(self, env)
+        self.lives = 0
+        self.was_real_done  = True
 
     def step(self, action):
-        lifes_before = self.lives()
-        next_state, reward, done, self.step_info = self.env.step(action)
-        lifes_after = self.lives()
-        if lifes_before > lifes_after:
+        obs, reward, done, info = self.env.step(action)
+        self.was_real_done = done
+        # check current lives, make loss of life terminal,
+        # then update lives to handle bonus lives
+        lives = self.env.unwrapped.ale.lives()
+        if lives < self.lives and lives > 0:
+            # for Qbert sometimes we stay in lives == 0 condition for a few frames
+            # so it's important to keep lives > 0, so that we only reset once
+            # the environment advertises done.
             done = True
-        return next_state, reward, done, self.step_info 
+        self.lives = lives
+        return obs, reward, done, info
+
+    def reset(self, **kwargs):
+        """Reset only when lives are exhausted.
+        This way all states are still reachable even though lives are episodic,
+        and the learner need not know about any of this behind-the-scenes.
+        """
+        if self.was_real_done:
+            obs = self.env.reset(**kwargs)
+        else:
+            # no-op step to advance from terminal/lost life state
+            obs, _, _, _ = self.env.step(0)
+        self.lives = self.env.unwrapped.ale.lives()
+        return obs
 
 
 class MaxAndSkipEnv(gym.Wrapper):
@@ -161,8 +175,8 @@ class BufferWrapper(gym.ObservationWrapper):
 def make_env(env_name):
     env = gym.make(env_name)
     env = FireResetEnv(env)
-    env = AtariResetLive(env)
-    #env = MaxAndSkipEnv(env)
+    env = EpisodicLifeEnv(env)
+    env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
     env = ImageToTorch(env)
@@ -173,9 +187,9 @@ def make_env_with_monitor(env_name, folder):
     
     env = gym.make(env_name)
     env = FireResetEnv(env)
-    env = AtariResetLive(env)
+    env = EpisodicLifeEnv(env)
     env = gym.wrappers.Monitor(env,directory=folder,force=True)
-    #env = MaxAndSkipEnv(env)
+    env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
     env = ImageToTorch(env)

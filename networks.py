@@ -73,8 +73,8 @@ def dueling_dqn_network(name, inputs, actions_num, reuse=False, dueling_type = '
         if dueling_type == 'SIMPLE':
             outputs = value + advantage
         if dueling_type == 'AVERAGE':
-            outputs = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keep_dims=True)
+            outputs = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keepdims=True)
         if dueling_type == 'MAX':
-            outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keep_dims=True)
+            outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keepdims=True)
         return outputs
     
