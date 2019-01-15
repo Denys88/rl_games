@@ -1,2 +1,0 @@
-model_checkpoint_path: "DQNBreakoutDeterministic-v4"
-all_model_checkpoint_paths: "DQNBreakoutDeterministic-v4"

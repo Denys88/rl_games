@@ -63,6 +63,28 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 
+class AtariResetLive(gym.Wrapper):
+    """
+    Wraps an Atari environment to end an episode when a life is lost.
+    """
+    def __init__(self, env=None):
+        super(AtariResetLive, self).__init__(env)
+        self.step_info = None
+
+    def lives(self):
+        if self.step_info is None:
+            return 0
+        else:
+            return self.step_info['ale.lives']
+
+    def step(self, action):
+        lifes_before = self.lives()
+        next_state, reward, done, self.step_info = self.env.step(action)
+        lifes_after = self.lives()
+        if lifes_before > lifes_after:
+            done = True
+        return next_state, reward, done, self.step_info 
+
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env=None, skip=4):
         """Return only every `skip`-th frame"""
@@ -175,8 +197,8 @@ class BufferWrapper(gym.ObservationWrapper):
 def make_env(env_name):
     env = gym.make(env_name)
     env = FireResetEnv(env)
-    env = EpisodicLifeEnv(env)
-    env = MaxAndSkipEnv(env)
+    env = AtariResetLive(env)
+    #env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
     env = ImageToTorch(env)
@@ -187,11 +209,12 @@ def make_env_with_monitor(env_name, folder):
     
     env = gym.make(env_name)
     env = FireResetEnv(env)
-    env = EpisodicLifeEnv(env)
+    env = AtariResetLive(env)
     env = gym.wrappers.Monitor(env,directory=folder,force=True)
-    env = MaxAndSkipEnv(env)
+    #env = MaxAndSkipEnv(env)
     
     env = ProcessFrame84(env)
     env = ImageToTorch(env)
     env = BufferWrapper(env, 4)
     return ScaledFloatFrame(env)
+

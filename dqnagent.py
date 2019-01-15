@@ -80,8 +80,7 @@ class DQNAgent:
         self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, axis=1)
         
         if self.config['IS_DOUBLE'] == True:
-            self.next_q_values_agent = tf.stop_gradient(self.next_qvalues)
-            self.next_selected_actions = tf.argmax(self.next_q_values_agent, axis=1)
+            self.next_selected_actions = tf.argmax(self.next_qvalues, axis=1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
         else:
@@ -102,6 +101,9 @@ class DQNAgent:
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
+
+    def restore(self, fn):
+        self.saver.restore(self.sess, fn)
 
     def _reset(self):
         self.state = self.env.reset()
@@ -168,6 +170,7 @@ class DQNAgent:
         return np.mean(rewards), np.mean(steps), np.mean(max_qvals)
 
     def train(self):
+        last_mean_rewards = 0
         self.load_weigths_into_target_network()
         for k in range(0, 10000):
             self.play_step(self.epsilon)
@@ -184,9 +187,13 @@ class DQNAgent:
             # train
 
             _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
-            if i % 500 == 0:
+            if i % 100 == 0:
                 print(i)
                 mean_reward, mean_steps, mean_qvals = self.evaluate(make_env(self.env_name))
+                if mean_reward > last_mean_rewards:
+                    print('saving next best rewards: ', mean_reward)
+                    last_mean_rewards = mean_reward
+                    self.save("./nn/" + self.config['NAME'] + self.env_name)
                 print(mean_reward) 
                 print(mean_steps)
                 self.writer.add_scalar('steps', mean_steps, i)
@@ -201,6 +208,6 @@ class DQNAgent:
             # adjust agent parameters
             if i % NUM_EPOCHS_TO_COPY == 0:
                 self.load_weigths_into_target_network()
-            if i % 5000 == 0:
-                self.save("./nn/" + self.config['NAME'] + self.env_name)
+            #if i % 5000 == 0:
+            #    self.save("./nn/" + self.config['NAME'] + self.env_name)
 
