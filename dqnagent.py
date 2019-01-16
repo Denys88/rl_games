@@ -187,7 +187,7 @@ class DQNAgent:
             # train
 
             _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
-            if i % 100 == 0:
+            if i % 5000 == 0:
                 print(i)
                 mean_reward, mean_steps, mean_qvals = self.evaluate(make_env(self.env_name))
                 if mean_reward > last_mean_rewards:
@@ -203,11 +203,10 @@ class DQNAgent:
                 
                 
                 self.writer.add_scalar('epsilon', self.epsilon, i)
-                self.epsilon = max(self.epsilon * EPS_DECAY_RATE, MIN_EPSILON)
+                
                 #clear_output(True)
             # adjust agent parameters
             if i % NUM_EPOCHS_TO_COPY == 0:
+                self.epsilon = max(self.epsilon * EPS_DECAY_RATE, MIN_EPSILON)
                 self.load_weigths_into_target_network()
-            #if i % 5000 == 0:
-            #    self.save("./nn/" + self.config['NAME'] + self.env_name)
 
