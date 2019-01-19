@@ -20,7 +20,8 @@ default_config = {
     'NAME' : 'DQN',
     'IS_DOUBLE' : False,
     'IS_DUELING' : False,
-    'DUELING_TYPE' : 'AVERAGE'
+    'DUELING_TYPE' : 'AVERAGE',
+    'SCORE_TO_WIN' : 20
     }
 
 
@@ -194,6 +195,9 @@ class DQNAgent:
                     print('saving next best rewards: ', mean_reward)
                     last_mean_rewards = mean_reward
                     self.save("./nn/" + self.config['NAME'] + self.env_name)
+                    if last_mean_rewards > self.config['SCORE_TO_WIN']:
+                        print('Network won!')
+                        return
                 print(mean_reward) 
                 print(mean_steps)
                 self.writer.add_scalar('steps', mean_steps, i)
