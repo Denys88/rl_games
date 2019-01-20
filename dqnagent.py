@@ -1,10 +1,10 @@
-from networks import dqn_network
-from networks import dueling_dqn_network
+import networks
 import tensorflow as tf
 import numpy as np
 import collections
+import time
 from tensorboardX import SummaryWriter
-from wrappers import make_env
+
 Experience = collections.namedtuple('Experience', field_names=['state', 'action', 'reward', 'done', 'new_state'])
 
 default_config = {
@@ -14,14 +14,13 @@ default_config = {
     'BATCH_SIZE' : 64,
     'EPSILON' : 0.8,
     'MIN_EPSILON' : 0.02,
-    'NUM_EPOCHS' : 3 * 10**5,
     'NUM_EPOCHS_TO_COPY' : 1000,
+    'NUM_STEPS_FILL_BUFFER' : 10000,
     'EPS_DECAY_RATE' : 0.99,
     'NAME' : 'DQN',
     'IS_DOUBLE' : False,
-    'IS_DUELING' : False,
-    'DUELING_TYPE' : 'AVERAGE',
-    'SCORE_TO_WIN' : 20
+    'SCORE_TO_WIN' : 20,
+    'NETWORK' : networks.AtariDQN()
     }
 
 
@@ -47,6 +46,7 @@ class DQNAgent:
     def __init__(self, env, sess, exp_buffer, env_name, config = default_config):
         observation_shape = env.observation_space.shape
         actions_num = env.action_space.n
+        self.network = config['NETWORK']
         self.config = config
         self.state_shape = observation_shape
         self.actions_num = actions_num
@@ -63,16 +63,12 @@ class DQNAgent:
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.env_name = env_name
-        if self.config['IS_DUELING'] == True:
-            self.qvalues = dueling_dqn_network('agent', self.obs_ph, actions_num, False, self.config['DUELING_TYPE'])
-            self.target_qvalues = dueling_dqn_network('target', self.next_obs_ph, actions_num, False, self.config['DUELING_TYPE'])
-            if self.config['IS_DOUBLE'] == True:
-                self.next_qvalues = dueling_dqn_network('agent', self.next_obs_ph, actions_num, reuse=True, dueling_type = self.config['DUELING_TYPE'])
-        else:
-            self.qvalues = dqn_network('agent', self.obs_ph, actions_num)
-            self.target_qvalues = dqn_network('target', self.next_obs_ph, actions_num)
-            if self.config['IS_DOUBLE'] == True:
-                self.next_qvalues = dqn_network('agent', self.next_obs_ph, actions_num, reuse=True)
+        self.step_count = 0
+  
+        self.qvalues = self.network('agent', self.obs_ph, actions_num)
+        self.target_qvalues = self.network('target', self.next_obs_ph, actions_num)
+        if self.config['IS_DOUBLE'] == True:
+            self.next_qvalues = self.network('agent', self.next_obs_ph, actions_num, reuse=True)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
@@ -92,11 +88,11 @@ class DQNAgent:
         
         LEARNING_RATE = self.config['LEARNING_RATE']
         self.reference_qvalues = self.rewards_ph + self.is_not_done * GAMMA * self.next_state_values_target
-        td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues)
+        self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues)
         #td_loss = (self.current_action_qvalues - self.reference_qvalues) ** 2
-        self.td_loss = tf.reduce_mean(td_loss)
+        self.td_loss_mean = tf.reduce_mean(self.td_loss)
 
-        self.train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.td_loss, var_list=self.weights)
+        self.train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.td_loss_mean, var_list=self.weights)
         self.saver = tf.train.Saver()
         sess.run(tf.global_variables_initializer())
 
@@ -109,12 +105,14 @@ class DQNAgent:
     def _reset(self):
         self.state = self.env.reset()
         self.total_reward = 0.0
+        self.step_count = 0
 
     def get_qvalues(self, state):
         return self.sess.run(self.qvalues, {self.obs_ph: state})
 
     def play_step(self, epsilon=0.0):
         done_reward = None
+        done_steps = None
         action = 0
         if np.random.random() < epsilon:
             action = self.env.action_space.sample()
@@ -125,14 +123,15 @@ class DQNAgent:
         # do step in the environment
         new_state, reward, is_done, _ = self.env.step(action)
         self.total_reward += reward
-
+        self.step_count += 1
         exp = Experience(self.state, action, reward, is_done, new_state)
         self.exp_buffer.append(exp)
         self.state = new_state
         if is_done:
             done_reward = self.total_reward
+            done_steps = self.step_count
             self._reset()
-        return done_reward
+        return done_reward, done_steps
 
     def load_weigths_into_target_network(self):
         assigns = []
@@ -171,26 +170,46 @@ class DQNAgent:
         return np.mean(rewards), np.mean(steps), np.mean(max_qvals)
 
     def train(self):
-        last_mean_rewards = 0
+        last_mean_rewards = -100500
         self.load_weigths_into_target_network()
-        for k in range(0, 10000):
+        for k in range(0, self.config['NUM_STEPS_FILL_BUFFER']):
             self.play_step(self.epsilon)
 
-        NUM_EPOCHS = self.config['NUM_EPOCHS']
         STEPS_PER_EPOCH = self.config['STEPS_PER_EPOCH']
         MIN_EPSILON = self.config['MIN_EPSILON']
         EPS_DECAY_RATE = self.config['EPS_DECAY_RATE']
         NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
         BATCH_SIZE = self.config['BATCH_SIZE']
-        for i in range(NUM_EPOCHS):
-            for k in range(0, STEPS_PER_EPOCH):
-                self.play_step(self.epsilon)
-            # train
+        frame = 0
 
+        update_time = 0
+        rewards = []
+        steps = []
+        while True:
+            t_start = time.time()
+
+            for k in range(0, STEPS_PER_EPOCH):
+                reward, step = self.play_step(self.epsilon)
+                if reward != None:
+                    steps.append(step)
+                    rewards.append(reward)
+            # train
+            frame += STEPS_PER_EPOCH
             _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
-            if i % 5000 == 0:
-                print(i)
-                mean_reward, mean_steps, mean_qvals = self.evaluate(make_env(self.env_name))
+            t_end = time.time()
+            update_time += t_end - t_start
+
+            if frame % 1000 == 0:
+                print('Frames per seconds: ', 1000 / update_time)
+                self.writer.add_scalar('Frames per seconds: ', 1000 / update_time, frame)
+                update_time = 0
+
+            if len(rewards) == 10:
+                print(frame)
+                mean_reward = np.mean(rewards)
+                mean_steps = np.mean(steps)
+                rewards = []
+                steps = []
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)
                     last_mean_rewards = mean_reward
@@ -198,19 +217,16 @@ class DQNAgent:
                     if last_mean_rewards > self.config['SCORE_TO_WIN']:
                         print('Network won!')
                         return
-                print(mean_reward) 
-                print(mean_steps)
-                self.writer.add_scalar('steps', mean_steps, i)
-                self.writer.add_scalar('reward', mean_reward, i)
-                self.writer.add_scalar('mean_qvals', mean_qvals, i)
-                self.writer.add_scalar('loss', loss_t, i)
+   
+                self.writer.add_scalar('steps', mean_steps, frame)
+                self.writer.add_scalar('reward', mean_reward, frame)
+                self.writer.add_scalar('loss', loss_t, frame)
+                self.writer.add_scalar('epsilon', self.epsilon, frame)
                 
-                
-                self.writer.add_scalar('epsilon', self.epsilon, i)
                 
                 #clear_output(True)
             # adjust agent parameters
-            if i % NUM_EPOCHS_TO_COPY == 0:
+            if frame % NUM_EPOCHS_TO_COPY == 0:
                 self.epsilon = max(self.epsilon * EPS_DECAY_RATE, MIN_EPSILON)
                 self.load_weigths_into_target_network()
 
