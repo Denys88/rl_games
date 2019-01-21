@@ -83,6 +83,28 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = self.env.unwrapped.ale.lives()
         return obs
 
+class AtariResetLive(gym.Wrapper):
+    """
+    Wraps an Atari environment to end an episode when a life is lost.
+    """
+    def __init__(self, env=None):
+        super(AtariResetLive, self).__init__(env)
+        self.step_info = None
+
+    def lives(self):
+        if self.step_info is None:
+            return 0
+        else:
+            return self.step_info['ale.lives']
+
+    def _step(self, action):
+        lifes_before = self.lives()
+        next_state, reward, done, self.step_info = self.env.step(action)
+        lifes_after = self.lives()
+        if lifes_before > lifes_after:
+            done = True
+        return next_state, reward, done, self.step_info 
+        
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env, skip=4):
         """Return only every `skip`-th frame"""
@@ -195,22 +217,22 @@ def make_atari(env_id):
     env = MaxAndSkipEnv(env, skip=4)
     return env
 
-def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=False, scale=False, pytorch_img=False):
+def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale=True, pytorch_img=False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
-        env = EpisodicLifeEnv(env)
+        env = AtariResetLive(env)
     if 'FIRE' in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
     env = WarpFrame(env)
-    if scale:
-        env = ScaledFloatFrame(env)
     if clip_rewards:
         env = ClipRewardEnv(env)
     if frame_stack:
         env = FrameStack(env, 4)
     if pytorch_img:
         env = ImageToPyTorch(env)
+    if scale:
+        env = ScaledFloatFrame(env)
     return env
 
 
