@@ -210,6 +210,20 @@ class ImageToPyTorch(gym.ObservationWrapper):
     def _observation(self, observation):
         return np.swapaxes(observation, 2, 0)
 
+class WarpCheatBreakoutFrame(gym.ObservationWrapper):
+    def __init__(self, env):
+        """Warp frames to 84x84 as done in the Nature paper and later work."""
+        gym.ObservationWrapper.__init__(self, env)
+        self.width = 84
+        self.height = 84
+        self.observation_space = spaces.Box(low=0, high=255, shape=(self.height, self.width, 1), dtype=np.uint8)
+
+    def _observation(self, frame):
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+        frame[0:38, :, None] = 0
+        return frame[:, :, None]
+
 def make_atari(env_id):
     env = gym.make(env_id)
     assert 'NoFrameskip' in env.spec.id
@@ -235,7 +249,28 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
         env = ScaledFloatFrame(env)
     return env
 
+def wrap_cheat_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale=True, pytorch_img=False):
+    """Configure environment for DeepMind-style Atari.
+    """
+    if episode_life:
+        env = AtariResetLive(env)
+    if 'FIRE' in env.unwrapped.get_action_meanings():
+        env = FireResetEnv(env)
+    env = WarpCheatBreakoutFrame(env)
+    if clip_rewards:
+        env = ClipRewardEnv(env)
+    if frame_stack:
+        env = FrameStack(env, 4)
+    if pytorch_img:
+        env = ImageToPyTorch(env)
+    if scale:
+        env = ScaledFloatFrame(env)
+    return env
 
 def make_atari_deepmind(env_id):
     env = make_atari(env_id)
     return wrap_deepmind(env)
+
+def make_cheat_atari_deepmind(env_id):
+    env = make_atari(env_id)
+    return wrap_cheat_deepmind(env)
