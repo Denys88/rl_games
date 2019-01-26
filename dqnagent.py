@@ -181,19 +181,21 @@ class DQNAgent:
         NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
         BATCH_SIZE = self.config['BATCH_SIZE']
         frame = 0
-
+        play_time = 0
         update_time = 0
         rewards = []
         steps = []
         while True:
-            t_start = time.time()
-
+            
+            t_play_start = time.time()
             for k in range(0, STEPS_PER_EPOCH):
                 reward, step = self.play_step(self.epsilon)
                 if reward != None:
                     steps.append(step)
                     rewards.append(reward)
-            # train
+            t_play_end = time.time()
+            play_time += t_play_end - t_play_start
+            t_start = time.time()
             frame += STEPS_PER_EPOCH
             _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
             t_end = time.time()
@@ -202,7 +204,10 @@ class DQNAgent:
             if frame % 1000 == 0:
                 print('Frames per seconds: ', 1000 / update_time)
                 self.writer.add_scalar('Frames per seconds: ', 1000 / update_time, frame)
+                self.writer.add_scalar('upd_time', update_time, frame)
+                self.writer.add_scalar('play_time', play_time, frame)
                 update_time = 0
+                play_time = 0
 
             if len(rewards) == 10:
                 print(frame)
