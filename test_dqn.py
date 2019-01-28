@@ -70,7 +70,7 @@ breakout_dddqn_config = {
     'LEARNING_RATE' : 1e-4,
     'STEPS_PER_EPOCH' : 5,
     'BATCH_SIZE' : 32 * 5,
-    'EPSILON' : 0.9,
+    'EPSILON' : 0.02,
     'MIN_EPSILON' : 0.02,
     'NUM_EPOCHS_TO_COPY' : 1000,
     'EPS_DECAY_RATE' : 0.985,
@@ -100,7 +100,7 @@ pong_noisy_dddqn_config = {
     'NETWORK' : networks.AtariNoisyDuelingDQN()
     }
 agent = DQNAgent(env, sess, ExperienceBuffer(EXP_BUFFER_CAPACITY), env_name, config = breakout_dddqn_config)
-#agent.restore('nn/DDDQNPongNoFrameskip-v4')
+agent.restore('nn/DDDQNBreakoutNoFrameskip-v4')
 #agent.epsilon = 0.02
 
 
