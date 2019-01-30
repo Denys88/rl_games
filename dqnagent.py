@@ -1,4 +1,6 @@
 import networks
+import tr_helpers
+
 import tensorflow as tf
 import numpy as np
 import collections
@@ -7,16 +9,19 @@ from tensorboardX import SummaryWriter
 
 Experience = collections.namedtuple('Experience', field_names=['state', 'action', 'reward', 'done', 'new_state'])
 
+
+
+
 default_config = {
     'GAMMA' : 0.99,
     'LEARNING_RATE' : 1e-3,
     'STEPS_PER_EPOCH' : 20,
     'BATCH_SIZE' : 64,
     'EPSILON' : 0.8,
+    'EPSILON_DECAY_FRAMES' : 1e5,
     'MIN_EPSILON' : 0.02,
     'NUM_EPOCHS_TO_COPY' : 1000,
     'NUM_STEPS_FILL_BUFFER' : 10000,
-    'EPS_DECAY_RATE' : 0.99,
     'NAME' : 'DQN',
     'IS_DOUBLE' : False,
     'SCORE_TO_WIN' : 20,
@@ -41,7 +46,6 @@ class ExperienceBuffer:
                np.array(dones, dtype=np.uint8), np.array(next_states)
 
 
-
 class DQNAgent:
     def __init__(self, env, sess, exp_buffer, env_name, config = default_config):
         observation_shape = env.observation_space.shape
@@ -52,6 +56,7 @@ class DQNAgent:
         self.actions_num = actions_num
         self.writer = SummaryWriter()
         self.epsilon = self.config['EPSILON']
+        self.epsilon_processor = tr_helpers.EpsilonProcessor(self.config['EPSILON'], self.config['MIN_EPSILON'], self.config['EPSILON_DECAY_FRAMES'])
         self.env = env
         self.sess = sess
         self.exp_buffer = exp_buffer
@@ -64,24 +69,24 @@ class DQNAgent:
         self.is_not_done = 1 - self.is_done_ph
         self.env_name = env_name
         self.step_count = 0
-  
+
         self.qvalues = self.network('agent', self.obs_ph, actions_num)
         self.target_qvalues = self.network('target', self.next_obs_ph, actions_num)
         if self.config['IS_DOUBLE'] == True:
-            self.next_qvalues = self.network('agent', self.next_obs_ph, actions_num, reuse=True)
+            self.next_qvalues = tf.stop_gradient(self.network('agent', self.next_obs_ph, actions_num, reuse=True))
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
 
-        self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, axis=1)
+        self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
         
         if self.config['IS_DOUBLE'] == True:
-            self.next_selected_actions = tf.argmax(self.next_qvalues, axis=1)
+            self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
         else:
-            self.next_state_values_target = tf.reduce_max(self.target_qvalues, axis=-1)
+            self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
 
 
         GAMMA = self.config['GAMMA']
@@ -176,8 +181,6 @@ class DQNAgent:
             self.play_step(self.epsilon)
 
         STEPS_PER_EPOCH = self.config['STEPS_PER_EPOCH']
-        MIN_EPSILON = self.config['MIN_EPSILON']
-        EPS_DECAY_RATE = self.config['EPS_DECAY_RATE']
         NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
         BATCH_SIZE = self.config['BATCH_SIZE']
         frame = 0
@@ -186,16 +189,20 @@ class DQNAgent:
         rewards = []
         steps = []
         while True:
-            
             t_play_start = time.time()
+            self.epsilon = self.epsilon_processor(frame)
+            t_start = time.time()
+
             for k in range(0, STEPS_PER_EPOCH):
                 reward, step = self.play_step(self.epsilon)
                 if reward != None:
                     steps.append(step)
                     rewards.append(reward)
+
             t_play_end = time.time()
             play_time += t_play_end - t_play_start
             t_start = time.time()
+            # train
             frame += STEPS_PER_EPOCH
             _, loss_t = self.sess.run([self.train_step, self.td_loss], self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE))
             t_end = time.time()
@@ -232,6 +239,5 @@ class DQNAgent:
                 #clear_output(True)
             # adjust agent parameters
             if frame % NUM_EPOCHS_TO_COPY == 0:
-                self.epsilon = max(self.epsilon * EPS_DECAY_RATE, MIN_EPSILON)
                 self.load_weigths_into_target_network()
 

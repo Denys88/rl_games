@@ -46,20 +46,17 @@ def dqn_network(name, inputs, actions_num, reuse=False):
         conv1 = tf.layers.conv2d(inputs=inputs,
                              filters=NUM_FILTERS_1,
                              kernel_size=[8, 8],
-                             strides=(4, 4),
-                              
+                             strides=(4, 4), 
                              activation=tf.nn.relu)
         conv2 = tf.layers.conv2d(inputs=conv1,
                              filters=NUM_FILTERS_2,
                              kernel_size=[4, 4],
-                             strides=(2, 2),
-                              
+                             strides=(2, 2),  
                              activation=tf.nn.relu)
         conv3 = tf.layers.conv2d(inputs=conv2,
                              filters=NUM_FILTERS_3,
                              kernel_size=[3, 3],
-                             strides=(1, 1),
-                              
+                             strides=(1, 1),  
                              activation=tf.nn.relu)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
         hidden = tf.layers.dense(inputs=flatten, 
@@ -81,20 +78,17 @@ def dueling_dqn_network(name, inputs, actions_num, reuse=False, dueling_type = '
         conv1 = tf.layers.conv2d(inputs=inputs,
                              filters=NUM_FILTERS_1,
                              kernel_size=[8, 8],
-                             strides=(4, 4),
-                              
+                             strides=(4, 4),  
                              activation=tf.nn.relu)
         conv2 = tf.layers.conv2d(inputs=conv1,
                              filters=NUM_FILTERS_2,
                              kernel_size=[4, 4],
-                             strides=(2, 2),
-                              
+                             strides=(2, 2),         
                              activation=tf.nn.relu)
         conv3 = tf.layers.conv2d(inputs=conv2,
                              filters=NUM_FILTERS_3,
                              kernel_size=[3, 3],
-                             strides=(1, 1),
-                              
+                             strides=(1, 1),                           
                              activation=tf.nn.relu)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
 
@@ -127,19 +121,16 @@ def noisy_dqn_network(name, inputs, actions_num, mean, std, reuse=False):
                              filters=NUM_FILTERS_1,
                              kernel_size=[8, 8],
                              strides=(4, 4),
-                              
                              activation=tf.nn.relu)
         conv2 = tf.layers.conv2d(inputs=conv1,
                              filters=NUM_FILTERS_2,
                              kernel_size=[4, 4],
                              strides=(2, 2),
-                              
                              activation=tf.nn.relu)
         conv3 = tf.layers.conv2d(inputs=conv2,
                              filters=NUM_FILTERS_3,
                              kernel_size=[3, 3],
                              strides=(1, 1),
-                              
                              activation=tf.nn.relu)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
         hidden = noisy_dense(inputs=flatten, 
@@ -163,19 +154,16 @@ def noisy_dueling_dqn_network(name, inputs, actions_num, mean, std, reuse=False,
                              filters=NUM_FILTERS_1,
                              kernel_size=[8, 8],
                              strides=(4, 4),
-                              
                              activation=tf.nn.relu)
         conv2 = tf.layers.conv2d(inputs=conv1,
                              filters=NUM_FILTERS_2,
                              kernel_size=[4, 4],
-                             strides=(2, 2),
-                              
+                             strides=(2, 2),              
                              activation=tf.nn.relu)
         conv3 = tf.layers.conv2d(inputs=conv2,
                              filters=NUM_FILTERS_3,
                              kernel_size=[3, 3],
                              strides=(1, 1),
-                              
                              activation=tf.nn.relu)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
 
