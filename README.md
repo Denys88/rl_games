@@ -7,6 +7,7 @@ As it was very simple game we get almost the same results,  90 minutes to learn 
 DQN has more optimistic Q value estimations.
 
 3 million frames noisy double dueling dqn:
+
 breakout_noisy_dddqn_config = {
     'GAMMA' : 0.99,
     'LEARNING_RATE' : 1e-4,
@@ -25,4 +26,4 @@ breakout_noisy_dddqn_config = {
     'NETWORK' : networks.AtariNoisyDuelingDQN()
     }
     
-[![Watch the video](https://i.imgur.com/vKb2F1B.png)](https://www.youtube.com/watch?v=f0sy4Fb3ZrQ&feature=youtu.be)
+https://youtu.be/f0sy4Fb3ZrQ
