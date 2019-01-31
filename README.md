@@ -26,4 +26,5 @@ breakout_noisy_dddqn_config = {
     'NETWORK' : networks.AtariNoisyDuelingDQN()
     }
     
-https://youtu.be/f0sy4Fb3ZrQ
+
+[![Watch the video](https://j.gifs.com/oVRzRz.gif)](https://youtu.be/f0sy4Fb3ZrQ)
