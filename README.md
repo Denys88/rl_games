@@ -7,7 +7,7 @@ As it was very simple game we get almost the same results,  90 minutes to learn 
 DQN has more optimistic Q value estimations.
 
 3 million frames noisy double dueling dqn:
-
+Near 10 hours to learn.
 breakout_noisy_dddqn_config = {
     'GAMMA' : 0.99,
     'LEARNING_RATE' : 1e-4,
