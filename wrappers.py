@@ -219,6 +219,26 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
+class ReallyDoneWrapper(gym.Wrapper):
+    def __init__(self, env):
+        """
+        Make it work with  video monitor to record whole game video isntead of one life
+        """
+        self.old_env = env
+        gym.Wrapper.__init__(self, env)
+        self.lives = 0
+        self.was_real_done  = True
+
+    def step(self, action):
+        old_lives = self.env.unwrapped.ale.lives()
+        obs, reward, done, info = self.env.step(action)
+        lives = self.env.unwrapped.ale.lives()
+        if old_lives > lives:
+            print('lives:', lives)
+            obs, _, done, _ = self.env.step(1)
+        done = lives == 0
+        return obs, reward, done, info
+
 def make_atari(env_id, timelimit=True):
     # XXX(john): remove timelimit argument after gym is upgraded to allow double wrapping
     env = gym.make(env_id)
@@ -252,4 +272,4 @@ def make_atari_deepmind(env_id):
 
 def make_atari_deepmind_test(env_id):
     env = make_atari(env_id)
-    return wrap_deepmind(env, episode_life=False)
+    return wrap_deepmind(env, episode_life=False, clip_rewards=False)

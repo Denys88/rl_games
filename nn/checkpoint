@@ -1,0 +1,2 @@
+model_checkpoint_path: "PongDDDQNPongNoFrameskip-v4"
+all_model_checkpoint_paths: "PongDDDQNPongNoFrameskip-v4"
