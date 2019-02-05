@@ -233,6 +233,10 @@ class DQNAgent:
                 self.writer.add_scalar('Frames per seconds: ', 1000 / (update_time + play_time), frame)
                 self.writer.add_scalar('upd_time', update_time, frame)
                 self.writer.add_scalar('play_time', play_time, frame)
+                self.writer.add_scalar('loss', loss_t, frame)
+                self.writer.add_scalar('epsilon', self.epsilon, frame)
+                if self.is_prioritized:
+                    self.writer.add_scalar('beta', self.beta, frame)
                 update_time = 0
                 play_time = 0
             ''' hardcoded for Breakout '''
@@ -253,8 +257,7 @@ class DQNAgent:
                 print(loss_t)
                 self.writer.add_scalar('steps', mean_steps, frame)
                 self.writer.add_scalar('reward', mean_reward, frame)
-                self.writer.add_scalar('loss', loss_t, frame)
-                self.writer.add_scalar('epsilon', self.epsilon, frame)
+
                 
                 
                 #clear_output(True)
