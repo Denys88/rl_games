@@ -105,6 +105,8 @@ class DQNAgent:
             
         self.train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.td_loss_mean, var_list=self.weights)
         self.saver = tf.train.Saver()
+        self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+     
         sess.run(tf.global_variables_initializer())
 
     def save(self, fn):
@@ -144,10 +146,8 @@ class DQNAgent:
         return done_reward, done_steps
 
     def load_weigths_into_target_network(self):
-        assigns = []
-        for w_self, w_target in zip(self.weights, self.target_weights):
-            assigns.append(tf.assign(w_target, w_self, validate_shape=True))
-        self.sess.run(assigns)
+        
+        self.sess.run(self.assigns_op)
 
     def sample_batch(self, exp_replay, batch_size):
         obs_batch, act_batch, reward_batch, next_obs_batch, is_done_batch  = exp_replay.sample(batch_size)
@@ -237,6 +237,7 @@ class DQNAgent:
                 self.writer.add_scalar('epsilon', self.epsilon, frame)
                 if self.is_prioritized:
                     self.writer.add_scalar('beta', self.beta, frame)
+                    
                 update_time = 0
                 play_time = 0
             ''' hardcoded for Breakout '''
@@ -254,7 +255,7 @@ class DQNAgent:
                     if last_mean_rewards > self.config['SCORE_TO_WIN']:
                         print('Network won!')
                         return
-                print(loss_t)
+
                 self.writer.add_scalar('steps', mean_steps, frame)
                 self.writer.add_scalar('reward', mean_reward, frame)
 

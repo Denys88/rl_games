@@ -268,7 +268,7 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
 
 def make_atari_deepmind(env_id):
     env = make_atari(env_id)
-    return wrap_deepmind(env, clip_rewards=False)
+    return wrap_deepmind(env)
 
 def make_atari_deepmind_test(env_id):
     env = make_atari(env_id)
