@@ -233,20 +233,25 @@ class ReallyDoneWrapper(gym.Wrapper):
         old_lives = self.env.unwrapped.ale.lives()
         obs, reward, done, info = self.env.step(action)
         lives = self.env.unwrapped.ale.lives()
+        if done:
+            return obs, reward, done, info
         if old_lives > lives:
             print('lives:', lives)
             obs, _, done, _ = self.env.step(1)
         done = lives == 0
         return obs, reward, done, info
 
-def make_atari(env_id, timelimit=True):
+
+
+
+def make_atari(env_id, timelimit=True, noop_max=30, skip=4):
     # XXX(john): remove timelimit argument after gym is upgraded to allow double wrapping
     env = gym.make(env_id)
     if not timelimit:
         env = env.env
     assert 'NoFrameskip' in env.spec.id
-    env = NoopResetEnv(env, noop_max=30)
-    env = MaxAndSkipEnv(env, skip=4)
+    env = NoopResetEnv(env, noop_max=noop_max)
+    env = MaxAndSkipEnv(env, skip=skip)
     return env
 
 def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale=True):
@@ -266,10 +271,11 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
     return env
 
 
-def make_atari_deepmind(env_id):
-    env = make_atari(env_id)
+def make_atari_deepmind(env_id, noop_max=30, skip=4):
+    env = make_atari(env_id, noop_max=noop_max, skip=skip)
     return wrap_deepmind(env, clip_rewards=False)
 
-def make_atari_deepmind_test(env_id):
-    env = make_atari(env_id)
+# turned off episode life to make a video, need to use ReallyDoneWrapper
+def make_atari_deepmind_test(env_id, noop_max=30, skip=4):
+    env = make_atari(env_id, noop_max=noop_max, skip=skip)
     return wrap_deepmind(env, episode_life=False, clip_rewards=False)

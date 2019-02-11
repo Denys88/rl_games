@@ -32,9 +32,13 @@ default_config = {
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1.0,
     'NETWORK' : networks.AtariDQN(),
-    'CLIP_REWARDS' : True, # I don't clip rewards in wrappers because I want to see right values in tensorboard 
-    'LIVES_REWARD' : 5, # 5 for breakout, just divider
-    'STEPS_NUM' : 1
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'EPISODES_TO_LOG' : 20, 
+    'LIVES_REWARD' : 5, # 5 it is divider to calculate rewards, 5 lifes is one episode in breakout
+    'STEPS_NUM' : 1,
+    'ATOMS_NUM' : 51, # if atoms_num > 1 then it is distributional dqn https://arxiv.org/abs/1510.09142
+    'V_MAX' : 10,
+    'V_MIN' : -10,
     }
 
 
@@ -58,8 +62,16 @@ class DQNAgent:
         self.env = env
         self.sess = sess
         self.steps_num = self.config['STEPS_NUM']
-        self.states  = deque([], maxlen=self.steps_num)
+        self.states = deque([], maxlen=self.steps_num)
         self.is_prioritized = config['REPLAY_BUFFER_TYPE'] != 'normal'
+        self.atoms_num = self.config['ATOMS_NUM']
+        self.is_distributional = self.atoms_num > 1
+    
+        if self.is_distributional:
+            self.v_min = self.config['V_MIN']
+            self.v_max = self.config['V_MAX']
+            self.delta_z = (self.v_max - self.v_min) /(self.atoms_num - 1)
+            self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
 
         if not self.is_prioritized:
             self.exp_buffer = experience.ReplayBuffer(config['REPLAY_BUFFER_SIZE'])
@@ -74,10 +86,26 @@ class DQNAgent:
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None,], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.env_name = env_name
-        self.step_count = 0
         self._reset()
+        self.gamma = self.config['GAMMA']
+        if self.atoms_num == 1:
+            self.setup_qvalues(actions_num)
+        else:
+            self.setup_c51_qvalues(actions_num)
+        
+        self.saver = tf.train.Saver()
+        self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+     
+        sess.run(tf.global_variables_initializer())
+
+    def setup_c51_qvalues(self, actions_num):
+        self.qvalues_c51 = self.network('agent', self.obs_ph, actions_num)
+
+
+    def setup_qvalues(self, actions_num):
         self.qvalues = self.network('agent', self.obs_ph, actions_num)
         self.target_qvalues = self.network('target', self.next_obs_ph, actions_num)
+
         if self.config['IS_DOUBLE'] == True:
             self.next_qvalues = tf.stop_gradient(self.network('agent', self.next_obs_ph, actions_num, reuse=True))
 
@@ -86,7 +114,7 @@ class DQNAgent:
 
 
         self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
-        
+
         if self.config['IS_DOUBLE'] == True:
             self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
@@ -94,11 +122,8 @@ class DQNAgent:
         else:
             self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
 
-
-        self.gamma = self.config['GAMMA']
-        gamma_step = self.gamma**self.steps_num
-        LEARNING_RATE = self.config['LEARNING_RATE']
-        self.reference_qvalues = self.rewards_ph +  gamma_step *self.is_not_done * self.next_state_values_target
+        self.gamma_step = tf.constant(self.gamma**self.steps_num, dtype=tf.float32)
+        self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.next_state_values_target
 
         if self.is_prioritized:
             # we need to return l1 loss to update priority buffer
@@ -108,12 +133,9 @@ class DQNAgent:
             self.td_loss_mean = tf.reduce_mean(self.td_loss) 
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
-            
-        self.train_step = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.td_loss_mean, var_list=self.weights)
-        self.saver = tf.train.Saver()
-        self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
-     
-        sess.run(tf.global_variables_initializer())
+
+        self.learning_rate = self.config['LEARNING_RATE']
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.td_loss_mean, var_list=self.weights)
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
@@ -125,6 +147,7 @@ class DQNAgent:
         self.states.clear()
         self.state = self.env.reset()
         self.total_reward = 0.0
+        self.total_shaped_reward = 0.0
         self.step_count = 0
 
     def get_qvalues(self, state):
@@ -141,6 +164,7 @@ class DQNAgent:
 
     def play_steps(self, steps, epsilon=0.0):
         done_reward = None
+        done_shaped_reward = None
         done_steps = None
         steps_rewards = 0
         cur_gamma = 1
@@ -155,10 +179,9 @@ class DQNAgent:
             new_state, reward, is_done, _ = self.env.step(action)
             self.step_count += 1
             self.total_reward += reward
-            if self.clip_rewards:
-                reward = np.sign(reward) # * (1.0 - is_done)
-
-            self.states.append([new_state, action, reward])
+            shaped_reward = self.rewards_shaper(reward)
+            self.total_shaped_reward += shaped_reward
+            self.states.append([new_state, action, shaped_reward])
 
             if len(self.states) < steps:
                 break
@@ -176,8 +199,9 @@ class DQNAgent:
         if is_done:
             done_reward = self.total_reward
             done_steps = self.step_count
+            done_shaped_reward = self.total_shaped_reward
             self._reset()
-        return done_reward, done_steps
+        return done_reward, done_shaped_reward, done_steps
 
 
     def load_weigths_into_target_network(self):
@@ -207,10 +231,12 @@ class DQNAgent:
         NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
         BATCH_SIZE = self.config['BATCH_SIZE']
         LIVES_REWARD = self.config['LIVES_REWARD']
+        EPISODES_TO_LOG = self.config['EPISODES_TO_LOG']
         frame = 0
         play_time = 0
         update_time = 0
         rewards = []
+        shaped_rewards = []
         steps = []
         while True:
             t_play_start = time.time()
@@ -218,10 +244,11 @@ class DQNAgent:
             self.beta = self.beta_processor(frame)
 
             for _ in range(0, STEPS_PER_EPOCH):
-                reward, step = self.play_steps(self.steps_num, self.epsilon)
+                reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
                 if reward != None:
                     steps.append(step)
                     rewards.append(reward)
+                    shaped_rewards.append(shaped_reward)
 
             t_play_end = time.time()
             play_time += t_play_end - t_play_start
@@ -252,13 +279,14 @@ class DQNAgent:
                     
                 update_time = 0
                 play_time = 0
-            ''' hardcoded for Breakout '''
-            if len(rewards) == 20:
-                d = 20 / LIVES_REWARD
-                print(rewards)
+            
+            if len(rewards) == EPISODES_TO_LOG:
+                d = EPISODES_TO_LOG / LIVES_REWARD
                 mean_reward = np.sum(rewards) / d
+                mean_shaped_reward = np.sum(shaped_rewards) / d
                 mean_steps = np.sum(steps) / d 
                 rewards = []
+                shaped_rewards = []
                 steps = []
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)
@@ -270,7 +298,7 @@ class DQNAgent:
 
                 self.writer.add_scalar('steps', mean_steps, frame)
                 self.writer.add_scalar('reward', mean_reward, frame)
-
+                self.writer.add_scalar('shaped_reward', mean_shaped_reward, frame)
                 
                 
                 #clear_output(True)

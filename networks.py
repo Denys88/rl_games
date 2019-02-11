@@ -1,6 +1,6 @@
-
 import tensorflow as tf
 import numpy as np
+
 def sample_noise(shape, mean = 0.0, std = 1.0):
     noise = tf.random_normal(shape, mean = mean, stddev = std)
     return noise
@@ -36,60 +36,61 @@ def noisy_dense(inputs, units, name, bias=True, activation=tf.identity, mean = 0
     else:
         return activation(ret)
 
-def dqn_network(name, inputs, actions_num, reuse=False):
-    with tf.variable_scope(name, reuse=reuse):
-        NUM_FILTERS_1 = 32
-        NUM_FILTERS_2 = 64
-        NUM_FILTERS_3 = 64
-        NUM_HIDDEN_NODES = 512
 
-        conv1 = tf.layers.conv2d(inputs=inputs,
+def distributional_output(inputs, actions_num, atoms_num):
+    distributed_qs = tf.layers.dense(inputs=inputs, activation=tf.nn.softmax, units=atoms_num * actions_num)
+    distributed_qs = tf.reshape(distributed_qs, shape = [-1, actions_num, atoms_num])
+    distributed_qs = tf.nn.softmax(distributed_qs, dim = -1)
+    return distributed_qs
+
+def distributional_noisy_output(inputs, actions_num, atoms_num, name, mean = 0.0, std = 1.0):
+    distributed_qs = noisy_dense(inputs=inputs, name=name,  activation=tf.nn.softmax, units=atoms_num * actions_num, mean=mean, std=std)
+    distributed_qs = tf.reshape(distributed_qs, shape = [-1, actions_num, atoms_num])
+    distributed_qs = tf.nn.softmax(distributed_qs, dim = -1)
+    return distributed_qs
+
+
+def atari_conv_net(inputs):
+    NUM_FILTERS_1 = 32
+    NUM_FILTERS_2 = 64
+    NUM_FILTERS_3 = 64
+    conv1 = tf.layers.conv2d(inputs=inputs,
                              filters=NUM_FILTERS_1,
                              kernel_size=[8, 8],
-                             strides=(4, 4), 
+                             strides=(4, 4),  
                              activation=tf.nn.relu)
-        conv2 = tf.layers.conv2d(inputs=conv1,
+    conv2 = tf.layers.conv2d(inputs=conv1,
                              filters=NUM_FILTERS_2,
                              kernel_size=[4, 4],
-                             strides=(2, 2),  
+                             strides=(2, 2),         
                              activation=tf.nn.relu)
-        conv3 = tf.layers.conv2d(inputs=conv2,
+    conv3 = tf.layers.conv2d(inputs=conv2,
                              filters=NUM_FILTERS_3,
                              kernel_size=[3, 3],
-                             strides=(1, 1),  
+                             strides=(1, 1),                           
                              activation=tf.nn.relu)
+    return conv3
+
+def dqn_network(name, inputs, actions_num, atoms_num = 1, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES = 512
+        conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
         hidden = tf.layers.dense(inputs=flatten, 
                                  units=NUM_HIDDEN_NODES,
                              activation=tf.nn.relu)
-
-        logits = tf.layers.dense(inputs=hidden, units=actions_num)
+        if atoms_num == 1:
+            logits = tf.layers.dense(inputs=hidden, units=actions_num)
+        else:
+            logits = distributional_output(inputs=hidden, actions_num=actions_num, atoms_num=atoms_num)
         return logits
 '''
 dueling_type = 'SIMPLE', 'AVERAGE', 'MAX'
 '''
 def dueling_dqn_network(name, inputs, actions_num, reuse=False, dueling_type = 'AVERAGE'):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_FILTERS_1 = 32
-        NUM_FILTERS_2 = 64
-        NUM_FILTERS_3 = 64
         NUM_HIDDEN_NODES = 512
-
-        conv1 = tf.layers.conv2d(inputs=inputs,
-                             filters=NUM_FILTERS_1,
-                             kernel_size=[8, 8],
-                             strides=(4, 4),  
-                             activation=tf.nn.relu)
-        conv2 = tf.layers.conv2d(inputs=conv1,
-                             filters=NUM_FILTERS_2,
-                             kernel_size=[4, 4],
-                             strides=(2, 2),         
-                             activation=tf.nn.relu)
-        conv3 = tf.layers.conv2d(inputs=conv2,
-                             filters=NUM_FILTERS_3,
-                             kernel_size=[3, 3],
-                             strides=(1, 1),                           
-                             activation=tf.nn.relu)
+        conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
 
         hidden_value = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
@@ -110,34 +111,18 @@ def dueling_dqn_network(name, inputs, actions_num, reuse=False, dueling_type = '
 
 
 
-def noisy_dqn_network(name, inputs, actions_num, mean, std, reuse=False):
+def noisy_dqn_network(name, inputs, actions_num, mean, std, atoms_num = 1, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_FILTERS_1 = 32
-        NUM_FILTERS_2 = 64
-        NUM_FILTERS_3 = 64
         NUM_HIDDEN_NODES = 512
-
-        conv1 = tf.layers.conv2d(inputs=inputs,
-                             filters=NUM_FILTERS_1,
-                             kernel_size=[8, 8],
-                             strides=(4, 4),
-                             activation=tf.nn.relu)
-        conv2 = tf.layers.conv2d(inputs=conv1,
-                             filters=NUM_FILTERS_2,
-                             kernel_size=[4, 4],
-                             strides=(2, 2),
-                             activation=tf.nn.relu)
-        conv3 = tf.layers.conv2d(inputs=conv2,
-                             filters=NUM_FILTERS_3,
-                             kernel_size=[3, 3],
-                             strides=(1, 1),
-                             activation=tf.nn.relu)
+        conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
         hidden = noisy_dense(inputs=flatten, 
                                  units=NUM_HIDDEN_NODES,
                              activation=tf.nn.relu, name = 'noisy_fc1')
-
-        logits = noisy_dense(inputs=hidden, units=actions_num, name = 'noisy_fc2', mean = mean, std = std)
+        if atoms_num == 1:
+            logits = noisy_dense(inputs=hidden, units=actions_num, name = 'noisy_fc2', mean = mean, std = std)
+        else:
+            logits = distributional_noisy_output(inputs=hidden, actions_num=actions_num, atoms_num = atoms_num, name = 'noisy_fc2', mean = mean, std = std)
         return logits
 
 '''
@@ -145,26 +130,8 @@ dueling_type = 'SIMPLE', 'AVERAGE', 'MAX'
 '''
 def noisy_dueling_dqn_network(name, inputs, actions_num, mean, std, reuse=False, dueling_type = 'AVERAGE'):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_FILTERS_1 = 32
-        NUM_FILTERS_2 = 64
-        NUM_FILTERS_3 = 64
         NUM_HIDDEN_NODES = 512
-
-        conv1 = tf.layers.conv2d(inputs=inputs,
-                             filters=NUM_FILTERS_1,
-                             kernel_size=[8, 8],
-                             strides=(4, 4),
-                             activation=tf.nn.relu)
-        conv2 = tf.layers.conv2d(inputs=conv1,
-                             filters=NUM_FILTERS_2,
-                             kernel_size=[4, 4],
-                             strides=(2, 2),              
-                             activation=tf.nn.relu)
-        conv3 = tf.layers.conv2d(inputs=conv2,
-                             filters=NUM_FILTERS_3,
-                             kernel_size=[3, 3],
-                             strides=(1, 1),
-                             activation=tf.nn.relu)
+        conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
 
         hidden_value = noisy_dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu, name = 'noisy_v1', mean = mean, std = std)
@@ -187,7 +154,7 @@ def noisy_dueling_dqn_network(name, inputs, actions_num, mean, std, reuse=False,
 
 class AtariDQN(object):
     def __call__(self, name, inputs, actions_num, reuse=False):
-        return dqn_network(name, inputs, actions_num, reuse)
+        return dqn_network(name, inputs, actions_num, 1, reuse)
     
 
 class AtariDuelingDQN(object):
@@ -202,7 +169,7 @@ class AtariNoisyDQN(object):
         self.mean = mean
         self.std = std
     def __call__(self, name, inputs, actions_num, reuse=False):
-        return noisy_dqn_network(name, inputs, actions_num, self.mean, self.std,  reuse)
+        return noisy_dqn_network(name, inputs, actions_num, self.mean, self.std, 1, reuse)
     
 
 class AtariNoisyDuelingDQN(object):
