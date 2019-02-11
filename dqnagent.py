@@ -56,7 +56,7 @@ class DQNAgent:
         self.actions_num = actions_num
         self.writer = SummaryWriter()
         self.epsilon = self.config['EPSILON']
-        self.clip_rewards = self.config['CLIP_REWARDS']
+        self.rewards_shaper = self.config['REWARD_SHAPER']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['EPSILON'], self.config['MIN_EPSILON'], self.config['EPSILON_DECAY_FRAMES'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['PRIORITY_BETA'], self.config['MAX_BETA'], self.config['BETA_DECAY_FRAMES'])
         self.env = env
