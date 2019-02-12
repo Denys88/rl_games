@@ -205,7 +205,6 @@ class DQNAgent:
 
 
     def load_weigths_into_target_network(self):
-        
         self.sess.run(self.assigns_op)
 
     def sample_batch(self, exp_replay, batch_size):
