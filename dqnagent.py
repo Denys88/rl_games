@@ -159,7 +159,7 @@ class DQNAgent:
             action = self.env.action_space.sample()
         else:
             qvals = self.get_qvalues([state])
-            action = np.argmax(qvals)  
+            action = np.argmax(qvals)
         return action      
 
     def play_steps(self, steps, epsilon=0.0):
@@ -177,6 +177,8 @@ class DQNAgent:
                 state = self.state
             action = self.get_action(state, epsilon)
             new_state, reward, is_done, _ = self.env.step(action)
+            reward = reward * (1 - is_done)
+ 
             self.step_count += 1
             self.total_reward += reward
             shaped_reward = self.rewards_shaper(reward)
