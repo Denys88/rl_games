@@ -149,7 +149,21 @@ def noisy_dueling_dqn_network(name, inputs, actions_num, mean, std, reuse=False,
             outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keepdims=True)
         return outputs
 
+def cartpole_a2c_network(name, inputs, actions_num, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES2 = 32
+        hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
+        actions = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
+        value = tf.layers.dense(inputs=hidden2, units=1, activation=None)
+
+    return actions, value
+
+class CartPoleA2C(object):
+    def __call__(self, name, inputs, actions_num, reuse=False):
+        return cartpole_a2c_network(name, inputs, actions_num,reuse)
 
 
 class AtariDQN(object):
