@@ -21,6 +21,9 @@ In pong_runs.py there are some setups. Prioritized Replay doesn't work as good a
 Currently the best setup for pong is noisy 3-step double dueling network.
 In test_dqn.ipynb different experiments could be found.
 Less then 400k frames to take score > 18.
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
+Light grey is noisy 3-step dddqn.
+
 
 Double dueling DQN vs DQN with the same parameters:
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
