@@ -1,4 +1,6 @@
 # Basic RL Algorithms Implementations
+
+Currently Implemented:
 * DQN
 * Double DQN
 * Dueling DQN
