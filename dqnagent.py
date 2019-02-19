@@ -104,7 +104,7 @@ class DQNAgent:
 
     def setup_qvalues(self, actions_num):
         self.qvalues = self.network('agent', self.obs_ph, actions_num)
-        self.target_qvalues = self.network('target', self.next_obs_ph, actions_num)
+        self.target_qvalues = tf.stop_gradient(self.network('target', self.next_obs_ph, actions_num))
 
         if self.config['IS_DOUBLE'] == True:
             self.next_qvalues = tf.stop_gradient(self.network('agent', self.next_obs_ph, actions_num, reuse=True))

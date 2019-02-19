@@ -244,9 +244,11 @@ class ReallyDoneWrapper(gym.Wrapper):
 
 
 
-def make_atari(env_id, timelimit=True, noop_max=30, skip=4):
+def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
     # XXX(john): remove timelimit argument after gym is upgraded to allow double wrapping
     env = gym.make(env_id)
+    if directory != None:
+        env = gym.wrappers.Monitor(env,directory=directory,force=True)
     if not timelimit:
         env = env.env
     assert 'NoFrameskip' in env.spec.id
@@ -276,6 +278,7 @@ def make_atari_deepmind(env_id, noop_max=30, skip=4):
     return wrap_deepmind(env, clip_rewards=False)
 
 # turned off episode life to make a video, need to use ReallyDoneWrapper
-def make_atari_deepmind_test(env_id, noop_max=30, skip=4):
-    env = make_atari(env_id, noop_max=noop_max, skip=skip)
+def make_atari_deepmind_test(env_id, noop_max=30, skip=4, directory='video_dddqn05'):
+    env = make_atari(env_id, noop_max=noop_max, skip=skip, directory=directory)
+
     return wrap_deepmind(env, episode_life=False, clip_rewards=False)
