@@ -37,7 +37,7 @@ Some games need 50m steps.
 * 5 million frames two step noisy double dueling dqn:
 Near 8 hours to learn.
 
-[![Watch the video](https://j.gifs.com/K1OL6r.gif)](https://youtu.be/f0sy4Fb3ZrQ)
+[![Watch the video](https://j.gifs.com/K1OL6r.gif)](https://youtu.be/Lu9Cm9K_6ms)
 
 * Random lucky game in Space Invaders after less then one hour learning:
 
