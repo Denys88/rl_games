@@ -26,7 +26,7 @@ Light grey is noisy 3-step dddqn.
 
 
 Double dueling DQN vs DQN with the same parameters:
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/pong_dqn.png)
 As it was very simple game we get almost the same results,  90 minutes to learn to the 20 reward.
 DQN has more optimistic Q value estimations.
 
