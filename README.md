@@ -10,4 +10,4 @@ DQN has more optimistic Q value estimations.
 Near 8 hours to learn.
     
 
-[![Watch the video](https://gifs.com/gif/deep-q-network-atari-breakout-K1OL6r)](https://youtu.be/f0sy4Fb3ZrQ)
+[![Watch the video](https://j.gifs.com/K1OL6r.gif)](https://youtu.be/f0sy4Fb3ZrQ)
