@@ -20,7 +20,7 @@ In pong_runs.py there are some setups. Prioritized Replay doesn't work as good a
 
 Currently the best setup for pong is noisy 3-step double dueling network.
 In test_dqn.ipynb different experiments could be found.
-Less then 400 frames to take score > 18.
+Less then 400k frames to take score > 18.
 
 Double dueling DQN vs DQN with the same parameters:
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
@@ -33,10 +33,13 @@ Some games need 50m steps.
 
 * 5 million frames two step noisy double dueling dqn:
 Near 8 hours to learn.
+
 [![Watch the video](https://j.gifs.com/K1OL6r.gif)](https://youtu.be/f0sy4Fb3ZrQ)
 
 * Random lucky game in Space Invaders after less then one hour learning:
+
 [![Watch the video](https://j.gifs.com/D1RQE5.gif)](https://www.youtube.com/watch?v=LO0RL437rh4)
+
 
 
 Thanks this article https://medium.com/mlreview/speeding-up-dqn-on-pytorch-solving-pong-in-30-minutes-81a1bd2dff55 and Max's book. Helped me a lot 
