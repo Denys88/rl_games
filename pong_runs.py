@@ -188,8 +188,8 @@ pong_dddqn_config6 = {
     'LEARNING_RATE' : 1e-4,
     'STEPS_PER_EPOCH' : 4,
     'BATCH_SIZE' : 32 * 4,
-    'EPSILON' : 0,
-    'MIN_EPSILON' : 0,
+    'EPSILON' : 1,
+    'MIN_EPSILON' : 0.02,
     'EPSILON_DECAY_FRAMES' : 100000,
     'NUM_EPOCHS_TO_COPY' : 1000,
     'NAME' : 'pong_dddqn_config6',
@@ -203,7 +203,7 @@ pong_dddqn_config6 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariNoisyDuelingDQN(),
+    'NETWORK' : networks.AtariDuelingDQN(),
     'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -211,7 +211,37 @@ pong_dddqn_config6 = {
     'ATOMS_NUM' : 1
     }
 
-configs = [pong_dddqn_config0, pong_dddqn_config1, pong_dddqn_config2, pong_dddqn_config3, pong_dddqn_config4, pong_dddqn_config5, pong_dddqn_config6]
+
+pong_dddqn_config7 = {
+    'GAMMA' : 0.99,
+    'LEARNING_RATE' : 1e-4,
+    'STEPS_PER_EPOCH' : 4,
+    'BATCH_SIZE' : 32 * 4,
+    'EPSILON' : 1,
+    'MIN_EPSILON' : 0.02,
+    'EPSILON_DECAY_FRAMES' : 100000,
+    'NUM_EPOCHS_TO_COPY' : 1000,
+    'NAME' : 'pong_dddqn_config7',
+    'IS_DOUBLE' : True,
+    'DUELING_TYPE' : 'AVERAGE',
+    'SCORE_TO_WIN' : 18,
+    'NUM_STEPS_FILL_BUFFER' : 10000,
+    'REPLAY_BUFFER_TYPE' : 'normal',
+    'REPLAY_BUFFER_SIZE' : 100000,
+    'PRIORITY_BETA' : 0.4,
+    'PRIORITY_ALPHA' : 0.6,
+    'BETA_DECAY_FRAMES' : 1e5,
+    'MAX_BETA' : 1,
+    'NETWORK' : networks.AtariDuelingDQN(use_batch_norm=True),
+    'STEPS_NUM' : 3,
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'EPISODES_TO_LOG' : 10, 
+    'LIVES_REWARD' : 1,
+    'ATOMS_NUM' : 1
+    }
+
+configs = [pong_dddqn_config0, pong_dddqn_config1, pong_dddqn_config2, pong_dddqn_config3, 
+pong_dddqn_config4, pong_dddqn_config5, pong_dddqn_config6, pong_dddqn_config7]
 env = make_atari_deepmind(env_name, skip=4)
 
 import argparse
@@ -235,12 +265,9 @@ def evaluate(env,t_max=10000):
     rewards = []
     env._max_episode_steps = 9999
     print('reset')
-    #env = env.old_env
     s = env.reset()
     reward = 0
     for it in range(t_max):
-        #nv.render()
-        #e.render()
         qvalues = agent.get_qvalues([s])
         action = np.argmax(qvalues)
         s, r, done, _ = env.step(action)
@@ -254,8 +281,7 @@ def evaluate(env,t_max=10000):
 
 import gym.wrappers
 
-env_monitor = wrappers.make_atari_deepmind_test(env_name, noop_max=30, skip=4)
-env_monitor = wrappers.ReallyDoneWrapper(env_monitor)
+env_monitor = wrappers.make_atari_deepmind(env_name, noop_max=30, skip=4)
 env_monitor = gym.wrappers.Monitor(env_monitor,directory='video_pong'+str(args.index[0]) ,force=True)
 
 sessions = [print('reward:', evaluate(env_monitor)) for _ in range(1)]

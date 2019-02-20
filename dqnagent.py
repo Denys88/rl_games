@@ -7,8 +7,7 @@ import collections
 import time
 from collections import deque
 from tensorboardX import SummaryWriter
-
-from multiprocessing import Pool, Queue, Process
+import ray
 
 default_config = {
     'GAMMA' : 0.99,
