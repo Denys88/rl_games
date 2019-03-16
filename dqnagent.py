@@ -8,7 +8,7 @@ import time
 from collections import deque
 from tensorboardX import SummaryWriter
 
-from multiprocessing import Pool, Queue, Process
+import multiprocessing
 
 default_config = {
     'GAMMA' : 0.99,
@@ -47,7 +47,6 @@ class DQNAgent:
     def __init__(self, env, sess, env_name, config = default_config):
         observation_shape = env.observation_space.shape
         actions_num = env.action_space.n
-        
         self.network = config['NETWORK']
         self.config = config
         self.state_shape = observation_shape
@@ -93,7 +92,7 @@ class DQNAgent:
         
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
-     
+
         sess.run(tf.global_variables_initializer())
 
     def setup_c51_qvalues(self, actions_num):
