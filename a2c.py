@@ -7,7 +7,8 @@ import collections
 import time
 from collections import deque
 from tensorboardX import SummaryWriter
-
+import ray
+import ray.experimental.tf_utils
 
 default_config = {
     'GAMMA' : 0.99,
@@ -148,6 +149,8 @@ class A2CAgent:
         self.loss = self.actor_loss + self.critic_loss
         self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE']).minimize(self.loss)
         self.sess.run(tf.global_variables_initializer())
+        
+        actor_list = [remote_network.remote(x_ids[i], y_ids[i]) for i in range(NUM_BATCHES)]
 
 
     def get_action_distribution(self, state):
