@@ -76,7 +76,7 @@ class DQNAgent:
             self.exp_buffer = experience.PrioritizedReplayBuffer(config['REPLAY_BUFFER_SIZE'], config['PRIORITY_ALPHA'])
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
-        self.obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'obs_ph')
+        self.obs_ph = tf.placeholder(tf.float32, shape=[None,] + self.state_shape , name = 'obs_ph')
         self.actions_ph = tf.placeholder(tf.int32, shape=[None,], name = 'actions_ph')
         self.rewards_ph = tf.placeholder(tf.float32, shape=[None,], name = 'rewards_ph')
         self.next_obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'next_obs_ph')
@@ -284,7 +284,7 @@ class DQNAgent:
                 mean_shaped_reward = np.sum(shaped_rewards) / d
                 mean_steps = np.sum(steps) / d 
                 rewards = []
-                shaped_rewards = []
+                shaped_rewards = []z
                 steps = []
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)
