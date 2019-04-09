@@ -163,7 +163,7 @@ class TensorFlowVariables(object):
         """
         self._check_sess()
         assign_list = [
-            self.assignment_nodes[name] for name in new_weights.variables.keys()
+            self.assignment_nodes[name] for name in new_weights.keys()
             if name in self.assignment_nodes
         ]
         assert assign_list, ("No variables in the input matched those in the "
@@ -175,6 +175,6 @@ class TensorFlowVariables(object):
             assign_list,
             feed_dict={
                 self.placeholders[name]: value
-                for (name, value) in new_weights.variables.items()
+                for (name, value) in new_weights.items()
                 if name in self.placeholders
             })
