@@ -25,103 +25,126 @@ default_config = {
     'LIVES_REWARD' : 5,
     'STEPS_NUM' : 1,
     'ENTROPY_COEF' : 0.001,
+    'ACTOR_STEPS_PER_UPDATE' : 10,
     'NUM_ACTORS' : 8
 }
+
+def discount_with_dones(rewards, dones, gamma):
+    discounted = []
+    r = 0
+    for reward, done in zip(rewards[::-1], dones[::-1]):
+        r = reward + gamma*r*(1.-done)
+        discounted.append(r)
+    return discounted[::-1]
+
+
 
 class Agent:
     def __init__(self, sess, actions_num, observation_shape, network, determenistic = False):
         self.sess = sess
         self.determenistic = determenistic
         self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape)   
-        self.actions , _ = network('agent', self.obs_ph, actions_num, reuse=False)
+        self.actions , self.values = network('agent', self.obs_ph, actions_num, reuse=False)
         self.softmax_probs = tf.nn.softmax(self.actions)
         self.variables = TensorFlowVariables(self.softmax_probs, self.sess)
         self.sess.run(tf.global_variables_initializer())
 
     def get_action_distribution(self, state):
-        return self.sess.run(self.softmax_probs, {self.obs_ph: state})
+        return self.sess.run([self.softmax_probs, self.values], {self.obs_ph: state})
 
     def set_weights(self, weights):
         self.variables.set_weights(weights)
 
     def get_action(self, state):
-        policy = self.get_action_distribution([state])[0]
+        policy, value = self.get_action_distribution([state])
         if self.determenistic:
-            action = np.argmax(policy)
+            action = np.argmax(policy[0])
         else:
-            action = np.random.choice(len(policy), p=policy)
-        return action
+            action = np.random.choice(len(policy[0]), p=policy[0])
+        return action, value[0][0]
 
     
 
 class NStepBuffer:
-    def __init__(self, steps_num, env, agent, rewards_shaper):
+    def __init__(self, steps_num, env, agent, gamma, rewards_shaper):
         self.steps_num = steps_num
         self.env = env
         self.agent = agent
         self.rewards_shaper = rewards_shaper
-        self.states = deque([], maxlen=self.steps_num)
+        self.is_done = True
+        self.done_reward = []
+        self.done_shaped_reward = []
+        self.done_steps = []
+        self.gamma = gamma
         self._reset()
     
     def _reset(self):
-        self.states.clear()
         self.current_state = self.env.reset()
         self.total_reward = 0.0
         self.total_shaped_reward = 0.0
         self.step_count = 0
+        self.is_done = False
+
+    def get_logs(self):
+        res = [self.done_reward, self.done_shaped_reward, self.done_steps]
+        self.done_reward = []
+        self.done_shaped_reward = []
+        self.done_steps = []
+        return res
 
     def set_weights(self, weights):
         self.agent.set_weights(weights)
 
     def play_steps(self):
-        done_reward = None
-        done_shaped_reward = None
-        done_steps = None
-        steps_rewards = 0
-        cur_gamma = 1
-        cur_states_len = len(self.states)
-        # always break after one
-        while True:
-            if cur_states_len > 0:
-                state = self.states[-1][0]
-            else:
-                state = self.current_state
-            action = self.agent.get_action(state)
+
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones = [],[],[],[],[]
+        is_done = self.is_done
+        for _ in range(self.steps_num):
+            mb_dones.append(is_done)
+            state = self.current_state
+            action, value = self.agent.get_action(state)
             new_state, reward, is_done, _ = self.env.step(action)
-            reward = reward * (1 - is_done)
- 
+            mb_obs.append(np.copy(state))
+            mb_actions.append(action)
+            mb_values.append(value)
+            
             self.step_count += 1
             self.total_reward += reward
             shaped_reward = self.rewards_shaper(reward)
             self.total_shaped_reward += shaped_reward
-            self.states.append([new_state, action, shaped_reward])
+            self.current_state = new_state
+            mb_rewards.append(shaped_reward)
+            self.is_done = is_done
+            if is_done:
+                self.done_reward.append(self.total_reward)
+                self.done_steps.append(self.step_count)
+                self.done_shaped_reward.append(self.total_shaped_reward)
+                self._reset()
 
-            if len(self.states) < self.steps_num:
-                break
+        
+        mb_dones.append(is_done)
 
-            for i in range(self.steps_num):
-                sreward = self.states[i][2]
-                steps_rewards += sreward * cur_gamma
-                cur_gamma = cur_gamma * 0.99
-
-            next_state, current_action, _ = self.states[0]
-            self.state = next_state
-            break
-
-        if is_done:
-            done_reward = self.total_reward
-            done_steps = self.step_count
-            done_shaped_reward = self.total_shaped_reward
-            self._reset()
-        return [state, current_action, shaped_reward, new_state, is_done, done_reward, done_shaped_reward, done_steps]
+        mb_obs = np.asarray(mb_obs, dtype=np.float32)
+        mb_actions = np.asarray(mb_actions, dtype=np.int32)
+        mb_values = np.asarray(mb_values, dtype=np.float32)
+        #mb_masks = mb_dones[:-1]
+        mb_dones = mb_dones[1:]
+            
+        if mb_dones[-1] == 0:
+            _, next_value = self.agent.get_action(self.current_state)
+            rewards = discount_with_dones(mb_rewards + [next_value], mb_dones + [0], self.gamma)[:-1]
+        else:
+            rewards = discount_with_dones(mb_rewards, mb_dones, self.gamma)
+            
+        mb_rewards = np.asarray(rewards, dtype=np.float32)
+        return mb_obs, mb_rewards, mb_actions, mb_values, mb_dones
 
 class Worker:
-    def __init__(self):
+    def __init__(self, actions_num, observation_shape, steps_num, gamma):
         sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
-        #agent = Agent(sess, actions_num, observation_shape, network, determenistic = False)
-        agent = Agent(sess, 2, (4,) , networks.CartPoleA2C(), determenistic = False)
+        agent = Agent(sess, actions_num, observation_shape, networks.CartPoleA2C(), determenistic = False)
         env = gym.make('CartPole-v1')
-        buffer = NStepBuffer(1, env, agent, tr_helpers.DefaultRewardsShaper())
+        buffer = NStepBuffer(steps_num, env, agent, gamma, tr_helpers.DefaultRewardsShaper())
         self.buffer = buffer
 
     def set_weights(self, weights):
@@ -141,41 +164,40 @@ class A2CAgent:
         self.actions_num = actions_num
         self.writer = SummaryWriter()
         self.sess = sess
+        self.grad_norm = config['GRAD_NORM']
         self.gamma = self.config['GAMMA']
         self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape)    
-        self.next_obs_ph = tf.placeholder('float32', (None, ) + observation_shape)
         self.actions_ph = tf.placeholder('int32', (None,))
         self.rewards_ph = tf.placeholder('float32', (None,))
-        self.is_done_ph = tf.placeholder('float32', (None,))
-        self.actions, self.state_values = self.network('agent', self.obs_ph, actions_num, reuse=False)
-        self.next_actions, self.next_state_values = self.network('agent', self.next_obs_ph, actions_num, reuse=True)
-        self.probs = tf.nn.softmax(self.actions)
-        self.log_probs = tf.nn.log_softmax(self.actions)
-        self.next_state_values = self.next_state_values * (1 - self.is_done_ph)
-        self.logp_actions = tf.reduce_sum(self.log_probs * tf.one_hot(self.actions_ph, actions_num), axis=-1)
-        self.entropy = tf.reduce_mean(-tf.reduce_sum(self.probs * self.log_probs, 1, name="entropy"))
-        self.gamma_step = tf.constant(self.gamma**self.steps_num, dtype=tf.float32)
-        self.target_state_values = self.rewards_ph + self.gamma_step * self.next_state_values
-        self.advantage = tf.stop_gradient(self.target_state_values) - tf.stop_gradient(self.state_values)
-        self.actor_loss = -tf.reduce_mean(self.logp_actions * tf.stop_gradient(self.advantage)) - self.config['ENTROPY_COEF'] * self.entropy
-        self.critic_loss = tf.reduce_mean((self.state_values - tf.stop_gradient(self.target_state_values))**2 ) # TODO use huber loss too
-        #self.critic_loss = tf.losses.huber_loss(self.state_values, tf.stop_gradient(self.target_state_values), reduction=tf.losses.Reduction.MEAN)
-        self.loss = self.actor_loss + self.critic_loss
-        self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE']).minimize(self.loss)
-        self.variables = TensorFlowVariables(self.probs, self.sess)
-        self.sess.run(tf.global_variables_initializer())
-        self.remote_worker= ray.remote(Worker)
-        self.actor_list = [self.remote_worker.remote() for i in range(self.num_actors)]
+        self.advantages_ph = tf.placeholder('float32', (None,))
 
-       # self.actor_list = [create_worker.remote(self.steps_num, actions_num, observation_shape, self.env_creator, self.network, self.config['REWARD_SHAPER']) 
-        #for i in range(self.num_actors)]
+        self.actions, self.state_values = self.network('agent', self.obs_ph, actions_num, reuse=False)
+        self.probs = tf.nn.softmax(self.actions)
+        self.logp_actions = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.actions, labels=self.actions_ph)
+        self.entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.probs, name="entropy"))
+        self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph) 
+        self.critic_loss = tf.reduce_mean((tf.squeeze(self.state_values) - self.rewards_ph)**2 ) # TODO use huber loss too
+        self.loss = self.actor_loss + 0.5 * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
+        self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE'])
+        self.variables = TensorFlowVariables([self.actions, self.state_values], self.sess)
+        self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
+        grads = tf.gradients(self.loss, self.weights)
+        #grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
+        grads = list(zip(grads, self.weights))
+
+        # 4. Backpropagation
+        #self.train_op = self.train_step.apply_gradients(grads)
+        self.train_op = self.train_step.minimize(self.loss)
+        self.sess.run(tf.global_variables_initializer())
+        self.remote_worker = ray.remote(Worker)
+        self.actor_list = [self.remote_worker.remote(self.actions_num, self.state_shape, self.steps_num, self.gamma) for i in range(self.num_actors)]
 
     def get_action_distribution(self, state):
         return self.sess.run(self.probs, {self.obs_ph: state})
 
 
     def get_action(self, state, is_determenistic = False):
-        policy = self.get_action_distribution([state])
+        policy = self.get_action_distribution([state])[0]
         if is_determenistic:
             action = np.argmax(policy)
         else:
@@ -184,35 +206,46 @@ class A2CAgent:
 
 
     def train(self):
+        
         ind = 0
+        steps_per_update = self.steps_num
+        scores = []
         while True:
-            ind += 1
+            
             weights = self.variables.get_weights()
             weights_id = ray.put(weights)
-            [actor.set_weights.remote(weights_id) for actor in self.actor_list]
-            info = [actor.step.remote() for actor in self.actor_list]
-            unpacked_info = ray.get(info)
+            [actor.set_weights.remote(weights_id) for actor in self.actor_list]    
+            
             obses = []
             actions = []
             rewards = []
-            next_obses = []
-            is_dones =[]
-            for i in range(self.num_actors):
-                obses.append(unpacked_info[i][0])
-                actions.append(unpacked_info[i][1])
-                rewards.append(unpacked_info[i][2])
-                next_obses.append(unpacked_info[i][3])
-                is_dones.append(unpacked_info[i][4])
-                if not (unpacked_info[i][6] is None):
-                    print (unpacked_info[i][6])
+            advantages = []
+            ind += steps_per_update
+            info = [actor.step.remote() for actor in self.actor_list]
+            unpacked_info = ray.get(info)
+            for k in range(self.num_actors):
+                actor_info = unpacked_info[k]
+                obses.append(actor_info[0])
+                rewards.append(actor_info[1])
+                actions.append(actor_info[2])
+                value = actor_info[3]
+                reward = actor_info[1]
+                advantages.append(reward - value)
+            
+            obses = np.asarray(obses, dtype=np.float32)[0,:]
+            rewards = np.asarray(rewards, dtype=np.float32)[0,:]
+            actions = np.asarray(actions, dtype=np.int32)[0,:]
+            advantages = np.asarray(advantages, dtype=np.float32)[0,:]
+            dict = {self.obs_ph: obses, self.actions_ph : actions, self.rewards_ph : rewards, self.advantages_ph : advantages}
+            a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
 
-            dict = {self.obs_ph: obses, self.actions_ph : actions, self.rewards_ph : rewards, self.next_obs_ph : next_obses, self.is_done_ph : is_dones }
-            a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_step], dict)
-
-            if ind % 100 == 0:
+            if ind % 1000 == 0:
                 print("a_loss", a_loss)
                 print("c_loss", c_loss)
                 print("entropy", entropy)
+                if (len(scores)) > 0:
+                    print("scores", np.mean(scores))
+                    scores = []
 
             
         

@@ -218,7 +218,7 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
 
 def cartpole_a2c_network(name, inputs, actions_num, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES1 = 64
         NUM_HIDDEN_NODES2 = 32
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
