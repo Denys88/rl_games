@@ -218,20 +218,36 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
 
 def cartpole_a2c_network(name, inputs, actions_num, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 64
-        NUM_HIDDEN_NODES2 = 32
+        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES2 = 16
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
-        actions = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
+        logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
         value = tf.layers.dense(inputs=hidden2, units=1, activation=None)
 
-    return actions, value
+    return logits, value
+
+def atari_a2c_network(name, inputs, actions_num, reuse=False, is_train=True):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES = 512
+        conv3 = atari_conv_net_batch_norm(inputs, is_train)
+        flatten = tf.contrib.layers.flatten(inputs = conv3)
+
+        hidden= tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
+  
+        logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
+        value = tf.layers.dense(inputs=hidden, units=1, activation=None)
+
+    return logits, value
 
 class CartPoleA2C(object):
     def __call__(self, name, inputs, actions_num, reuse=False):
         return cartpole_a2c_network(name, inputs, actions_num,reuse)
 
+class AtariA2C(object):
+    def __call__(self, name, inputs, actions_num, reuse=False):
+        return atari_a2c_network(name, inputs, actions_num,reuse)
 
 class AtariDQN(object):
     def __call__(self, name, inputs, actions_num, reuse=False):

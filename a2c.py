@@ -1,6 +1,7 @@
 import networks
 import tr_helpers
 import experience
+import wrappers
 import tensorflow as tf
 import numpy as np
 import collections
@@ -28,7 +29,8 @@ default_config = {
     'ACTOR_STEPS_PER_UPDATE' : 10,
     'NUM_ACTORS' : 8,
     'PPO' : True,
-    'E_CLIP' : 0.1
+    'E_CLIP' : 0.1,
+    'SAMPLE_TYPE' : 'GUMBEL'#'RANDOM_CHOICE'
 }
 
 a2c_configurations = {
@@ -36,6 +38,11 @@ a2c_configurations = {
         'NETWORK' : networks.CartPoleA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda : gym.make('CartPole-v1')
+    },
+    'PongNoFrameskip-v4' : {
+        'NETWORK' : networks.AtariA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4)
     }
 }
 
@@ -64,28 +71,39 @@ def flatten_first_two_dims(arr):
         return arr.reshape(-1)
 
 class Agent:
-    def __init__(self, sess, actions_num, observation_shape, network, determenistic = False):
+    def __init__(self, sess, actions_num, observation_shape, sampling, network,  determenistic = False):
         self.sess = sess
+        self.sampling = sampling
         self.determenistic = determenistic
         self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape)   
-        self.actions , self.values = network('agent', self.obs_ph, actions_num, reuse=False)
-        self.softmax_probs = tf.nn.softmax(self.actions)
+        self.logits , self.values = network('agent', self.obs_ph, actions_num, reuse=False)
+        self.softmax_probs = tf.nn.softmax(self.logits)
+        self.u = tf.random_uniform(tf.shape(self.logits), dtype=self.logits.dtype)
+        self.action = tf.argmax(self.logits - tf.log(-tf.log(self.u)), axis=-1)
+        self.one_hot_actions = tf.one_hot(self.action, actions_num)
+        self.neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.one_hot_actions)
         self.variables = TensorFlowVariables(self.softmax_probs, self.sess)
         self.sess.run(tf.global_variables_initializer())
 
     def get_network_output(self, state):
-        return self.sess.run([self.softmax_probs, self.values, self.actions], {self.obs_ph: state})
+        return self.sess.run([self.softmax_probs, self.values, self.neglogp, self.action], {self.obs_ph: state})
 
     def set_weights(self, weights):
         self.variables.set_weights(weights)
 
     def get_action_and_value(self, state):
-        policy, value, log_policy = self.get_network_output([state])
+        policy, value, log_policy, action = self.get_network_output(state)
+        action = np.squeeze(action)
+        log_policy = np.squeeze(log_policy)
+        value = np.squeeze(value)
         if self.determenistic:
             action = np.argmax(policy[0])
-        else:
-            action = np.random.choice(len(policy[0]), p=policy[0])
-        return action, value[0][0], log_policy[0]
+        #else:
+            #if (self.sampling == 'GUMBEL'):
+              #  action = action[0]
+            #else:
+            #    action = np.random.choice(len(policy[0]), p=policy[0])
+        return action, value, log_policy
 
     
 
@@ -110,8 +128,8 @@ class NStepBuffer:
         self.step_count = 0
         self.is_done = False
 
-    def get_logs(self):
-        res = [self.done_reward, self.done_shaped_reward, self.done_steps]
+    def get_history(self):
+        res = self.done_reward#[self.done_reward, self.done_shaped_reward, self.done_steps]
         self.done_reward = []
         self.done_shaped_reward = []
         self.done_steps = []
@@ -127,7 +145,7 @@ class NStepBuffer:
         for _ in range(self.steps_num):
             mb_dones.append(is_done)
             state = self.current_state
-            action, value, mb_logit = self.agent.get_action_and_value(state)
+            action, value, mb_logit = self.agent.get_action_and_value([state])
             new_state, reward, is_done, _ = self.env.step(action)
             mb_obs.append(np.copy(state))
             mb_actions.append(action)
@@ -156,7 +174,7 @@ class NStepBuffer:
         mb_dones = mb_dones[1:]
     
         if mb_dones[-1] == 0:
-            _, next_value, _ = self.agent.get_action_and_value(self.current_state)
+            _, next_value, _ = self.agent.get_action_and_value([self.current_state])
             
             rewards = compute_gae(mb_rewards, mb_dones, mb_values + [next_value], self.gamma, self.tau)
         else:
@@ -169,15 +187,17 @@ class NStepBuffer:
         '''
         mb_rewards = np.asarray(rewards, dtype=np.float32)
         mb_values = np.asarray(mb_values, dtype=np.float32)
-        return mb_obs, mb_rewards, mb_actions, mb_values, mb_logits
+        return [mb_obs, mb_rewards, mb_actions, mb_values, mb_logits]
 
 class Worker:
     def __init__(self, env_name, actions_num, observation_shape, steps_num, gamma, tau):
         sess = tf.Session(config=tf.ConfigProto(device_count={'GPU': 0}))
-        agent = Agent(sess, actions_num, observation_shape, a2c_configurations['CartPole-v1']['NETWORK'], determenistic = False)
+        agent = Agent(sess, actions_num, observation_shape, 'GUMBEL', a2c_configurations[env_name]['NETWORK'], determenistic = False)
         env = a2c_configurations[env_name]['ENV_CREATOR']()
-        buffer = NStepBuffer(steps_num, env, agent, gamma, tau, a2c_configurations['CartPole-v1']['REWARD_SHAPER'])
+        buffer = NStepBuffer(steps_num, env, agent, gamma, tau, a2c_configurations[env_name]['REWARD_SHAPER'])
         self.buffer = buffer
+    def get_history(self):
+        return self.buffer.get_history()
 
     def set_weights(self, weights):
         self.buffer.set_weights(weights)
@@ -205,22 +225,23 @@ class A2CAgent:
         self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape, name = "obs")    
         self.actions_ph = tf.placeholder('int32', (None,), name = "actions")
         self.rewards_ph = tf.placeholder('float32', (None,), name = "rewards")
-        self.prev_logits_ph = tf.placeholder('float32', (None, ) + (actions_num,), name = "prev_logs")
+        self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = "prev_logs")
         self.advantages_ph = tf.placeholder('float32', (None,), name = "adv")
 
         self.actions, self.state_values = self.network('agent', self.obs_ph, actions_num, reuse=False)
         self.probs = tf.nn.softmax(self.actions)
-        self.logp_actions = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.actions, labels=tf.squeeze(self.actions_ph))
-        self.old_logp_actions = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.prev_logits_ph, labels=tf.squeeze(self.actions_ph))
+        self.one_hot_actions = tf.one_hot(self.actions_ph, self.actions_num)
+        self.logp_actions = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.one_hot_actions)
         if (self.ppo):
-            self.prob_ratio = tf.exp(self.old_logp_actions - self.logp_actions)
-            self.pg_loss_unclipped = -self.advantages_ph * self.prob_ratio
-            self.pg_loss_clipped = -self.advantages_ph * tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip)
+            self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
+            self.pg_loss_clipped = -tf.multiply(self.advantages_ph , tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph) 
-
-        self.entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.probs, name="entropy"))
+        
+        #self.entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.probs, name="entropy"))
+        self.entropy = tf.reduce_mean(self.get_entropy(self.actions))
         self.critic_loss = tf.reduce_mean((tf.squeeze(self.state_values) - self.rewards_ph)**2 ) # TODO use huber loss too
         self.loss = self.actor_loss + 0.5 * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE'])
@@ -241,6 +262,12 @@ class A2CAgent:
     def get_action_distribution(self, state):
         return self.sess.run(self.probs, {self.obs_ph: state})
 
+    def get_entropy(self, logits):
+        a0 = logits - tf.reduce_max(logits, axis=-1, keepdims=True)
+        ea0 = tf.exp(a0)
+        z0 = tf.reduce_sum(ea0, axis=-1, keepdims=True)
+        p0 = ea0 / z0
+        return tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=-1)
 
     def get_action(self, state, is_determenistic = False):
         policy = self.get_action_distribution([state])[0]
@@ -258,11 +285,11 @@ class A2CAgent:
 
     def train(self):
         
-        ind = 0
+        frame = 0
         steps_per_update = self.steps_num
-        scores = []
+        update_time = 0
         while True:
-            
+            t_start = time.time()
             weights = self.variables.get_weights()
             weights_id = ray.put(weights)
             [actor.set_weights.remote(weights_id) for actor in self.actor_list]    
@@ -272,9 +299,10 @@ class A2CAgent:
             rewards = []
             advantages = []
             policies = []
-            ind += steps_per_update
+            frame += steps_per_update * self.num_actors
             info = [actor.step.remote() for actor in self.actor_list]
             unpacked_info = ray.get(info)
+           
             for k in range(self.num_actors):
                 actor_info = unpacked_info[k]
                 obses.append(actor_info[0])
@@ -295,17 +323,25 @@ class A2CAgent:
             actions = flatten_first_two_dims(actions)
             advantages = flatten_first_two_dims(advantages)
             policies = flatten_first_two_dims(policies)
-
-            dict = {self.obs_ph: obses, self.actions_ph : actions, self.rewards_ph : rewards, self.advantages_ph : advantages, self.prev_logits_ph : policies}
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            dict = {self.obs_ph: obses, self.actions_ph : actions, self.rewards_ph : rewards, self.advantages_ph : advantages, self.old_logp_actions_ph : policies}
             a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
-
-            if ind % 1000 == 0:
-                print("a_loss", a_loss)
-                print("c_loss", c_loss)
-                print("entropy", entropy)
-                if (len(scores)) > 0:
-                    print("scores", np.mean(scores))
-                    scores = []
+            t_end = time.time()
+            update_time += t_end - t_start
+            if frame % 1000 == 0:
+                print('Frames per seconds: ', 1000 / update_time)
+                self.writer.add_scalar('Frames per seconds: ', 1000 / update_time, frame)
+                self.writer.add_scalar('upd_time', update_time, frame)
+                self.writer.add_scalar('a_loss', a_loss, frame)
+                self.writer.add_scalar('c_loss', c_loss, frame)
+                self.writer.add_scalar('entropy', entropy, frame)
+                history = [actor.get_history.remote() for actor in self.actor_list]
+                mean_rewards = ray.get(history)
+                mean_rewards =  np.asarray(sum(mean_rewards, []), dtype=np.float32).flatten()
+                if len(mean_rewards) > 0:
+                    mean_rewards = np.mean(mean_rewards)
+                    self.writer.add_scalar('mean_rewards', mean_rewards, frame)
+                update_time = 0
 
             
         
