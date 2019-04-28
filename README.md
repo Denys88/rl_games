@@ -6,6 +6,8 @@ Currently Implemented:
 * Dueling DQN
 * Noisy DQN
 * N-Step DQN
+* A2C
+* PPO
 
 TODO:
 * Rainbow DQN
@@ -44,5 +46,7 @@ Near 8 hours to learn.
 [![Watch the video](https://j.gifs.com/D1RQE5.gif)](https://www.youtube.com/watch?v=LO0RL437rh4)
 
 
+# A2C and PPO Results
+* More than 4 hours for Pong to achieve 20 score with one actor playing. 
+* For CartPole PPO starts work with learning_rate=1e2, for Pong it doesn't work yet. 
 
-Thanks this article https://medium.com/mlreview/speeding-up-dqn-on-pytorch-solving-pong-in-30-minutes-81a1bd2dff55 and Max's book. Helped me a lot 
