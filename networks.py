@@ -228,10 +228,10 @@ def cartpole_a2c_network(name, inputs, actions_num, reuse=False):
 
     return logits, value
 
-def atari_a2c_network(name, inputs, actions_num, reuse=False, is_train=True):
+def atari_a2c_network(name, inputs, actions_num, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES = 512
-        conv3 = atari_conv_net_batch_norm(inputs, is_train)
+        conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
 
         hidden= tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)

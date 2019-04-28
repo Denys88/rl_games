@@ -39,6 +39,11 @@ a2c_configurations = {
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda : gym.make('CartPole-v1')
     },
+    'Acrobot-v1' : {
+        'NETWORK' : networks.CartPoleA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda : gym.make('Acrobot-v1')
+    },
     'PongNoFrameskip-v4' : {
         'NETWORK' : networks.AtariA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
@@ -82,7 +87,7 @@ class Agent:
         self.action = tf.argmax(self.logits - tf.log(-tf.log(self.u)), axis=-1)
         self.one_hot_actions = tf.one_hot(self.action, actions_num)
         self.neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.one_hot_actions)
-        self.variables = TensorFlowVariables(self.softmax_probs, self.sess)
+        self.variables = TensorFlowVariables([self.logits , self.values], self.sess)
         self.sess.run(tf.global_variables_initializer())
 
     def get_network_output(self, state):
@@ -98,11 +103,6 @@ class Agent:
         value = np.squeeze(value)
         if self.determenistic:
             action = np.argmax(policy[0])
-        #else:
-            #if (self.sampling == 'GUMBEL'):
-              #  action = action[0]
-            #else:
-            #    action = np.random.choice(len(policy[0]), p=policy[0])
         return action, value, log_policy
 
     
@@ -228,10 +228,10 @@ class A2CAgent:
         self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = "prev_logs")
         self.advantages_ph = tf.placeholder('float32', (None,), name = "adv")
 
-        self.actions, self.state_values = self.network('agent', self.obs_ph, actions_num, reuse=False)
-        self.probs = tf.nn.softmax(self.actions)
+        self.logits, self.state_values = self.network('agent', self.obs_ph, actions_num, reuse=False)
+        self.probs = tf.nn.softmax(self.logits)
         self.one_hot_actions = tf.one_hot(self.actions_ph, self.actions_num)
-        self.logp_actions = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.one_hot_actions)
+        self.logp_actions = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.one_hot_actions)
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
@@ -240,14 +240,14 @@ class A2CAgent:
         else:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph) 
         
-        #self.entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.actions, labels=self.probs, name="entropy"))
-        self.entropy = tf.reduce_mean(self.get_entropy(self.actions))
+        self.entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.probs, name="entropy"))
+        #self.entropy = tf.reduce_mean(self.get_entropy(self.actions))
         self.critic_loss = tf.reduce_mean((tf.squeeze(self.state_values) - self.rewards_ph)**2 ) # TODO use huber loss too
         self.loss = self.actor_loss + 0.5 * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE'])
 
 
-        self.variables = TensorFlowVariables([self.actions, self.state_values], self.sess)
+        self.variables = TensorFlowVariables([self.logits, self.state_values], self.sess)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         grads = tf.gradients(self.loss, self.weights)
         if self.config['TRUNCATE_GRADS']:
@@ -284,16 +284,19 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
-        
+        batch_size = self.steps_num * self.num_actors
+        indexes = np.arange(batch_size)
         frame = 0
         steps_per_update = self.steps_num
         update_time = 0
+        last_mean_rewards = -100500
         while True:
+            
             t_start = time.time()
             weights = self.variables.get_weights()
             weights_id = ray.put(weights)
             [actor.set_weights.remote(weights_id) for actor in self.actor_list]    
-            
+            np.random.shuffle(indexes)
             obses = []
             actions = []
             rewards = []
@@ -341,6 +344,13 @@ class A2CAgent:
                 if len(mean_rewards) > 0:
                     mean_rewards = np.mean(mean_rewards)
                     self.writer.add_scalar('mean_rewards', mean_rewards, frame)
+                    if mean_rewards > last_mean_rewards:
+                        print('saving next best rewards: ', mean_rewards)
+                        last_mean_rewards = mean_rewards
+                        self.save("./nn/" + "a2c" + self.env_name)
+                        if last_mean_rewards > self.config['SCORE_TO_WIN']:
+                            print('Network won!')
+                            return
                 update_time = 0
 
             
