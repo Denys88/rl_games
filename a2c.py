@@ -11,7 +11,15 @@ from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
 import gym
+from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
+import gym_super_mario_bros
+from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 
+def create_super_mario_env():
+    env = gym_super_mario_bros.make('SuperMarioBros-v1')
+    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
+    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale=True)
+    return env
 
 default_config = {
     'GAMMA' : 0.99, #discount value
@@ -44,11 +52,32 @@ a2c_configurations = {
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda : gym.make('Acrobot-v1')
     },
+    'LunarLander-v2' : {
+        'NETWORK' : networks.CartPoleA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda : gym.make('LunarLander-v2')
+    },
     'PongNoFrameskip-v4' : {
         'NETWORK' : networks.AtariA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4)
-    }
+    },
+    'CarRacing-v0' : {
+        'NETWORK' : networks.AtariA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4)
+    },
+    'RoboschoolAnt-v1' : {
+        'NETWORK' : networks.CartPoleA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda : gym.make('RoboschoolAnt-v1')
+    },
+    'SuperMarioBros-v1' : {
+        'NETWORK' : networks.AtariA2C(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda :  create_super_mario_env()
+    },
+
 }
 
 def discount_with_dones(rewards, dones, gamma):
@@ -98,7 +127,7 @@ class Agent:
 
     def get_action_and_value(self, state):
         policy, value, log_policy, action = self.get_network_output(state)
-        action = np.squeeze(action)
+        action = int(np.squeeze(action))
         log_policy = np.squeeze(log_policy)
         value = np.squeeze(value)
         if self.determenistic:
