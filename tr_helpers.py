@@ -21,6 +21,29 @@ class DefaultRewardsShaper:
     def __call__(self, reward):
         reward = reward + self.shift_value
         reward = reward * self.scale_value
-        if (np.abs(reward)) > self.clip_value:
-            reward = np.sign(reward) * self.clip_value
+        reward = np.clip(reward, -self.clip_value, self.clip_value)
         return reward
+
+def discount_with_dones(rewards, dones, gamma):
+    discounted = []
+    r = 0
+    for reward, done in zip(rewards[::-1], dones[::-1]):
+        r = reward + gamma*r*(1.-done)
+        discounted.append(r)
+    return discounted[::-1]
+
+def compute_gae(rewards, dones, values, gamma, tau):
+    gae = 0
+    returns = []
+    for step in reversed(range(len(rewards))):
+        delta = rewards[step] + gamma * values[step + 1] * (1 - dones[step]) - values[step]
+        gae = delta + gamma * tau * (1 -dones[step]) * gae
+        returns.append(gae + values[step])
+    return returns[::-1]
+
+
+def flatten_first_two_dims(arr):
+    if arr.ndim > 2:
+        return arr.reshape(-1, *arr.shape[-(arr.ndim-2):])
+    else:
+        return arr.reshape(-1)

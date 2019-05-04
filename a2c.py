@@ -6,20 +6,13 @@ import tensorflow as tf
 import numpy as np
 import collections
 import time
-import ray
+from vecenv import a2c_configurations
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
+import ray
 import gym
-from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
-import gym_super_mario_bros
-from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
-
-def create_super_mario_env():
-    env = gym_super_mario_bros.make('SuperMarioBros-v1')
-    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
-    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale=True)
-    return env
+from tr_helpers import compute_gae
 
 default_config = {
     'GAMMA' : 0.99, #discount value
@@ -40,63 +33,6 @@ default_config = {
     'E_CLIP' : 0.1,
     'SAMPLE_TYPE' : 'GUMBEL'#'RANDOM_CHOICE'
 }
-
-a2c_configurations = {
-    'CartPole-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('CartPole-v1')
-    },
-    'Acrobot-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('Acrobot-v1')
-    },
-    'LunarLander-v2' : {
-        'NETWORK' : networks.CartPoleA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('LunarLander-v2')
-    },
-    'PongNoFrameskip-v4' : {
-        'NETWORK' : networks.AtariA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4)
-    },
-    'CarRacing-v0' : {
-        'NETWORK' : networks.AtariA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4)
-    },
-    'RoboschoolAnt-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('RoboschoolAnt-v1')
-    },
-    'SuperMarioBros-v1' : {
-        'NETWORK' : networks.AtariA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda :  create_super_mario_env()
-    },
-
-}
-
-def discount_with_dones(rewards, dones, gamma):
-    discounted = []
-    r = 0
-    for reward, done in zip(rewards[::-1], dones[::-1]):
-        r = reward + gamma*r*(1.-done)
-        discounted.append(r)
-    return discounted[::-1]
-
-def compute_gae(rewards, dones, values, gamma, tau):
-    gae = 0
-    returns = []
-    for step in reversed(range(len(rewards))):
-        delta = rewards[step] + gamma * values[step + 1] * (1 - dones[step]) - values[step]
-        gae = delta + gamma * tau * (1 -dones[step]) * gae
-        returns.append(gae + values[step])
-    return returns[::-1]
-
 
 def flatten_first_two_dims(arr):
     if arr.ndim > 2:
@@ -208,12 +144,7 @@ class NStepBuffer:
             rewards = compute_gae(mb_rewards, mb_dones, mb_values + [next_value], self.gamma, self.tau)
         else:
             rewards = compute_gae(mb_rewards, mb_dones, mb_values + [0], self.gamma, self.tau)
-        '''
-        if mb_dones[-1] == 0:
-            rewards2 = discount_with_dones(mb_rewards + [next_value], mb_dones + [0], self.gamma)[:-1]
-        else:
-            rewards2 = discount_with_dones(mb_rewards, mb_dones, self.gamma)
-        '''
+
         mb_rewards = np.asarray(rewards, dtype=np.float32)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         return [mb_obs, mb_rewards, mb_actions, mb_values, mb_logits]
@@ -357,7 +288,7 @@ class A2CAgent:
             policies = flatten_first_two_dims(policies)
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             dict = {self.obs_ph: obses, self.actions_ph : actions, self.rewards_ph : rewards, self.advantages_ph : advantages, self.old_logp_actions_ph : policies}
-            a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
+            a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy,self.train_op], dict)
             t_end = time.time()
             update_time += t_end - t_start
             if frame % 1000 == 0:

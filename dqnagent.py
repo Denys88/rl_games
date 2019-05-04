@@ -46,11 +46,13 @@ default_config = {
 class DQNAgent:
     def __init__(self, env, sess, env_name, config = default_config):
         observation_shape = env.observation_space.shape
+        
         actions_num = env.action_space.n
         self.network = config['NETWORK']
         self.config = config
         self.state_shape = observation_shape
         self.actions_num = actions_num
+        print(self.state_shape)
         self.writer = SummaryWriter()
         self.epsilon = self.config['EPSILON']
         self.rewards_shaper = self.config['REWARD_SHAPER']
@@ -76,7 +78,7 @@ class DQNAgent:
             self.exp_buffer = experience.PrioritizedReplayBuffer(config['REPLAY_BUFFER_SIZE'], config['PRIORITY_ALPHA'])
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
-        self.obs_ph = tf.placeholder(tf.float32, shape=[None,] + self.state_shape , name = 'obs_ph')
+        self.obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'obs_ph')
         self.actions_ph = tf.placeholder(tf.int32, shape=[None,], name = 'actions_ph')
         self.rewards_ph = tf.placeholder(tf.float32, shape=[None,], name = 'rewards_ph')
         self.next_obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'next_obs_ph')
@@ -284,7 +286,7 @@ class DQNAgent:
                 mean_shaped_reward = np.sum(shaped_rewards) / d
                 mean_steps = np.sum(steps) / d 
                 rewards = []
-                shaped_rewards = []z
+                shaped_rewards = []
                 steps = []
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)

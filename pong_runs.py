@@ -176,7 +176,7 @@ pong_dddqn_config5 = {
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
     'NETWORK' : networks.AtariNoisyDuelingDQN(),
-    'STEPS_NUM' : 1,
+    'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
     'LIVES_REWARD' : 1,
