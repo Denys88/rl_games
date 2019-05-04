@@ -284,7 +284,7 @@ class DQNAgent:
                 mean_shaped_reward = np.sum(shaped_rewards) / d
                 mean_steps = np.sum(steps) / d 
                 rewards = []
-                shaped_rewards = []z
+                shaped_rewards = []
                 steps = []
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)
