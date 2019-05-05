@@ -21,17 +21,21 @@ Future Plans:
 Tensorflow implementations of the DQN atari.
 In pong_runs.py there are some setups. Prioritized Replay doesn't work as good as I expected. Probably there is mistake in implementation.
 
+* Double dueling DQN vs DQN with the same parameters
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
+Near 90 minutes to learn with this setup.
+
+
+* Different DQN Configurations tests
+
+Light grey is noisy 1-step dddqn.
+Noisy 3-step dddqn was even faster.
+Best network (configuration 5) needs near 20 minutes to learn, on NVIDIA 1080.
 Currently the best setup for pong is noisy 3-step double dueling network.
 In pong_runs.py different experiments could be found.
 Less then 200k frames to take score > 18.
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
-Light grey is noisy 1-step dddqn.
-Noisy 3-step dddqn was even faster: 
-Best network (configuration 5) needs near 20 minutes to learn, on NVIDIA 1080.
-
-Double dueling DQN vs DQN with the same parameters:
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/pong_dqn.png)
-Near 90 minutes to learn with this setup.
 DQN has more optimistic Q value estimations.
 
 # Other Games Results
