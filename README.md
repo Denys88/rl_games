@@ -51,5 +51,6 @@ Near 8 hours to learn.
 # A2C and PPO Results
 * More than 2 hours for Pong to achieve 20 score with one actor playing. 
 * 8 Hours for Supermario lvl1
+
 [![Watch the video](https://j.gifs.com/nxOYyp.gif)](https://www.youtube.com/watch?v=T9ujS3HIvMY)
 
