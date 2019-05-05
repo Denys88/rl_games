@@ -49,6 +49,7 @@ Near 8 hours to learn.
 
 
 # A2C and PPO Results
-* More than 4 hours for Pong to achieve 20 score with one actor playing. 
-* For CartPole PPO starts work with learning_rate=1e2, for Pong it doesn't work yet. 
+* More than 2 hours for Pong to achieve 20 score with one actor playing. 
+* 8 Hours for Supermario lvl1
+[![Watch the video](https://gifs.com/gif/ppo-supermario-nxOYyp)](https://www.youtube.com/watch?v=T9ujS3HIvMY)
 
