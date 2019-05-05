@@ -63,8 +63,9 @@ class A2CAgent:
         self.grad_norm = config['GRAD_NORM']
         self.gamma = self.config['GAMMA']
         self.tau = self.config['TAU']
-        self.dones = np.asarray([False]*self.num_actors, dtype=np.bool) 
-
+        self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
+        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
+        self.game_rewards = deque([], maxlen=100)
         self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape)
         self.target_obs_ph = tf.placeholder('float32', (None, ) + observation_shape)        
         self.actions_ph = tf.placeholder('int32', (None,))
@@ -119,12 +120,8 @@ class A2CAgent:
         epinfos = []
         # For n in range number of steps
         for _ in range(self.steps_num):
-            # Given observations, get action value and neglopacs
-            # We already have self.obs because Runner superclass run self.obs[:] = env.reset() on init
             actions, values, neglogpacs = self.get_action_values(self.obs)
-            #actions = np.squeeze(actions, axis=0)
             values = np.squeeze(values)
-            #neglogpacs = np.squeeze(neglogpacs, axis=0)
             
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)
@@ -133,9 +130,17 @@ class A2CAgent:
             mb_dones.append(self.dones)
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
-            rewards = self.rewards_shaper(rewards)
+            self.current_rewards += rewards
+
+            for reward, done in zip(self.current_rewards, self.dones):
+                if done:
+                    self.game_rewards.append(reward)
+
+            self.current_rewards = self.current_rewards * (1.0 -self.dones)
+
+            shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
-            mb_rewards.append(rewards)
+            mb_rewards.append(shaped_rewards)
 
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
@@ -146,7 +151,8 @@ class A2CAgent:
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
-        # discount/bootstrap off value fn
+   
+
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
@@ -223,10 +229,6 @@ class A2CAgent:
             t_end = time.time()
             update_time += t_end - t_start
 
-            for d, r in zip(dones, returns):
-                if d:
-                    last_rewards.append(r)
-
             if frame % 1000 == 0:
                 print('Frames per seconds: ', 1000 / update_time)
                 self.writer.add_scalar('Frames per seconds: ', 1000 / update_time, frame)
@@ -235,8 +237,8 @@ class A2CAgent:
                 self.writer.add_scalar('c_loss', np.mean(c_losses), frame)
                 self.writer.add_scalar('entropy', entropy, frame)
 
-                if len(last_rewards) > 0:
-                    mean_rewards = np.mean(last_rewards)
+                if len(self.game_rewards) > 0:
+                    mean_rewards = np.mean(self.game_rewards)
                     self.writer.add_scalar('mean_rewards', mean_rewards, frame)
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)

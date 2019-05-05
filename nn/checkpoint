@@ -1,2 +1,2 @@
-model_checkpoint_path: "PongDDDQNPongNoFrameskip-v4"
-all_model_checkpoint_paths: "PongDDDQNPongNoFrameskip-v4"
+model_checkpoint_path: "a2cSuperMarioBros-v1"
+all_model_checkpoint_paths: "a2cSuperMarioBros-v1"
