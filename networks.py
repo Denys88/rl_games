@@ -1,5 +1,7 @@
 import tensorflow as tf
 import numpy as np
+import tensorflow_probability as tfp
+tfd = tfp.distributions
 
 def sample_noise(shape, mean = 0.0, std = 1.0):
     noise = tf.random_normal(shape, mean = mean, stddev = std)
@@ -216,19 +218,23 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
             outputs = value + advantage - tf.reduce_max(advantage, reduction_indices=1, keepdims=True)
         return outputs
 
-def cartpole_a2c_network(name, inputs, actions_num, reuse=False):
+def cartpole_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES1 = 32
         NUM_HIDDEN_NODES2 = 16
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
-        logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
         value = tf.layers.dense(inputs=hidden2, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=hidden2, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=hidden2, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value
+        else:
+            logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
+            return logits, value
 
-    return logits, value
-
-def atari_a2c_network(name, inputs, actions_num, reuse=False):
+def atari_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES = 512
         conv3 = atari_conv_net(inputs)
@@ -236,18 +242,65 @@ def atari_a2c_network(name, inputs, actions_num, reuse=False):
 
         hidden= tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
   
-        logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
         value = tf.layers.dense(inputs=hidden, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=hidden, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=hidden, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value
+        else:
+            logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
+            return logits, value
 
-    return logits, value
+class ModelA2C(object):
+    def __call__(self, name, inputs, actions_num, prev_actions_ph=None, reuse=False):
+        logits, value = cartpole_a2c_network(name, inputs, actions_num, False, reuse)
+        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+        # Gumbel Softmax
+        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+        one_hot_actions = tf.one_hot(action, actions_num)
+        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
 
-class CartPoleA2C(object):
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return cartpole_a2c_network(name, inputs, actions_num,reuse)
+        if prev_actions_ph == None:
+            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
+            return  neglogp, value, action, entropy
+
+        prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
+        return prev_neglogp, value, action, entropy
+
+class ModelA2CContinuous(object):
+    def __call__(self, name, inputs,  actions_num, prev_actions_ph=None, reuse=False):
+        mu, var, value = cartpole_a2c_network(name, inputs, actions_num, True, reuse)
+        sigma = tf.sqrt(var) + 1e-5
+        norm_dist = tfd.Normal(mu, sigma)
+        action = tf.squeeze(norm_dist.sample(1), axis=0)
+        action = tf.clip_by_value(action, -1.0, 1.0)
+        
+        entropy = tf.reduce_mean(norm_dist.entropy())
+        if prev_actions_ph == None:
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action) + 1e-5), axis=-1)
+            return  neglogp, value, action, entropy
+
+        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
+        return prev_neglogp, value, action, entropy
+
 
 class AtariA2C(object):
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return atari_a2c_network(name, inputs, actions_num,reuse)
+    def __call__(self, name, inputs, actions_num, prev_actions_ph=None, reuse=False):
+        logits, value = atari_a2c_network(name, inputs, actions_num, False, reuse)
+        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+        # Gumbel Softmax
+        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+        one_hot_actions = tf.one_hot(action, actions_num)
+        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
+
+        if prev_actions_ph == None:
+            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
+            return  neglogp, value, action, entropy
+
+        prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
+        return prev_neglogp, value, action, entropy
+
+
 
 class AtariDQN(object):
     def __call__(self, name, inputs, actions_num, reuse=False):

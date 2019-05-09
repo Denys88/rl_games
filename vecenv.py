@@ -1,3 +1,4 @@
+import roboschool
 import gym
 from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
 import gym_super_mario_bros
@@ -17,17 +18,22 @@ def create_super_mario_env():
     
 a2c_configurations = {
     'CartPole-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
+        'NETWORK' : networks.ModelA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda : gym.make('CartPole-v1')
     },
+    'MountainCarContinuous-v0' : {
+        'NETWORK' : networks.ModelA2CContinuous(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+        'ENV_CREATOR' : lambda : gym.make('MountainCarContinuous-v0')
+    },
     'Acrobot-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
+        'NETWORK' : networks.ModelA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda : gym.make('Acrobot-v1')
     },
     'LunarLander-v2' : {
-        'NETWORK' : networks.CartPoleA2C(),
+        'NETWORK' : networks.ModelA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/100.0),
         'ENV_CREATOR' : lambda : gym.make('LunarLander-v2')
     },
@@ -42,8 +48,8 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4)
     },
     'RoboschoolAnt-v1' : {
-        'NETWORK' : networks.CartPoleA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/15.0),
+        'NETWORK' : networks.ModelA2CContinuous(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 1, scale_value = 1.0/15.0),
         'ENV_CREATOR' : lambda : gym.make('RoboschoolAnt-v1')
     },
     'SuperMarioBros-v1' : {
