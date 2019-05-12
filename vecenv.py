@@ -34,7 +34,7 @@ a2c_configurations = {
     },
     'LunarLander-v2' : {
         'NETWORK' : networks.ModelA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/100.0),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/100.0),
         'ENV_CREATOR' : lambda : gym.make('LunarLander-v2')
     },
     'PongNoFrameskip-v4' : {
@@ -43,7 +43,7 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4)
     },
     'CarRacing-v0' : {
-        'NETWORK' : networks.AtariA2C(),
+        'NETWORK' : networks.AtariA2CContinuous(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
         'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4)
     },
@@ -56,6 +56,21 @@ a2c_configurations = {
         'NETWORK' : networks.AtariA2C(),
         'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/100.0),
         'ENV_CREATOR' : lambda :  create_super_mario_env()
+    },
+    'RoboschoolHalfCheetah-v1' : {
+        'NETWORK' : networks.ModelA2CContinuous(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/10.0),
+        'ENV_CREATOR' : lambda : gym.make('RoboschoolHalfCheetah-v1')
+    },
+    'LunarLanderContinuous-v2' : {
+        'NETWORK' : networks.ModelA2CContinuous(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/10.0),
+        'ENV_CREATOR' : lambda : gym.make('LunarLanderContinuous-v2')
+    },
+    'BipedalWalker-v2' : {
+        'NETWORK' : networks.ModelA2CContinuous(),
+        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/10.0),
+        'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2')
     },
 
 }

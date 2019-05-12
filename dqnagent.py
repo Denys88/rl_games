@@ -52,7 +52,6 @@ class DQNAgent:
         self.config = config
         self.state_shape = observation_shape
         self.actions_num = actions_num
-        print(self.state_shape)
         self.writer = SummaryWriter()
         self.epsilon = self.config['EPSILON']
         self.rewards_shaper = self.config['REWARD_SHAPER']

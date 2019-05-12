@@ -59,7 +59,7 @@ class A2CAgent:
         self.steps_num = config['STEPS_NUM']
         self.config = config
         self.state_shape = observation_shape
-        
+        self.critic_coef = config['CRITIC_COEF']
         self.writer = SummaryWriter()
         self.sess = sess
         self.grad_norm = config['GRAD_NORM']
@@ -97,7 +97,7 @@ class A2CAgent:
 
 
         self.critic_loss = tf.reduce_mean((tf.squeeze(self.state_values) - self.rewards_ph)**2 ) # TODO use huber loss too
-        self.loss = self.actor_loss + 0.5 * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
+        self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE'])
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
@@ -146,7 +146,7 @@ class A2CAgent:
         #batch of steps to batch of rollouts
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions, dtype=np.int32)
+        mb_actions = np.asarray(mb_actions, dtype=np.float32)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
@@ -190,42 +190,46 @@ class A2CAgent:
         minibatch_size = self.config['MINIBATCH_SIZE']
         mini_epochs_num = self.config['MINI_EPOCHS']
         num_minibatches = batch_size // minibatch_size
-        permutation = np.random.permutation(batch_size)
+        
         frame = 0
         update_time = 0
         last_mean_rewards = -100500
         last_rewards = []
         while True:
+            
             frame += batch_size
             t_start = time.time()
             obses, returns, dones, actions, values, neglogpacs, infos = self.play_steps()
             advantages = returns - values
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-
-            obses = obses[permutation]
-            returns =returns[permutation]
-            dones = dones[permutation]
-            actions = actions[permutation]
-            values = values[permutation]
-            neglogpacs = neglogpacs[permutation]
-            advantages = advantages[permutation]
             a_losses = []
             c_losses = []
             for _ in range(0, mini_epochs_num):
+                permutation = np.random.permutation(batch_size)
+                obses = obses[permutation]
+                returns = returns[permutation]
+                dones = dones[permutation]
+                actions = actions[permutation]
+                values = values[permutation]
+                neglogpacs = neglogpacs[permutation]
+                advantages = advantages[permutation]
                 for i in range(0, num_minibatches):
+
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
+                    std_advs = advantages[batch]
+                    #std_advs = (std_advs - std_advs.mean()) / (std_advs.std() + 1e-8)
                     dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                            self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch]}
+                            self.advantages_ph : std_advs, self.old_logp_actions_ph : neglogpacs[batch]}
                     a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
             t_end = time.time()
             update_time += t_end - t_start
 
-            if frame % 1000 == 0:
-                print('Frames per seconds: ', 1000 / update_time)
-                self.writer.add_scalar('Frames per seconds: ', 1000 / update_time, frame)
+            if True:
+                print('Frames per seconds: ', batch_size / update_time)
+                self.writer.add_scalar('Frames per seconds: ', batch_size / update_time, frame)
                 self.writer.add_scalar('upd_time', update_time, frame)
                 self.writer.add_scalar('a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('c_loss', np.mean(c_losses), frame)

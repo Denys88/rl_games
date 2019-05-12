@@ -21,7 +21,8 @@ class DefaultRewardsShaper:
     def __call__(self, reward):
         reward = reward + self.shift_value
         reward = reward * self.scale_value
-        reward = np.clip(reward, -self.clip_value, self.clip_value)
+        if self.clip_value > 0:
+            reward = np.clip(reward, -self.clip_value, self.clip_value)
         return reward
 
 def discount_with_dones(rewards, dones, gamma):
