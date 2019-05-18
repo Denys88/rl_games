@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 import collections
 import time
-from vecenv import a2c_configurations
+from env_configurations import a2c_configurations
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
@@ -17,25 +17,28 @@ from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
 import gym_super_mario_bros
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 
-default_config = {
-    'GAMMA' : 0.99, #discount value
-    'TAU' : 0.5, #for gae
+config_example = {
+    'NETWORK' : networks.ModelA2C(networks.default_a2c_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'VECENV_TYPE' : 'RAY',
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
-    'EPSILON_DECAY_FRAMES' : 1e5,
-    'NAME' : 'A2C',
-    'SCORE_TO_WIN' : 20,
-    'ENV_NAME' : 'CartPole-v1'
-    'REWARD_SHAPER',
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 5000,
     'EPISODES_TO_LOG' : 20, 
     'LIVES_REWARD' : 5,
-    'STEPS_NUM' : 1,
-    'ENTROPY_COEF' : 0.001,
-    'ACTOR_STEPS_PER_UPDATE' : 10,
-    'NUM_ACTORS' : 8,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'RoboschoolAnt-v1',
     'PPO' : True,
-    'E_CLIP' : 0.1,
-    'MINIBATCH_SIZE' : 4,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 128,
+    'MINIBATCH_SIZE' : 512,
     'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
 }
 
 def sf01(arr):
@@ -46,17 +49,19 @@ def sf01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, name, observation_space, is_discrete, action_space, config = default_config):  
+    def __init__(self, sess, name, observation_space, is_discrete, action_space, config):  
         observation_shape = observation_space.shape
+        self.name = name
         self.env_name = config['ENV_NAME']
         self.ppo = config['PPO']
         self.e_clip = config['E_CLIP']
         self.is_discrete = is_discrete
-        self.network = a2c_configurations[self.env_name]['NETWORK']
-        self.rewards_shaper = a2c_configurations[self.env_name]['REWARD_SHAPER']
+        self.network = config['NETWORK']
+        self.rewards_shaper = config['REWARD_SHAPER']
         self.num_actors = config['NUM_ACTORS']
-        self.vec_env = vecenv.VecEnv(self.env_name, self.num_actors)
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
         self.steps_num = config['STEPS_NUM']
+        self.normalize_advantage = config['NORMALIZE_ADVANTAGE']
         self.config = config
         self.state_shape = observation_shape
         self.critic_coef = config['CRITIC_COEF']
@@ -194,17 +199,18 @@ class A2CAgent:
         frame = 0
         update_time = 0
         last_mean_rewards = -100500
-        last_rewards = []
         while True:
             
             frame += batch_size
             t_start = time.time()
             obses, returns, dones, actions, values, neglogpacs, infos = self.play_steps()
             advantages = returns - values
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            if self.normalize_advantage:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
             a_losses = []
             c_losses = []
+            entropies = []
             for _ in range(0, mini_epochs_num):
                 permutation = np.random.permutation(batch_size)
                 obses = obses[permutation]
@@ -218,12 +224,12 @@ class A2CAgent:
 
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                     std_advs = advantages[batch]
-                    #std_advs = (std_advs - std_advs.mean()) / (std_advs.std() + 1e-8)
                     dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
                             self.advantages_ph : std_advs, self.old_logp_actions_ph : neglogpacs[batch]}
                     a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
+                    entropies.append(entropy)
             t_end = time.time()
             update_time += t_end - t_start
 
@@ -233,6 +239,7 @@ class A2CAgent:
                 self.writer.add_scalar('upd_time', update_time, frame)
                 self.writer.add_scalar('a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('c_loss', np.mean(c_losses), frame)
+                self.writer.add_scalar('entropy', np.mean(entropies), frame)
                 self.writer.add_scalar('entropy', entropy, frame)
 
                 if len(self.game_rewards) > 0:
@@ -241,7 +248,7 @@ class A2CAgent:
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + "a2c" + self.env_name)
+                        self.save("./nn/" + self.name + self.env_name)
                         if last_mean_rewards > self.config['SCORE_TO_WIN']:
                             print('Network won!')
                             return

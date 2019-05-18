@@ -1,81 +1,27 @@
-import roboschool
-import gym
-from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
-import gym_super_mario_bros
-from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-import networks 
-import wrappers
-import tr_helpers
 import ray
+from env_configurations import a2c_configurations
 import numpy as np
 
-def create_super_mario_env():
-    env = gym_super_mario_bros.make('SuperMarioBrosRandomStages-v1')
-    env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
-    #env = wrappers.MaxAndSkipEnv(env, skip=2)
-    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
-    return env
-    
-a2c_configurations = {
-    'CartPole-v1' : {
-        'NETWORK' : networks.ModelA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('CartPole-v1')
-    },
-    'MountainCarContinuous-v0' : {
-        'NETWORK' : networks.ModelA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('MountainCarContinuous-v0')
-    },
-    'Acrobot-v1' : {
-        'NETWORK' : networks.ModelA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda : gym.make('Acrobot-v1')
-    },
-    'LunarLander-v2' : {
-        'NETWORK' : networks.ModelA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/100.0),
-        'ENV_CREATOR' : lambda : gym.make('LunarLander-v2')
-    },
-    'PongNoFrameskip-v4' : {
-        'NETWORK' : networks.AtariA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4)
-    },
-    'CarRacing-v0' : {
-        'NETWORK' : networks.AtariA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4)
-    },
-    'RoboschoolAnt-v1' : {
-        'NETWORK' : networks.ModelA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 1, scale_value = 1.0/15.0),
-        'ENV_CREATOR' : lambda : gym.make('RoboschoolAnt-v1')
-    },
-    'SuperMarioBros-v1' : {
-        'NETWORK' : networks.AtariA2C(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/100.0),
-        'ENV_CREATOR' : lambda :  create_super_mario_env()
-    },
-    'RoboschoolHalfCheetah-v1' : {
-        'NETWORK' : networks.ModelA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0/10.0),
-        'ENV_CREATOR' : lambda : gym.make('RoboschoolHalfCheetah-v1')
-    },
-    'LunarLanderContinuous-v2' : {
-        'NETWORK' : networks.ModelA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/10.0),
-        'ENV_CREATOR' : lambda : gym.make('LunarLanderContinuous-v2')
-    },
-    'BipedalWalker-v2' : {
-        'NETWORK' : networks.ModelA2CContinuous(),
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/10.0),
-        'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2')
-    },
+class IVecEnv(object):
+    def step(self, actions):
+        raise NotImplementedError 
 
-}
+    def reset(self):
+        raise NotImplementedError 
 
-class Worker:
+
+
+class IsaacEnv(IVecEnv):
+    def __init__(self, config_name, num_actors):
+        raise NotImplementedError
+
+    def step(self, actions):
+        raise NotImplementedError 
+
+    def reset(self):
+        raise NotImplementedError 
+
+class RayWorker:
     def __init__(self, config_name):
         self.env = a2c_configurations[config_name]['ENV_CREATOR']()
         self.obs = self.env.reset()
@@ -91,11 +37,11 @@ class Worker:
         return self.obs
 
 
-class VecEnv:
+class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
         self.config_name = config_name
         self.num_actors = num_actors
-        self.remote_worker = ray.remote(Worker)
+        self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name) for i in range(self.num_actors)]
 
     def step(self, actions):
@@ -118,4 +64,8 @@ class VecEnv:
 
     
 
-    
+def create_vec_env(config_name, num_actors):
+    if a2c_configurations[config_name]['VECENV_TYPE'] == 'RAY':
+        return RayVecEnv(config_name, num_actors)
+    if a2c_configurations[config_name]['VECENV_TYPE'] == 'ISAAC':
+        return IsaacEnv(config_name, num_actors)
