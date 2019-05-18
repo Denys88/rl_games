@@ -39,6 +39,7 @@ config_example = {
     'MINIBATCH_SIZE' : 512,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
 }
 
 def sf01(arr):
@@ -55,6 +56,7 @@ class A2CAgent:
         self.env_name = config['ENV_NAME']
         self.ppo = config['PPO']
         self.e_clip = config['E_CLIP']
+        self.clip_value = config['CLIP_VALUE']
         self.is_discrete = is_discrete
         self.network = config['NETWORK']
         self.rewards_shaper = config['REWARD_SHAPER']
@@ -85,7 +87,7 @@ class A2CAgent:
 
         self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
         self.rewards_ph = tf.placeholder('float32', (None,), name = 'rewards')
-
+        self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         
         self.logp_actions ,self.state_values, self.action, self.entropy  = self.network('agent', self.obs_ph, self.actions_num, self.actions_ph, reuse=False)
@@ -101,7 +103,14 @@ class A2CAgent:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
 
 
-        self.critic_loss = tf.reduce_mean((tf.squeeze(self.state_values) - self.rewards_ph)**2 ) # TODO use huber loss too
+        self.c_loss = tf.square(tf.squeeze(self.state_values) - self.rewards_ph)
+        if self.clip_value:
+            self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - self.e_clip, self.e_clip)
+            self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
+            self.critic_loss =  tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
+        else:
+            self.critic_loss = tf.reduce_mean(self.c_loss)
+            
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.config['LEARNING_RATE'])
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
@@ -220,12 +229,12 @@ class A2CAgent:
                 values = values[permutation]
                 neglogpacs = neglogpacs[permutation]
                 advantages = advantages[permutation]
-                for i in range(0, num_minibatches):
 
+                for i in range(0, num_minibatches):
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                     std_advs = advantages[batch]
                     dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                            self.advantages_ph : std_advs, self.old_logp_actions_ph : neglogpacs[batch]}
+                            self.advantages_ph : std_advs, self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
                     a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)

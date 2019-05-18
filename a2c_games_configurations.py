@@ -18,16 +18,18 @@ roboschoolant_config = {
     'ENV_NAME' : 'RoboschoolAnt-v1',
     'PPO' : True,
     'E_CLIP' : 0.2,
+    'V_CLIP' : 0.3,
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 512,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
 }
 
 
 bipedalwalker_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -43,6 +45,7 @@ bipedalwalker_config = {
     'ENV_NAME' : 'BipedalWalker-v2',
     'PPO' : True,
     'E_CLIP' : 0.2,
+    'CLIP_VALUE' : True,
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 512,
     'MINIBATCH_SIZE' : 2048,
