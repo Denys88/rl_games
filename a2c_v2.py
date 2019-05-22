@@ -103,11 +103,11 @@ class A2CAgent:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
 
 
-        self.c_loss = tf.square(tf.squeeze(self.state_values) - self.rewards_ph)
+        self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
         if self.clip_value:
             self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - self.e_clip, self.e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
-            self.critic_loss =  tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
+            self.critic_loss = tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
         else:
             self.critic_loss = tf.reduce_mean(self.c_loss)
             
@@ -220,6 +220,7 @@ class A2CAgent:
             a_losses = []
             c_losses = []
             entropies = []
+            
             for _ in range(0, mini_epochs_num):
                 permutation = np.random.permutation(batch_size)
                 obses = obses[permutation]
@@ -232,9 +233,9 @@ class A2CAgent:
 
                 for i in range(0, num_minibatches):
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
-                    std_advs = advantages[batch]
+                    #std_advs = advantages[batch]
                     dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                            self.advantages_ph : std_advs, self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+                            self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
                     a_loss, c_loss, entropy, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.train_op], dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)

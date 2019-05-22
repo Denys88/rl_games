@@ -7,6 +7,9 @@ from gym import spaces
 import cv2
 cv2.ocl.setUseOpenCL(False)
 
+
+
+
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
         """Sample initial states by taking random number of no-ops on reset.
@@ -151,7 +154,7 @@ class WarpFrame(gym.ObservationWrapper):
         return frame
 
 class FrameStack(gym.Wrapper):
-    def __init__(self, env, k):
+    def __init__(self, env, k, flat = False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -161,6 +164,7 @@ class FrameStack(gym.Wrapper):
         """
         gym.Wrapper.__init__(self, env)
         self.k = k
+        self.flat = flat
         self.frames = deque([], maxlen=k)
         shp = env.observation_space.shape
         self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
@@ -178,7 +182,10 @@ class FrameStack(gym.Wrapper):
 
     def _get_ob(self):
         assert len(self.frames) == self.k
-        return np.squeeze(np.swapaxes(self.frames, 3, 0))
+        if self.flat:
+            return np.squeeze(self.frames).flatten()
+        else:
+            return np.squeeze(np.swapaxes(self.frames, 3, 0))
         #return LazyFrames(list(self.frames))
 
 class ScaledFloatFrame(gym.ObservationWrapper):
