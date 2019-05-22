@@ -324,7 +324,7 @@ class ModelA2CContinuous(object):
     def __call__(self, name, inputs,  actions_num, prev_actions_ph=None, reuse=False):
         mu, var, value = self.network(name, inputs, actions_num, True, reuse)
         sigma = tf.sqrt(var) + 1e-5
-        norm_dist = tfd.Normal(mu, var)
+        norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
         action = tf.clip_by_value(action, -1.0, 1.0)

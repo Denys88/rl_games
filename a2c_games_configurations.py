@@ -107,7 +107,7 @@ loonar_config = {
 
 car_config = {
     'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(shift_value = 100),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(shift_value = 1),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
