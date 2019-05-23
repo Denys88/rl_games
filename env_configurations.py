@@ -62,7 +62,7 @@ a2c_configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
-        'ENV_CREATOR' : lambda : gym.make('QuadruppedWalk-v1'),#wrappers.FrameStack(gym.make('QuadruppedWalk-v1'), 4, True),
+        'ENV_CREATOR' : wrappers.FrameStack(gym.make('QuadruppedWalk-v1'), 4, True),
         'VECENV_TYPE' : 'RAY'
     },
 }
