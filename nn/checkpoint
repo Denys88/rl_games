@@ -1,2 +1,0 @@
-model_checkpoint_path: "ppo_continuousBipedalWalker-v2"
-all_model_checkpoint_paths: "ppo_continuousBipedalWalker-v2"
