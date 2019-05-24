@@ -96,12 +96,17 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env, skip=4):
+    def __init__(self, env,skip=4, use_max = True):
         """Return only every `skip`-th frame"""
         gym.Wrapper.__init__(self, env)
+        self.use_max = use_max 
         # most recent raw observations (for max pooling across time steps)
-        self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.uint8)
+        if self.use_max:
+            self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.uint8)
+        else:
+            self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.float32)
         self._skip       = skip
+        
 
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
@@ -109,14 +114,21 @@ class MaxAndSkipEnv(gym.Wrapper):
         done = None
         for i in range(self._skip):
             obs, reward, done, info = self.env.step(action)
-            if i == self._skip - 2: self._obs_buffer[0] = obs
-            if i == self._skip - 1: self._obs_buffer[1] = obs
+            if self.use_max:
+                if i == self._skip - 2: self._obs_buffer[0] = obs
+                if i == self._skip - 1: self._obs_buffer[1] = obs
+            else:
+                self._obs_buffer[0] = obs
+
             total_reward += reward
             if done:
                 break
         # Note that the observation on the done=True frame
         # doesn't matter
-        max_frame = self._obs_buffer.max(axis=0)
+        if self.use_max:
+            max_frame = self._obs_buffer.max(axis=0)
+        else:
+            max_frame = self._obs_buffer[0]
 
         return max_frame, total_reward, done, info
 
