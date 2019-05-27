@@ -208,10 +208,10 @@ class A2CAgent:
         frame = 0
         update_time = 0
         last_mean_rewards = -100500
+        play_time = 0
         while True:
-            
+            play_time_start = time.time()
             frame += batch_size
-            t_start = time.time()
             obses, returns, dones, actions, values, neglogpacs, infos = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
@@ -220,7 +220,9 @@ class A2CAgent:
             a_losses = []
             c_losses = []
             entropies = []
-            
+            play_time_end = time.time()
+            play_time = play_time_end - play_time_start
+            update_time_start = time.time()
             for _ in range(0, mini_epochs_num):
                 permutation = np.random.permutation(batch_size)
                 obses = obses[permutation]
@@ -230,7 +232,7 @@ class A2CAgent:
                 values = values[permutation]
                 neglogpacs = neglogpacs[permutation]
                 advantages = advantages[permutation]
-
+                 
                 for i in range(0, num_minibatches):
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                     #std_advs = advantages[batch]
@@ -240,18 +242,18 @@ class A2CAgent:
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     entropies.append(entropy)
-            t_end = time.time()
-            update_time += t_end - t_start
-
+            update_time_end = time.time()
+            update_time = update_time_end - update_time_start
+            sum_time = update_time + play_time
             if True:
-                print('Frames per seconds: ', batch_size / update_time)
-                self.writer.add_scalar('Frames per seconds: ', batch_size / update_time, frame)
+                print('Frames per seconds: ', batch_size / sum_time)
+                self.writer.add_scalar('Frames per seconds: ', batch_size / sum_time, frame)
                 self.writer.add_scalar('upd_time', update_time, frame)
+                self.writer.add_scalar('play_time', play_time, frame)
                 self.writer.add_scalar('a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('c_loss', np.mean(c_losses), frame)
                 self.writer.add_scalar('entropy', np.mean(entropies), frame)
                 self.writer.add_scalar('entropy', entropy, frame)
-
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     self.writer.add_scalar('mean_rewards', mean_rewards, frame)
