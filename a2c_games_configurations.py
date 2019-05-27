@@ -29,7 +29,7 @@ roboschoolant_config = {
 
 quadrupped_config = {
     'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 2000.0),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
