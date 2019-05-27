@@ -1,4 +1,5 @@
 
+
 import numpy as np
 import gym
 from gym import wrappers
@@ -43,7 +44,22 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
         sinCosToTarget = 2 # sin cos from angle to target
         servoObservation = 12 # rel angles
         numObservation = sensorsObservations+rotationObservation+sinCosToTarget+servoObservation+self.velObservations
-        #numObservation = numObservation * 4 # 0.75, 0.5, 0.25 sec history
+
+        if hasattr(settings,"history1Len")==False:
+            settings.history1Len = 0.0
+        if hasattr(settings,"history2Len")==False:
+            settings.history2Len = 0.0
+        if hasattr(settings,"history3Len")==False:
+            settings.history3Len = 0.0
+
+
+        baseObservations = numObservation
+        if settings.history1Len>0.0:
+            numObservation += baseObservations
+        if settings.history2Len>0.0:
+            numObservation += baseObservations
+        if settings.history3Len>0.0:
+            numObservation += baseObservations
         RoboschoolUrdfEnv.__init__(self, fn, robot_name, action_dim, numObservation,
             fixed_base=False,
             self_collision=False)
@@ -71,8 +87,20 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
 
     def calc_state(self):
         robot_state = self.calc_state_single()
+        if settings.history1Len>0.0:
+            self.history1.append(robot_state)
+        if settings.history2Len>0.0:
+            self.history2.append(robot_state)
+        if settings.history3Len>0.0:
+            self.history3.append(robot_state);
         self.last_state = robot_state
-        return self.last_state
+        if settings.history1Len>0.0:
+            robot_state= np.append(robot_state,self.history1[0])
+        if settings.history2Len>0.0:
+            robot_state= np.append(robot_state,self.history2[0])
+        if settings.history3Len>0.0:
+            robot_state= np.append(robot_state,self.history3[0])
+        return robot_state
 
  
 
@@ -159,7 +187,7 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
 
         globalMultiplier = 10.0
 
-        alive_multiplier = 0.01/1.0
+        alive_multiplier = 0.1/1.0
         alive = float(self.alive_bonus(state))
         if alive<0 and self.frame==0:
             print("bad transition")
@@ -191,8 +219,8 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
             vecMovement = np.linalg.norm( vecStep )
             minSpeedToPunishPerSec = 0.01 # 1 cm
             minMovePerFrame = minSpeedToPunishPerSec/self.numStepsPerSecond
-            if vecMovement<minMovePerFrame:
-                progress = -1
+            #if vecMovement<minMovePerFrame:
+            #    progress = -1
             
         feet_collision_cost = 0.0
         for i,f in enumerate(self.feet):
@@ -212,7 +240,7 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
             ratio = min(abs(j.targetAngleDelta),np.pi)/np.pi
             angleDiffSpeed_cost = max(ratio,angleDiffSpeed_cost)
         #angleDiffSpeed_cost = angleDiffSpeed_cost/len(self.ordered_joints)
-        angleDiffSpeed_cost_multiplier = -0.02*5.0
+        angleDiffSpeed_cost_multiplier = -0.02
         angleDiffSpeed_cost = angleDiffSpeed_cost*angleDiffSpeed_cost_multiplier*globalMultiplier
         
         #energy cost for non contacted chain is better
@@ -226,12 +254,14 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
         
         progressMultiplier = 5.0
         progressNegativeMultiplier = 10.0
-        progress = np.dot(self.movement_per_frame,self.movement_dir)
-        if progress<0.0:
-            progress*=progressNegativeMultiplier
+        progressDir = np.dot(self.movement_per_frame,self.movement_dir)
+        if progressDir<0.0:
+            progressDir*=progressNegativeMultiplier
         else:
-            progress*=progressMultiplier
+            progressDir*=progressMultiplier
+        progressDir*=globalMultiplier
         progress*=globalMultiplier
+        progress+=progressDir
         self.rewards_progress.append(progress)
 
 
@@ -296,12 +326,12 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
         self.numStepsPerSecond = 1.0/self.physics_time_step
         self.numSecondsToTrack = 1.0
         self.walked_distance = deque(maxlen=int(self.numSecondsToTrack*self.numStepsPerSecond))
-        self.history1Len = 0.45
-        self.history1 = deque(maxlen=int(self.history1Len*self.numStepsPerSecond))
-        self.history2Len = 0.3
-        self.history2 = deque(maxlen=int(self.history2Len*self.numStepsPerSecond))
-        self.history3Len = 0.15
-        self.history3 = deque(maxlen=int(self.history3Len*self.numStepsPerSecond))
+        if settings.history1Len>0.0:
+            self.history1 = deque(maxlen=int(settings.history1Len*self.numStepsPerSecond))
+        if settings.history2Len>0.0:
+            self.history2 = deque(maxlen=int(settings.history2Len*self.numStepsPerSecond))
+        if settings.history3Len>0.0:
+            self.history3 = deque(maxlen=int(settings.history3Len*self.numStepsPerSecond))
         if self.robotLibOn:
             self.robotLib.executeCommand("cmd#zero")
             #self.robotLib.executeCommand("cmd#testAction")
@@ -377,7 +407,6 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
                 curTarget = math.radians(0);
             if(j.name=="br1"):
                 curTarget = math.radians(0);
-
             if(j.name=="fl2"):
                 curTarget = math.radians(45);
             if(j.name=="fr2"):
