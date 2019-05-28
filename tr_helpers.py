@@ -13,7 +13,7 @@ class LinearValueProcessor:
 
 
 class DefaultRewardsShaper:
-    def __init__(self, clip_value = 1, scale_value = 1, shift_value = 0):
+    def __init__(self, clip_value = 0, scale_value = 1, shift_value = 0):
         self.clip_value = clip_value
         self.scale_value = scale_value
         self.shift_value = shift_value

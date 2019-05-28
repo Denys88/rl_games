@@ -6,7 +6,7 @@ from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
 import networks 
 import wrappers
 import tr_helpers
-
+import quadruppedEnv
 
 def create_super_mario_env():
     env = gym_super_mario_bros.make('SuperMarioBrosRandomStages-v1')
@@ -53,6 +53,10 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda : gym.make('RoboschoolHalfCheetah-v1'),
         'VECENV_TYPE' : 'RAY'
     },
+    'RoboschoolHumanoid-v1' : {
+        'ENV_CREATOR' : lambda : gym.make('RoboschoolHumanoid-v1'),
+        'VECENV_TYPE' : 'RAY'
+    },
     'LunarLanderContinuous-v2' : {
         'ENV_CREATOR' : lambda : gym.make('LunarLanderContinuous-v2'),
         'VECENV_TYPE' : 'RAY'
@@ -61,5 +65,8 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2'),
         'VECENV_TYPE' : 'RAY'
     },
-
+    'QuadruppedWalk-v1' : {
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),8, False), 4, True),
+        'VECENV_TYPE' : 'RAY'
+    },
 }
