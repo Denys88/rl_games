@@ -53,8 +53,8 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda : gym.make('RoboschoolHalfCheetah-v1'),
         'VECENV_TYPE' : 'RAY'
     },
-    'RoboschoolHalfCheetah-v1' : {
-        'ENV_CREATOR' : lambda : gym.make('RoboschoolHumanoid-v0'),
+    'RoboschoolHumanoid-v1' : {
+        'ENV_CREATOR' : lambda : gym.make('RoboschoolHumanoid-v1'),
         'VECENV_TYPE' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
