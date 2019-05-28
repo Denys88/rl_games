@@ -38,7 +38,7 @@ a2c_configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'CarRacing-v0' : {
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('CarRacing-v0', skip=4),
+        'ENV_CREATOR' : lambda :  wrappers.make_car_racing('CarRacing-v0', skip=4),
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolAnt-v1' : {

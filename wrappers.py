@@ -273,8 +273,9 @@ def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
         env = gym.wrappers.Monitor(env,directory=directory,force=True)
     if not timelimit:
         env = env.env
-    assert 'NoFrameskip' in env.spec.id
-    env = NoopResetEnv(env, noop_max=noop_max)
+    #assert 'NoFrameskip' in env.spec.id
+    if noop_max > 0:
+        env = NoopResetEnv(env, noop_max=noop_max)
     env = MaxAndSkipEnv(env, skip=skip)
     return env
 
@@ -294,6 +295,21 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
         env = FrameStack(env, 4)
     return env
 
+def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=True):
+    """Configure environment for DeepMind-style Atari.
+    """
+    env = WarpFrame(env)
+    if scale:
+        env = ScaledFloatFrame(env)
+    if clip_rewards:
+        env = ClipRewardEnv(env)
+    if frame_stack:
+        env = FrameStack(env, 4)
+    return env
+
+def make_car_racing(env_id, skip=4):
+    env = make_atari(env_id, noop_max=0, skip=skip)
+    return wrap_carracing(env, clip_rewards=False)
 
 def make_atari_deepmind(env_id, noop_max=30, skip=4):
     env = make_atari(env_id, noop_max=noop_max, skip=skip)
