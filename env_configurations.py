@@ -14,7 +14,7 @@ def create_super_mario_env():
     #env = wrappers.MaxAndSkipEnv(env, skip=2)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     return env
-    
+
 a2c_configurations = {
     'CartPole-v1' : {
         'VECENV_TYPE' : 'RAY',
@@ -24,8 +24,16 @@ a2c_configurations = {
         'VECENV_TYPE' : 'RAY',
         'ENV_CREATOR' : lambda : gym.make('MountainCarContinuous-v0'),
     },
+    'MountainCar-v0' : {
+        'VECENV_TYPE' : 'RAY',
+        'ENV_CREATOR' : lambda : gym.make('MountainCar-v0'),
+    },
     'Acrobot-v1' : {
         'ENV_CREATOR' : lambda : gym.make('Acrobot-v1'),
+        'VECENV_TYPE' : 'RAY'
+    },
+    'Pendulum-v0' : {
+        'ENV_CREATOR' : lambda : gym.make('Pendulum-v0'),
         'VECENV_TYPE' : 'RAY'
     },
     'LunarLander-v2' : {
@@ -69,4 +77,16 @@ a2c_configurations = {
         'ENV_CREATOR' : lambda : wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),8, False), 4, True),
         'VECENV_TYPE' : 'RAY'
     },
+    'BipedalWalkerHardcore-v2' : {
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v2'),4, True),
+        'VECENV_TYPE' : 'RAY'
+    },
 }
+
+
+def get_obs_and_action_spaces(name):
+    env = a2c_configurations[name]['ENV_CREATOR']()
+    observation_space = env.observation_space
+    action_space = env.action_space
+    env.close()
+    return observation_space, action_space

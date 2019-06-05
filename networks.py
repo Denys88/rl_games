@@ -242,12 +242,12 @@ def default_a2c_network_separated(name, inputs, actions_num, continuous=False, r
 
 def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        #NUM_HIDDEN_NODES0 = 256
+        NUM_HIDDEN_NODES0 = 256
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
 
-        #hidden0 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
-        hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden0 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
+        hidden1 = tf.layers.dense(inputs=hidden0, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
         hidden2c = hidden2a = hidden2
 
@@ -260,6 +260,24 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
             logits = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None)
             return logits, value
 
+
+def simple_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES1 = 64
+        NUM_HIDDEN_NODES2 = 64
+
+        hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+        hidden2c = hidden2a = hidden2
+
+        value = tf.layers.dense(inputs=hidden2c, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value
+        else:
+            logits = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None)
+            return logits, value
 
 
 def atari_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
@@ -333,50 +351,10 @@ class ModelA2CContinuous(object):
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
             neglogp = tf.reduce_sum(tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
-            return  neglogp, value, action, entropy
+            return  neglogp, value, action, entropy, mu, sigma
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
-        return prev_neglogp, value, action, entropy
-
-
-class AtariA2C(object):
-    def __init__(self, network):
-        self.network = network
-
-    def __call__(self, name, inputs, actions_num, prev_actions_ph=None, reuse=False):
-        logits, value = self.network(name, inputs, actions_num, False, reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        # Gumbel Softmax
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
-        one_hot_actions = tf.one_hot(action, actions_num)
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
-
-        if prev_actions_ph == None:
-            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy
-
-        prev_neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy
-
-class AtariA2CContinuous(object):
-    def __init__(self, network):
-        self.network = network
-
-    def __call__(self, name, inputs, actions_num, prev_actions_ph=None, reuse=False):
-        mu, var, value = self.network(name, inputs, actions_num, True, reuse)
-        sigma = tf.sqrt(var) + 1e-5
-        norm_dist = tfd.Normal(mu, sigma)
-        action = tf.squeeze(norm_dist.sample(1), axis=0)
-        action = tf.clip_by_value(action, -1.0, 1.0)
-        
-        entropy = tf.reduce_mean(norm_dist.entropy())
-        if prev_actions_ph == None:
-            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action) + 1e-5), axis=-1)
-            return  neglogp, value, action, entropy
-
-        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
-        return prev_neglogp, value, action, entropy
-
+        return prev_neglogp, value, action, entropy, mu, sigma
 
 
 class AtariDQN(object):
