@@ -2,16 +2,14 @@ import networks
 import tr_helpers
 
 roboschoolant_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 2.5*1e-4,
     'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
+    'SCORE_TO_WIN' : 1800,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -25,7 +23,7 @@ roboschoolant_config = {
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 20.0
+    'LR_THRESHOLD' : 0.02
 }
 
 roboschoolhumanoid_config = {
@@ -37,8 +35,6 @@ roboschoolhumanoid_config = {
     'LEARNING_RATE' : 2.5*1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -56,7 +52,7 @@ roboschoolhumanoid_config = {
 
 
 carracing_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -64,8 +60,6 @@ carracing_config = {
     'LEARNING_RATE' : 2.5*1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -91,8 +85,6 @@ quadrupped_config = {
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo2',
     'SCORE_TO_WIN' : 200000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -104,7 +96,7 @@ quadrupped_config = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'CLIP_VALUE' : True,
+    'CLIP_VALUE' : False,
     'IS_ADAPTIVE_LR' : False
 }
 
@@ -118,8 +110,6 @@ bipedalwalker_config = {
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -144,8 +134,6 @@ bipedalwalkerhardcore_config = {
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -170,8 +158,6 @@ loonar_config = {
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -233,7 +219,8 @@ pendulum_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : True,
+    'LR_THRESHOLD' : 0.75
 }
 
 mountain_car_config = {

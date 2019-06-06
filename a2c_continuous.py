@@ -50,9 +50,22 @@ def rescale_actions(low, high, action):
     m = (high + low) / 2.0
     scaled_action =  action * d + m
     return scaled_action
-
+#(steps_num, actions_num)
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
+    c1 = np.log(p0_sigma/p1_sigma + 1e-5)
+    c2 = (np.square(p0_sigma) + np.square(p1_mu - p0_mu))/(2.0 *(np.square(p1_sigma) + 1e-5))
+    c3 = -1.0 / 2.0
+    kl = c1 + c2 + c3
+    kl = np.mean(np.sum(kl, axis = -1)) # returning mean between all steps of sum between all actions
+    return kl
 
+def policy_kl_tf(p0_mu, p0_sigma, p1_mu, p1_sigma):
+    c1 = tf.log(p1_sigma/p0_sigma + 1e-5)
+    c2 = (tf.square(p0_sigma) + tf.square(p1_mu - p0_mu))/(2.0 *(tf.square(p1_sigma) + 1e-5))
+    c3 = -1.0 / 2.0
+    kl = c1 + c2 + c3
+    kl = tf.reduce_mean(tf.reduce_sum(kl, axis = -1)) # returning mean between all steps of sum between all actions
+    return kl
 
 class A2CAgent:
     def __init__(self, sess, name, observation_space, is_discrete, action_space, config):
@@ -90,7 +103,8 @@ class A2CAgent:
         self.target_obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'target_obs')
         self.actions_num = action_space.shape[0]   
         self.actions_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'actions')
-
+        self.old_mu_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_mu_ph')
+        self.old_sigma_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_sigma_ph')
         self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
         self.rewards_ph = tf.placeholder('float32', (None,), name = 'rewards')
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
@@ -100,7 +114,7 @@ class A2CAgent:
         self.current_lr = self.learning_rate_ph
 
         self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network('agent', self.obs_ph, self.actions_num, self.actions_ph, reuse=False)
-        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent',  self.target_obs_ph, self.actions_num, None, reuse=True)
+        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent', self.target_obs_ph, self.actions_num, None, reuse=True)
         
 
         if (self.ppo):
@@ -120,11 +134,11 @@ class A2CAgent:
         else:
             self.critic_loss = tf.reduce_mean(self.c_loss)
         
-        self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
+        self.kl_dist = policy_kl_tf(self.mu, self.sigma, self.old_mu_ph, self.old_sigma_ph)
         if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
-            self.current_lr = tf.where(self.epoch_num_ph > 20, self.current_lr, self.learning_rate_ph)
+            self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
+            self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+            #self.current_lr = tf.where(self.epoch_num_ph > 20, self.current_lr, self.learning_rate_ph)
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         
         self.train_step = tf.train.AdamOptimizer(self.current_lr)
@@ -150,9 +164,8 @@ class A2CAgent:
         epinfos = []
         # For n in range number of steps
         for _ in range(self.steps_num):
-            actions, values, neglogpacs, sigma, mu = self.get_action_values(self.obs)
+            actions, values, neglogpacs, mu, sigma = self.get_action_values(self.obs)
             values = np.squeeze(values)
-            #actions = np.squeeze(actions)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())
             mb_actions.append(actions)
@@ -180,6 +193,8 @@ class A2CAgent:
         mb_actions = np.asarray(mb_actions, dtype=np.float32)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
+        mb_mus = np.asarray(mb_mus, dtype=np.float32)
+        mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
@@ -202,7 +217,7 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
 
-        result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), epinfos)
+        result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), epinfos)
         return result
 
     def get_action(self, state, det = False):
@@ -232,7 +247,7 @@ class A2CAgent:
             play_time_start = time.time()
             epoch_num += 1
             frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, infos = self.play_steps()
+            obses, returns, dones, actions, values, neglogpacs, mus, sigmas, infos = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -254,15 +269,24 @@ class A2CAgent:
                 values = values[permutation]
                 neglogpacs = neglogpacs[permutation]
                 advantages = advantages[permutation]
-                 
+                mus = mus[permutation]
+                sigmas = sigmas[permutation] 
                 for i in range(0, num_minibatches):
                     batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                     #std_advs = advantages[batch]
                     dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
                             self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+
+
+                    dict[self.old_mu_ph] = mus[batch]
+                    dict[self.old_sigma_ph] = sigmas[batch]
+
                     dict[self.learning_rate_ph] = last_lr
                     dict[self.epoch_num_ph] = epoch_num
-                    a_loss, c_loss, entropy, kl, last_lr, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.train_op], dict)
+
+                    a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op], dict)
+                    mus[batch] = cmu
+                    sigmas[batch] = csigma
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)

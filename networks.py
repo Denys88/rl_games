@@ -242,7 +242,7 @@ def default_a2c_network_separated(name, inputs, actions_num, continuous=False, r
 
 def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 256
+        NUM_HIDDEN_NODES0 = 128
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
 
@@ -263,7 +263,7 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
 
 def simple_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 64
+        NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
 
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
