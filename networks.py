@@ -350,7 +350,7 @@ class ModelA2CContinuous(object):
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
-            neglogp = tf.reduce_sum(tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
             return  neglogp, value, action, entropy, mu, sigma
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
