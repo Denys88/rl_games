@@ -22,7 +22,7 @@ roboschoolant_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : True,
+    'IS_ADAPTIVE_LR' : False,
     'LR_THRESHOLD' : 0.02
 }
 
@@ -102,14 +102,14 @@ quadrupped_config = {
 
 
 bipedalwalker_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network_separated),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 5000,
+    'SCORE_TO_WIN' : 300,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -118,17 +118,18 @@ bipedalwalker_config = {
     'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 1024,
-    'MINIBATCH_SIZE' : 2048,
-    'MINI_EPOCHS' : 8,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
+    'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : False,
+    'LR_THRESHOLD' : 0.015
 }
 
 bipedalwalkerhardcore_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network_separated),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
-    'NORMALIZE_ADVANTAGE' : False,
+    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
@@ -142,11 +143,12 @@ bipedalwalkerhardcore_config = {
     'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 512,
-    'MINIBATCH_SIZE' : 2048,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : True,
+    'LR_THRESHOLD' : 0.015
 }
 
 loonar_config = {
@@ -177,7 +179,7 @@ loonar_config = {
 mountain_car_cont_config = {
     'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-    'NORMALIZE_ADVANTAGE' : False,
+    'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
@@ -187,14 +189,14 @@ mountain_car_cont_config = {
     'ENTROPY_COEF' : 0.001,
     'TRUNCATE_GRADS' : True,
     'ENV_NAME' : 'MountainCarContinuous-v0',
-    'PPO' : False,
+    'PPO' : True,
     'E_CLIP' : 0.2,
-    'NUM_ACTORS' : 8,
-    'STEPS_NUM' : 8,
-    'MINIBATCH_SIZE' : 64,
-    'MINI_EPOCHS' : 1,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 64,
+    'MINIBATCH_SIZE' : 256,
+    'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'CLIP_VALUE' : False,
+    'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : False
 }
 

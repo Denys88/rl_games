@@ -37,7 +37,6 @@ a2c_configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'LunarLander-v2' : {
-        'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(clip_value = 0, scale_value = 1.0/100.0),
         'ENV_CREATOR' : lambda : gym.make('LunarLander-v2'),
         'VECENV_TYPE' : 'RAY'
     },
