@@ -77,14 +77,14 @@ carracing_config = {
 
 
 quadrupped_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo2',
-    'SCORE_TO_WIN' : 200000,
+    'SCORE_TO_WIN' : 300000,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -96,13 +96,13 @@ quadrupped_config = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'CLIP_VALUE' : False,
+    'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : False
 }
 
 
 bipedalwalker_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -122,19 +122,19 @@ bipedalwalker_config = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
-    'LR_THRESHOLD' : 0.015
+    'IS_ADAPTIVE_LR' : True,
+    'LR_THRESHOLD' : 0.01
 }
 
 bipedalwalkerhardcore_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 5000,
+    'SCORE_TO_WIN' : 300,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -148,7 +148,7 @@ bipedalwalkerhardcore_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.015
+    'LR_THRESHOLD' : 0.02
 }
 
 loonar_config = {
@@ -302,7 +302,7 @@ car_config = {
 atari_pong_config = {
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'NETWORK' : networks.ModelA2C(networks.atari_a2c_network),
+    'NETWORK' : networks.ModelA2C(networks.atari_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'LEARNING_RATE' : 1e-4,
