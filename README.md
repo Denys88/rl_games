@@ -1,5 +1,5 @@
 # Basic RL Algorithms Implementations
-![Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
+[Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
 
 Currently Implemented:
 * DQN
