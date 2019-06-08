@@ -253,7 +253,6 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
         hidden1 = tf.layers.dense(inputs=hidden0, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
-
         value = tf.layers.dense(inputs=hidden2, units=1, activation=None)
         if continuous:
             mu = tf.layers.dense(inputs=hidden2, units=actions_num, activation=tf.nn.tanh)
@@ -263,15 +262,16 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
             logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
             return logits, value
 
-
-def simple_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
+def simple_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
+        
+        hidden1c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
-        hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
-        hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
-        hidden2c = hidden2a = hidden2
+        hidden1a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
         value = tf.layers.dense(inputs=hidden2c, units=1, activation=None)
         if continuous:
@@ -280,6 +280,23 @@ def simple_a2c_network(name, inputs, actions_num, continuous=False, reuse=False)
             return mu, var, value
         else:
             logits = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None)
+            return logits, value
+
+def simple_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES1 = 128
+        NUM_HIDDEN_NODES2 = 64
+
+        hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+
+        value = tf.layers.dense(inputs=hidden2, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=hidden2, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=hidden2, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value
+        else:
+            logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
             return logits, value
 
 
