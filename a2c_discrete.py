@@ -1,44 +1,14 @@
-import networks
 import tr_helpers
-import experience
 import wrappers
 import tensorflow as tf
 import numpy as np
 import collections
 import time
-from env_configurations import a2c_configurations
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
-
-config_example = {
-    'NETWORK' : networks.ModelA2C(networks.default_a2c_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-    'VECENV_TYPE' : 'RAY',
-    'GAMMA' : 0.99,
-    'TAU' : 0.9,
-    'LEARNING_RATE' : 1e-4,
-    'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 5000,
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5,
-    'GRAD_NORM' : 0.5,
-    'ENTROPY_COEF' : 0.000,
-    'TRUNCATE_GRADS' : True,
-    'ENV_NAME' : 'RoboschoolAnt-v1',
-    'PPO' : True,
-    'E_CLIP' : 0.2,
-    'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 128,
-    'MINIBATCH_SIZE' : 512,
-    'MINI_EPOCHS' : 4,
-    'CRITIC_COEF' : 1,
-    'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
-    'LR_THRESHOLD' : 0.5
-}
 
 def swap_and_flatten01(arr):
     """
