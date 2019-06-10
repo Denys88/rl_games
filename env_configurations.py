@@ -12,7 +12,7 @@ import quadruppedEnv
 def create_super_mario_env():
     env = gym_super_mario_bros.make('SuperMarioBrosRandomStages-v1')
     env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
-    #env = wrappers.MaxAndSkipEnv(env, skip=2)
+    #env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     return env
 
