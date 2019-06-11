@@ -1,5 +1,5 @@
 import ray
-from env_configurations import a2c_configurations
+from env_configurations import configurations
 import numpy as np
 
 class IVecEnv(object):
@@ -23,7 +23,7 @@ class IsaacEnv(IVecEnv):
 
 class RayWorker:
     def __init__(self, config_name):
-        self.env = a2c_configurations[config_name]['ENV_CREATOR']()
+        self.env = configurations[config_name]['ENV_CREATOR']()
         self.obs = self.env.reset()
     
     def step(self, action):
@@ -65,7 +65,7 @@ class RayVecEnv(IVecEnv):
     
 
 def create_vec_env(config_name, num_actors):
-    if a2c_configurations[config_name]['VECENV_TYPE'] == 'RAY':
+    if configurations[config_name]['VECENV_TYPE'] == 'RAY':
         return RayVecEnv(config_name, num_actors)
-    if a2c_configurations[config_name]['VECENV_TYPE'] == 'ISAAC':
+    if configurations[config_name]['VECENV_TYPE'] == 'ISAAC':
         return IsaacEnv(config_name, num_actors)

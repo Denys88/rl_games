@@ -7,7 +7,6 @@ sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
 from wrappers import make_atari_deepmind
 import gym
 import numpy as np
-import matplotlib.pyplot as plt
 
 env_name = "PongNoFrameskip-v4"
 from dqnagent import DQNAgent

@@ -326,15 +326,15 @@ def atari_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
 
         conv3 = atari_conv_net(inputs)
         flatten = tf.contrib.layers.flatten(inputs = conv3)
-        hiddena = hiddenc = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
+        hidden = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
   
-        value = tf.layers.dense(inputs=hiddenc, units=1, activation=None)
+        value = tf.layers.dense(inputs=hidden, units=1, activation=None)
         if continuous:
-            mu = tf.layers.dense(inputs=hiddena, units=actions_num, activation=tf.nn.tanh)
-            var = tf.layers.dense(inputs=hiddena, units=actions_num, activation=tf.nn.softplus)
+            mu = tf.layers.dense(inputs=hidden, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=hidden, units=actions_num, activation=tf.nn.softplus)
             return mu, var, value
         else:
-            logits = tf.layers.dense(inputs=hiddena, units=actions_num, activation=None)
+            logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
             return logits, value
 
 class ModelA2C(object):
