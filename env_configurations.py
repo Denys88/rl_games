@@ -18,7 +18,7 @@ def create_quadrupped_env():
     import gym
     import roboschool
     import quadruppedEnv
-    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),4, False), 2, True),
+    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),4, False), 2, True)
 
 def create_roboschool_env(name):
     import gym
