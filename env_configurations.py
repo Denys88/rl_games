@@ -51,7 +51,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : gym.make('BipedalWalkerHardcore-v2'),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v2'), 4, True),
         'VECENV_TYPE' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
@@ -83,7 +83,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('BipedalWalker-v2'),
+        'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2'),
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {

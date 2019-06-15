@@ -9,7 +9,7 @@ roboschoolant_config = {
     'TAU' : 0.9,
     'LEARNING_RATE' : 2.5*1e-4,
     'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 2500,
+    'SCORE_TO_WIN' : 1800,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -23,7 +23,8 @@ roboschoolant_config = {
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.02
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True
 }
 
 roboschoolhumanoid_config = {
@@ -123,11 +124,12 @@ bipedalwalker_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.01
+    'LR_THRESHOLD' : 0.004,
+    'NORMALIZE_INPUT' : True
 }
 
 bipedalwalkerhardcore_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network_separated),
+    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -148,7 +150,8 @@ bipedalwalkerhardcore_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.02
+    'LR_THRESHOLD' : 0.0025,
+    'NORMALIZE_INPUT' : True
 }
 
 loonar_config = {
