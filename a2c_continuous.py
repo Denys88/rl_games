@@ -1,3 +1,4 @@
+
 import networks
 import tr_helpers
 import experience
@@ -12,6 +13,8 @@ from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
 
+from tf_moving_mean_std import MovingMeanStd
+
 def swap_and_flatten01(arr):
     s = arr.shape
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
@@ -22,6 +25,7 @@ def rescale_actions(low, high, action):
     m = (high + low) / 2.0
     scaled_action =  action * d + m
     return scaled_action
+
 #(steps_num, actions_num)
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
     c1 = np.log(p0_sigma/p1_sigma + 1e-5)
@@ -68,6 +72,7 @@ class A2CAgent:
         self.grad_norm = config['GRAD_NORM']
         self.gamma = self.config['GAMMA']
         self.tau = self.config['TAU']
+        self.normalize_input = self.config['NORMALIZE_INPUT']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
         self.game_rewards = deque([], maxlen=100)
@@ -85,8 +90,16 @@ class A2CAgent:
         self.epoch_num_ph = tf.placeholder('int32', (), name = 'epoch_num_ph')
         self.current_lr = self.learning_rate_ph
 
-        self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network('agent', self.obs_ph, self.actions_num, self.actions_ph, reuse=False)
-        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent', self.target_obs_ph, self.actions_num, None, reuse=True)
+        if self.normalize_input:
+            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
+            self.input_target_obs = self.moving_mean_std.normalize(self.target_obs_ph, train=False)
+        else:
+            self.input_obs = self.obs_ph
+            self.input_target_obs = self.target_obs_ph
+
+        self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network('agent', self.input_obs, self.actions_num, self.actions_ph, reuse=False)
+        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent', self.input_target_obs, self.actions_num, None, reuse=True)
         
 
         if (self.ppo):
@@ -125,7 +138,8 @@ class A2CAgent:
         self.sess.run(tf.global_variables_initializer())
 
     def get_action_values(self, obs):
-        return self.sess.run([self.target_action, self.target_state_values, self.target_neglogp, self.target_mu, self.target_sigma], {self.target_obs_ph : obs})
+        run_ops = [self.target_action, self.target_state_values, self.target_neglogp, self.target_mu, self.target_sigma]
+        return self.sess.run(run_ops, {self.target_obs_ph : obs})
 
     def get_values(self, obs):
         return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
@@ -255,8 +269,9 @@ class A2CAgent:
 
                     dict[self.learning_rate_ph] = last_lr
                     dict[self.epoch_num_ph] = epoch_num
-
-                    a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _ = self.sess.run([self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op], dict)
+                    run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
+                    run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
+                    a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _, _ = self.sess.run(run_ops, dict)
                     mus[batch] = cmu
                     sigmas[batch] = csigma
                     a_losses.append(a_loss)
