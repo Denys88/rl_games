@@ -606,7 +606,7 @@ class RoboschoolForwardWalkerMujocoXML(RoboschoolForwardWalker, RoboschoolUrdfEn
         maxServoAnglePerFrame = self.max_servo_speed*self.physics_time_step
         angleDiffSpeed_cost_max = 0.0
         angleDiffSpeed_cost_min = 1.0
-        angleDiffSpeed_cost_multiplier = -0.5
+        angleDiffSpeed_cost_multiplier = -0.08
         for n,j in enumerate(self.ordered_joints):
             ratio = min(abs(j.targetAngleDelta),np.pi)/np.pi
             #ratio = min(abs(j.targetAngleDeltaFrame),maxServoAnglePerFrame)/maxServoAnglePerFrame

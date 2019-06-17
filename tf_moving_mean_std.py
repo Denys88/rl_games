@@ -3,13 +3,14 @@ from tensorflow.python.training.moving_averages import assign_moving_average
 
 class MovingMeanStd(object):
 
-    def __init__(self, shape, epsilon, decay):
+    def __init__(self, shape, epsilon, decay, clamp = 16.0):
         self.moving_mean = tf.Variable(tf.constant(0.0, shape=shape, dtype=tf.float64), trainable=False)
         self.moving_variance = tf.Variable(tf.constant(1.0, shape=shape, dtype=tf.float64), trainable=False)
         self.epsilon = epsilon
         self.shape = shape
         self.decay = decay
         self.count = tf.Variable(tf.constant(0.0, shape=shape, dtype=tf.float64), trainable=False)
+        self.clamp = clamp
 
     def update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count):
         delta = batch_mean - mean
@@ -25,12 +26,15 @@ class MovingMeanStd(object):
     def normalize(self, x, train=True):
         x64 = tf.cast(x, tf.float64)
         if train:
-            mean, variance = tf.nn.moments(x64, [0])
-            new_mean, new_var, new_count = self.update_mean_var_count_from_moments(self.moving_mean, self.moving_variance, self.count, mean, variance, tf.cast(tf.shape(x)[0], tf.float64))
+            mean, var = tf.nn.moments(x64, [0])
+            new_mean, new_var, new_count = self.update_mean_var_count_from_moments(self.moving_mean, self.moving_variance, self.count, mean, var, tf.cast(tf.shape(x)[0], tf.float64))
             mean_op = self.moving_mean.assign(new_mean)
-            var_op = self.moving_variance.assign(new_var)
+            var_op = self.moving_variance.assign(tf.maximum(new_var, 1e-2))
             count_op = self.count.assign(new_count)
+            
             with tf.control_dependencies([mean_op, var_op, count_op]):
-                return tf.cast((x64 - self.moving_mean) / (tf.sqrt(self.moving_variance) + self.epsilon), tf.float32)
+                res = tf.cast((x64 - self.moving_mean) / (tf.sqrt(self.moving_variance)), tf.float32)
+                return tf.clip_by_value(res, -self.clamp, self.clamp)
         else:
-            return tf.cast((x64 - self.moving_mean) / (tf.sqrt(self.moving_variance) + self.epsilon), tf.float32)
+            res = tf.cast((x64 - self.moving_mean) / (tf.sqrt(self.moving_variance)), tf.float32)
+            return tf.clip_by_value(res, -self.clamp, self.clamp)

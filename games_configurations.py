@@ -24,7 +24,7 @@ roboschoolant_config = {
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : True,
     'LR_THRESHOLD' : 0.02,
-    'NORMALIZE_INPUT' : True
+    'NORMALIZE_INPUT' : False
 }
 
 roboschoolhumanoid_config = {
@@ -98,7 +98,8 @@ quadrupped_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : True
 }
 
 
@@ -124,7 +125,7 @@ bipedalwalker_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.004,
+    'LR_THRESHOLD' : 0.008,
     'NORMALIZE_INPUT' : True
 }
 
