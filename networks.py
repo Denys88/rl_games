@@ -40,6 +40,26 @@ def noisy_dense(inputs, units, name, bias=True, activation=tf.identity, mean = 0
         return activation(ret)
 
 
+
+def default_rnn(name, inputs, units, env_num, batch_num):
+    hidden = tf.layers.flatten(inputs)
+    steps_num = batch_num // env_num
+
+    masks = tf.placeholder(tf.float32, [batch_num])
+    init_states = tf.placeholder(tf.float32, [env_num, units])
+
+    masks_seq = batch_to_seq(masks, env_num, steps_num)
+    init_states_seq = batch_to_seq(init_states, env_num, steps_num)
+    states_seq = batch_to_seq(hidden, env_num, steps_num)
+
+    lstm_cell = tf.contrib.rnn.LSTMBlockCell(units=units)
+    state_in = tf.contrib.rnn.LSTMStateTuple(init_states_seq, masks_seq)
+    lstm_outputs, lstm_state = tf.nn.dynamic_rnn( lstm_cell, states_seq, initial_state=state_in, sequence_length=steps_num, time_major=False)
+    hidden = seq_to_batch(lstm_outputs)
+    initial_state = np.zeros(init_states.shape.as_list(), dtype=float)
+    return [hidden, init_states, masks, lstm_state, initial_state]
+
+
 def distributional_output(inputs, actions_num, atoms_num):
     distributed_qs = tf.layers.dense(inputs=inputs, activation=tf.nn.softmax, units=atoms_num * actions_num)
     distributed_qs = tf.reshape(distributed_qs, shape = [-1, actions_num, atoms_num])
