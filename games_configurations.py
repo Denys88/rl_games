@@ -1,8 +1,9 @@
 import networks
+import models
 import tr_helpers
 
 roboschoolant_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -28,7 +29,7 @@ roboschoolant_config = {
 }
 
 roboschoolhumanoid_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -53,7 +54,7 @@ roboschoolhumanoid_config = {
 
 
 carracing_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -78,7 +79,7 @@ carracing_config = {
 
 
 quadrupped_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -104,7 +105,7 @@ quadrupped_config = {
 
 
 bipedalwalker_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -130,7 +131,7 @@ bipedalwalker_config = {
 }
 
 bipedalwalkerhardcore_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -156,7 +157,7 @@ bipedalwalkerhardcore_config = {
 }
 
 loonar_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -180,7 +181,7 @@ loonar_config = {
 }
 
 mountain_car_cont_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -204,7 +205,7 @@ mountain_car_cont_config = {
 }
 
 pendulum_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.simple_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -229,7 +230,7 @@ pendulum_config = {
 }
 
 mountain_car_config = {
-    'NETWORK' : networks.ModelA2C(networks.simple_a2c_network),
+    'NETWORK' : models.ModelA2C(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -253,7 +254,7 @@ mountain_car_config = {
 }
 
 cartpole_config = {
-    'NETWORK' : networks.ModelA2C(networks.simple_a2c_network),
+    'NETWORK' : models.ModelA2C(networks.simple_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -277,7 +278,7 @@ cartpole_config = {
 }
 
 car_config = {
-    'NETWORK' : networks.ModelA2CContinuous(networks.atari_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.atari_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -305,7 +306,7 @@ car_config = {
 atari_pong_config = {
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'NETWORK' : networks.ModelA2C(networks.atari_a2c_network),
+    'NETWORK' : models.ModelA2C(networks.atari_a2c_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'NORMALIZE_ADVANTAGE' : True,
     'LEARNING_RATE' : 1e-4,

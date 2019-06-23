@@ -39,25 +39,39 @@ def noisy_dense(inputs, units, name, bias=True, activation=tf.identity, mean = 0
     else:
         return activation(ret)
 
+def batch_to_seq(h, nbatch, nsteps, flat=False):
+    if flat:
+        h = tf.reshape(h, [nbatch, nsteps])
+    else:
+        h = tf.reshape(h, [nbatch, nsteps, -1])
+    return [tf.squeeze(v, [1]) for v in tf.split(axis=1, num_or_size_splits=nsteps, value=h)]
 
+def seq_to_batch(h, flat = False):
+    shape = h[0].get_shape().as_list()
+    if not flat:
+        assert(len(shape) > 1)
+        nh = h[0].get_shape()[-1].value
+        return tf.reshape(tf.concat(axis=1, values=h), [-1, nh])
+    else:
+        return tf.reshape(tf.stack(values=h, axis=1), [-1])
 
-def default_rnn(name, inputs, units, env_num, batch_num):
+def default_lstm(name, inputs, units, env_num, batch_num):
     hidden = tf.layers.flatten(inputs)
     steps_num = batch_num // env_num
 
     masks = tf.placeholder(tf.float32, [batch_num])
-    init_states = tf.placeholder(tf.float32, [env_num, units])
+    states = tf.placeholder(tf.float32, [env_num, units])
 
     masks_seq = batch_to_seq(masks, env_num, steps_num)
-    init_states_seq = batch_to_seq(init_states, env_num, steps_num)
+    init_states_seq = batch_to_seq(states, env_num, steps_num)
     states_seq = batch_to_seq(hidden, env_num, steps_num)
 
     lstm_cell = tf.contrib.rnn.LSTMBlockCell(units=units)
     state_in = tf.contrib.rnn.LSTMStateTuple(init_states_seq, masks_seq)
     lstm_outputs, lstm_state = tf.nn.dynamic_rnn( lstm_cell, states_seq, initial_state=state_in, sequence_length=steps_num, time_major=False)
     hidden = seq_to_batch(lstm_outputs)
-    initial_state = np.zeros(init_states.shape.as_list(), dtype=float)
-    return [hidden, init_states, masks, lstm_state, initial_state]
+    initial_state = np.zeros(states.shape.as_list(), dtype=float)
+    return [hidden, states, masks, lstm_state, initial_state]
 
 
 def distributional_output(inputs, actions_num, atoms_num):
@@ -282,6 +296,25 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
             logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
             return logits, value
 
+def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES0 = 256
+        NUM_HIDDEN_NODES1 = 128
+        NUM_HIDDEN_NODES2 = 64
+        LSTM_UNITS = 256
+        hidden0 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
+        hidden1 = tf.layers.dense(inputs=hidden0, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+        lstm_out, states_ph, masks_ph, lstm_state, initial_state = default_lstm(name, hidden2, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        value = tf.layers.dense(inputs=lstm_out, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value, states_ph, masks_ph, lstm_state, initial_state
+        else:
+            logits = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=None)
+            return logits, value, states_ph, masks_ph, lstm_state, initial_state
+
 def simple_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES1 = 128
@@ -357,81 +390,3 @@ def atari_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
             logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
             return logits, value
 
-class ModelA2C(object):
-    def __init__(self, network):
-        self.network = network
-        
-    def __call__(self, name, inputs, actions_num, prev_actions_ph=None, reuse=False):
-        logits, value = self.network(name, inputs, actions_num, False, reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        # Gumbel Softmax
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
-        one_hot_actions = tf.one_hot(action, actions_num)
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
-
-        if prev_actions_ph == None:
-            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy
-
-        prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy
-
-class ModelA2CContinuous(object):
-    def __init__(self, network):
-        self.network = network
-
-    def __call__(self, name, inputs,  actions_num, prev_actions_ph=None, reuse=False):
-        mu, var, value = self.network(name, inputs, actions_num, True, reuse)
-        sigma = tf.sqrt(var)
-        norm_dist = tfd.Normal(mu, sigma)
-
-        action = tf.squeeze(norm_dist.sample(1), axis=0)
-        action = tf.clip_by_value(action, -1.0, 1.0)
-        
-        entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
-        if prev_actions_ph == None:
-            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
-            return  neglogp, value, action, entropy, mu, sigma
-
-        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
-        return prev_neglogp, value, action, entropy, mu, sigma
-
-
-class AtariDQN(object):
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return dqn_network(name, inputs, actions_num, 1, reuse)
-    
-
-class AtariDuelingDQN(object):
-    def __init__(self, dueling_type = 'AVERAGE', use_batch_norm = False, is_train=True):
-        self.dueling_type = dueling_type
-        self.use_batch_norm = use_batch_norm
-        self.is_train = is_train
-
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        if self.use_batch_norm:
-            return dueling_dqn_network_with_batch_norm(name, inputs, actions_num, reuse, self.dueling_type, is_train=self.is_train)
-        else:
-            return dueling_dqn_network(name, inputs, actions_num, reuse, self.dueling_type)
-
-
-class AtariNoisyDQN(object):
-    def __init__(self, mean = 0.0, std = 1.0):
-        self.mean = mean
-        self.std = std
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return noisy_dqn_network(name, inputs, actions_num, self.mean, self.std, 1, reuse)
-    
-
-class AtariNoisyDuelingDQN(object):
-    def __init__(self, dueling_type = 'AVERAGE', mean = 0.0, std = 1.0, use_batch_norm = False, is_train=True):
-        self.dueling_type = dueling_type
-        self.mean = mean
-        self.std = std
-        self.use_batch_norm = use_batch_norm
-        self.is_train=is_train
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        if self.use_batch_norm:
-            return noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, self.mean, self.std, reuse, self.dueling_type, is_train=self.is_train)
-        else:
-            return noisy_dueling_dqn_network(name, inputs, actions_num, self.mean, self.std, reuse, self.dueling_type)

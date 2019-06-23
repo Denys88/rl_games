@@ -59,8 +59,25 @@ class A2CAgent:
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
         self.epoch_num_ph = tf.placeholder('int32', (), name = 'epoch_num_ph')
         self.current_lr = self.learning_rate_ph
+        self.train_dict = {
+            'name' : 'agent',
+            'input' : self.obs_ph,
+            'batch_num' : self.config['MINIBATCH_SIZE'],
+            'env_num' : self.config['ENV_NUM'],
+            'actions_num' : self.config['actions_num'],
+            'prev_actions_ph' : self.actions_ph
+        }
 
-        self.logp_actions ,self.state_values, self.action, self.entropy = self.network('agent', self.obs_ph, self.actions_num, self.actions_ph, reuse=False)
+        self.test_dict = {
+            'name' : 'agent',
+            'input' : self.target_obs_ph,
+            'batch_num' : 1,
+            'env_num' : 1,
+            'actions_num' : self.config['actions_num'],
+            'prev_actions_ph' : None
+        }
+
+        self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
         self.target_neglogp, self.target_state_values, self.target_action, _ = self.network('agent',  self.target_obs_ph, self.actions_num, None, reuse=True)
 
         if (self.ppo):
