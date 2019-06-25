@@ -98,8 +98,26 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network('agent', self.input_obs, self.actions_num, self.actions_ph, reuse=False)
-        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent', self.input_target_obs, self.actions_num, None, reuse=True)
+        self.train_dict = {
+            'name' : 'agent',
+            'inputs' : self.input_obs,
+            'batch_num' : self.config['MINIBATCH_SIZE'],
+            'env_num' : self.config['NUM_ACTORS'],
+            'actions_num' : self.actions_num,
+            'prev_actions_ph' : self.actions_ph
+        }
+
+        self.test_dict = {
+            'name' : 'agent',
+            'inputs' : self.input_target_obs,
+            'batch_num' : 1,
+            'env_num' : 1,
+            'actions_num' : self.actions_num,
+            'prev_actions_ph' : None
+        }
+
+        self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
+        self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma  = self.network(self.test_dict, reuse=True)
         
 
         if (self.ppo):

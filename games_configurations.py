@@ -123,10 +123,10 @@ bipedalwalker_config = {
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 256,
     'MINIBATCH_SIZE' : 1024,
-    'MINI_EPOCHS' : 4,
+    'MINI_EPOCHS' : 8,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.008,
+    'LR_THRESHOLD' : 0.01,
     'NORMALIZE_INPUT' : True
 }
 
@@ -142,7 +142,7 @@ bipedalwalkerhardcore_config = {
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
-    'ENV_NAME' : 'BipedalWalkerHardcore-v2',
+    'ENV_NAME' : 'BipedalWalker-v2',
     'PPO' : True,
     'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
@@ -152,7 +152,7 @@ bipedalwalkerhardcore_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.0025,
+    'LR_THRESHOLD' : 0.008,
     'NORMALIZE_INPUT' : True
 }
 
