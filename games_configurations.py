@@ -104,6 +104,31 @@ quadrupped_config = {
 }
 
 
+quadrupped_lstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo2',
+    'SCORE_TO_WIN' : 300000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'QuadruppedWalk-v1',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : False
+}
+
 bipedalwalker_config = {
     'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
@@ -130,6 +155,59 @@ bipedalwalker_config = {
     'NORMALIZE_INPUT' : True
 }
 
+bipedalwalker_lstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 300,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'BipedalWalker-v2',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'CLIP_VALUE' : True,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
+    'MINI_EPOCHS' : 8,
+    'CRITIC_COEF' : 1,
+    'IS_ADAPTIVE_LR' : True,
+    'LR_THRESHOLD' : 0.01,
+    'NORMALIZE_INPUT' : True
+}
+
+pendulum_lstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 5000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.00,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'Pendulum-v0',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 128,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'IS_ADAPTIVE_LR' : False,
+    'LR_THRESHOLD' : 0.75,
+    'NORMALIZE_INPUT' : False
+}
+
+
 bipedalwalkerhardcore_config = {
     'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
@@ -142,7 +220,7 @@ bipedalwalkerhardcore_config = {
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
-    'ENV_NAME' : 'BipedalWalker-v2',
+    'ENV_NAME' : 'BipedalWalkerHardcore-v2',
     'PPO' : True,
     'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
@@ -210,9 +288,9 @@ pendulum_config = {
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'LEARNING_RATE' : 1e-3,
+    'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 5000,
+    'SCORE_TO_WIN' : 0,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.00,
     'TRUNCATE_GRADS' : True,
@@ -220,13 +298,14 @@ pendulum_config = {
     'PPO' : True,
     'E_CLIP' : 0.2,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 16,
-    'MINIBATCH_SIZE' : 64,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 128,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : True,
-    'LR_THRESHOLD' : 0.75
+    'IS_ADAPTIVE_LR' : False,
+    'LR_THRESHOLD' : 0.75,
+    'NORMALIZE_INPUT' : False
 }
 
 mountain_car_config = {

@@ -47,10 +47,8 @@ class LSTMModelA2C(BaseModel):
         env_num = dict['env_num']
         batch_num = dict['batch_num']
 
-
         logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name, inputs, env_num, batch_num, actions_num, False, reuse)
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        # Gumbel Softmax
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
         one_hot_actions = tf.one_hot(action, actions_num)
         entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
@@ -86,6 +84,37 @@ class ModelA2CContinuous(BaseModel):
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma
 
+
+
+class LSTMModelA2CContinuous(BaseModel):
+    def __init__(self, network):
+        self.network = network
+
+    def is_rnn(self):
+        return True
+
+    def __call__(self, dict, reuse=False):
+        name = dict['name']
+        inputs = dict['inputs']
+        actions_num = dict['actions_num']
+        prev_actions_ph = dict['prev_actions_ph']
+        env_num = dict['env_num']
+        batch_num = dict['batch_num']
+
+        mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, env_num, batch_num,  True, reuse)
+        sigma = tf.sqrt(var)
+        norm_dist = tfd.Normal(mu, sigma)
+
+        action = tf.squeeze(norm_dist.sample(1), axis=0)
+        action = tf.clip_by_value(action, -1.0, 1.0)
+        
+        entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
+        if prev_actions_ph == None:
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
+            return  neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+
+        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
+        return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
 
 
 
