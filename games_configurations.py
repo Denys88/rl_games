@@ -86,7 +86,7 @@ quadrupped_config = {
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo2',
-    'SCORE_TO_WIN' : 350000,
+    'SCORE_TO_WIN' : 450000,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -105,14 +105,14 @@ quadrupped_config = {
 
 
 quadrupped_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo2',
-    'SCORE_TO_WIN' : 350000,
+    'SCORE_TO_WIN' : 450000,
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
@@ -126,7 +126,7 @@ quadrupped_lstm_config = {
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : False,
-    'NORMALIZE_INPUT' : True
+    'NORMALIZE_INPUT' : False
 }
 
 bipedalwalker_config = {
@@ -156,7 +156,7 @@ bipedalwalker_config = {
 }
 
 bipedalwalker_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
