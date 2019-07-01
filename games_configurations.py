@@ -105,7 +105,7 @@ quadrupped_config = {
 
 
 quadrupped_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network_separated),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -126,7 +126,7 @@ quadrupped_lstm_config = {
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : False,
-    'NORMALIZE_INPUT' : False
+    'NORMALIZE_INPUT' : True
 }
 
 bipedalwalker_config = {
