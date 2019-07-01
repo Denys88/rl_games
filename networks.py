@@ -125,10 +125,11 @@ def openai_lstm(name, inputs, states_ph, dones_ph, units, env_num, batch_num, la
     inputs_seq = batch_to_seq(inputs, env_num, nsteps)
     dones_seq = batch_to_seq(dones_ph, env_num, nsteps)
     nin = inputs.get_shape()[1].value
-    if layer_norm:
-        h5, final_state = lnlstm(inputs_seq, dones_seq, states_ph, scope='lnlstm', nin=nin, nh=units)
-    else:
-        h5, final_state = lstm(inputs_seq, dones_seq, states_ph, scope='lstm', nin=nin, nh=units)
+    with tf.variable_scope(name):
+        if layer_norm:
+            h5, final_state = lnlstm(inputs_seq, dones_seq, states_ph, scope='lnlstm', nin=nin, nh=units)
+        else:
+            h5, final_state = lstm(inputs_seq, dones_seq, states_ph, scope='lstm', nin=nin, nh=units)
 
     hidden = seq_to_batch(h5)
     initial_state = np.zeros(states_ph.shape.as_list(), dtype=float)
@@ -375,9 +376,9 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
 
 def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 256
-        NUM_HIDDEN_NODES1 = 128
-        NUM_HIDDEN_NODES2 = 64
+        NUM_HIDDEN_NODES0 = 512
+        NUM_HIDDEN_NODES1 = 256
+        NUM_HIDDEN_NODES2 = 256
         LSTM_UNITS = 256
         hidden0 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
         hidden1 = tf.layers.dense(inputs=hidden0, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
@@ -385,7 +386,7 @@ def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, cont
 
         dones_ph = tf.placeholder(tf.float32, [batch_num])
         states_ph = tf.placeholder(tf.float32, [env_num, 2*LSTM_UNITS])
-        lstm_out, lstm_state, initial_state = openai_lstm(name, hidden2, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        lstm_out, lstm_state, initial_state = openai_lstm('lstm_ac', hidden2, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
         value = tf.layers.dense(inputs=lstm_out, units=1, activation=None)
         if continuous:
             mu = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.tanh)
@@ -395,6 +396,69 @@ def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, cont
             logits = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=None)
             return logits, value, states_ph, dones_ph, lstm_state, initial_state
 
+
+def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES0 = 512
+        NUM_HIDDEN_NODES1 = 256
+        NUM_HIDDEN_NODES2 = 128
+        LSTM_UNITS = 256
+
+        hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
+        hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+
+        hidden0a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
+        hidden1a = tf.layers.dense(inputs=hidden0a, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+
+
+        dones_ph = tf.placeholder(tf.float32, [batch_num])
+        states_ph = tf.placeholder(tf.float32, [env_num, 2* 2*LSTM_UNITS])
+        states_a, states_c = tf.split(states_ph, 2, axis=1)
+        lstm_outa, lstm_statae, initial_statea = openai_lstm('lstm_actions', hidden2a, dones_ph=dones_ph, states_ph=states_a, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+
+        lstm_outc, lstm_statec, initial_statec = openai_lstm('lstm_critics', hidden2c, dones_ph=dones_ph, states_ph=states_c, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        initial_state = np.concatenate((initial_statea, initial_statec), axis=1)
+        lstm_state = tf.concat( values=(lstm_statae, lstm_statec), axis=1)
+        value = tf.layers.dense(inputs=lstm_outc, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value, states_ph, dones_ph, lstm_state, initial_state
+        else:
+            logits = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=None)
+            return logits, value, states_ph, dones_ph, lstm_state, initial_state
+
+def simple_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES1 = 128
+        NUM_HIDDEN_NODES2 = 64
+        LSTM_UNITS = 128
+
+        hidden1c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+
+        hidden1a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
+        hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+
+
+        dones_ph = tf.placeholder(tf.float32, [batch_num])
+        states_ph = tf.placeholder(tf.float32, [env_num, 2* 2*LSTM_UNITS])
+        states_a, states_c = tf.split(states_ph, 2, axis=1)
+        lstm_outa, lstm_statae, initial_statea = openai_lstm('lstm_actions', hidden2a, dones_ph=dones_ph, states_ph=states_a, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+
+        lstm_outc, lstm_statec, initial_statec = openai_lstm('lstm_critics', hidden2c, dones_ph=dones_ph, states_ph=states_c, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        initial_state = np.concatenate((initial_statea, initial_statec), axis=1)
+        lstm_state = tf.concat( values=(lstm_statae, lstm_statec), axis=1)
+        value = tf.layers.dense(inputs=lstm_outc, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value, states_ph, dones_ph, lstm_state, initial_state
+        else:
+            logits = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=None)
+            return logits, value, states_ph, dones_ph, lstm_state, initial_state
 
 def simple_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
@@ -406,7 +470,7 @@ def simple_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, conti
 
         dones_ph = tf.placeholder(tf.float32, [batch_num])
         states_ph = tf.placeholder(tf.float32, [env_num, 2*LSTM_UNITS])
-        lstm_out, lstm_state, initial_state = openai_lstm(name, hidden2, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        lstm_out, lstm_state, initial_state = openai_lstm('lstm_ac', hidden2, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
         value = tf.layers.dense(inputs=lstm_out, units=1, activation=None)
         if continuous:
             mu = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.tanh)

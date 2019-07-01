@@ -57,7 +57,6 @@ class A2CAgent:
             self.lr_threshold = config['LR_THRESHOLD']
         self.e_clip = config['E_CLIP']
         self.clip_value = config['CLIP_VALUE']
-        self.is_discrete = is_discrete
         self.network = config['NETWORK']
         self.rewards_shaper = config['REWARD_SHAPER']
         self.num_actors = config['NUM_ACTORS']
@@ -131,6 +130,7 @@ class A2CAgent:
 
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            #self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))

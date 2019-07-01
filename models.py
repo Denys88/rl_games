@@ -103,6 +103,7 @@ class LSTMModelA2CContinuous(BaseModel):
 
         mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, env_num, batch_num,  True, reuse)
         sigma = tf.sqrt(var)
+        sigma = tf.maximum(sigma, 0.01)
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)

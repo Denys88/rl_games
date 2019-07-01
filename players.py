@@ -1,5 +1,13 @@
 import env_configurations
 import tensorflow as tf
+from tf_moving_mean_std import MovingMeanStd
+
+def rescale_actions(low, high, action):
+    d = (high - low) / 2.0
+    m = (high + low) / 2.0
+    scaled_action =  action * d + m
+    return scaled_action
+
 class BasePlayer(object):
     def __init__(self, sess, config):
         self.config = config
@@ -8,7 +16,7 @@ class BasePlayer(object):
         self.obs_space, self.action_space = env_configurations.get_obs_and_action_spaces(self.env_name)
 
     def restore(self, fn):
-        self.saver.restore(self.sess, fn)
+        raise NotImplementedError('restore')
 
 
     def create_env(self):
@@ -26,16 +34,25 @@ class PpoPlayerContinuous(BasePlayer):
         self.network = config['NETWORK']
         self.obs_ph = tf.placeholder('float32', (None, ) + self.obs_space.shape, name = 'obs')
         self.actions_num = self.action_space.shape[0] 
+        self.actions_low = self.action_space.low
+        self.actions_high = self.action_space.high
+        self.mask = [False]
+
+        self.normalize_input = self.config['NORMALIZE_INPUT']
+        if self.normalize_input:
+            self.moving_mean_std = MovingMeanStd(shape = self.obs_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=False)
+        else:
+            self.input_obs = self.obs_ph
 
         self.run_dict = {
             'name' : 'agent',
-            'inputs' : self.obs_ph,
+            'inputs' : self.input_obs,
             'batch_num' : 1,
             'env_num' : 1,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : None
         }
-
         self.last_state = None
         if self.network.is_rnn():
             _ ,_, self.action, _, self.mu, _, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.run_dict, reuse=False)
@@ -44,6 +61,7 @@ class PpoPlayerContinuous(BasePlayer):
             _ ,_, self.action, _, self.mu, _  = self.network(self.run_dict, reuse=False)
 
         self.saver = tf.train.Saver()
+        self.sess.run(tf.global_variables_initializer())
 
     def get_action(self, obs, is_determenistic = False):
         if is_determenistic:
@@ -52,12 +70,15 @@ class PpoPlayerContinuous(BasePlayer):
             ret_action = self.action
 
         if self.network.is_rnn():
-            action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : [False]})
-
+            action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
 
-        return action
-        
+        return  rescale_actions(self.actions_low, self.actions_high, action)
+
+    def restore(self, fn):
+        self.saver.restore(self.sess, fn)
+
     def reset(self):
         self.last_state = self.initial_state
+        #self.mask = [True]
