@@ -93,6 +93,9 @@ class LSTMModelA2CContinuous(BaseModel):
     def is_rnn(self):
         return True
 
+    def is_single_batched(self):
+        return False
+
     def __call__(self, dict, reuse=False):
         name = dict['name']
         inputs = dict['inputs']
@@ -103,8 +106,7 @@ class LSTMModelA2CContinuous(BaseModel):
 
         mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, env_num, batch_num,  True, reuse)
         sigma = tf.sqrt(var)
-        #sigma = tf.maximum(sigma, 0.01)
-        norm_dist = tfd.Normal(mu, sigma)
+        norm_dist = tfd.Normal(mu, sigma + 1e-5)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
         action = tf.clip_by_value(action, -1.0, 1.0)
@@ -117,6 +119,12 @@ class LSTMModelA2CContinuous(BaseModel):
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
 
+
+class LSTMModelA2CContinuousV2(LSTMModelA2CContinuous):
+    def __init__(self, network):
+        self.network = network
+    def is_single_batched(self):
+        return True
 
 
 class AtariDQN(object):

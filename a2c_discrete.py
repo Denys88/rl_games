@@ -9,7 +9,7 @@ from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
-
+from tf_moving_mean_std import MovingMeanStd
 def swap_and_flatten01(arr):
     """
     swap and then flatten axes 0 and 1
@@ -59,21 +59,32 @@ class A2CAgent:
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
         self.epoch_num_ph = tf.placeholder('int32', (), name = 'epoch_num_ph')
         self.current_lr = self.learning_rate_ph
+
+        train_env_num = self.num_actors * self.steps_num // self.config['MINIBATCH_SIZE'] # it is used only for current rnn implementation
+
+        if self.normalize_input:
+            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
+            self.input_target_obs = self.moving_mean_std.normalize(self.target_obs_ph, train=False)
+        else:
+            self.input_obs = self.obs_ph
+            self.input_target_obs = self.target_obs_ph
+
         self.train_dict = {
             'name' : 'agent',
-            'input' : self.obs_ph,
+            'inputs' : self.input_obs,
             'batch_num' : self.config['MINIBATCH_SIZE'],
-            'env_num' : self.config['ENV_NUM'],
-            'actions_num' : self.config['actions_num'],
+            'env_num' : train_env_num,
+            'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph
         }
 
-        self.test_dict = {
+        self.run_dict = {
             'name' : 'agent',
-            'input' : self.target_obs_ph,
-            'batch_num' : 1,
-            'env_num' : 1,
-            'actions_num' : self.config['actions_num'],
+            'inputs' : self.input_target_obs,
+            'batch_num' : self.num_actors,
+            'env_num' : self.num_actors,
+            'actions_num' : self.actions_num,
             'prev_actions_ph' : None
         }
 

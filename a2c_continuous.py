@@ -98,8 +98,8 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        train_env_num = self.num_actors * self.steps_num // self.config['MINIBATCH_SIZE']
-        print(train_env_num)
+        train_env_num = self.num_actors * self.steps_num // self.config['MINIBATCH_SIZE'] # it is used only for current rnn implementation
+
         self.train_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
@@ -130,7 +130,7 @@ class A2CAgent:
 
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
-            #self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
+            self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
@@ -181,11 +181,18 @@ class A2CAgent:
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
-        mb_states = self.states
+        if self.network.is_rnn() and self.network.is_single_batched():
+            mb_states = []
+        else:
+            mb_states = self.states
         epinfos = []
         # For n in range number of steps
         for _ in range(self.steps_num):
+            if self.network.is_rnn() and self.network.is_single_batched():
+                mb_states.append(self.states)
+
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
+            actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())
@@ -195,6 +202,8 @@ class A2CAgent:
             mb_dones.append(self.dones)
             mb_mus.append(mu)
             mb_sigmas.append(sigma)
+
+
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, actions))
             self.current_rewards += rewards
 
@@ -216,7 +225,8 @@ class A2CAgent:
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_mus = np.asarray(mb_mus, dtype=np.float32)
         mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        mb_dones = np.asarray(mb_dones, dtype=np.float32)
+        mb_states = np.asarray(mb_states, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
    
@@ -237,8 +247,11 @@ class A2CAgent:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
         mb_returns = mb_advs + mb_values
+        if self.network.is_rnn() and self.network.is_single_batched():
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas, mb_states )), epinfos)
+        else:
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), mb_states, epinfos)
 
-        result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), mb_states, epinfos)
         return result
 
     def get_action(self, state, det = False):
@@ -280,7 +293,7 @@ class A2CAgent:
             play_time_end = time.time()
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
-            if self.network.is_rnn():
+            if self.network.is_rnn() and not self.network.is_single_batched():
                 num_envs_batch = self.num_actors // num_minibatches
                 env_indexes = np.arange(self.num_actors)
                 flat_indexes = np.arange(self.num_actors * self.steps_num).reshape(self.num_actors, self.steps_num)
@@ -328,6 +341,9 @@ class A2CAgent:
                     advantages = advantages[permutation]
                     mus = mus[permutation]
                     sigmas = sigmas[permutation] 
+                    if self.network.is_rnn() and self.network.is_single_batched():
+                        lstm_states = lstm_states[permutation] 
+
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
@@ -336,6 +352,9 @@ class A2CAgent:
 
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
+                        if self.network.is_rnn() and self.network.is_single_batched():
+                             dict[self.states_ph] = lstm_states[batch]
+                             dict[self.masks_ph] = dones[batch]
 
                         dict[self.learning_rate_ph] = last_lr
                         dict[self.epoch_num_ph] = epoch_num

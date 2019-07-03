@@ -1,4 +1,4 @@
-import networks
+import models
 import tr_helpers
 import experience
 import tensorflow as tf
@@ -29,7 +29,7 @@ default_config = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1.0,
-    'NETWORK' : networks.AtariDQN(),
+    'NETWORK' : models.AtariDQN(),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 20, 
     'LIVES_REWARD' : 5, # 5 it is divider to calculate rewards, 5 lifes is one episode in breakout
