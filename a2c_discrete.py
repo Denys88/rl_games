@@ -10,6 +10,7 @@ from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
 from tf_moving_mean_std import MovingMeanStd
+
 def swap_and_flatten01(arr):
     """
     swap and then flatten axes 0 and 1

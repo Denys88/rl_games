@@ -72,8 +72,9 @@ class A2CAgent:
         self.gamma = self.config['GAMMA']
         self.tau = self.config['TAU']
         self.normalize_input = self.config['NORMALIZE_INPUT']
+        self.seq_len = self.config['SEQ_LEN']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
-    
+
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
         self.game_rewards = deque([], maxlen=100)
         self.obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'obs')
@@ -98,13 +99,13 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        train_env_num = self.num_actors * self.steps_num // self.config['MINIBATCH_SIZE'] # it is used only for current rnn implementation
+        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len # it is used only for current rnn implementation
 
         self.train_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
             'batch_num' : self.config['MINIBATCH_SIZE'],
-            'env_num' : train_env_num,
+            'games_num' : games_num,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph
         }
@@ -113,7 +114,7 @@ class A2CAgent:
             'name' : 'agent',
             'inputs' : self.input_target_obs,
             'batch_num' : self.num_actors,
-            'env_num' : self.num_actors,
+            'games_num' : self.num_actors,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : None
         }
@@ -181,14 +182,11 @@ class A2CAgent:
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
-        if self.network.is_rnn() and self.network.is_single_batched():
-            mb_states = []
-        else:
-            mb_states = self.states
+        mb_states = []
         epinfos = []
         # For n in range number of steps
         for _ in range(self.steps_num):
-            if self.network.is_rnn() and self.network.is_single_batched():
+            if self.network.is_rnn():
                 mb_states.append(self.states)
 
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
@@ -225,7 +223,7 @@ class A2CAgent:
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_mus = np.asarray(mb_mus, dtype=np.float32)
         mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.float32)
+        mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
@@ -247,10 +245,10 @@ class A2CAgent:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
         mb_returns = mb_advs + mb_values
-        if self.network.is_rnn() and self.network.is_single_batched():
+        if self.network.is_rnn():
             result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas, mb_states )), epinfos)
         else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), mb_states, epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), None, epinfos)
 
         return result
 
@@ -281,7 +279,7 @@ class A2CAgent:
             play_time_start = time.time()
             epoch_num += 1
             frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, mus, sigmas, lstm_states, infos = self.play_steps()
+            obses, returns, dones, actions, values, neglogpacs, mus, sigmas, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -294,17 +292,18 @@ class A2CAgent:
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
             if self.network.is_rnn() and not self.network.is_single_batched():
-                num_envs_batch = self.num_actors // num_minibatches
-                env_indexes = np.arange(self.num_actors)
-                flat_indexes = np.arange(self.num_actors * self.steps_num).reshape(self.num_actors, self.steps_num)
-                
+                total_games = batch_size // self.seq_len
+                num_games_batch = minibatch_size // self.seq_len
+                game_indexes = np.arange(total_games)
+                flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
+                lstm_states = lstm_states[::self.seq_len]
                 for _ in range(0, mini_epochs_num):
-                    np.random.shuffle(env_indexes)
+                    np.random.shuffle(game_indexes)
 
                     for i in range(0, num_minibatches):
-                        batch = range(i * num_envs_batch, (i + 1) * num_envs_batch)
-                        mb_env_indexes = env_indexes[batch]
-                        mbatch = flat_indexes[mb_env_indexes].ravel()                        
+                        batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                        mb_indexes = game_indexes[batch]
+                        mbatch = flat_indexes[mb_indexes].ravel()                        
 
                         dict = {}
                         dict[self.old_values_ph] = values[mbatch]
@@ -334,7 +333,7 @@ class A2CAgent:
                     permutation = np.random.permutation(batch_size)
                     obses = obses[permutation]
                     returns = returns[permutation]
-                    dones = dones[permutation]
+                    
                     actions = actions[permutation]
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
@@ -343,7 +342,8 @@ class A2CAgent:
                     sigmas = sigmas[permutation] 
                     if self.network.is_rnn() and self.network.is_single_batched():
                         lstm_states = lstm_states[permutation] 
-
+                        dones = dones[permutation]
+                        
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
@@ -352,13 +352,17 @@ class A2CAgent:
 
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
-                        if self.network.is_rnn() and self.network.is_single_batched():
-                             dict[self.states_ph] = lstm_states[batch]
-                             dict[self.masks_ph] = dones[batch]
+            
 
                         dict[self.learning_rate_ph] = last_lr
                         dict[self.epoch_num_ph] = epoch_num
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
+                        
+
+                        if self.network.is_rnn() and self.network.is_single_batched():
+                            dict[self.states_ph] = lstm_states[batch]
+                            dict[self.masks_ph] = dones[batch]
+                            
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
                         a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _, _ = self.sess.run(run_ops, dict)
                         mus[batch] = cmu

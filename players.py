@@ -80,5 +80,6 @@ class PpoPlayerContinuous(BasePlayer):
         self.saver.restore(self.sess, fn)
 
     def reset(self):
-        self.last_state = self.initial_state
+        if self.network.is_rnn():
+            self.last_state = self.initial_state
         #self.mask = [True]

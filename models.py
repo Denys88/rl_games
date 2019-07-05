@@ -44,10 +44,10 @@ class LSTMModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        env_num = dict['env_num']
+        games_num = dict['games_num']
         batch_num = dict['batch_num']
 
-        logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name, inputs, env_num, batch_num, actions_num, False, reuse)
+        logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name, inputs, games_num, batch_num, actions_num, False, reuse)
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
         one_hot_actions = tf.one_hot(action, actions_num)
@@ -101,10 +101,10 @@ class LSTMModelA2CContinuous(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        env_num = dict['env_num']
+        games_num = dict['games_num']
         batch_num = dict['batch_num']
 
-        mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, env_num, batch_num,  True, reuse)
+        mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, games_num, batch_num,  True, reuse)
         sigma = tf.sqrt(var)
         norm_dist = tfd.Normal(mu, sigma + 1e-5)
 

@@ -2,6 +2,33 @@ import networks
 import models
 import tr_helpers
 
+halfcheetah_lstm_config_v2 = {
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 2700,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'RoboschoolHalfCheetah-v1',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'CLIP_VALUE' : True,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'IS_ADAPTIVE_LR' : False,
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 16
+}
+
 roboschoolant_config = {
     'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
@@ -28,8 +55,9 @@ roboschoolant_config = {
     'NORMALIZE_INPUT' : False
 }
 
+
 roboschoolhumanoid_config = {
-    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -49,7 +77,33 @@ roboschoolhumanoid_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : True
+}
+
+roboschoolhumanoid_lstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.default_a2c_lstm_network_v2),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 2.5*1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 5000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'RoboschoolHumanoid-v1',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 512,
+    'MINIBATCH_SIZE' : 2048,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : True
 }
 
 
@@ -152,11 +206,39 @@ bipedalwalker_config = {
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : False,
     'LR_THRESHOLD' : 0.01,
-    'NORMALIZE_INPUT' : True
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 16
 }
 
 bipedalwalker_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 320,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'BipedalWalker-v2',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'CLIP_VALUE' : True,
+    'NUM_ACTORS' : 16,
+    'STEPS_NUM' : 128,
+    'MINIBATCH_SIZE' : 256,
+    'MINI_EPOCHS' : 8,
+    'CRITIC_COEF' : 1,
+    'IS_ADAPTIVE_LR' : True,
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8
+}
+
+bipedalwalker_lstm_config_v2 = {
+    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.default_a2c_lstm_network_v2),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -175,32 +257,6 @@ bipedalwalker_lstm_config = {
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 128,
     'MINI_EPOCHS' : 10,
-    'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
-    'LR_THRESHOLD' : 0.02,
-    'NORMALIZE_INPUT' : True
-}
-
-bipedalwalker_lstm_config_v2 = {
-    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.simple_a2c_lstm_network_v2),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
-    'NORMALIZE_ADVANTAGE' : True,
-    'GAMMA' : 0.99,
-    'TAU' : 0.9,
-    'LEARNING_RATE' : 1e-4,
-    'NAME' : 'robo1',
-    'SCORE_TO_WIN' : 320,
-    'GRAD_NORM' : 0.5,
-    'ENTROPY_COEF' : 0.000,
-    'TRUNCATE_GRADS' : True,
-    'ENV_NAME' : 'BipedalWalker-v2',
-    'PPO' : True,
-    'E_CLIP' : 0.2,
-    'CLIP_VALUE' : True,
-    'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 256,
-    'MINIBATCH_SIZE' : 1024,
-    'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'IS_ADAPTIVE_LR' : False,
     'LR_THRESHOLD' : 0.02,
