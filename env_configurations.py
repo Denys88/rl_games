@@ -8,8 +8,9 @@ def create_super_mario_env():
     from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
     import gym_super_mario_bros
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-    env = gym_super_mario_bros.make('SuperMarioBrosRandomStages-v1')
-    env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
+    env = gym_super_mario_bros.make('SuperMarioBros-v1')
+    env = wrappers.AllowBacktracking(env)
+    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
     #env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     return env
@@ -82,10 +83,7 @@ configurations = {
         'ENV_CREATOR' : lambda : create_roboschool_env('LunarLanderContinuous-v2'),
         'VECENV_TYPE' : 'RAY'
     },
-    'HalfCheetah-v2' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('HalfCheetah-v2'),
-        'VECENV_TYPE' : 'RAY'
-    },
+
     'BipedalWalker-v2' : {
         'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2'),
         'VECENV_TYPE' : 'RAY'

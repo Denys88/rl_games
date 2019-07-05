@@ -211,7 +211,7 @@ bipedalwalker_config = {
 }
 
 bipedalwalker_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -220,18 +220,18 @@ bipedalwalker_lstm_config = {
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 320,
     'GRAD_NORM' : 0.5,
-    'ENTROPY_COEF' : 0.000,
+    'ENTROPY_COEF' : -0.000,
     'TRUNCATE_GRADS' : True,
     'ENV_NAME' : 'BipedalWalker-v2',
     'PPO' : True,
-    'E_CLIP' : 0.2,
+    'E_CLIP' : 0.1,
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 256,
     'MINI_EPOCHS' : 8,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : True,
+    'IS_ADAPTIVE_LR' : False,
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 8
@@ -511,5 +511,59 @@ atari_pong_config = {
     'MINI_EPOCHS' : 3,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 16
+}
+
+atari_pong_config_lstm = {
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'NETWORK' : models.LSTMModelA2C(networks.atari_a2c_network_lstm),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
+    'NORMALIZE_ADVANTAGE' : True,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'pong',
+    'SCORE_TO_WIN' : 20,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.01,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'PongNoFrameskip-v4',
+    'PPO' : True,
+    'E_CLIP' : 0.1,
+    'NUM_ACTORS' : 8,
+    'STEPS_NUM' : 128,
+    'MINIBATCH_SIZE' : 256,
+    'MINI_EPOCHS' : 3,
+    'CRITIC_COEF' : 1.0,
+    'CLIP_VALUE' : True,
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 8
+}
+
+mario_config_lstm = {
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'NETWORK' : models.LSTMModelA2C(networks.atari_a2c_network_lstm),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'pong',
+    'SCORE_TO_WIN' : 20,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.01,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'PongNoFrameskip-v4',
+    'PPO' : True,
+    'E_CLIP' : 0.1,
+    'NUM_ACTORS' : 8,
+    'STEPS_NUM' : 128,
+    'MINIBATCH_SIZE' : 256,
+    'MINI_EPOCHS' : 3,
+    'CRITIC_COEF' : 1.0,
+    'CLIP_VALUE' : True,
+    'IS_ADAPTIVE_LR' : False,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 8
 }

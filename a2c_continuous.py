@@ -349,11 +349,8 @@ class A2CAgent:
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
 
-
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
-            
-
                         dict[self.learning_rate_ph] = last_lr
                         dict[self.epoch_num_ph] = epoch_num
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
@@ -374,6 +371,7 @@ class A2CAgent:
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
+
             if True:
                 print('Frames per seconds: ', batch_size / sum_time)
                 self.writer.add_scalar('Frames per seconds: ', batch_size / sum_time, frame)

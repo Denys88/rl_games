@@ -55,10 +55,27 @@ def seq_to_batch(h, flat = False):
     else:
         return tf.reshape(tf.stack(values=h, axis=1), [-1])
 
+def ortho_init(scale=1.0):
+    def _ortho_init(shape, dtype, partition_info=None):
+        #lasagne ortho init for tf
+        shape = tuple(shape)
+        if len(shape) == 2:
+            flat_shape = shape
+        elif len(shape) == 4: # assumes NHWC
+            flat_shape = (np.prod(shape[:-1]), shape[-1])
+        else:
+            raise NotImplementedError
+        a = np.random.normal(0.0, 1.0, flat_shape)
+        u, _, v = np.linalg.svd(a, full_matrices=False)
+        q = u if u.shape == flat_shape else v # pick the one with the correct shape
+        q = q.reshape(shape)
+        return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
+    return _ortho_init
+
 def lstm(xs, ms, s, scope, nh,  nin):
     with tf.variable_scope(scope):
-        wx = tf.get_variable("wx", [nin, nh*4], initializer=tf.orthogonal_initializer(), dtype=tf.float32 )
-        wh = tf.get_variable("wh", [nh, nh*4], initializer=tf.orthogonal_initializer() )
+        wx = tf.get_variable("wx", [nin, nh*4], initializer=ortho_init(), dtype=tf.float32 )
+        wh = tf.get_variable("wh", [nh, nh*4], initializer=ortho_init() )
         b = tf.get_variable("b", [nh*4], initializer=tf.constant_initializer(0.0))
 
     c, h = tf.split(axis=1, num_or_size_splits=2, value=s)
@@ -86,11 +103,11 @@ def _ln(x, g, b, e=1e-5, axes=[1]):
 
 def lnlstm(xs, ms, s, scope, nh, nin):
     with tf.variable_scope(scope):
-        wx = tf.get_variable("wx", [nin, nh*4], initializer=tf.orthogonal_initializer())
+        wx = tf.get_variable("wx", [nin, nh*4], initializer=ortho_init())
         gx = tf.get_variable("gx", [nh*4], initializer=tf.constant_initializer(1.0))
         bx = tf.get_variable("bx", [nh*4], initializer=tf.constant_initializer(0.0))
 
-        wh = tf.get_variable("wh", [nh, nh*4], initializer=tf.orthogonal_initializer())
+        wh = tf.get_variable("wh", [nh, nh*4], initializer=ortho_init())
         gh = tf.get_variable("gh", [nh*4], initializer=tf.constant_initializer(1.0))
         bh = tf.get_variable("bh", [nh*4], initializer=tf.constant_initializer(0.0))
 
@@ -438,7 +455,7 @@ def default_a2c_lstm_network_v2(name, inputs, actions_num, env_num, batch_num, c
 def simple_a2c_lstm_network_v2(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES1 = 128
-        NUM_HIDDEN_NODES2 = 64
+        NUM_HIDDEN_NODES2 = 128
         LSTM_UNITS = 128
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
@@ -677,4 +694,26 @@ def atari_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
         else:
             logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
             return logits, value
+
+def atari_a2c_network_lstm(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES = 512
+        LSTM_UNITS = 256
+        conv3 = atari_conv_net(inputs)
+        flatten = tf.contrib.layers.flatten(inputs = conv3)
+        hidden = tf.layers.dense(inputs=flatten, units=NUM_HIDDEN_NODES, activation=tf.nn.relu)
+
+
+        dones_ph = tf.placeholder(tf.bool, [batch_num])
+        states_ph = tf.placeholder(tf.float32, [env_num, 2*LSTM_UNITS])
+        lstm_out, lstm_state, initial_state = openai_lstm('lstm_ac', hidden, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        value = tf.layers.dense(inputs=lstm_out, units=1, activation=None)
+        if continuous:
+            mu = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.tanh)
+            var = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=tf.nn.softplus)
+            return mu, var, value, states_ph, dones_ph, lstm_state, initial_state
+        else:
+            logits = tf.layers.dense(inputs=lstm_out, units=actions_num, activation=None)
+            return logits, value, states_ph, dones_ph, lstm_state, initial_state
+
 
