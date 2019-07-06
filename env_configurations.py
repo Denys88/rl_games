@@ -9,10 +9,10 @@ def create_super_mario_env():
     import gym_super_mario_bros
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
     env = gym_super_mario_bros.make('SuperMarioBros-v1')
+    env = wrappers.MaxAndSkipEnv(env, skip=4)
+    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     env = wrappers.AllowBacktracking(env)
     env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
-    #env = wrappers.MaxAndSkipEnv(env, skip=4)
-    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     return env
 
 def create_quadrupped_env():
