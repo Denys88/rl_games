@@ -57,7 +57,6 @@ class A2CAgent:
             self.lr_threshold = config['LR_THRESHOLD']
         self.e_clip = config['E_CLIP']
         self.clip_value = config['CLIP_VALUE']
-        self.is_discrete = is_discrete
         self.network = config['NETWORK']
         self.rewards_shaper = config['REWARD_SHAPER']
         self.num_actors = config['NUM_ACTORS']
@@ -73,7 +72,9 @@ class A2CAgent:
         self.gamma = self.config['GAMMA']
         self.tau = self.config['TAU']
         self.normalize_input = self.config['NORMALIZE_INPUT']
+        self.seq_len = self.config['SEQ_LEN']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
+
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
         self.game_rewards = deque([], maxlen=100)
         self.obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'obs')
@@ -98,12 +99,39 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network('agent', self.input_obs, self.actions_num, self.actions_ph, reuse=False)
-        self.target_neglogp, self.target_state_values, self.target_action, _ , self.target_mu, self.target_sigma = self.network('agent', self.input_target_obs, self.actions_num, None, reuse=True)
+        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len # it is used only for current rnn implementation
+
+        self.train_dict = {
+            'name' : 'agent',
+            'inputs' : self.input_obs,
+            'batch_num' : self.config['MINIBATCH_SIZE'],
+            'games_num' : games_num,
+            'actions_num' : self.actions_num,
+            'prev_actions_ph' : self.actions_ph
+        }
+
+        self.run_dict = {
+            'name' : 'agent',
+            'inputs' : self.input_target_obs,
+            'batch_num' : self.num_actors,
+            'games_num' : self.num_actors,
+            'actions_num' : self.actions_num,
+            'prev_actions_ph' : None
+        }
+
+        self.states = None
+        if self.network.is_rnn():
+            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
+            self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma, self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state = self.network(self.run_dict, reuse=True)
+            self.states = self.target_initial_state
+        else:
+            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
+            self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma  = self.network(self.run_dict, reuse=True)
         
 
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
@@ -139,18 +167,30 @@ class A2CAgent:
 
     def get_action_values(self, obs):
         run_ops = [self.target_action, self.target_state_values, self.target_neglogp, self.target_mu, self.target_sigma]
-        return self.sess.run(run_ops, {self.target_obs_ph : obs})
+        if self.network.is_rnn():
+            run_ops.append(self.target_lstm_state)
+            return self.sess.run(run_ops, {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
+        else:
+            return (*self.sess.run(run_ops, {self.target_obs_ph : obs}), None)
 
     def get_values(self, obs):
-        return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
+        if self.network.is_rnn():
+            return self.sess.run([self.target_state_values], {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
+        else:
+            return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
 
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
+        mb_states = []
         epinfos = []
         # For n in range number of steps
         for _ in range(self.steps_num):
-            actions, values, neglogpacs, mu, sigma = self.get_action_values(self.obs)
+            if self.network.is_rnn():
+                mb_states.append(self.states)
+
+            actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
+            actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())
@@ -160,6 +200,8 @@ class A2CAgent:
             mb_dones.append(self.dones)
             mb_mus.append(mu)
             mb_sigmas.append(sigma)
+
+
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, actions))
             self.current_rewards += rewards
 
@@ -182,6 +224,7 @@ class A2CAgent:
         mb_mus = np.asarray(mb_mus, dtype=np.float32)
         mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        mb_states = np.asarray(mb_states, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
    
@@ -202,8 +245,11 @@ class A2CAgent:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
         mb_returns = mb_advs + mb_values
+        if self.network.is_rnn():
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas, mb_states )), epinfos)
+        else:
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), None, epinfos)
 
-        result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), epinfos)
         return result
 
     def get_action(self, state, det = False):
@@ -233,7 +279,7 @@ class A2CAgent:
             play_time_start = time.time()
             epoch_num += 1
             frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, mus, sigmas, infos = self.play_steps()
+            obses, returns, dones, actions, values, neglogpacs, mus, sigmas, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -245,42 +291,87 @@ class A2CAgent:
             play_time_end = time.time()
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
-            for _ in range(0, mini_epochs_num):
-                
-                permutation = np.random.permutation(batch_size)
-                obses = obses[permutation]
-                returns = returns[permutation]
-                dones = dones[permutation]
-                actions = actions[permutation]
-                values = values[permutation]
-                neglogpacs = neglogpacs[permutation]
-                advantages = advantages[permutation]
-                mus = mus[permutation]
-                sigmas = sigmas[permutation] 
-                for i in range(0, num_minibatches):
-                    batch = range(i * minibatch_size, (i + 1) * minibatch_size)
-                    #std_advs = advantages[batch]
-                    dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                            self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+            if self.network.is_rnn() and not self.network.is_single_batched():
+                total_games = batch_size // self.seq_len
+                num_games_batch = minibatch_size // self.seq_len
+                game_indexes = np.arange(total_games)
+                flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
+                lstm_states = lstm_states[::self.seq_len]
+                for _ in range(0, mini_epochs_num):
+                    np.random.shuffle(game_indexes)
 
+                    for i in range(0, num_minibatches):
+                        batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                        mb_indexes = game_indexes[batch]
+                        mbatch = flat_indexes[mb_indexes].ravel()                        
 
-                    dict[self.old_mu_ph] = mus[batch]
-                    dict[self.old_sigma_ph] = sigmas[batch]
+                        dict = {}
+                        dict[self.old_values_ph] = values[mbatch]
+                        dict[self.old_logp_actions_ph] = neglogpacs[mbatch]
+                        dict[self.advantages_ph] = advantages[mbatch]
+                        dict[self.rewards_ph] = returns[mbatch]
+                        dict[self.actions_ph] = actions[mbatch]
+                        dict[self.obs_ph] = obses[mbatch]
+                        dict[self.old_mu_ph] = mus[mbatch]
+                        dict[self.old_sigma_ph] = sigmas[mbatch]
+                        dict[self.masks_ph] = dones[mbatch]
+                        dict[self.states_ph] = lstm_states[batch]
+                        
+                        dict[self.learning_rate_ph] = last_lr
+                        dict[self.epoch_num_ph] = epoch_num
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
+                        run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
+                        a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _, _ = self.sess.run(run_ops, dict)
+                        mus[mbatch] = cmu
+                        sigmas[mbatch] = csigma
+                        a_losses.append(a_loss)
+                        c_losses.append(c_loss)
+                        kls.append(kl)
+                        entropies.append(entropy)
+            else:
+                for _ in range(0, mini_epochs_num):
+                    permutation = np.random.permutation(batch_size)
+                    obses = obses[permutation]
+                    returns = returns[permutation]
+                    
+                    actions = actions[permutation]
+                    values = values[permutation]
+                    neglogpacs = neglogpacs[permutation]
+                    advantages = advantages[permutation]
+                    mus = mus[permutation]
+                    sigmas = sigmas[permutation] 
+                    if self.network.is_rnn() and self.network.is_single_batched():
+                        lstm_states = lstm_states[permutation] 
+                        dones = dones[permutation]
+                        
+                    for i in range(0, num_minibatches):
+                        batch = range(i * minibatch_size, (i + 1) * minibatch_size)
+                        dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
+                                self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
 
-                    dict[self.learning_rate_ph] = last_lr
-                    dict[self.epoch_num_ph] = epoch_num
-                    run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
-                    run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-                    a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _, _ = self.sess.run(run_ops, dict)
-                    mus[batch] = cmu
-                    sigmas[batch] = csigma
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    kls.append(kl)
-                    entropies.append(entropy)
+                        dict[self.old_mu_ph] = mus[batch]
+                        dict[self.old_sigma_ph] = sigmas[batch]
+                        dict[self.learning_rate_ph] = last_lr
+                        dict[self.epoch_num_ph] = epoch_num
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
+                        
+
+                        if self.network.is_rnn() and self.network.is_single_batched():
+                            dict[self.states_ph] = lstm_states[batch]
+                            dict[self.masks_ph] = dones[batch]
+                            
+                        run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
+                        a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, _, _ = self.sess.run(run_ops, dict)
+                        mus[batch] = cmu
+                        sigmas[batch] = csigma
+                        a_losses.append(a_loss)
+                        c_losses.append(c_loss)
+                        kls.append(kl)
+                        entropies.append(entropy)
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
+
             if True:
                 print('Frames per seconds: ', batch_size / sum_time)
                 self.writer.add_scalar('Frames per seconds: ', batch_size / sum_time, frame)
