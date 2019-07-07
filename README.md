@@ -60,6 +60,7 @@ Near 8 hours to learn.
 [![Watch the video](https://j.gifs.com/nxOYyp.gif)](https://www.youtube.com/watch?v=T9ujS3HIvMY)
 
 * PPO with LSTM layers
+
 [![Watch the video](https://j.gifs.com/YWV9W0.gif)](https://www.youtube.com/watch?v=fjY4AWbmhHg)
 
 
