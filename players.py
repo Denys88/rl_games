@@ -1,5 +1,6 @@
 import env_configurations
 import tensorflow as tf
+import numpy as np
 from tf_moving_mean_std import MovingMeanStd
 
 def rescale_actions(low, high, action):
@@ -49,7 +50,7 @@ class PpoPlayerContinuous(BasePlayer):
             'name' : 'agent',
             'inputs' : self.input_obs,
             'batch_num' : 1,
-            'env_num' : 1,
+            'games_num' : 1,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : None
         }
@@ -73,7 +74,7 @@ class PpoPlayerContinuous(BasePlayer):
             action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
-
+        action = np.squeeze(action)
         return  rescale_actions(self.actions_low, self.actions_high, action)
 
     def restore(self, fn):
@@ -129,7 +130,7 @@ class PpoPlayerDiscrete(BasePlayer):
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
 
-        return   action
+        return   int(np.squeeze(action))
 
     def restore(self, fn):
         self.saver.restore(self.sess, fn)

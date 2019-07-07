@@ -2,18 +2,39 @@ import networks
 import wrappers
 import tr_helpers
 import gym
+import numpy as np
 
-def create_super_mario_env():
+def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
     from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
     import gym_super_mario_bros
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-    env = gym_super_mario_bros.make('SuperMarioBros-v1')
+    env = gym_super_mario_bros.make(name)
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
-    env = wrappers.AllowBacktracking(env)
     env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
     return env
+
+def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
+    import gym
+    from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
+    import gym_super_mario_bros
+    from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
+    stage_names = [
+        'SuperMarioBros-1-1-v1',
+        'SuperMarioBros-1-2-v1',
+        'SuperMarioBros-1-3-v1',
+        'SuperMarioBros-1-4-v1',
+    ]
+
+    env = gym_super_mario_bros.make(stage_names[1])
+    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
+    env = wrappers.MaxAndSkipEnv(env, skip=4)
+    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
+    #env = wrappers.AllowBacktracking(env)
+    
+    return env
+
 
 def create_quadrupped_env():
     import gym
@@ -69,6 +90,14 @@ configurations = {
     },
     'SuperMarioBros-v1' : {
         'ENV_CREATOR' : lambda :  create_super_mario_env(),
+        'VECENV_TYPE' : 'RAY'
+    },
+    'SuperMarioBrosRandomStages-v1' : {
+        'ENV_CREATOR' : lambda :  create_super_mario_env('SuperMarioBrosRandomStages-v1'),
+        'VECENV_TYPE' : 'RAY'
+    },
+    'SuperMarioBrosRandomStage1-v1' : {
+        'ENV_CREATOR' : lambda :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolHalfCheetah-v1' : {

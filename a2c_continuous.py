@@ -291,7 +291,7 @@ class A2CAgent:
             play_time_end = time.time()
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
-            if self.network.is_rnn() and not self.network.is_single_batched():
+            if self.network.is_rnn():
                 total_games = batch_size // self.seq_len
                 num_games_batch = minibatch_size // self.seq_len
                 game_indexes = np.arange(total_games)
@@ -340,7 +340,7 @@ class A2CAgent:
                     advantages = advantages[permutation]
                     mus = mus[permutation]
                     sigmas = sigmas[permutation] 
-                    if self.network.is_rnn() and self.network.is_single_batched():
+                    if self.network.is_rnn():
                         lstm_states = lstm_states[permutation] 
                         dones = dones[permutation]
                         
@@ -356,7 +356,7 @@ class A2CAgent:
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.train_op]
                         
 
-                        if self.network.is_rnn() and self.network.is_single_batched():
+                        if self.network.is_rnn():
                             dict[self.states_ph] = lstm_states[batch]
                             dict[self.masks_ph] = dones[batch]
                             
