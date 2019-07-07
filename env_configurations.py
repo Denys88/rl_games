@@ -112,7 +112,10 @@ configurations = {
         'ENV_CREATOR' : lambda : create_roboschool_env('LunarLanderContinuous-v2'),
         'VECENV_TYPE' : 'RAY'
     },
-
+    'RoboschoolHumanoidFlagrun-v1' : {
+        'ENV_CREATOR' : lambda : create_roboschool_env('RoboschoolHumanoidFlagrun-v1'),
+        'VECENV_TYPE' : 'RAY'
+    },
     'BipedalWalker-v2' : {
         'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2'),
         'VECENV_TYPE' : 'RAY'

@@ -118,7 +118,7 @@ flagrun_lstm_config = {
     'GRAD_NORM' : 0.5,
     'ENTROPY_COEF' : 0.000,
     'TRUNCATE_GRADS' : True,
-    'ENV_NAME' : 'RoboschoolFlagRun-v1',
+    'ENV_NAME' : 'RoboschoolHumanoidFlagrun-v1',
     'PPO' : True,
     'E_CLIP' : 0.2,
     'NUM_ACTORS' : 16,
@@ -128,7 +128,8 @@ flagrun_lstm_config = {
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'IS_ADAPTIVE_LR' : False,
-    'NORMALIZE_INPUT' : True
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8
 }
 
 carracing_config = {
