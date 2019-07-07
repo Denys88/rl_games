@@ -60,7 +60,7 @@ Near 8 hours to learn.
 [![Watch the video](https://j.gifs.com/nxOYyp.gif)](https://www.youtube.com/watch?v=T9ujS3HIvMY)
 
 * PPO with LSTM layers
-[![Watch the video]https://gifs.com/gif/YWV9W0)](https://www.youtube.com/watch?v=fjY4AWbmhHg)
+[![Watch the video](https://gifs.com/gif/YWV9W0)](https://www.youtube.com/watch?v=fjY4AWbmhHg)
 
 
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/mario_random_stages.png)
