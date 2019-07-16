@@ -200,7 +200,7 @@ class FrameStack(gym.Wrapper):
         if self.flat:
             return np.squeeze(self.frames).flatten()
         else:
-            return np.squeeze(np.swapaxes(self.frames, 3, 0))
+            return np.concatenate(self.frames, axis=-1)
         #return LazyFrames(list(self.frames))
 
 class ScaledFloatFrame(gym.ObservationWrapper):
