@@ -80,7 +80,7 @@ class LSTMModelA2CContinuous(BaseModel):
 
         mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, games_num, batch_num,  True, reuse)
         sigma = tf.sqrt(var)
-        norm_dist = tfd.Normal(mu, sigma + 1e-5)
+        norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
         action = tf.clip_by_value(action, -1.0, 1.0)
@@ -120,12 +120,6 @@ class LSTMModelA2C(BaseModel):
 
         prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
         return prev_neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
-
-class LSTMModelA2CContinuousV2(LSTMModelA2CContinuous):
-    def __init__(self, network):
-        self.network = network
-    def is_single_batched(self):
-        return True
 
 
 class AtariDQN(object):

@@ -338,8 +338,8 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
 
 def default_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 256
-        NUM_HIDDEN_NODES1 = 128
+        NUM_HIDDEN_NODES0 = 64
+        NUM_HIDDEN_NODES1 = 64
         NUM_HIDDEN_NODES2 = 64
         
         hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
@@ -381,10 +381,10 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
 
 def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 512
-        NUM_HIDDEN_NODES1 = 256
-        NUM_HIDDEN_NODES2 = 256
-        LSTM_UNITS = 256
+        NUM_HIDDEN_NODES0 = 128
+        NUM_HIDDEN_NODES1 = 64
+        NUM_HIDDEN_NODES2 = 64
+        LSTM_UNITS = 64
         hidden0 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
         hidden1 = tf.layers.dense(inputs=hidden0, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
@@ -403,10 +403,10 @@ def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, cont
 
 def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 512
-        NUM_HIDDEN_NODES1 = 256
-        NUM_HIDDEN_NODES2 = 128
-        LSTM_UNITS = 256
+        NUM_HIDDEN_NODES0 = 128
+        NUM_HIDDEN_NODES1 = 64
+        NUM_HIDDEN_NODES2 = 64
+        LSTM_UNITS = 64
 
         hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
         hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
@@ -435,11 +435,13 @@ def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch
             return logits, value, states_ph, dones_ph, lstm_state, initial_state
 
 
+
 def simple_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 128
-        NUM_HIDDEN_NODES2 = 128
-        LSTM_UNITS = 128
+        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES2 = 32
+        #NUM_HIDDEN_NODES3 = 16
+        LSTM_UNITS = 16
 
         hidden1c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
@@ -456,6 +458,8 @@ def simple_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_
         lstm_outc, lstm_statec, initial_statec = openai_lstm('lstm_critics', hidden2c, dones_ph=dones_ph, states_ph=states_c, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
         initial_state = np.concatenate((initial_statea, initial_statec), axis=1)
         lstm_state = tf.concat( values=(lstm_statae, lstm_statec), axis=1)
+        #lstm_outa = tf.layers.dense(inputs=lstm_outa, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
+        #lstm_outc = tf.layers.dense(inputs=lstm_outc, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
         value = tf.layers.dense(inputs=lstm_outc, units=1, activation=None)
         if continuous:
             mu = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.tanh)
@@ -467,9 +471,9 @@ def simple_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_
 
 def simple_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 128
-        NUM_HIDDEN_NODES2 = 128
-        LSTM_UNITS = 128
+        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES2 = 32
+        LSTM_UNITS = 16
         hidden1 = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2 = tf.layers.dense(inputs=hidden1, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
 
@@ -487,8 +491,8 @@ def simple_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, conti
 
 def simple_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES1 = 128
-        NUM_HIDDEN_NODES2 = 64
+        NUM_HIDDEN_NODES1 = 32
+        NUM_HIDDEN_NODES2 = 32
         
         hidden1c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)

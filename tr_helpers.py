@@ -48,3 +48,10 @@ def flatten_first_two_dims(arr):
         return arr.reshape(-1, *arr.shape[-(arr.ndim-2):])
     else:
         return arr.reshape(-1)
+
+
+def get_or_default(config, name, def_val):
+    if name in config:
+        return config[name]
+    else:
+        return def_val

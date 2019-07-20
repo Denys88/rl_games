@@ -113,7 +113,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('RoboschoolHumanoidFlagrun-v1'),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 2, True),
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {

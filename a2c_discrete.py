@@ -26,7 +26,7 @@ class A2CAgent:
         self.config = config
         self.env_name = config['ENV_NAME']
         self.ppo = config['PPO']
-        self.is_adaptive_lr = config['IS_ADAPTIVE_LR']
+        self.is_adaptive_lr = config['LR_SCHEDULE']
         if self.is_adaptive_lr:
             self.lr_threshold = config['LR_THRESHOLD']
         self.e_clip = config['E_CLIP']

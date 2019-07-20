@@ -2,6 +2,12 @@ import networks
 import models
 import tr_helpers
 
+
+
+"""
+LR_SCHEDULE: 'ADAPTIVE', 'EXP_DECAY', 'LINEAR_DECAY', 'NONE'
+"""
+
 halfcheetah_lstm_config_v2 = {
     'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_lstm_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
@@ -23,11 +29,12 @@ halfcheetah_lstm_config_v2 = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : True,
-    'SEQ_LEN' : 16
-}
+    'SEQ_LEN' : 16,
+    'MAX_EPOCHS' : 10000
+    }
 
 roboschoolant_config = {
     'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
@@ -50,9 +57,10 @@ roboschoolant_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.02,
-    'NORMALIZE_INPUT' : False
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 16
 }
 
 
@@ -62,7 +70,7 @@ roboschoolhumanoid_config = {
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'LEARNING_RATE' : 2.5*1e-4,
+    'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
     'GRAD_NORM' : 0.5,
@@ -72,17 +80,20 @@ roboschoolhumanoid_config = {
     'PPO' : True,
     'E_CLIP' : 0.2,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 512,
-    'MINIBATCH_SIZE' : 2048,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
-    'NORMALIZE_INPUT' : True
+    'LR_SCHEDULE' : 'NONE',
+    'NORMALIZE_INPUT' : True,
+        'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'SEQ_LEN' : 16
 }
 
 roboschoolhumanoid_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.default_a2c_lstm_network),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -102,17 +113,18 @@ roboschoolhumanoid_lstm_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
-    'NORMALIZE_INPUT' : True
+    'LR_SCHEDULE' : 'NONE',
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 16,
 }
 
 flagrun_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.default_a2c_lstm_network),
+    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'LEARNING_RATE' : 2.5*1e-4,
+    'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
     'GRAD_NORM' : 0.5,
@@ -122,14 +134,14 @@ flagrun_lstm_config = {
     'PPO' : True,
     'E_CLIP' : 0.2,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 1024,
-    'MINIBATCH_SIZE' : 2048 * 2,
+    'STEPS_NUM' : 512,
+    'MINIBATCH_SIZE' : 1024 * 2,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : True,
-    'SEQ_LEN' : 8
+    'SEQ_LEN' : 16
 }
 
 carracing_config = {
@@ -153,7 +165,7 @@ carracing_config = {
     'MINI_EPOCHS' : 8,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 
@@ -178,7 +190,7 @@ quadrupped_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 16
 }
@@ -205,7 +217,7 @@ quadrupped_lstm_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
 }
@@ -231,14 +243,14 @@ bipedalwalker_config = {
     'MINIBATCH_SIZE' : 64,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.01,
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 16
 }
 
 bipedalwalker_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.simple_a2c_lstm_network_separated),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -251,21 +263,21 @@ bipedalwalker_lstm_config = {
     'TRUNCATE_GRADS' : True,
     'ENV_NAME' : 'BipedalWalker-v2',
     'PPO' : True,
-    'E_CLIP' : 0.1,
+    'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 256,
     'MINI_EPOCHS' : 8,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 8
 }
 
 bipedalwalker_lstm_config_v2 = {
-    'NETWORK' : models.LSTMModelA2CContinuousV2(networks.default_a2c_lstm_network),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -285,7 +297,7 @@ bipedalwalker_lstm_config_v2 = {
     'MINIBATCH_SIZE' : 128,
     'MINI_EPOCHS' : 10,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : True
 }
@@ -311,7 +323,7 @@ bipedalwalkerhardcore_lstm_config = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : True
 }
@@ -337,7 +349,7 @@ pendulum_lstm_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.75,
     'NORMALIZE_INPUT' : False
 }
@@ -364,7 +376,7 @@ bipedalwalkerhardcore_config = {
     'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'IS_ADAPTIVE_LR' : True,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.008,
     'NORMALIZE_INPUT' : True
 }
@@ -390,7 +402,7 @@ loonar_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : False,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 mountain_car_cont_config = {
@@ -414,7 +426,7 @@ mountain_car_cont_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 pendulum_config = {
@@ -438,7 +450,7 @@ pendulum_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.75,
     'NORMALIZE_INPUT' : False
 }
@@ -464,7 +476,7 @@ mountain_car_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 cartpole_config = {
@@ -488,7 +500,7 @@ cartpole_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 car_config = {
@@ -514,7 +526,7 @@ car_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False
+    'LR_SCHEDULE' : 'NONE'
 }
 
 atari_pong_config = {
@@ -538,7 +550,7 @@ atari_pong_config = {
     'MINI_EPOCHS' : 3,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 16
 }
@@ -564,7 +576,7 @@ atari_pong_config_lstm = {
     'MINI_EPOCHS' : 3,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
 }
@@ -590,7 +602,7 @@ mario_config_lstm = {
     'MINI_EPOCHS' : 3,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
 }
@@ -616,7 +628,7 @@ mario_random_config_lstm = {
     'MINI_EPOCHS' : 3,
     'CRITIC_COEF' : 1.0,
     'CLIP_VALUE' : True,
-    'IS_ADAPTIVE_LR' : False,
+    'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
 }
