@@ -65,7 +65,7 @@ roboschoolant_config = {
 
 
 roboschoolhumanoid_config = {
-    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network_separated),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -85,11 +85,10 @@ roboschoolhumanoid_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
+    'NORMALIZE_INPUT' : False,
     'LR_SCHEDULE' : 'NONE',
-    'NORMALIZE_INPUT' : True,
-        'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.02,
-    'SEQ_LEN' : 16
+    'SEQ_LEN' : 8
 }
 
 roboschoolhumanoid_lstm_config = {

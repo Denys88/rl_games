@@ -338,18 +338,16 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
 
 def default_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 64
-        NUM_HIDDEN_NODES1 = 64
+        NUM_HIDDEN_NODES0 = 128
+        NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
         
         hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
         hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
-
         hidden0a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.relu)
         hidden1a = tf.layers.dense(inputs=hidden0a, units=NUM_HIDDEN_NODES1, activation=tf.nn.relu)
         hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.relu)
-
 
         value = tf.layers.dense(inputs=hidden2c, units=1, activation=None)
         if continuous:
@@ -418,13 +416,11 @@ def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch
 
 
         dones_ph = tf.placeholder(tf.bool, [batch_num])
-        states_ph = tf.placeholder(tf.float32, [env_num, 2* 2*LSTM_UNITS])
-        states_a, states_c = tf.split(states_ph, 2, axis=1)
-        lstm_outa, lstm_statae, initial_statea = openai_lstm('lstm_a', hidden2a, dones_ph=dones_ph, states_ph=states_a, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        states_ph = tf.placeholder(tf.float32, [env_num, 2*LSTM_UNITS])
+        hidden = tf.concat((hidden2a, hidden2c), axis=1)
+        lstm_out, lstm_state, initial_state = openai_lstm('lstm_a', hidden, dones_ph=dones_ph, states_ph=states_ph, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
+        lstm_outa, lstm_outc = tf.split(lstm_out, 2, axis=1)
 
-        lstm_outc, lstm_statec, initial_statec = openai_lstm('lstm_c', hidden2c, dones_ph=dones_ph, states_ph=states_c, units=LSTM_UNITS, env_num=env_num, batch_num=batch_num)
-        initial_state = np.concatenate((initial_statea, initial_statec), axis=1)
-        lstm_state = tf.concat( values=(lstm_statae, lstm_statec), axis=1)
         value = tf.layers.dense(inputs=lstm_outc, units=1, activation=None)
         if continuous:
             mu = tf.layers.dense(inputs=lstm_outa, units=actions_num, activation=tf.nn.tanh)

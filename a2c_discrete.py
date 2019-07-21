@@ -26,7 +26,10 @@ class A2CAgent:
         self.config = config
         self.env_name = config['ENV_NAME']
         self.ppo = config['PPO']
-        self.is_adaptive_lr = config['LR_SCHEDULE']
+        self.is_adaptive_lr = config['LR_SCHEDULE'] == 'ADAPTIVE'
+        self.is_polynom_decay_lr = config['LR_SCHEDULE'] == 'POLYNOM_DECAY'
+        self.is_exp_decay_lr = config['LR_SCHEDULE'] == 'EXP_DECAY'
+        self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
         if self.is_adaptive_lr:
             self.lr_threshold = config['LR_THRESHOLD']
         self.e_clip = config['E_CLIP']
@@ -61,9 +64,17 @@ class A2CAgent:
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        self.epoch_num_ph = tf.placeholder('int32', (), name = 'epoch_num_ph')
+
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
+        self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
+        if self.is_adaptive_lr:
+            self.lr_threshold = config['LR_THRESHOLD']
+        if self.is_polynom_decay_lr:
+            self.lr_multiplier = tf.train.polynomial_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, end_learning_rate=0.0001, power=tr_helpers.get_or_default(config, 'DECAY_PWOER', 1.0))
+        if self.is_exp_decay_lr:
+            self.lr_multiplier = tf.train.exponential_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, decay_rate = config['DECAY_RATE'])
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
@@ -101,10 +112,11 @@ class A2CAgent:
             self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _ = self.network(self.run_dict, reuse=True)
 
+        curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
-            self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- self.e_clip, 1.+ self.e_clip))
+            self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- curr_e_clip, 1.+ curr_e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
@@ -112,22 +124,18 @@ class A2CAgent:
 
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
         if self.clip_value:
-            self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - self.e_clip, self.e_clip)
+            self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - curr_e_clip, curr_e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
             self.critic_loss = tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
         else:
             self.critic_loss = tf.reduce_mean(self.c_loss)
         
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
-        '''
-        if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
-            self.current_lr = tf.where(self.epoch_num_ph > 20, self.current_lr, self.learning_rate_ph)
-        '''
+
+
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         
-        self.train_step = tf.train.AdamOptimizer(self.current_lr)
+        self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
         grads = tf.gradients(self.loss, self.weights)
@@ -137,6 +145,9 @@ class A2CAgent:
         self.train_op = self.train_step.apply_gradients(grads)
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
+
+    def update_epoch(self):
+        return self.sess.run([self.update_epoch_op])[0]
 
     def get_action_values(self, obs):
         run_ops = [self.target_action, self.target_state_values, self.target_neglogp]

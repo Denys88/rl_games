@@ -95,6 +95,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.obs_ph = tf.placeholder('float32', (None, ) + self.obs_space.shape, name = 'obs')
         self.actions_num = self.action_space.n
         self.mask = [False]
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
 
         self.normalize_input = self.config['NORMALIZE_INPUT']
         if self.normalize_input:
