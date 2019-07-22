@@ -65,16 +65,16 @@ class A2CAgent:
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
 
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['LR_THRESHOLD']
         if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, end_learning_rate=0.0001, power=tr_helpers.get_or_default(config, 'DECAY_PWOER', 1.0))
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['MAX_EPOCHS'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'DECAY_POWER', 1.0))
         if self.is_exp_decay_lr:
-            self.lr_multiplier = tf.train.exponential_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, decay_rate = config['DECAY_RATE'])
+            self.lr_multiplier = tf.train.exponential_decay(1.0, self.epoch_num,config['MAX_EPOCHS'],  decay_rate = config['DECAY_RATE'])
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
@@ -251,6 +251,7 @@ class A2CAgent:
         last_mean_rewards = -100500
         play_time = 0
         epoch_num = 0
+        max_epochs = tr_helpers.get_or_default(self.config, 'NAX_EPOCHS', 1e6)
         while True:
             play_time_start = time.time()
             epoch_num += 1
@@ -292,7 +293,6 @@ class A2CAgent:
                         dict[self.states_ph] = lstm_states[batch]
                         
                         dict[self.learning_rate_ph] = last_lr
-                        dict[self.epoch_num_ph] = epoch_num
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.train_op]
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
                         a_loss, c_loss, entropy, kl, last_lr, _, _ = self.sess.run(run_ops, dict)
@@ -317,7 +317,6 @@ class A2CAgent:
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
             
                         dict[self.learning_rate_ph] = last_lr
-                        dict[self.epoch_num_ph] = epoch_num
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.train_op]
                             
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
@@ -350,7 +349,9 @@ class A2CAgent:
                         if last_mean_rewards > self.config['SCORE_TO_WIN']:
                             print('Network won!')
                             return
-
+                if epoch_num > max_epochs:
+                    print('MAX EPOCHS NUM!')
+                    return       
                 update_time = 0
 
 

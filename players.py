@@ -38,7 +38,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.actions_low = self.action_space.low
         self.actions_high = self.action_space.high
         self.mask = [False]
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         self.normalize_input = self.config['NORMALIZE_INPUT']
         if self.normalize_input:
@@ -76,7 +76,7 @@ class PpoPlayerContinuous(BasePlayer):
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
         action = np.squeeze(action)
-        return  rescale_actions(self.actions_low, self.actions_high, action)
+        return  rescale_actions(self.actions_low, self.actions_high, np.clip(action, -1.0, 1.0))
 
     def restore(self, fn):
         self.saver.restore(self.sess, fn)
@@ -95,7 +95,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.obs_ph = tf.placeholder('float32', (None, ) + self.obs_space.shape, name = 'obs')
         self.actions_num = self.action_space.n
         self.mask = [False]
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         self.normalize_input = self.config['NORMALIZE_INPUT']
         if self.normalize_input:

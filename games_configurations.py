@@ -65,7 +65,7 @@ roboschoolant_config = {
 
 
 roboschoolhumanoid_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'NETWORK' : models.ModelA2CContinuous(networks.default_a2c_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -85,19 +85,19 @@ roboschoolhumanoid_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'NORMALIZE_INPUT' : False,
-    'LR_SCHEDULE' : 'NONE',
-    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.04,
     'SEQ_LEN' : 8
 }
 
 roboschoolhumanoid_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
-    'LEARNING_RATE' : 2.5*1e-4,
+    'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 5000,
     'GRAD_NORM' : 0.5,
@@ -107,8 +107,8 @@ roboschoolhumanoid_lstm_config = {
     'PPO' : True,
     'E_CLIP' : 0.2,
     'NUM_ACTORS' : 16,
-    'STEPS_NUM' : 512,
-    'MINIBATCH_SIZE' : 2048,
+    'STEPS_NUM' : 256,
+    'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
@@ -243,13 +243,14 @@ bipedalwalker_config = {
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
     'LR_SCHEDULE' : 'NONE',
+    'MAX_EPOCHS' : 10000,
     'LR_THRESHOLD' : 0.01,
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 16
 }
 
 bipedalwalker_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network),
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,

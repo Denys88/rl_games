@@ -3,6 +3,9 @@ import networks
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
+
+
+
 class BaseModel(object):
     def is_rnn(self):
         return False
@@ -48,14 +51,14 @@ class ModelA2CContinuous(BaseModel):
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
-        action = tf.clip_by_value(action, -1.0, 1.0)
+        #action = tf.clip_by_value(action, -1.0, 1.0)
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
-            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-6), axis=-1)
             return  neglogp, value, action, entropy, mu, sigma
 
-        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
+        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma
 
 
@@ -83,14 +86,14 @@ class LSTMModelA2CContinuous(BaseModel):
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
-        action = tf.clip_by_value(action, -1.0, 1.0)
+        #action = tf.clip_by_value(action, -1.0, 1.0)
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
-            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-5), axis=-1)
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-6), axis=-1)
             return  neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
 
-        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-5), axis=-1)
+        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
 
 class LSTMModelA2C(BaseModel):

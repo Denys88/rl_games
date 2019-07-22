@@ -105,7 +105,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolHumanoid-v1' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('RoboschoolHumanoid-v1'),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 2, True),
         'VECENV_TYPE' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {

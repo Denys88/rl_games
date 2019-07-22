@@ -89,16 +89,16 @@ class A2CAgent:
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.int32), trainable=False)
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['LR_THRESHOLD']
         if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, end_learning_rate=0.0001, power=tr_helpers.get_or_default(config, 'DECAY_PWOER', 1.0))
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['MAX_EPOCHS'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'DECAY_POWER', 1.0))
         if self.is_exp_decay_lr:
-            self.lr_multiplier = tf.train.exponential_decay(self.lr_multiplier, config['MAX_EPOCHS'], self.epoch_num, decay_rate = config['DECAY_RATE'])
+            self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['MAX_EPOCHS'],  decay_rate = config['DECAY_RATE'])
 
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
@@ -150,7 +150,7 @@ class A2CAgent:
 
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
         if self.clip_value:
-            self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - curr_e_clip, curr_e_clip)
+            self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, -curr_e_clip, curr_e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
             self.critic_loss = tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
         else:
@@ -212,7 +212,7 @@ class A2CAgent:
             mb_sigmas.append(sigma)
 
 
-            self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, actions))
+            self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
             self.current_rewards += rewards
 
             for reward, done in zip(self.current_rewards, self.dones):
@@ -262,11 +262,6 @@ class A2CAgent:
 
         return result
 
-    def get_action(self, state, det = False):
-        action = self.sess.run(self.action, {self.obs_ph: state})
-        return rescale_actions(self.actions_low, self.actions_high, action)
-
-
     def save(self, fn):
         self.saver.save(self.sess, fn)
 
@@ -274,6 +269,7 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
+        max_epochs = tr_helpers.get_or_default(self.config, 'NAX_EPOCHS', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors
         minibatch_size = self.config['MINIBATCH_SIZE']
@@ -392,6 +388,7 @@ class A2CAgent:
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
+                
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
@@ -402,7 +399,9 @@ class A2CAgent:
                         if last_mean_rewards > self.config['SCORE_TO_WIN']:
                             print('Network won!')
                             return
-
+                if epoch_num > max_epochs:
+                    print('MAX EPOCHS NUM!')
+                    return                    
                 update_time = 0
 
             

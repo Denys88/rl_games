@@ -179,6 +179,7 @@ class FrameStack(gym.Wrapper):
         self.flat = flat
         self.frames = deque([], maxlen=k)
         shp = env.observation_space.shape
+        #TODO: remove consts -1 and 1
         if flat:
             self.observation_space = spaces.Box(low=-1, high=1, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
         else:
