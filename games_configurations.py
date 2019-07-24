@@ -292,7 +292,7 @@ bipedalwalkerhardcore_lstm_config = {
     'PPO' : True,
     'E_CLIP' : 0.2,
     'CLIP_VALUE' : True,
-    'NUM_ACTORS' : 16,
+    'NUM_ACTORS' : 24,
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 512,
     'MINI_EPOCHS' : 4,
