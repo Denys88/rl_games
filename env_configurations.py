@@ -47,6 +47,15 @@ def create_roboschool_env(name):
     import roboschool
     return gym.make(name)
 
+class HCRewardEnv(gym.RewardWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+
+    def reward(self, reward):
+        if reward == -100:
+            return -5
+        return reward
+
 configurations = {
     'CartPole-v1' : {
         'VECENV_TYPE' : 'RAY',
@@ -70,10 +79,6 @@ configurations = {
     },
     'LunarLander-v2' : {
         'ENV_CREATOR' : lambda : gym.make('LunarLander-v2'),
-        'VECENV_TYPE' : 'RAY'
-    },
-    'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : gym.make('BipedalWalkerHardcore-v2'),
         'VECENV_TYPE' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
@@ -117,7 +122,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'ENV_CREATOR' : lambda : gym.make('BipedalWalker-v2'),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 2, True),
+        'VECENV_TYPE' : 'RAY'
+    },
+    'BipedalWalkerHardcore-v2' : {
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 2, True),
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {

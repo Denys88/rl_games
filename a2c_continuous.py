@@ -385,6 +385,7 @@ class A2CAgent:
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
                 self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
