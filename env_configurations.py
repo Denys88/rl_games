@@ -54,6 +54,8 @@ class HCRewardEnv(gym.RewardWrapper):
     def reward(self, reward):
         if reward == -100:
             return -5
+        if reward == 0:
+            return -0.1
         return reward
 
 configurations = {

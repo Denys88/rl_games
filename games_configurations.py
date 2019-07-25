@@ -278,7 +278,7 @@ bipedalwalker_lstm_config = {
 
 bipedalwalkerhardcore_lstm_config = {
     'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 1.0),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
     'TAU' : 0.9,
@@ -294,10 +294,10 @@ bipedalwalkerhardcore_lstm_config = {
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 24,
     'STEPS_NUM' : 128,
-    'MINIBATCH_SIZE' : 512,
+    'MINIBATCH_SIZE' : 1024,
     'MINI_EPOCHS' : 4,
     'CRITIC_COEF' : 1,
-    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_SCHEDULE' : 'NONE',
     'LR_THRESHOLD' : 0.04,
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 8

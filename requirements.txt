@@ -1,12 +1,12 @@
 gym==0.10.9
 numpy==1.15.4
 ray==0.6.6
-tensorboard==1.13.1
+tensorboard==1.14.0
 tensorboardX==1.6
-tensorflow==1.13.1
-tensorflow-probability==0.6.0
+tensorflow-gpu==1.14.0
+tensorflow-probability==0.7.0
 opencv-python==4.1.0.25
-#gym-super-mario-bros==7.1.6
-#pybullet==2.5.0
+gym-super-mario-bros==7.1.6
+pybullet==2.5.0
 
 
