@@ -12,7 +12,7 @@ env_name = "PongNoFrameskip-v4"
 from dqnagent import DQNAgent
 import tr_helpers
 import networks
-
+import models
 
 pong_dddqn_config0 = {
     'GAMMA' : 0.99,
@@ -34,7 +34,7 @@ pong_dddqn_config0 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDQN(),
+    'NETWORK' : models.AtariDQN(),
     'STEPS_NUM' : 1,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -62,7 +62,7 @@ pong_dddqn_config1 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDQN(),
+    'NETWORK' : models.AtariDQN(),
     'STEPS_NUM' : 1,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -90,7 +90,7 @@ pong_dddqn_config2 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDuelingDQN(),
+    'NETWORK' : models.AtariDuelingDQN(),
     'STEPS_NUM' : 1,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -118,7 +118,7 @@ pong_dddqn_config3 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDuelingDQN(),
+    'NETWORK' : models.AtariDuelingDQN(),
     'STEPS_NUM' : 1,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -146,7 +146,7 @@ pong_dddqn_config4 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDuelingDQN(),
+    'NETWORK' : models.AtariDuelingDQN(),
     'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -174,7 +174,7 @@ pong_dddqn_config5 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariNoisyDuelingDQN(),
+    'NETWORK' : models.AtariNoisyDuelingDQN(),
     'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -202,7 +202,7 @@ pong_dddqn_config6 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDuelingDQN(),
+    'NETWORK' : models.AtariDuelingDQN(),
     'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
@@ -231,7 +231,7 @@ pong_dddqn_config7 = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1,
-    'NETWORK' : networks.AtariDuelingDQN(use_batch_norm=True),
+    'NETWORK' : models.AtariDuelingDQN(use_batch_norm=True),
     'STEPS_NUM' : 3,
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 10, 
