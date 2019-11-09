@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "/home/trrrrr/anaconda3/envs/rl/bin/python",
+    "python.pythonPath": "/usr/bin/python3",
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
     "python.linting.mypyEnabled": false,

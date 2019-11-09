@@ -338,7 +338,7 @@ def noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, mean, s
 
 def default_a2c_network_separated(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 128
+        NUM_HIDDEN_NODES0 = 256
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
         

@@ -82,10 +82,10 @@ roboschoolhumanoid_config = {
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 256,
     'MINIBATCH_SIZE' : 1024,
-    'MINI_EPOCHS' : 4,
+    'MINI_EPOCHS' : 10,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'NORMALIZE_INPUT' : True,
+    'NORMALIZE_INPUT' : False,
     'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.04,
     'SEQ_LEN' : 8
@@ -606,4 +606,32 @@ mario_random_config_lstm = {
     'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
+}
+
+
+flexant_config = {
+    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 2.5*1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 18000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexAnt',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 64,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 12,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 16
 }

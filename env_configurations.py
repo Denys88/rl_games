@@ -47,6 +47,31 @@ def create_roboschool_env(name):
     import roboschool
     return gym.make(name)
 
+
+def create_multiflex(path):
+    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env_muli_env
+    from autolab_core import YamlConfig
+    import gym
+
+    set_flex_bin_path('/home/trrrrr/Documents/FlexRobotics-master/bin')
+
+    cfg_env = YamlConfig(path)
+    env = make_flex_vec_env_muli_env([cfg_env] * 2)
+
+    return env
+
+def create_flex(path):
+    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env
+    from autolab_core import YamlConfig
+    import gym
+
+    set_flex_bin_path('/home/trrrrr/Documents/FlexRobotics-master/bin')
+
+    cfg_env = YamlConfig(path)
+    env = make_flex_vec_env(cfg_env)
+
+    return env
+
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -112,7 +137,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolHumanoid-v1' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 2, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 1, True),
         'VECENV_TYPE' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
@@ -120,7 +145,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 2, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {
@@ -135,7 +160,10 @@ configurations = {
         'ENV_CREATOR' : lambda : create_quadrupped_env(),
         'VECENV_TYPE' : 'RAY'
     },
-
+    'FlexAnt' : {
+        'ENV_CREATOR' : lambda : create_multiflex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/ant.yaml'),
+        'VECENV_TYPE' : 'ISAAC'
+    },
 }
 
 
