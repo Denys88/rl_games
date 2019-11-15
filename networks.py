@@ -361,12 +361,37 @@ def default_a2c_network_separated(name, inputs, actions_num, continuous=False, r
         if continuous:
             mu = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None,)
             #std = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=tf.nn.softplus)
+            logstd = tf.layers.dense(inputs=hidden2a, units=actions_num)
+            return mu, logstd, value
+        else:
+            logits = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None)
+            return logits, value
+
+def default_a2c_network_separated_logstd(name, inputs, actions_num, continuous=False, reuse=False):
+    with tf.variable_scope(name, reuse=reuse):
+        NUM_HIDDEN_NODES0 = 256
+        NUM_HIDDEN_NODES1 = 128
+        NUM_HIDDEN_NODES2 = 64
+        hidden_init = normc_initializer(1.0) # tf.random_normal_initializer(stddev= 1.0)
+        hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.elu, kernel_initializer=hidden_init)
+        hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, activation=tf.nn.elu, kernel_initializer=hidden_init)
+        hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.elu, kernel_initializer=hidden_init)
+
+        hidden0a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.elu, kernel_initializer=hidden_init)
+        hidden1a = tf.layers.dense(inputs=hidden0a, units=NUM_HIDDEN_NODES1, activation=tf.nn.elu, kernel_initializer=hidden_init)
+        hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.elu, kernel_initializer=hidden_init)
+
+        value = tf.layers.dense(inputs=hidden2c, units=1, activation=None, kernel_initializer=hidden_init)
+        if continuous:
+            mu = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None,)
+            #std = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=tf.nn.softplus)
             #logstd = tf.layers.dense(inputs=hidden2a, units=actions_num)
             logstd = tf.get_variable(name='log_std', shape=(actions_num), initializer=tf.constant_initializer(0.0), trainable=True)
             return mu, mu * 0 + logstd, value
         else:
             logits = tf.layers.dense(inputs=hidden2a, units=actions_num, activation=None)
             return logits, value
+
 
 def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):

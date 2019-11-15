@@ -638,7 +638,7 @@ flexant_config = {
 
 
 flexhum_config = {
-    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated),
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
