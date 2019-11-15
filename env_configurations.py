@@ -48,15 +48,15 @@ def create_roboschool_env(name):
     return gym.make(name)
 
 
-def create_multiflex(path):
+def create_multiflex(path, num_instances=1):
     from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env_muli_env
     from autolab_core import YamlConfig
     import gym
 
-    set_flex_bin_path('/home/trrrrr/Documents/FlexRobotics-master/bin')
+    set_flex_bin_path('/home/viktor/Documents/rl/FlexRobotics/bin')
 
     cfg_env = YamlConfig(path)
-    env = make_flex_vec_env_muli_env([cfg_env] * 2)
+    env = make_flex_vec_env_muli_env([cfg_env] * num_instances)
 
     return env
 
@@ -65,7 +65,7 @@ def create_flex(path):
     from autolab_core import YamlConfig
     import gym
 
-    set_flex_bin_path('/home/trrrrr/Documents/FlexRobotics-master/bin')
+    set_flex_bin_path('/home/viktor/Documents/rl/FlexRobotics/bin')
 
     cfg_env = YamlConfig(path)
     cfg_env['gym']['rank'] = 0
@@ -73,16 +73,17 @@ def create_flex(path):
 
     return env
 
-class HCRewardEnv(gym.RewardWrapper):
-    def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
 
-    def reward(self, reward):
-        if reward == -100:
-            return -5
-        if reward == 0:
-            return -0.1
-        return reward
+
+def __init__(self, env):
+    gym.RewardWrapper.__init__(self, env)
+
+def reward(self, reward):
+    if reward == -100:
+        return -5
+    if reward == 0:
+        return -0.1
+    return reward
 
 configurations = {
     'CartPole-v1' : {
