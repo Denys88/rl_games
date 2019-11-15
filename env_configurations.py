@@ -68,6 +68,7 @@ def create_flex(path):
     set_flex_bin_path('/home/trrrrr/Documents/FlexRobotics-master/bin')
 
     cfg_env = YamlConfig(path)
+    cfg_env['gym']['rank'] = 0
     env = make_flex_vec_env(cfg_env)
 
     return env
@@ -161,7 +162,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'FlexAnt' : {
-        'ENV_CREATOR' : lambda : create_multiflex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/ant.yaml'),
+        'ENV_CREATOR' : lambda : create_flex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/ant.yaml'),
+        'VECENV_TYPE' : 'ISAAC'
+    },
+    'FlexHum' : {
+        'ENV_CREATOR' : lambda : create_flex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/humanoid.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
 }

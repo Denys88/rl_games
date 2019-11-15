@@ -3,13 +3,13 @@ from tensorflow.python.training.moving_averages import assign_moving_average
 
 class MovingMeanStd(object):
 
-    def __init__(self, shape, epsilon, decay, clamp = 16.0):
+    def __init__(self, shape, epsilon, decay, clamp = 5.0):
         self.moving_mean = tf.Variable(tf.constant(0.0, shape=shape, dtype=tf.float64), trainable=False)#, name='moving_mean')
         self.moving_variance = tf.Variable(tf.constant(1.0, shape=shape, dtype=tf.float64), trainable=False)#, name='moving_variance' )
         self.epsilon = epsilon
         self.shape = shape
         self.decay = decay
-        self.count = tf.Variable(tf.constant(0.0, shape=shape, dtype=tf.float64), trainable=False)
+        self.count = tf.Variable(tf.constant(epsilon, shape=shape, dtype=tf.float64), trainable=False)
         self.clamp = clamp
 
     def update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count):

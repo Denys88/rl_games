@@ -1,5 +1,6 @@
 import tensorflow as tf
 import networks
+import numpy as np
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
@@ -62,6 +63,36 @@ class ModelA2CContinuous(BaseModel):
         return prev_neglogp, value, action, entropy, mu, sigma
 
 
+
+class ModelA2CContinuousLogStd(BaseModel):
+    def __init__(self, network):
+        self.network = network
+
+    def __call__(self, dict, reuse=False):
+        name = dict['name']
+        inputs = dict['inputs']
+        actions_num = dict['actions_num']
+        prev_actions_ph = dict['prev_actions_ph']
+        mean, logstd, value = self.network(name, inputs, actions_num, True, reuse)
+        std = tf.exp(logstd)
+        norm_dist = tfd.Normal(mean, std)
+
+        action = mean + std * tf.random_normal(tf.shape(mean))
+        #action = tf.squeeze(norm_dist.sample(1), axis=0)
+        #action = tf.clip_by_value(action, -1.0, 1.0)
+        
+        entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
+        if prev_actions_ph is None:
+            neglogp = self.neglogp(action, mean, std, logstd)
+            return  neglogp, value, action, entropy, mean, std
+
+        prev_neglogp = self.neglogp(prev_actions_ph, mean, std, logstd)
+        return prev_neglogp, value, action, entropy, mean, std
+
+    def neglogp(self, x, mean, std, logstd):
+        return 0.5 * tf.reduce_sum(tf.square((x - mean) / std), axis=-1) \
+            + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[-1]) \
+            + tf.reduce_sum(logstd, axis=-1)
 
 class LSTMModelA2CContinuous(BaseModel):
     def __init__(self, network):

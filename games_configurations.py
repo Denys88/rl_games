@@ -627,11 +627,39 @@ flexant_config = {
     'NUM_ACTORS' : 1024,
     'STEPS_NUM' : 64,
     'MINIBATCH_SIZE' : 1024 * 16,
-    'MINI_EPOCHS' : 12,
+    'MINI_EPOCHS' : 15,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
     'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.02,
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 16
+}
+
+
+flexhum_config = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.95,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 18000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHum',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 64,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 20,
+    'CRITIC_COEF' : 2,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8
 }
