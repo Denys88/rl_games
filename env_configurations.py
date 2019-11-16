@@ -169,6 +169,10 @@ configurations = {
         'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/humanoid.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
+    'FlexHumanoidHard' : {
+        'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/humanoid_hard.yaml'),
+        'VECENV_TYPE' : 'ISAAC'
+    },
 }
 
 

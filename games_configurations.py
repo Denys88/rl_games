@@ -689,3 +689,30 @@ flexhumanoid2_config = {
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 8
 }
+
+flexhumanoidhard_config = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.95,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'hum2',
+    'SCORE_TO_WIN' : 15000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoidHard',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 64,
+    'MINIBATCH_SIZE' : 1024 * 24,
+    'MINI_EPOCHS' : 20,
+    'CRITIC_COEF' : 2,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8
+}
