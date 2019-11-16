@@ -376,7 +376,6 @@ def default_a2c_network_separated(name, inputs, actions_num, continuous=False, r
         NUM_HIDDEN_NODES0 = 256
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
-
         
         hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, kernel_initializer=normc_initializer(1.0), activation=activation)
         hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, kernel_initializer=normc_initializer(1.0), activation=activation)

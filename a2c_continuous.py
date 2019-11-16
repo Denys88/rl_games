@@ -146,9 +146,8 @@ class A2CAgent:
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
             self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
-
-
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
+
         if self.clip_value:
             self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, -curr_e_clip, curr_e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
@@ -160,6 +159,7 @@ class A2CAgent:
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
@@ -211,7 +211,6 @@ class A2CAgent:
             mb_mus.append(mu)
             mb_sigmas.append(sigma)
 
-
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
             self.current_rewards += rewards
 
@@ -219,7 +218,7 @@ class A2CAgent:
                 if done:
                     self.game_rewards.append(reward)
 
-            self.current_rewards = self.current_rewards * (1.0 -self.dones)
+            self.current_rewards = self.current_rewards * (1.0 - self.dones)
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
@@ -237,7 +236,6 @@ class A2CAgent:
         mb_states = np.asarray(mb_states, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
-   
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -276,11 +274,16 @@ class A2CAgent:
         mini_epochs_num = self.config['MINI_EPOCHS']
         num_minibatches = batch_size // minibatch_size
         last_lr = self.config['LEARNING_RATE']
+
+        last_mean_rewards = -100500
+
+        epoch_num = 0
         frame = 0
         update_time = 0
-        last_mean_rewards = -100500
         play_time = 0
-        epoch_num = 0
+        start_time = time.time()
+        total_time = start_time
+
         while True:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
@@ -357,8 +360,7 @@ class A2CAgent:
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]
-                        
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]             
 
                         if self.network.is_rnn():
                             dict[self.states_ph] = lstm_states[batch]
@@ -372,9 +374,12 @@ class A2CAgent:
                         c_losses.append(c_loss)
                         kls.append(kl)
                         entropies.append(entropy)
+
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
+
+            total_time = update_time_end - start_time
 
             if True:
                 print('Frames per seconds: ', batch_size / sum_time)
@@ -393,6 +398,7 @@ class A2CAgent:
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards

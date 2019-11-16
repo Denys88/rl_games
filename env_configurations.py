@@ -74,7 +74,6 @@ def create_flex(path):
     return env
 
 
-
 def __init__(self, env):
     gym.RewardWrapper.__init__(self, env)
 
@@ -163,11 +162,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'FlexAnt' : {
-        'ENV_CREATOR' : lambda : create_flex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/ant.yaml'),
+        'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/ant.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
-    'FlexHum' : {
-        'ENV_CREATOR' : lambda : create_flex('/home/trrrrr/Documents/FlexRobotics-master/demo/gym/cfg/humanoid.yaml'),
+    'FlexHumanoid' : {
+        'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/humanoid.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
 }
