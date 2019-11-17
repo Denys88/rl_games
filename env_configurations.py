@@ -4,6 +4,9 @@ import tr_helpers
 import gym
 import numpy as np
 
+FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+
+
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
     from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
@@ -53,7 +56,7 @@ def create_multiflex(path, num_instances=1):
     from autolab_core import YamlConfig
     import gym
 
-    set_flex_bin_path('/home/viktor/Documents/rl/FlexRobotics/bin')
+    set_flex_bin_path(FLEX_PATH + '/bin')
 
     cfg_env = YamlConfig(path)
     env = make_flex_vec_env_muli_env([cfg_env] * num_instances)
@@ -65,7 +68,7 @@ def create_flex(path):
     from autolab_core import YamlConfig
     import gym
 
-    set_flex_bin_path('/home/viktor/Documents/rl/FlexRobotics/bin')
+    set_flex_bin_path(FLEX_PATH + '/bin')
 
     cfg_env = YamlConfig(path)
     cfg_env['gym']['rank'] = 0
@@ -162,11 +165,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'FlexAnt' : {
-        'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/ant.yaml'),
+        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
     'FlexHumanoid' : {
-        'ENV_CREATOR' : lambda : create_flex('/home/viktor/Documents/rl/FlexRobotics/demo/gym/cfg/humanoid.yaml'),
+        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
 }

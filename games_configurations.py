@@ -689,3 +689,31 @@ flexhumanoid2_config = {
     'NORMALIZE_INPUT' : True,
     'SEQ_LEN' : 8
 }
+
+flexhumanoid3_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'robo1',
+    'SCORE_TO_WIN' : 27000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoid',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'CLIP_VALUE' : True,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 64,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'LR_SCHEDULE' : 'NONE',
+    'LR_THRESHOLD' : 0.2,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8,
+    'MAX_EPOCHS' : 10000
+    }

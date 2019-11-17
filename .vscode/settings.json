@@ -1,7 +1,8 @@
 {
-    "python.pythonPath": "/usr/bin/python3",
+    "python.pythonPath": "/home/trrrrr/anaconda3/envs/rl/bin/python",
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
     "python.linting.mypyEnabled": false,
-    "python.linting.banditEnabled": false
+    "python.linting.banditEnabled": false,
+    "python.linting.flake8Enabled": false
 }
