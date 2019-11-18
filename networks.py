@@ -149,6 +149,8 @@ TODO: try to use more efficient tensorflow way
 def openai_lstm(name, inputs, states_ph, dones_ph, units, env_num, batch_num, layer_norm=True):
     nbatch = batch_num
     nsteps = nbatch // env_num
+    print('nbatch: ', nbatch)
+    print('env_num: ', env_num)
     dones_ph = tf.to_float(dones_ph)
     inputs_seq = batch_to_seq(inputs, env_num, nsteps)
     dones_seq = batch_to_seq(dones_ph, env_num, nsteps)
@@ -462,19 +464,16 @@ def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, cont
 
 def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
-        NUM_HIDDEN_NODES0 = 128
+        NUM_HIDDEN_NODES0 = 256
         NUM_HIDDEN_NODES1 = 128
         NUM_HIDDEN_NODES2 = 64
         LSTM_UNITS = 128
 
         hidden0c = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.elu)
         hidden1c = tf.layers.dense(inputs=hidden0c, units=NUM_HIDDEN_NODES1, activation=tf.nn.elu)
-        #hidden2c = tf.layers.dense(inputs=hidden1c, units=NUM_HIDDEN_NODES2, activation=tf.nn.elu)
 
         hidden0a = tf.layers.dense(inputs=inputs, units=NUM_HIDDEN_NODES0, activation=tf.nn.elu)
         hidden1a = tf.layers.dense(inputs=hidden0a, units=NUM_HIDDEN_NODES1, activation=tf.nn.elu)
-        #hidden2a = tf.layers.dense(inputs=hidden1a, units=NUM_HIDDEN_NODES2, activation=tf.nn.elu)
-
 
         dones_ph = tf.placeholder(tf.bool, [batch_num])
         states_ph = tf.placeholder(tf.float32, [env_num, 2*LSTM_UNITS])

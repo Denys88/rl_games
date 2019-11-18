@@ -22,7 +22,7 @@ def swap_and_flatten01(arr):
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
-    scaled_action =  action * d + m
+    scaled_action = action * d + m
     return scaled_action
 
 #(steps_num, actions_num)
@@ -36,10 +36,10 @@ def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
 
 def policy_kl_tf(p0_mu, p0_sigma, p1_mu, p1_sigma):
     c1 = tf.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (tf.square(p0_sigma) + tf.square(p1_mu - p0_mu))/(2.0 *(tf.square(p1_sigma) + 1e-5))
+    c2 = (tf.square(p0_sigma) + tf.square(p1_mu - p0_mu))/(2.0 * (tf.square(p1_sigma) + 1e-5))
     c3 = -1.0 / 2.0
     kl = c1 + c2 + c3
-    kl = tf.reduce_mean(tf.reduce_sum(kl, axis = -1)) # returning mean between all steps of sum between all actions
+    kl = tf.reduce_mean(tf.reduce_sum(kl, axis=-1))  # returning mean between all steps of sum between all actions
     return kl
 
 class A2CAgent:
@@ -76,8 +76,11 @@ class A2CAgent:
         self.seq_len = self.config['SEQ_LEN']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
 
-        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
+        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
+        self.current_lengths = np.asarray([0]*self.num_actors, dtype=np.float32)
         self.game_rewards = deque([], maxlen=100)
+        self.game_lengths = deque([], maxlen=100)
+
         self.obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'obs')
         self.target_obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'target_obs')
         self.actions_num = action_space.shape[0]   
@@ -89,7 +92,7 @@ class A2CAgent:
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
+        self.epoch_num = tf.Variable(tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
@@ -108,7 +111,7 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len # it is used only for current rnn implementation
+        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len  # it is used only for current rnn implementation
 
         self.train_dict = {
             'name' : 'agent',
@@ -213,17 +216,20 @@ class A2CAgent:
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
             self.current_rewards += rewards
+            self.current_lengths += 1
 
-            for reward, done in zip(self.current_rewards, self.dones):
+            for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
                 if done:
                     self.game_rewards.append(reward)
-
-            self.current_rewards = self.current_rewards * (1.0 - self.dones)
+                    self.game_lengths.append(length)
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
+            shaped_rewards = np.where(self.current_lengths == 1001, 0, shaped_rewards)
             mb_rewards.append(shaped_rewards)
 
+            self.current_rewards = self.current_rewards * (1.0 - self.dones)
+            self.current_lengths = self.current_lengths * (1.0 - self.dones)
         #using openai baseline approach
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
@@ -397,8 +403,12 @@ class A2CAgent:
                 
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
+                    mean_lengths = np.mean(self.game_lengths)
                     self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    self.writer.add_scalar('episode_lengths/mean_100', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
