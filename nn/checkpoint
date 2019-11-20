@@ -1,2 +1,2 @@
-model_checkpoint_path: "run2RoboschoolHumanoid-v1"
-all_model_checkpoint_paths: "run2RoboschoolHumanoid-v1"
+model_checkpoint_path: "runBipedalWalkerHardcore-v2"
+all_model_checkpoint_paths: "runBipedalWalkerHardcore-v2"

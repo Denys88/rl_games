@@ -87,7 +87,7 @@ class A2CAgent:
         self.actions_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'actions')
         self.old_mu_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_mu_ph')
         self.old_sigma_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_sigma_ph')
-        self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
+        self.old_neglogp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
         self.rewards_ph = tf.placeholder('float32', (None,), name = 'rewards')
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
@@ -133,22 +133,22 @@ class A2CAgent:
 
         self.states = None
         if self.network.is_rnn():
-            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
+            self.neglogp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma, self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state = self.network(self.run_dict, reuse=True)
             self.states = self.target_initial_state
         else:
-            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
+            self.neglogp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma  = self.network(self.run_dict, reuse=True)
 
         curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
-            self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            self.prob_ratio = tf.exp(self.old_neglogp_actions_ph - self.neglogp_actions)
             self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- curr_e_clip, 1.+ curr_e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
-            self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
+            self.actor_loss = tf.reduce_mean(self.neglogp_actions * self.advantages_ph)
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
 
         if self.clip_value:
@@ -201,7 +201,6 @@ class A2CAgent:
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
-
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
             actions = np.squeeze(actions)
             values = np.squeeze(values)
@@ -210,7 +209,7 @@ class A2CAgent:
             mb_actions.append(actions)
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones)
+            mb_dones.append(self.dones.copy())
             mb_mus.append(mu)
             mb_sigmas.append(sigma)
 
@@ -225,7 +224,7 @@ class A2CAgent:
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
-            shaped_rewards = np.where(self.current_lengths == 1001, 0, shaped_rewards)
+            #shaped_rewards = np.where(self.current_lengths == 1001, 0, shaped_rewards)
             mb_rewards.append(shaped_rewards)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
@@ -240,6 +239,7 @@ class A2CAgent:
         mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
+
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
@@ -322,7 +322,7 @@ class A2CAgent:
 
                         dict = {}
                         dict[self.old_values_ph] = values[mbatch]
-                        dict[self.old_logp_actions_ph] = neglogpacs[mbatch]
+                        dict[self.old_neglogp_actions_ph] = neglogpacs[mbatch]
                         dict[self.advantages_ph] = advantages[mbatch]
                         dict[self.rewards_ph] = returns[mbatch]
                         dict[self.actions_ph] = actions[mbatch]
@@ -345,32 +345,25 @@ class A2CAgent:
             else:
                 for _ in range(0, mini_epochs_num):
                     permutation = np.random.permutation(batch_size)
+
                     obses = obses[permutation]
                     returns = returns[permutation]
-                    
                     actions = actions[permutation]
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
                     mus = mus[permutation]
                     sigmas = sigmas[permutation] 
-                    if self.network.is_rnn():
-                        lstm_states = lstm_states[permutation] 
-                        dones = dones[permutation]
                         
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                                self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+                                self.advantages_ph : advantages[batch], self.old_neglogp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
 
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]             
-
-                        if self.network.is_rnn():
-                            dict[self.states_ph] = lstm_states[batch]
-                            dict[self.masks_ph] = dones[batch]
                             
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
                         a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, lr_mul, _, _ = self.sess.run(run_ops, dict)

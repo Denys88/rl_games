@@ -16,9 +16,9 @@ class IsaacEnv(IVecEnv):
         self.obs = self.env.reset()
     
     def step(self, action): 
-        _, reward, is_done, info = self.env.step(action)
-        reward -= is_done * 100.0
-        next_state = self.reset()
+        next_state, reward, is_done, info = self.env.step(action)
+        #reward -= is_done * 100.0
+        next_state = self.reset() 
         return next_state, reward, is_done, info
 
     def reset(self):

@@ -7,6 +7,21 @@ import numpy as np
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
+class HCObsEnv(gym.ObservationWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+
+    def observation(self, observation):
+        obs = observation - [ 0.1296, -0.0004,  0.5202, -0.0023,  1.0305,  0.0138,  0.6832,  0.0093,  0.1488,
+                                0.0475,  0.0138, -0.4303, -0.1001,  0.4631,  0.3619,  0.3659,  0.3786,  0.4016,
+                                0.4381,  0.4942,  0.5818,  0.7271,  0.9577,  1.    ]
+
+        obs = obs / [0.1244, 0.0293, 0.1321, 0.0603, 0.1239, 0.5635, 0.2883, 0.826,  0.3558, 0.292,
+                    0.9197, 0.2155, 0.705,  0.4986, 0.0245, 0.0249, 0.0262, 0.0284, 0.0324, 0.0388,
+                    0.0494, 0.0681, 0.056,  0.0003,]
+        obs = np.clip(obs, -5.0, 5.0)
+        return obs
+
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
     from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
@@ -153,11 +168,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 2, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCObsEnv(gym.make('BipedalWalker-v2')), 1, True),
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 2, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCObsEnv(gym.make('BipedalWalkerHardcore-v2')), 2, True),
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
@@ -170,6 +185,10 @@ configurations = {
     },
     'FlexHumanoid' : {
         'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
+        'VECENV_TYPE' : 'ISAAC'
+    },
+    'FlexHumanoid_Hard' : {
+        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
 }
