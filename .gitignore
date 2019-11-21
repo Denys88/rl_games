@@ -104,3 +104,6 @@ venv.bak/
 .mypy_cache/
 *.DESKTOP-A5H25JU
 
+# vscode
+.vscode
+

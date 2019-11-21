@@ -4,8 +4,19 @@ import tr_helpers
 import gym
 import numpy as np
 
-FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
 
+
+class HCRewardEnv(gym.RewardWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+
+    def reward(self, reward):
+        if reward == -100:
+            return -20
+        if np.abs(reward) < 0.01:
+            return -0.1
+        return reward
 
 class HCObsEnv(gym.ObservationWrapper):
     def __init__(self, env):
@@ -172,7 +183,7 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCObsEnv(gym.make('BipedalWalkerHardcore-v2')), 2, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 1, True),
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
@@ -187,7 +198,7 @@ configurations = {
         'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
-    'FlexHumanoid_Hard' : {
+    'FlexHumanoidHard' : {
         'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'VECENV_TYPE' : 'ISAAC'
     },
