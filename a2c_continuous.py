@@ -22,7 +22,7 @@ def swap_and_flatten01(arr):
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
-    scaled_action =  action * d + m
+    scaled_action = action * d + m
     return scaled_action
 
 #(steps_num, actions_num)
@@ -36,10 +36,10 @@ def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
 
 def policy_kl_tf(p0_mu, p0_sigma, p1_mu, p1_sigma):
     c1 = tf.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (tf.square(p0_sigma) + tf.square(p1_mu - p0_mu))/(2.0 *(tf.square(p1_sigma) + 1e-5))
+    c2 = (tf.square(p0_sigma) + tf.square(p1_mu - p0_mu))/(2.0 * (tf.square(p1_sigma) + 1e-5))
     c3 = -1.0 / 2.0
     kl = c1 + c2 + c3
-    kl = tf.reduce_mean(tf.reduce_sum(kl, axis = -1)) # returning mean between all steps of sum between all actions
+    kl = tf.reduce_mean(tf.reduce_sum(kl, axis=-1))  # returning mean between all steps of sum between all actions
     return kl
 
 class A2CAgent:
@@ -76,20 +76,23 @@ class A2CAgent:
         self.seq_len = self.config['SEQ_LEN']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
 
-        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
+        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
+        self.current_lengths = np.asarray([0]*self.num_actors, dtype=np.float32)
         self.game_rewards = deque([], maxlen=100)
+        self.game_lengths = deque([], maxlen=100)
+
         self.obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'obs')
         self.target_obs_ph = tf.placeholder('float32', (None, ) + self.state_shape, name = 'target_obs')
         self.actions_num = action_space.shape[0]   
         self.actions_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'actions')
         self.old_mu_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_mu_ph')
         self.old_sigma_ph = tf.placeholder('float32', (None,) + action_space.shape, name = 'old_sigma_ph')
-        self.old_logp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
+        self.old_neglogp_actions_ph = tf.placeholder('float32', (None, ), name = 'old_logpactions')
         self.rewards_ph = tf.placeholder('float32', (None,), name = 'rewards')
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
+        self.epoch_num = tf.Variable(tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
@@ -108,7 +111,7 @@ class A2CAgent:
             self.input_obs = self.obs_ph
             self.input_target_obs = self.target_obs_ph
 
-        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len # it is used only for current rnn implementation
+        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len  # it is used only for current rnn implementation
 
         self.train_dict = {
             'name' : 'agent',
@@ -130,25 +133,24 @@ class A2CAgent:
 
         self.states = None
         if self.network.is_rnn():
-            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
+            self.neglogp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma, self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state = self.network(self.run_dict, reuse=True)
             self.states = self.target_initial_state
         else:
-            self.logp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
+            self.neglogp_actions ,self.state_values, self.action, self.entropy, self.mu, self.sigma  = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.target_mu, self.target_sigma  = self.network(self.run_dict, reuse=True)
 
         curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
-            self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            self.prob_ratio = tf.exp(self.old_neglogp_actions_ph - self.neglogp_actions)
             self.prob_ratio = tf.clip_by_value(self.prob_ratio, 0.0, 16.0)
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- curr_e_clip, 1.+ curr_e_clip))
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
-            self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
-
-
+            self.actor_loss = tf.reduce_mean(self.neglogp_actions * self.advantages_ph)
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
+
         if self.clip_value:
             self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, -curr_e_clip, curr_e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
@@ -160,6 +162,7 @@ class A2CAgent:
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
@@ -198,7 +201,6 @@ class A2CAgent:
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
-
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
             actions = np.squeeze(actions)
             values = np.squeeze(values)
@@ -207,24 +209,26 @@ class A2CAgent:
             mb_actions.append(actions)
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones)
+            mb_dones.append(self.dones.copy())
             mb_mus.append(mu)
             mb_sigmas.append(sigma)
 
-
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
             self.current_rewards += rewards
+            self.current_lengths += 1
 
-            for reward, done in zip(self.current_rewards, self.dones):
+            for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
                 if done:
                     self.game_rewards.append(reward)
-
-            self.current_rewards = self.current_rewards * (1.0 -self.dones)
+                    self.game_lengths.append(length)
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
+            #shaped_rewards = np.where(self.current_lengths == 1001, 0, shaped_rewards)
             mb_rewards.append(shaped_rewards)
 
+            self.current_rewards = self.current_rewards * (1.0 - self.dones)
+            self.current_lengths = self.current_lengths * (1.0 - self.dones)
         #using openai baseline approach
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
@@ -235,9 +239,9 @@ class A2CAgent:
         mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
+
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
-   
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -276,11 +280,16 @@ class A2CAgent:
         mini_epochs_num = self.config['MINI_EPOCHS']
         num_minibatches = batch_size // minibatch_size
         last_lr = self.config['LEARNING_RATE']
+
+        last_mean_rewards = -100500
+
+        epoch_num = 0
         frame = 0
         update_time = 0
-        last_mean_rewards = -100500
         play_time = 0
-        epoch_num = 0
+        start_time = time.time()
+        total_time = start_time
+
         while True:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
@@ -313,7 +322,7 @@ class A2CAgent:
 
                         dict = {}
                         dict[self.old_values_ph] = values[mbatch]
-                        dict[self.old_logp_actions_ph] = neglogpacs[mbatch]
+                        dict[self.old_neglogp_actions_ph] = neglogpacs[mbatch]
                         dict[self.advantages_ph] = advantages[mbatch]
                         dict[self.rewards_ph] = returns[mbatch]
                         dict[self.actions_ph] = actions[mbatch]
@@ -336,33 +345,25 @@ class A2CAgent:
             else:
                 for _ in range(0, mini_epochs_num):
                     permutation = np.random.permutation(batch_size)
+
                     obses = obses[permutation]
                     returns = returns[permutation]
-                    
                     actions = actions[permutation]
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
                     mus = mus[permutation]
                     sigmas = sigmas[permutation] 
-                    if self.network.is_rnn():
-                        lstm_states = lstm_states[permutation] 
-                        dones = dones[permutation]
                         
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                                self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+                                self.advantages_ph : advantages[batch], self.old_neglogp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
 
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]
-                        
-
-                        if self.network.is_rnn():
-                            dict[self.states_ph] = lstm_states[batch]
-                            dict[self.masks_ph] = dones[batch]
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]             
                             
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
                         a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, lr_mul, _, _ = self.sess.run(run_ops, dict)
@@ -372,9 +373,12 @@ class A2CAgent:
                         c_losses.append(c_loss)
                         kls.append(kl)
                         entropies.append(entropy)
+
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
+
+            total_time = update_time_end - start_time
 
             if True:
                 print('Frames per seconds: ', batch_size / sum_time)
@@ -392,7 +396,12 @@ class A2CAgent:
                 
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
+                    mean_lengths = np.mean(self.game_lengths)
                     self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    self.writer.add_scalar('episode_lengths/mean_100', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards

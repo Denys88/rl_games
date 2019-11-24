@@ -8,8 +8,9 @@ import tr_helpers
 LR_SCHEDULE: 'ADAPTIVE', 'EXP_DECAY', 'LINEAR_DECAY', 'NONE'
 """
 
-halfcheetah_lstm_config_v2 = {
-    'NETWORK' : models.ModelA2CContinuous(networks.simple_a2c_lstm_network_separated),
+
+halfcheetah_config_v2 = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
@@ -82,10 +83,10 @@ roboschoolhumanoid_config = {
     'NUM_ACTORS' : 16,
     'STEPS_NUM' : 256,
     'MINIBATCH_SIZE' : 1024,
-    'MINI_EPOCHS' : 4,
+    'MINI_EPOCHS' : 10,
     'CRITIC_COEF' : 1,
     'CLIP_VALUE' : True,
-    'NORMALIZE_INPUT' : True,
+    'NORMALIZE_INPUT' : False,
     'LR_SCHEDULE' : 'ADAPTIVE',
     'LR_THRESHOLD' : 0.04,
     'SEQ_LEN' : 8
@@ -276,12 +277,12 @@ bipedalwalker_lstm_config = {
     'SEQ_LEN' : 8
 }
 
-bipedalwalkerhardcore_lstm_config = {
-    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+bipedalwalkerhardcore__config = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
     'NORMALIZE_ADVANTAGE' : True,
     'GAMMA' : 0.99,
-    'TAU' : 0.9,
+    'TAU' : 0.95,
     'LEARNING_RATE' : 1e-4,
     'NAME' : 'robo1',
     'SCORE_TO_WIN' : 320,
@@ -290,16 +291,16 @@ bipedalwalkerhardcore_lstm_config = {
     'TRUNCATE_GRADS' : True,
     'ENV_NAME' : 'BipedalWalkerHardcore-v2',
     'PPO' : True,
-    'E_CLIP' : 0.2,
+    'E_CLIP' : 0.1,
     'CLIP_VALUE' : True,
     'NUM_ACTORS' : 24,
     'STEPS_NUM' : 128,
     'MINIBATCH_SIZE' : 1024,
-    'MINI_EPOCHS' : 4,
+    'MINI_EPOCHS' : 10,
     'CRITIC_COEF' : 1,
-    'LR_SCHEDULE' : 'NONE',
-    'LR_THRESHOLD' : 0.04,
-    'NORMALIZE_INPUT' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.01,
+    'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
 }
 
@@ -606,4 +607,168 @@ mario_random_config_lstm = {
     'LR_SCHEDULE' : 'NONE',
     'NORMALIZE_INPUT' : False,
     'SEQ_LEN' : 8
+}
+
+
+flexant_config = {
+    'NETWORK' : models.ModelA2CContinuous(networks.default_small_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 100.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 3e-4,
+    'NAME' : 'ant',
+    'SCORE_TO_WIN' : 20000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexAnt',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 400,
+    'STEPS_NUM' : 24,
+    'MINIBATCH_SIZE' : 400 * 16,
+    'MINI_EPOCHS' : 16,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.01,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 16
+}
+
+flexhumanoid_config = {
+    'NETWORK' : models.ModelA2CContinuous(networks.default_small_a2c_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 3e-4,
+    'NAME' : 'hum1',
+    'SCORE_TO_WIN' : 15000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoid',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 24,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 15,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 16
+}
+
+flexhumanoid2_config = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.95,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'hum2',
+    'SCORE_TO_WIN' : 15000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoid_Hard',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 15,
+    'CRITIC_COEF' : 2,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.01,
+    'NORMALIZE_INPUT' : False,
+    'SEQ_LEN' : 8
+}
+
+flexhumanoidlstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.9,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'humlstm',
+    'SCORE_TO_WIN' : 10000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.000,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoid_Hard',
+    'PPO' : True,
+    'E_CLIP' : 0.1,
+    'CLIP_VALUE' : True,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 1024 * 8,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'LR_SCHEDULE' : 'NONE',
+    'LR_THRESHOLD' : 0.2,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 4,
+    'MAX_EPOCHS' : 10000
+    }
+
+flexhumanoidhard_config = {
+    'NETWORK' : models.ModelA2CContinuousLogStd(networks.default_a2c_network_separated_logstd),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.95,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'humhard',
+    'SCORE_TO_WIN' : 15000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.0,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoidHard',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 1024 * 16,
+    'MINI_EPOCHS' : 15,
+    'CRITIC_COEF' : 2,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'ADAPTIVE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 8
+}
+
+flexhumanoidhardlstm_config = {
+    'NETWORK' : models.LSTMModelA2CContinuous(networks.default_a2c_lstm_network_separated),
+    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(scale_value = 1.0 / 10.0),
+    'NORMALIZE_ADVANTAGE' : True,
+    'GAMMA' : 0.99,
+    'TAU' : 0.95,
+    'LEARNING_RATE' : 1e-4,
+    'NAME' : 'hum2',
+    'SCORE_TO_WIN' : 15000,
+    'GRAD_NORM' : 0.5,
+    'ENTROPY_COEF' : 0.0,
+    'TRUNCATE_GRADS' : True,
+    'ENV_NAME' : 'FlexHumanoidHard',
+    'PPO' : True,
+    'E_CLIP' : 0.2,
+    'NUM_ACTORS' : 1024,
+    'STEPS_NUM' : 32,
+    'MINIBATCH_SIZE' : 1024 * 8,
+    'MINI_EPOCHS' : 4,
+    'CRITIC_COEF' : 1,
+    'CLIP_VALUE' : True,
+    'LR_SCHEDULE' : 'NONE',
+    'LR_THRESHOLD' : 0.02,
+    'NORMALIZE_INPUT' : True,
+    'SEQ_LEN' : 4
 }

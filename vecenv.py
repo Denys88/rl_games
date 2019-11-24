@@ -10,16 +10,21 @@ class IVecEnv(object):
         raise NotImplementedError 
 
 
-
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
-        raise NotImplementedError
-
-    def step(self, actions):
-        raise NotImplementedError 
+        self.env = configurations[config_name]['ENV_CREATOR']()
+        self.obs = self.env.reset()
+    
+    def step(self, action): 
+        next_state, reward, is_done, info = self.env.step(action)
+        #reward -= is_done * 100.0
+        next_state = self.reset() 
+        return next_state, reward, is_done, info
 
     def reset(self):
-        raise NotImplementedError 
+        self.obs = self.env.reset()
+        return self.obs
+
 
 class RayWorker:
     def __init__(self, config_name):
@@ -61,7 +66,6 @@ class RayVecEnv(IVecEnv):
     def reset(self):
         obs = [worker.reset.remote() for worker in self.workers]
         return np.asarray(ray.get(obs), dtype=np.float32)
-
     
 
 def create_vec_env(config_name, num_actors):

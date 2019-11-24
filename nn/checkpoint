@@ -1,0 +1,2 @@
+model_checkpoint_path: "runBipedalWalkerHardcore-v2"
+all_model_checkpoint_paths: "runBipedalWalkerHardcore-v2"
