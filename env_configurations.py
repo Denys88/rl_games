@@ -10,12 +10,37 @@ FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
+        
+        self.num_stops = 0
+        self.stops_decay = 0
+        self.max_stops = 30
 
+    def reset(self, **kwargs):
+        self.num_stops = 0
+        self.stops_decay = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if self.num_stops > self.max_stops:
+            print('too many stops!')
+            reward = -100
+            observation = self.reset()
+            done = True
+        return observation, self.reward(reward), done, info
     def reward(self, reward):
         if reward == -100:
             return -20
-        if np.abs(reward) < 0.01:
+       # print('reward:', reward)
+        if reward < 0.005:
+            self.stops_decay = 0
+            self.num_stops += 1
+            #print('stops:', self.num_stops)
             return -0.1
+        self.stops_decay += 1
+        if self.stops_decay == self.max_stops:
+            self.num_stops = 0
+            self.stops_decay = 0
         return reward
 
 class HCObsEnv(gym.ObservationWrapper):
@@ -23,13 +48,13 @@ class HCObsEnv(gym.ObservationWrapper):
         gym.RewardWrapper.__init__(self, env)
 
     def observation(self, observation):
-        obs = observation - [ 0.1296, -0.0004,  0.5202, -0.0023,  1.0305,  0.0138,  0.6832,  0.0093,  0.1488,
-                                0.0475,  0.0138, -0.4303, -0.1001,  0.4631,  0.3619,  0.3659,  0.3786,  0.4016,
-                                0.4381,  0.4942,  0.5818,  0.7271,  0.9577,  1.    ]
+        obs = observation - [ 0.1193, -0.001 ,  0.0958, -0.0052, -0.629 , -0.01  ,  0.1604, -0.0205,
+  0.7094,  0.6344,  0.0091,  0.1617, -0.0001,  0.7018,  0.4293,  0.3909,
+  0.3776,  0.3662,  0.3722,  0.4043,  0.4497,  0.6033,  0.7825,  0.9575]
 
-        obs = obs / [0.1244, 0.0293, 0.1321, 0.0603, 0.1239, 0.5635, 0.2883, 0.826,  0.3558, 0.292,
-                    0.9197, 0.2155, 0.705,  0.4986, 0.0245, 0.0249, 0.0262, 0.0284, 0.0324, 0.0388,
-                    0.0494, 0.0681, 0.056,  0.0003,]
+        obs = obs / [0.3528, 0.0501, 0.1561, 0.0531, 0.2936, 0.4599, 0.6598, 0.4978, 0.454 ,
+ 0.7168, 0.3419, 0.6492, 0.4548, 0.4575, 0.1024, 0.0716, 0.0918, 0.11  ,
+ 0.1289, 0.1501, 0.1649, 0.191 , 0.2036, 0.1095]
         obs = np.clip(obs, -5.0, 5.0)
         return obs
 
@@ -179,11 +204,11 @@ configurations = {
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCObsEnv(gym.make('BipedalWalker-v2')), 1, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
         'VECENV_TYPE' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 1, True),
+        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 4, True),
         'VECENV_TYPE' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
