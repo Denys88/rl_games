@@ -94,6 +94,45 @@ class ModelA2CContinuousLogStd(BaseModel):
             + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[-1]) \
             + tf.reduce_sum(logstd, axis=-1)
 
+class LSTMModelA2CContinuousLogStd(BaseModel):
+    def __init__(self, network):
+        self.network = network
+
+    def is_rnn(self):
+        return True
+
+    def is_single_batched(self):
+        return False
+
+    def neglogp(self, x, mean, std, logstd):
+        return 0.5 * tf.reduce_sum(tf.square((x - mean) / std), axis=-1) \
+            + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[-1]) \
+            + tf.reduce_sum(logstd, axis=-1)
+
+    def __call__(self, dict, reuse=False):
+        name = dict['name']
+        inputs = dict['inputs']
+        actions_num = dict['actions_num']
+        prev_actions_ph = dict['prev_actions_ph']
+        games_num = dict['games_num']
+        batch_num = dict['batch_num']
+
+        mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, games_num, batch_num,  True, reuse)
+        std = tf.exp(logstd)
+        norm_dist = tfd.Normal(mean, std)
+
+        action = mean + std * tf.random_normal(tf.shape(mean))
+        norm_dist = tfd.Normal(mu, sigma)
+        
+        entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
+        if prev_actions_ph == None:
+            neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-6), axis=-1)
+            return  neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+
+        prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
+        return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+
+
 class LSTMModelA2CContinuous(BaseModel):
     def __init__(self, network):
         self.network = network
@@ -126,6 +165,8 @@ class LSTMModelA2CContinuous(BaseModel):
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+
+
 
 class LSTMModelA2C(BaseModel):
     def __init__(self, network):
