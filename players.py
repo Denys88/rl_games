@@ -130,7 +130,6 @@ class PpoPlayerDiscrete(BasePlayer):
             action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
-
         return   int(np.squeeze(action))
 
     def restore(self, fn):

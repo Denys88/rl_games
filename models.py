@@ -47,8 +47,7 @@ class ModelA2CContinuous(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        mu, var, value = self.network(name, inputs, actions_num, True, reuse)
-        sigma = tf.sqrt(var)
+        mu, sigma, value = self.network(name, inputs, actions_num, True, reuse)
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
@@ -209,10 +208,8 @@ class AtariDuelingDQN(object):
         self.is_train = is_train
 
     def __call__(self, name, inputs, actions_num, reuse=False):
-        if self.use_batch_norm:
-            return networks.dueling_dqn_network_with_batch_norm(name, inputs, actions_num, reuse, self.dueling_type, is_train=self.is_train)
-        else:
-            return networks.dueling_dqn_network(name, inputs, actions_num, reuse, self.dueling_type)
+ 
+        return networks.dueling_dqn_network(name, inputs, actions_num, reuse, self.dueling_type)
 
 
 class AtariNoisyDQN(object):
