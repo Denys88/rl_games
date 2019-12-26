@@ -13,6 +13,8 @@ from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
 from tf_moving_mean_std import MovingMeanStd
+import ray
+
 
 def swap_and_flatten01(arr):
     s = arr.shape
@@ -43,9 +45,7 @@ def policy_kl_tf(p0_mu, p0_sigma, p1_mu, p1_sigma):
     return kl
 
 class A2CAgent:
-    def __init__(self, sess, name, observation_space, is_discrete, action_space, config):
-        assert not is_discrete  
-
+    def __init__(self, sess, name, observation_space, action_space, config):
         self.name = name
         self.actions_low = action_space.low
         self.actions_high = action_space.high
@@ -273,6 +273,7 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
+
         max_epochs = tr_helpers.get_or_default(self.config, 'NAX_EPOCHS', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors

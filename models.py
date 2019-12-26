@@ -68,11 +68,12 @@ class ModelA2CContinuousLogStd(BaseModel):
         self.network = network
 
     def __call__(self, dict, reuse=False):
+
         name = dict['name']
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        mean, logstd, value = self.network(name, inputs, actions_num, True, reuse)
+        mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, reuse=reuse)
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
 

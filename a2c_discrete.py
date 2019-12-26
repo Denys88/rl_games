@@ -19,8 +19,7 @@ def swap_and_flatten01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, name, observation_space, is_discrete, action_space, config):
-        assert is_discrete 
+    def __init__(self, sess, name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         self.name = name
         self.config = config
@@ -239,6 +238,7 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
+
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors
         minibatch_size = self.config['MINIBATCH_SIZE']
@@ -352,7 +352,5 @@ class A2CAgent:
                     print('MAX EPOCHS NUM!')
                     return       
                 update_time = 0
-
-
             
         
