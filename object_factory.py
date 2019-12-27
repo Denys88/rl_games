@@ -2,11 +2,11 @@ class ObjectFactory:
     def __init__(self):
         self._builders = {}
 
-    def register_builder(self, key, builder):
-        self._builders[key] = builder
+    def register_builder(self, name, builder):
+        self._builders[name] = builder
 
-    def create(self, key, **kwargs):
-        builder = self._builders.get(key)
+    def create(self, name, **kwargs):
+        builder = self._builders.get(name)
         if not builder:
-            raise ValueError(key)
+            raise ValueError(name)
         return builder(**kwargs)

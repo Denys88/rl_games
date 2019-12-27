@@ -19,9 +19,9 @@ def swap_and_flatten01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, name, observation_space, action_space, config):
+    def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
-        self.name = name
+        self.name = base_name
         self.config = config
         self.env_name = config['ENV_NAME']
         self.ppo = config['PPO']

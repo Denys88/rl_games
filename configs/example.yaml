@@ -9,11 +9,19 @@ network:
   name: actor_critic_continuous
   separate: true
   fixed_sigma: true
-  sizes: [256, 128, 64]
-  activations: [relu, relu, relu]
+  units: [256, 128, 64]
+  activation: relu
+  initializer:
+    name: normc_initializer
+    std: 1
   mu_activation: none
   sigma_activation: none
-
+  mu_init:
+    name: normc_initializer
+    std: 0.01
+  sigma_init:
+    name: const_initializer
+    value: 0
 load_checkpoint: false
 load_path: path
 

@@ -39,7 +39,7 @@ class Runner:
         config = tf.ConfigProto(gpu_options=gpu_options)
         sess = tf.InteractiveSession(config=config)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['ENV_NAME'])
-        agent = self.algo_factory.create(self.algo_name, sess=sess,name='run', observation_space=obs_space, action_space=action_space, config=self.config)
+        agent = self.algo_factory.create(self.algo_name, sess=sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
         if self.load_check_point:
             agent.restore(self.load_path)
 
