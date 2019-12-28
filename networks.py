@@ -201,31 +201,6 @@ def atari_conv_net(inputs):
     return conv3
 
 
-def atari_conv_net_batch_norm(inputs, train_phase = True):
-    NUM_FILTERS_1 = 32
-    NUM_FILTERS_2 = 64
-    NUM_FILTERS_3 = 64
-    conv1 = tf.layers.conv2d(inputs=inputs,
-                             filters=NUM_FILTERS_1,
-                             kernel_size=[8, 8],
-                             strides=(4, 4))
-    conv1 = tf.layers.batch_normalization(conv1, training=train_phase)
-    conv1 = tf.nn.relu(conv1)
-
-    conv2 = tf.layers.conv2d(inputs=conv1,
-                             filters=NUM_FILTERS_2,
-                             kernel_size=[4, 4],
-                             strides=(2, 2))
-    conv2 = tf.layers.batch_normalization(conv2, training=train_phase)
-    conv2 = tf.nn.relu(conv2)
-    conv3 = tf.layers.conv2d(inputs=conv2,
-                             filters=NUM_FILTERS_3,
-                             kernel_size=[3, 3],
-                             strides=(1, 1))
-    conv3 = tf.layers.batch_normalization(conv3, training=train_phase)
-    conv3 = tf.nn.relu(conv3)
-    return conv3
-
 def dqn_network(name, inputs, actions_num, atoms_num = 1, reuse=False):
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES = 512

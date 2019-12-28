@@ -1,2 +1,2 @@
-model_checkpoint_path: "runBipedalWalkerHardcore-v2"
-all_model_checkpoint_paths: "runBipedalWalkerHardcore-v2"
+model_checkpoint_path: "runPongNoFrameskip-v4"
+all_model_checkpoint_paths: "runPongNoFrameskip-v4"

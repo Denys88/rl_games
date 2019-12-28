@@ -21,7 +21,7 @@ class ModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        logits, value = self.network(name, inputs, actions_num, False, reuse)
+        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, reuse=reuse)
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         # Gumbel Softmax
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
@@ -47,7 +47,7 @@ class ModelA2CContinuous(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        mu, sigma, value = self.network(name, inputs, actions_num, True, reuse)
+        mu, sigma, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, reuse=reuse)
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)

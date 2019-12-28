@@ -13,7 +13,7 @@ class ModelBuilder:
         self.model_factory.register_builder('continuous_a2c_lstm', lambda network, **kwargs : models.LSTMModelA2CContinuous(network))
 
         self.network_factory = object_factory.ObjectFactory()
-        self.network_factory.register_builder('actor_critic_continuous', lambda **kwargs : network_builder.A2CContinousMlpBuilder())
+        self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
 
     def load(self, params):
         self.model_name = params['model']['name']

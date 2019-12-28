@@ -28,7 +28,7 @@ class NetworkBuilder:
         self.init_factory = object_factory.ObjectFactory()
         self.init_factory.register_builder('normc_initializer', lambda **kwargs : normc_initializer(**kwargs))
         self.init_factory.register_builder('const_initializer', lambda **kwargs : tf.constant_initializer(**kwargs))
-        self.init_factory.register_builder('orthogonal', lambda **kwargs : tf.ortho_initializer(**kwargs))
+        self.init_factory.register_builder('orthogonal_initializer', lambda **kwargs : tf.orthogonal_initializer(**kwargs))
         self.init_factory.register_builder('glorot_normal', lambda **kwargs : tf.glorot_normal(**kwargs))
         self.init_factory.register_builder('glorot_uniform', lambda **kwargs : tf.glorot_uniform(**kwargs))
 
@@ -42,62 +42,93 @@ class NetworkBuilder:
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
 
-    def _build_mlp(self, input, units, activation, initializer, separate):
+    def _build_mlp(self, name, input, units, activation, initializer):
         out = input
         ind = 0
         for unit in units:
             ind += 1
             out = tf.layers.dense(out, units=unit, activation=self.activations_factory.create(activation), 
-            kernel_initializer = self.init_factory.create(**initializer), name='actor_fc' + str(ind))
-        out_actor = out
-        
-        if separate:
-            ind = 0
-            out = input
-            for unit in units:
-                ind += 1
-                out = tf.layers.dense(out, units=unit, activation=self.activations_factory.create(activation), 
-                kernel_initializer = self.init_factory.create(**initializer), name='critic_fc' + str(ind)) 
+            kernel_initializer = self.init_factory.create(**initializer), name=name + str(ind))      
 
-        out_critic = out        
+        return out
 
-        return out_actor, out_critic
+    def _build_cnn(self, name, input, convs, activation, initializer):
+        out = input
+        ind = 0
+        for conv in convs:
+            ind += 1
+            config = conv.copy()
+            config['filters'] = conv['filters']
+            config['padding'] = conv['padding']
+            config['kernel_size'] = [conv['kernel_size']] * 2
+            config['strides'] = [conv['strides']] * 2
+            config['activation'] = self.activations_factory.create(activation)
+            config['kernel_initializer'] = self.init_factory.create(**initializer)
+            config['name'] = name + str(ind)
+            out = tf.layers.conv2d(inputs=out, **config)
+        return out
 
-
-
-class A2CContinousMlpBuilder(NetworkBuilder):
+class A2CBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
 
     def load(self, params):
         self.separate = params['separate']
         self.units = params['units']
-        self.fixed_sigma = params['fixed_sigma']
-        self.mu_activation = params['mu_activation']
-        self.sigma_activation = params['sigma_activation']
         self.activation = params['activation']
         self.initializer = params['initializer']
-        self.sigma_init = params['sigma_init']
-        self.mu_init = params['mu_init']
+        self.is_discrete = 'discrete' in params['space']
+        self.is_continuous = 'continuous'in params['space']
+
+        if self.is_continuous:
+            self.space_config = params['space']['continuous']
+        elif self.is_discrete:
+            self.space_config = params['space']['discrete']
+            
+        if 'cnn' in params:
+            self.has_cnn = True
+            self.cnn = params['cnn']
+
+        else:
+            self.has_cnn = False
+
     def build(self, name, **kwargs):
         actions_num = kwargs.pop('actions_num')
         input = kwargs.pop('inputs')
         reuse = kwargs.pop('reuse')
 
 
-        with tf.variable_scope(name, reuse=reuse):                      
-            out_actor, out_critic = self._build_mlp(input, self.units, self.activation, self.initializer, self.separate)
-            mu = tf.layers.dense(out_actor, units = actions_num, activation=self.activations_factory.create(self.mu_activation), 
-            kernel_initializer = self.init_factory.create(**self.mu_init), name='mu')
+        with tf.variable_scope(name, reuse=reuse):   
+            if self.has_cnn:
+                actor_input = self._build_cnn('actor_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
+                actor_input = tf.contrib.layers.flatten(actor_input)
+                critic_input = actor_input
+
+                if self.separate:
+                    critic_input = self._build_cnn('critic_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
+                    critic_input = tf.contrib.layers.flatten(critic_input)
+
+
+            out_actor = self._build_mlp('actor_fc', actor_input, self.units, self.activation, self.initializer)
+            if self.separate:
+                out_critic = self._build_mlp('critic_fc', critic_input, self.units, self.activation, self.initializer)
+            else:
+                out_critic = out_actor
             value = tf.layers.dense(out_critic, units = 1, kernel_initializer = self.init_factory.create(**self.initializer), name='value')  
 
-            if self.fixed_sigma:
-                sigma_out = tf.get_variable(name='sigma_out', shape=(actions_num), initializer=self.init_factory.create(**self.sigma_init), trainable=True)
+            if self.is_continuous:
+                mu = tf.layers.dense(out_actor, units = actions_num, activation=self.activations_factory.create(self.space_config['mu_activation']), 
+                kernel_initializer = self.init_factory.create(**self.space_config['mu_init']), name='mu')
 
-            else:
-                sigma_out = tf.layers.dense(out_actor, units = actions_num, kernel_initializer=self.init_factory.create(**self.sigma_init), activation=self.activations_factory.create(self.sigma_activation), name='sigma_out')
+                if self.space_config['fixed_sigma']:
+                    sigma_out = tf.get_variable(name='sigma_out', shape=(actions_num), initializer=self.init_factory.create(**self.space_config['sigma_init']),trainable=True)
 
-        return mu, mu * 0 + sigma_out, value
+                else:
+                    sigma_out = tf.layers.dense(out_actor, units = actions_num, kernel_initializer=self.init_factory.create(**self.space_config['sigma_init']),activation=self.activations_factory.create(self.sigma_activation), name='sigma_out')
 
+                return mu, mu * 0 + sigma_out, value
 
-
+            if self.is_discrete:
+                logits = tf.layers.dense(inputs=out_actor, units=actions_num, name='logits', kernel_initializer = self.init_factory.create(**self.initializer))
+                
+                return logits, value

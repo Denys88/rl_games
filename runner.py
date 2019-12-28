@@ -46,27 +46,21 @@ class Runner:
         agent.train()
         ray.shutdown()
 
-        
-
-
-
-
-
-
 if __name__ == '__main__':
     import sys
     arguments = len(sys.argv) - 1
     if arguments == 0:
-        config_name = 'configs/example.yaml'
+        config_name = 'configs/example_ppo_continuous.yaml'
     else:
-        config_name = sys.argv[0]
+        config_name = sys.argv[1]
 
-    
+    print('Loading config: ', config_name)
     with open(config_name, 'r') as stream:
         config = yaml.safe_load(stream)
         runner = Runner()
-
-        runner.load(config)
-
+        try:
+            runner.load(config)
+        except yaml.YAMLError as exc:
+            print(exc)
     runner.run()
         
