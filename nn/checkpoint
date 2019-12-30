@@ -1,2 +1,2 @@
-model_checkpoint_path: "runPongNoFrameskip-v4"
-all_model_checkpoint_paths: "runPongNoFrameskip-v4"
+model_checkpoint_path: "pong_dddqn_config1PongNoFrameskip-v4"
+all_model_checkpoint_paths: "pong_dddqn_config1PongNoFrameskip-v4"

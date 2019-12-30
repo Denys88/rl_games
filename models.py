@@ -5,8 +5,6 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 
-
-
 class BaseModel(object):
     def is_rnn(self):
         return False
@@ -51,7 +49,6 @@ class ModelA2CContinuous(BaseModel):
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
-        #action = tf.clip_by_value(action, -1.0, 1.0)
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
@@ -197,39 +194,12 @@ class LSTMModelA2C(BaseModel):
         return prev_neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
 
 
-class AtariDQN(object):
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return networks.dqn_network(name, inputs, actions_num, 1, reuse)
-    
-
-class AtariDuelingDQN(object):
-    def __init__(self, dueling_type = 'AVERAGE', use_batch_norm = False, is_train=True):
-        self.dueling_type = dueling_type
-        self.use_batch_norm = use_batch_norm
-        self.is_train = is_train
-
-    def __call__(self, name, inputs, actions_num, reuse=False):
- 
-        return networks.dueling_dqn_network(name, inputs, actions_num, reuse, self.dueling_type)
-
-
-class AtariNoisyDQN(object):
-    def __init__(self, mean = 0.0, std = 1.0):
-        self.mean = mean
-        self.std = std
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        return networks.noisy_dqn_network(name, inputs, actions_num, self.mean, self.std, 1, reuse)
-    
-
-class AtariNoisyDuelingDQN(object):
-    def __init__(self, dueling_type = 'AVERAGE', mean = 0.0, std = 1.0, use_batch_norm = False, is_train=True):
-        self.dueling_type = dueling_type
-        self.mean = mean
-        self.std = std
-        self.use_batch_norm = use_batch_norm
-        self.is_train=is_train
-    def __call__(self, name, inputs, actions_num, reuse=False):
-        if self.use_batch_norm:
-            return networks.noisy_dueling_dqn_network_with_batch_norm(name, inputs, actions_num, self.mean, self.std, reuse, self.dueling_type, is_train=self.is_train)
-        else:
-            return networks.noisy_dueling_dqn_network(name, inputs, actions_num, self.mean, self.std, reuse, self.dueling_type)
+class AtariDQN(BaseModel):
+    def __init__(self, network):
+        self.network = network
+        
+    def __call__(self, dict, reuse=False):
+        name = dict['name']
+        inputs = dict['inputs']
+        actions_num = dict['actions_num']        
+        return self.network(name=name, inputs=inputs, actions_num=actions_num, reuse=reuse)

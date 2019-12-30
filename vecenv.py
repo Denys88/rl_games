@@ -61,11 +61,11 @@ class RayVecEnv(IVecEnv):
             newdones.append(cdones)
             newinfos.append(cinfos)
 
-        return np.asarray(newobs), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
+        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
 
     def reset(self):
         obs = [worker.reset.remote() for worker in self.workers]
-        return np.asarray(ray.get(obs), dtype=np.float32)
+        return np.asarray(ray.get(obs))
     
 
 def create_vec_env(config_name, num_actors):

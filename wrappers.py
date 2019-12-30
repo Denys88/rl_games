@@ -303,7 +303,7 @@ def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
     env = MaxAndSkipEnv(env, skip=skip)
     return env
 
-def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale=True):
+def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
@@ -319,7 +319,7 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
         env = FrameStack(env, 4)
     return env
 
-def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=True):
+def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
     """
     env = WarpFrame(env)

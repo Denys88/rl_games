@@ -92,17 +92,20 @@ class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, sess, config):
         BasePlayer.__init__(self, sess, config)
         self.network = config['NETWORK']
-        self.obs_ph = tf.placeholder('float32', (None, ) + self.obs_space.shape, name = 'obs')
+        self.obs_ph = tf.placeholder(self.obs_space.dtype, (None, ) + self.obs_space.shape, name = 'obs')
         self.actions_num = self.action_space.n
         self.mask = [False]
         self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         self.normalize_input = self.config['NORMALIZE_INPUT']
+        self.input_obs = self.obs_ph
+        if self.obs_space.dtype == np.uint8:
+            self.input_obs = tf.to_float(self.input_obs) / 255.0
+            
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = self.obs_space.shape, epsilon = 1e-5, decay = 0.99)
-            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=False)
-        else:
-            self.input_obs = self.obs_ph
+            self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=False)
+            
 
         self.run_dict = {
             'name' : 'agent',

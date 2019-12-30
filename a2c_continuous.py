@@ -103,13 +103,18 @@ class A2CAgent:
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['MAX_EPOCHS'],  decay_rate = config['DECAY_RATE'])
 
+
+        self.input_obs = self.obs_ph
+        self.input_target_obs = self.target_obs_ph
+ 
+        if observation_space.dtype == np.uint8:
+            self.input_obs = tf.to_float(self.input_obs) / 255.0
+            self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
+
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
-            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
-            self.input_target_obs = self.moving_mean_std.normalize(self.target_obs_ph, train=False)
-        else:
-            self.input_obs = self.obs_ph
-            self.input_target_obs = self.target_obs_ph
+            self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
+            self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
 
         games_num = self.config['MINIBATCH_SIZE'] // self.seq_len  # it is used only for current rnn implementation
 
@@ -224,7 +229,6 @@ class A2CAgent:
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
-            #shaped_rewards = np.where(self.current_lengths == 1001, 0, shaped_rewards)
             mb_rewards.append(shaped_rewards)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
@@ -289,7 +293,7 @@ class A2CAgent:
         update_time = 0
         play_time = 0
         start_time = time.time()
-        total_time = start_time
+        total_time = 0
 
         while True:
             play_time_start = time.time()

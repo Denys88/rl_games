@@ -5,9 +5,10 @@ import tensorflow as tf
 import numpy as np
 import collections
 import time
+import env_configurations
 from collections import deque
 from tensorboardX import SummaryWriter
-import ray
+import networks
 
 
 default_config = {
@@ -29,7 +30,7 @@ default_config = {
     'PRIORITY_ALPHA' : 0.6,
     'BETA_DECAY_FRAMES' : 1e5,
     'MAX_BETA' : 1.0,
-    'NETWORK' : models.AtariDQN(),
+    'NETWORK' : models.AtariDQN(networks.dqn_network),
     'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
     'EPISODES_TO_LOG' : 20, 
     'LIVES_REWARD' : 5, # 5 it is divider to calculate rewards, 5 lifes is one episode in breakout
@@ -41,13 +42,14 @@ default_config = {
 
 
 
-
+def kl_loss_log(y_true_log, y_pred_log):
+    return tf.exp(y_true_log) * (y_true_log - y_pred_log)
 
 class DQNAgent:
-    def __init__(self, env, sess, env_name, config = default_config):
-        observation_shape = env.observation_space.shape
-        
-        actions_num = env.action_space.n
+    def __init__(self, sess, base_name, observation_space, action_space, config):
+        observation_shape = observation_space.shape
+        actions_num = action_space.n
+        self.env_name = config['ENV_NAME']
         self.network = config['NETWORK']
         self.config = config
         self.state_shape = observation_shape
@@ -57,7 +59,7 @@ class DQNAgent:
         self.rewards_shaper = self.config['REWARD_SHAPER']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['EPSILON'], self.config['MIN_EPSILON'], self.config['EPSILON_DECAY_FRAMES'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['PRIORITY_BETA'], self.config['MAX_BETA'], self.config['BETA_DECAY_FRAMES'])
-        self.env = env
+        self.env = env_configurations.configurations[self.env_name]['ENV_CREATOR']()
         self.sess = sess
         self.steps_num = self.config['STEPS_NUM']
         self.states = deque([], maxlen=self.steps_num)
@@ -77,15 +79,24 @@ class DQNAgent:
             self.exp_buffer = experience.PrioritizedReplayBuffer(config['REPLAY_BUFFER_SIZE'], config['PRIORITY_ALPHA'])
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
-        self.obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'obs_ph')
+        self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')
         self.actions_ph = tf.placeholder(tf.int32, shape=[None,], name = 'actions_ph')
         self.rewards_ph = tf.placeholder(tf.float32, shape=[None,], name = 'rewards_ph')
-        self.next_obs_ph = tf.placeholder(tf.float32, shape=(None,) + self.state_shape , name = 'next_obs_ph')
+        self.next_obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'next_obs_ph')
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None,], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
-        self.env_name = env_name
+        self.name = base_name
         self._reset()
         self.gamma = self.config['GAMMA']
+
+        self.input_obs = self.obs_ph
+        self.input_next_obs = self.next_obs_ph
+ 
+        if observation_space.dtype == np.uint8:
+            self.input_obs = tf.to_float(self.input_obs) / 255.0
+            self.input_next_obs = tf.to_float(self.input_next_obs) / 255.0
+
+
         if self.atoms_num == 1:
             self.setup_qvalues(actions_num)
         else:
@@ -101,11 +112,26 @@ class DQNAgent:
 
 
     def setup_qvalues(self, actions_num):
-        self.qvalues = self.network('agent', self.obs_ph, actions_num)
-        self.target_qvalues = tf.stop_gradient(self.network('target', self.next_obs_ph, actions_num))
+        config = {
+            'name' : 'agent',
+            'inputs' : self.input_obs,
+            'actions_num' : actions_num,
+        }
+        self.qvalues = self.network(config, reuse=False)
+        config = {
+            'name' : 'target',
+            'inputs' : self.input_next_obs,
+            'actions_num' : actions_num,
+        }
+        self.target_qvalues = tf.stop_gradient(self.network(config, reuse=False))
 
         if self.config['IS_DOUBLE'] == True:
-            self.next_qvalues = tf.stop_gradient(self.network('agent', self.next_obs_ph, actions_num, reuse=True))
+            config = {
+                'name' : 'agent',
+                'inputs' : self.input_next_obs,
+                'actions_num' : actions_num,
+            }
+            self.next_qvalues = tf.stop_gradient(self.network(config, reuse=True))
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
