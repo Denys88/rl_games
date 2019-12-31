@@ -104,7 +104,7 @@ class A2CBuilder(NetworkBuilder):
 
 
         with tf.variable_scope(name, reuse=reuse):   
-            actor_input = critic_input=input
+            actor_input = critic_input = input
             if self.has_cnn:
                 actor_input = self._build_cnn('actor_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
                 actor_input = tf.contrib.layers.flatten(actor_input)
@@ -169,8 +169,9 @@ class DQNBuilder(NetworkBuilder):
         else:
             dense_layer = tf.layers.dense
         with tf.variable_scope(name, reuse=reuse):   
+            out = input
             if self.has_cnn:
-                out = self._build_cnn('dqn_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
+                out = self._build_cnn('dqn_cnn', out, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
                 out = tf.contrib.layers.flatten(out)
 
             if self.is_dueling:

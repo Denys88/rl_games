@@ -43,7 +43,7 @@ config:
   reward_scale: 1
   reward_shift: 0
   gamma : 0.99
-  learning_rate : 0.0004
+  learning_rate : 0.0001
   steps_per_epoch : 4
   batch_size : 128
   epsilon : 0 #.90
