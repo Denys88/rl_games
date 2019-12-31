@@ -12,7 +12,7 @@ class IVecEnv(object):
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
-        self.env = configurations[config_name]['ENV_CREATOR']()
+        self.env = configurations[config_name]['env_creator']()
         self.obs = self.env.reset()
     
     def step(self, action): 
@@ -28,7 +28,7 @@ class IsaacEnv(IVecEnv):
 
 class RayWorker:
     def __init__(self, config_name):
-        self.env = configurations[config_name]['ENV_CREATOR']()
+        self.env = configurations[config_name]['env_creator']()
         self.obs = self.env.reset()
     
     def step(self, action):
@@ -69,7 +69,7 @@ class RayVecEnv(IVecEnv):
     
 
 def create_vec_env(config_name, num_actors):
-    if configurations[config_name]['VECENV_TYPE'] == 'RAY':
+    if configurations[config_name]['vecenv_type'] == 'RAY':
         return RayVecEnv(config_name, num_actors)
-    if configurations[config_name]['VECENV_TYPE'] == 'ISAAC':
+    if configurations[config_name]['vecenv_type'] == 'ISAAC':
         return IsaacEnv(config_name, num_actors)

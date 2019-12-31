@@ -61,7 +61,7 @@ class FireResetEnv(gym.Wrapper):
 
 class EpisodicLifeEnv(gym.Wrapper):
     def __init__(self, env):
-        """Make end-of-life == end-of-episode, but only reset on true game over.
+        """Make end-of-life == end-of-episode, but only reset on True game over.
         Done by DeepMind for the DQN and co. since it helps value estimation.
         """
         gym.Wrapper.__init__(self, env)

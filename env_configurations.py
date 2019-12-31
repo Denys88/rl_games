@@ -140,98 +140,98 @@ def reward(self, reward):
 
 configurations = {
     'CartPole-v1' : {
-        'VECENV_TYPE' : 'RAY',
-        'ENV_CREATOR' : lambda : gym.make('CartPole-v1'),
+        'vecenv_type' : 'RAY',
+        'env_creator' : lambda : gym.make('CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
-        'VECENV_TYPE' : 'RAY',
-        'ENV_CREATOR' : lambda : gym.make('MountainCarContinuous-v0'),
+        'vecenv_type' : 'RAY',
+        'env_creator' : lambda : gym.make('MountainCarContinuous-v0'),
     },
     'MountainCar-v0' : {
-        'VECENV_TYPE' : 'RAY',
-        'ENV_CREATOR' : lambda : gym.make('MountainCar-v0'),
+        'vecenv_type' : 'RAY',
+        'env_creator' : lambda : gym.make('MountainCar-v0'),
     },
     'Acrobot-v1' : {
-        'ENV_CREATOR' : lambda : gym.make('Acrobot-v1'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : gym.make('Acrobot-v1'),
+        'vecenv_type' : 'RAY'
     },
     'Pendulum-v0' : {
-        'ENV_CREATOR' : lambda : gym.make('Pendulum-v0'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : gym.make('Pendulum-v0'),
+        'vecenv_type' : 'RAY'
     },
     'LunarLander-v2' : {
-        'ENV_CREATOR' : lambda : gym.make('LunarLander-v2'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : gym.make('LunarLander-v2'),
+        'vecenv_type' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
-        'ENV_CREATOR' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
+        'vecenv_type' : 'RAY'
     },
     'CarRacing-v0' : {
-        'ENV_CREATOR' : lambda :  wrappers.make_car_racing('CarRacing-v0', skip=4),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda :  wrappers.make_car_racing('CarRacing-v0', skip=4),
+        'vecenv_type' : 'RAY'
     },
     'RoboschoolAnt-v1' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('RoboschoolAnt-v1'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : create_roboschool_env('RoboschoolAnt-v1'),
+        'vecenv_type' : 'RAY'
     },
     'SuperMarioBros-v1' : {
-        'ENV_CREATOR' : lambda :  create_super_mario_env(),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda :  create_super_mario_env(),
+        'vecenv_type' : 'RAY'
     },
     'SuperMarioBrosRandomStages-v1' : {
-        'ENV_CREATOR' : lambda :  create_super_mario_env('SuperMarioBrosRandomStages-v1'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda :  create_super_mario_env('SuperMarioBrosRandomStages-v1'),
+        'vecenv_type' : 'RAY'
     },
     'SuperMarioBrosRandomStage1-v1' : {
-        'ENV_CREATOR' : lambda :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
+        'vecenv_type' : 'RAY'
     },
     'RoboschoolHalfCheetah-v1' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('RoboschoolHalfCheetah-v1'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : create_roboschool_env('RoboschoolHalfCheetah-v1'),
+        'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoid-v1' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 1, True),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 1, True),
+        'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
-        'ENV_CREATOR' : lambda : create_roboschool_env('LunarLanderContinuous-v2'),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : create_roboschool_env('LunarLanderContinuous-v2'),
+        'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
+        'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
+        'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'ENV_CREATOR' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 4, True),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 4, True),
+        'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
-        'ENV_CREATOR' : lambda : create_quadrupped_env(),
-        'VECENV_TYPE' : 'RAY'
+        'env_creator' : lambda : create_quadrupped_env(),
+        'vecenv_type' : 'RAY'
     },
     'FlexAnt' : {
-        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
-        'VECENV_TYPE' : 'ISAAC'
+        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
+        'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoid' : {
-        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
-        'VECENV_TYPE' : 'ISAAC'
+        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
+        'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoidHard' : {
-        'ENV_CREATOR' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
-        'VECENV_TYPE' : 'ISAAC'
+        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
+        'vecenv_type' : 'ISAAC'
     },
 }
 
 
 def get_obs_and_action_spaces(name):
-    env = configurations[name]['ENV_CREATOR']()
+    env = configurations[name]['env_creator']()
     observation_space = env.observation_space
     action_space = env.action_space
     env.close()

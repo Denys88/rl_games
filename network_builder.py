@@ -24,7 +24,7 @@ class NetworkBuilder:
         self.activations_factory.register_builder('elu', lambda  **kwargs : tf.nn.elu)
         self.activations_factory.register_builder('selu', lambda **kwargs : tf.nn.selu)
         self.activations_factory.register_builder('selu', lambda **kwargs : tf.nn.softplus)
-        self.activations_factory.register_builder('none', lambda **kwargs : None)
+        self.activations_factory.register_builder('None', lambda **kwargs : None)
 
         self.init_factory = object_factory.ObjectFactory()
         self.init_factory.register_builder('normc_initializer', lambda **kwargs : normc_initializer(**kwargs))
@@ -104,6 +104,7 @@ class A2CBuilder(NetworkBuilder):
 
 
         with tf.variable_scope(name, reuse=reuse):   
+            actor_input = critic_input=input
             if self.has_cnn:
                 actor_input = self._build_cnn('actor_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'])
                 actor_input = tf.contrib.layers.flatten(actor_input)

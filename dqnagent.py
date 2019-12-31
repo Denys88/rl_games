@@ -42,41 +42,41 @@ default_config = {
 
 
 
-def kl_loss_log(y_true_log, y_pred_log):
-    return tf.exp(y_true_log) * (y_true_log - y_pred_log)
+def kl_loss_log(y_True_log, y_pred_log):
+    return tf.exp(y_True_log) * (y_True_log - y_pred_log)
 
 class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         actions_num = action_space.n
-        self.env_name = config['ENV_NAME']
-        self.network = config['NETWORK']
+        self.env_name = config['env_name']
+        self.network = config['network']
         self.config = config
         self.state_shape = observation_shape
         self.actions_num = actions_num
         self.writer = SummaryWriter()
-        self.epsilon = self.config['EPSILON']
-        self.rewards_shaper = self.config['REWARD_SHAPER']
-        self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['EPSILON'], self.config['MIN_EPSILON'], self.config['EPSILON_DECAY_FRAMES'])
-        self.beta_processor = tr_helpers.LinearValueProcessor(self.config['PRIORITY_BETA'], self.config['MAX_BETA'], self.config['BETA_DECAY_FRAMES'])
-        self.env = env_configurations.configurations[self.env_name]['ENV_CREATOR']()
+        self.epsilon = self.config['epsilon']
+        self.rewards_shaper = self.config['reward_shaper']
+        self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
+        self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
+        self.env = env_configurations.configurations[self.env_name]['env_creator']()
         self.sess = sess
-        self.steps_num = self.config['STEPS_NUM']
+        self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
-        self.is_prioritized = config['REPLAY_BUFFER_TYPE'] != 'normal'
-        self.atoms_num = self.config['ATOMS_NUM']
+        self.is_prioritized = config['replay_buffer_type'] != 'normal'
+        self.atoms_num = self.config['atoms_num']
         self.is_distributional = self.atoms_num > 1
     
         if self.is_distributional:
-            self.v_min = self.config['V_MIN']
-            self.v_max = self.config['V_MAX']
+            self.v_min = self.config['v_min']
+            self.v_max = self.config['v_max']
             self.delta_z = (self.v_max - self.v_min) /(self.atoms_num - 1)
             self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBuffer(config['REPLAY_BUFFER_SIZE'])
+            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
         else: 
-            self.exp_buffer = experience.PrioritizedReplayBuffer(config['REPLAY_BUFFER_SIZE'], config['PRIORITY_ALPHA'])
+            self.exp_buffer = experience.prioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')
@@ -87,7 +87,7 @@ class DQNAgent:
         self.is_not_done = 1 - self.is_done_ph
         self.name = base_name
         self._reset()
-        self.gamma = self.config['GAMMA']
+        self.gamma = self.config['gamma']
 
         self.input_obs = self.obs_ph
         self.input_next_obs = self.next_obs_ph
@@ -125,7 +125,7 @@ class DQNAgent:
         }
         self.target_qvalues = tf.stop_gradient(self.network(config, reuse=False))
 
-        if self.config['IS_DOUBLE'] == True:
+        if self.config['is_double'] == True:
             config = {
                 'name' : 'agent',
                 'inputs' : self.input_next_obs,
@@ -139,7 +139,7 @@ class DQNAgent:
 
         self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
 
-        if self.config['IS_DOUBLE'] == True:
+        if self.config['is_double'] == True:
             self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
@@ -153,12 +153,12 @@ class DQNAgent:
             # we need to return l1 loss to update priority buffer
             self.abs_errors = tf.abs(self.current_action_qvalues - self.reference_qvalues) + 1e-5
             # the same as multiply gradients later (other way is used in different examples over internet) 
-            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.NONE) * self.sample_weights_ph
+            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.reduction.NONE) * self.sample_weights_ph
             self.td_loss_mean = tf.reduce_mean(self.td_loss) 
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
-        self.learning_rate = self.config['LEARNING_RATE']
+        self.learning_rate = self.config['learning_rate']
         self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.td_loss_mean, var_list=self.weights)
 
     def save(self, fn):
@@ -249,14 +249,14 @@ class DQNAgent:
     def train(self):
         last_mean_rewards = -100500
         self.load_weigths_into_target_network()
-        for _ in range(0, self.config['NUM_STEPS_FILL_BUFFER']):
+        for _ in range(0, self.config['num_steps_fill_buffer']):
             self.play_steps(self.steps_num, self.epsilon)
 
-        STEPS_PER_EPOCH = self.config['STEPS_PER_EPOCH']
-        NUM_EPOCHS_TO_COPY = self.config['NUM_EPOCHS_TO_COPY']
-        BATCH_SIZE = self.config['BATCH_SIZE']
-        LIVES_REWARD = self.config['LIVES_REWARD']
-        EPISODES_TO_LOG = self.config['EPISODES_TO_LOG']
+        steps_per_epoch = self.config['steps_per_epoch']
+        num_epochs_to_copy = self.config['num_epochs_to_copy']
+        batch_size = self.config['batch_size']
+        lives_reward = self.config['lives_reward']
+        episodes_to_log = self.config['episodes_to_log']
         frame = 0
         play_time = 0
         update_time = 0
@@ -268,7 +268,7 @@ class DQNAgent:
             self.epsilon = self.epsilon_processor(frame)
             self.beta = self.beta_processor(frame)
 
-            for _ in range(0, STEPS_PER_EPOCH):
+            for _ in range(0, steps_per_epoch):
                 reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
                 if reward != None:
                     steps.append(step)
@@ -279,22 +279,22 @@ class DQNAgent:
             play_time += t_play_end - t_play_start
             
             # train
-            frame = frame + STEPS_PER_EPOCH
+            frame = frame + steps_per_epoch
             
             t_start = time.time()
             if self.is_prioritized:
-                batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=BATCH_SIZE, beta = self.beta)
+                batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
                 _, loss_t, errors_update = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors], batch)
                 self.exp_buffer.update_priorities(idxes, errors_update)
             else:
-                batch = self.sample_batch(self.exp_buffer, batch_size=BATCH_SIZE)
+                batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
                 _, loss_t = self.sess.run([self.train_step, self.td_loss_mean], batch)
             t_end = time.time()
             update_time += t_end - t_start
 
             if frame % 1000 == 0:
-                print('Frames per seconds: ', 1000 / (update_time + play_time))
-                self.writer.add_scalar('Frames per seconds: ', 1000 / (update_time + play_time), frame)
+                print('frames per seconds: ', 1000 / (update_time + play_time))
+                self.writer.add_scalar('frames per seconds: ', 1000 / (update_time + play_time), frame)
                 self.writer.add_scalar('upd_time', update_time, frame)
                 self.writer.add_scalar('play_time', play_time, frame)
                 self.writer.add_scalar('loss', loss_t, frame)
@@ -305,8 +305,8 @@ class DQNAgent:
                 update_time = 0
                 play_time = 0
             
-            if len(rewards) == EPISODES_TO_LOG:
-                d = EPISODES_TO_LOG / LIVES_REWARD
+            if len(rewards) == episodes_to_log:
+                d = episodes_to_log / lives_reward
                 mean_reward = np.sum(rewards) / d
                 mean_shaped_reward = np.sum(shaped_rewards) / d
                 mean_steps = np.sum(steps) / d 
@@ -316,9 +316,9 @@ class DQNAgent:
                 if mean_reward > last_mean_rewards:
                     print('saving next best rewards: ', mean_reward)
                     last_mean_rewards = mean_reward
-                    self.save("./nn/" + self.config['NAME'] + self.env_name)
-                    if last_mean_rewards > self.config['SCORE_TO_WIN']:
-                        print('Network won!')
+                    self.save("./nn/" + self.config['name'] + self.env_name)
+                    if last_mean_rewards > self.config['score_to_win']:
+                        print('network won!')
                         return
 
                 self.writer.add_scalar('steps', mean_steps, frame)
@@ -328,6 +328,6 @@ class DQNAgent:
                 
                 #clear_output(True)
             # adjust agent parameters
-            if frame % NUM_EPOCHS_TO_COPY == 0:
+            if frame % num_epochs_to_copy == 0:
                 self.load_weigths_into_target_network()
 

@@ -49,31 +49,31 @@ class A2CAgent:
         self.name = base_name
         self.actions_low = action_space.low
         self.actions_high = action_space.high
-        self.env_name = config['ENV_NAME']
-        self.ppo = config['PPO']
-        self.is_adaptive_lr = config['LR_SCHEDULE'] == 'ADAPTIVE'
-        self.is_polynom_decay_lr = config['LR_SCHEDULE'] == 'POLYNOM_DECAY'
-        self.is_exp_decay_lr = config['LR_SCHEDULE'] == 'EXP_DECAY'
+        self.env_name = config['env_name']
+        self.ppo = config['ppo']
+        self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
+        self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
+        self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
         self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
 
-        self.e_clip = config['E_CLIP']
-        self.clip_value = config['CLIP_VALUE']
-        self.network = config['NETWORK']
-        self.rewards_shaper = config['REWARD_SHAPER']
-        self.num_actors = config['NUM_ACTORS']
+        self.e_clip = config['e_clip']
+        self.clip_value = config['clip_value']
+        self.network = config['network']
+        self.rewards_shaper = config['reward_shaper']
+        self.num_actors = config['num_actors']
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
-        self.steps_num = config['STEPS_NUM']
-        self.normalize_advantage = config['NORMALIZE_ADVANTAGE']
+        self.steps_num = config['steps_num']
+        self.normalize_advantage = config['normalize_advantage']
         self.config = config
         self.state_shape = observation_space.shape
-        self.critic_coef = config['CRITIC_COEF']
+        self.critic_coef = config['critic_coef']
         self.writer = SummaryWriter()
         self.sess = sess
-        self.grad_norm = config['GRAD_NORM']
-        self.gamma = self.config['GAMMA']
-        self.tau = self.config['TAU']
-        self.normalize_input = self.config['NORMALIZE_INPUT']
-        self.seq_len = self.config['SEQ_LEN']
+        self.grad_norm = config['grad_norm']
+        self.gamma = self.config['gamma']
+        self.tau = self.config['tau']
+        self.normalize_input = self.config['normalize_input']
+        self.seq_len = self.config['seq_len']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
 
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
@@ -97,11 +97,11 @@ class A2CAgent:
         self.current_lr = self.learning_rate_ph
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['LR_THRESHOLD']
+            self.lr_threshold = config['lr_threshold']
         if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['MAX_EPOCHS'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'DECAY_POWER', 1.0))
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
         if self.is_exp_decay_lr:
-            self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['MAX_EPOCHS'],  decay_rate = config['DECAY_RATE'])
+            self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'],  decay_rate = config['decay_rate'])
 
 
         self.input_obs = self.obs_ph
@@ -112,16 +112,16 @@ class A2CAgent:
             self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
         if self.normalize_input:
-            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.moving_mean_std = movingmeanstd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
             self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
 
-        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len  # it is used only for current rnn implementation
+        games_num = self.config['minibatch_size'] // self.seq_len  # it is used only for current rnn implementation
 
         self.train_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
-            'batch_num' : self.config['MINIBATCH_SIZE'],
+            'batch_num' : self.config['minibatch_size'],
             'games_num' : games_num,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph
@@ -168,12 +168,12 @@ class A2CAgent:
             self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
 
-        self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
+        self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
         grads = tf.gradients(self.loss, self.weights)
-        if self.config['TRUNCATE_GRADS']:
+        if self.config['truncate_grads']:
             grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
         grads = list(zip(grads, self.weights))
         self.train_op = self.train_step.apply_gradients(grads)
@@ -278,13 +278,13 @@ class A2CAgent:
 
     def train(self):
 
-        max_epochs = tr_helpers.get_or_default(self.config, 'NAX_EPOCHS', 1e6)
+        max_epochs = tr_helpers.get_or_default(self.config, 'nax_epochs', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors
-        minibatch_size = self.config['MINIBATCH_SIZE']
-        mini_epochs_num = self.config['MINI_EPOCHS']
+        minibatch_size = self.config['minibatch_size']
+        mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
-        last_lr = self.config['LEARNING_RATE']
+        last_lr = self.config['learning_rate']
 
         last_mean_rewards = -100500
 
@@ -411,7 +411,7 @@ class A2CAgent:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.name + self.env_name)
-                        if last_mean_rewards > self.config['SCORE_TO_WIN']:
+                        if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             return
                 if epoch_num > max_epochs:

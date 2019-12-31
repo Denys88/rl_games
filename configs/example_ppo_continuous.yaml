@@ -3,52 +3,52 @@ algo:
 
 model:
   name: continuous_a2c_logstd
-  
+
 network:
   name: actor_critic
-  separate: true
+  separate: True
   space:
     continuous:
-      mu_activation: none
-      sigma_activation: none
+      mu_activation: None
+      sigma_activation: None
       mu_init:
         name: normc_initializer
         std: 0.01
       sigma_init:
         name: const_initializer
         value: 0
-      fixed_sigma: true
+      fixed_sigma: True
 
   units: [256, 128, 64]
   activation: relu
   initializer:
     name: normc_initializer
     std: 1
-load_checkpoint: false
+load_checkpoint: False
 load_path: path
 
 config:
-    REWARD_SCALE: 0.1
-    REWARD_SHIFT: 0
-    NORMALIZE_ADVANTAGE: True
-    GAMMA: 0.99
-    TAU: 0.9
-    LEARNING_RATE: 1e-4
-    NAME: robo1
-    SCORE_TO_WIN: 300
-    GRAD_NORM: 0.5
-    ENTROPY_COEF: 0.000
-    TRUNCATE_GRADS: True
-    ENV_NAME:  BipedalWalkerHardcore-v2
-    PPO: true
-    E_CLIP: 0.2
-    CLIP_VALUE: True
-    NUM_ACTORS: 16
-    STEPS_NUM: 256
-    MINIBATCH_SIZE: 1024
-    MINI_EPOCHS: 8
-    CRITIC_COEF: 1
-    LR_SCHEDULE:  NONE
-    LR_THRESHOLD: 0.008
-    NORMALIZE_INPUT: False
-    SEQ_LEN: 8
+    reward_scale: 0.1
+    reward_shift: 0
+    normalize_advantage: true
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 1e-4
+    name: robo1
+    score_to_win: 300
+    grad_norm: 0.5
+    entropy_coef: 0.000
+    truncate_grads: true
+    env_name:  BipedalWalkerHardcore-v2
+    ppo: true
+    e_clip: 0.2
+    clip_value: true
+    num_actors: 16
+    steps_num: 256
+    minibatch_size: 1024
+    mini_epochs: 8
+    critic_coef: 1
+    lr_schedule:  none
+    lr_threshold: 0.008
+    normalize_input: false
+    seq_len: 8

@@ -29,8 +29,8 @@ class Runner:
         self.model = self.model_builder.load(params)
         self.config = params['config']
         
-        self.config['REWARD_SHAPER'] = tr_helpers.DefaultRewardsShaper(scale_value = self.config['REWARD_SCALE'], shift_value = self.config['REWARD_SHIFT'])
-        self.config['NETWORK'] = self.model
+        self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(scale_value = self.config['reward_scale'], shift_value = self.config['reward_shift'])
+        self.config['network'] = self.model
 
     def run(self):
         ray.init(redis_max_memory=1024*1024*100, object_store_memory=1024*1024*100)
@@ -38,7 +38,7 @@ class Runner:
 
         config = tf.ConfigProto(gpu_options=gpu_options)
         sess = tf.InteractiveSession(config=config)
-        obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['ENV_NAME'])
+        obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['env_name'])
         agent = self.algo_factory.create(self.algo_name, sess=sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
         if self.load_check_point:
             agent.restore(self.load_path)
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     else:
         config_name = sys.argv[1]
 
-    print('Loading config: ', config_name)
+    print('Running Config: ', config_name)
     with open(config_name, 'r') as stream:
         config = yaml.safe_load(stream)
         runner = Runner()

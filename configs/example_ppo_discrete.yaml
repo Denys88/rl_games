@@ -4,12 +4,12 @@ algo:
 model:
   name: discrete_a2c
 
-load_checkpoint: false
+load_checkpoint: False
 load_path: path
 
 network:
   name: actor_critic
-  separate: false
+  separate: False
   space: 
     discrete:
 
@@ -41,27 +41,27 @@ network:
     gain: 1.41421356237
 
 config:
-  REWARD_SCALE: 1
-  REWARD_SHIFT: 0
-  NORMALIZE_ADVANTAGE: True
-  GAMMA: 0.99
-  TAU: 0.9
-  LEARNING_RATE: 5e-4
-  NAME: atari
-  SCORE_TO_WIN: 20.9
-  GRAD_NORM: 0.5
-  ENTROPY_COEF: 0.004
-  TRUNCATE_GRADS: True
-  ENV_NAME:  PongNoFrameskip-v4
-  PPO: true
-  E_CLIP: 0.1
-  CLIP_VALUE: True
-  NUM_ACTORS: 16
-  STEPS_NUM: 16
-  MINIBATCH_SIZE: 64
-  MINI_EPOCHS: 8
-  CRITIC_COEF: 1
-  LR_SCHEDULE:  NONE
-  LR_THRESHOLD: 0.008
-  NORMALIZE_INPUT: False
-  SEQ_LEN: 8
+  reward_scale: 1
+  reward_shift: 0
+  normalize_advantage: True
+  gamma: 0.99
+  tau: 0.9
+  learning_rate: 5e-4
+  name: atari
+  score_to_win: 20.9
+  grad_norm: 0.5
+  entropy_coef: 0.004
+  truncate_grads: True
+  env_name:  PongNoFrameskip-v4
+  ppo: true
+  e_clip: 0.1
+  clip_value: true
+  num_actors: 16
+  steps_num: 16
+  minibatch_size: 64
+  mini_epochs: 8
+  critic_coef: 1
+  lr_schedule:  none
+  lr_threshold: 0.008
+  normalize_input: False
+  seq_len: 8

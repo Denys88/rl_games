@@ -4,7 +4,7 @@ algo:
 model:
   name: dqn
 
-load_checkpoint: false
+load_checkpoint: False
 load_path: path
 
 network:
@@ -22,15 +22,15 @@ network:
       - filters: 32
         kernel_size: 8
         strides: 4
-        padding: 'VALID'
+        padding: 'valid'
       - filters: 64
         kernel_size: 4
         strides: 2
-        padding: 'VALID'
+        padding: 'valid'
       - filters: 64
         kernel_size: 3
         strides: 1
-        padding: 'VALID'
+        padding: 'valid'
     
     
   units: [256]
@@ -40,28 +40,28 @@ network:
     scale: 2
 
 config:
-  REWARD_SCALE: 1
-  REWARD_SHIFT: 0
-  GAMMA : 0.99
-  LEARNING_RATE : 0.0004
-  STEPS_PER_EPOCH : 4
-  BATCH_SIZE : 128
-  EPSILON : 0 #.90
-  MIN_EPSILON : 0 #.02
-  EPSILON_DECAY_FRAMES : 100000
-  NUM_EPOCHS_TO_COPY : 10000
-  NAME : 'pong_dddqn_config1'
-  ENV_NAME:  PongNoFrameskip-v4
-  IS_DOUBLE : True
-  SCORE_TO_WIN : 20.9
-  NUM_STEPS_FILL_BUFFER : 10000
-  REPLAY_BUFFER_TYPE : 'normal'
-  REPLAY_BUFFER_SIZE : 100000
-  PRIORITY_BETA : 0.4
-  PRIORITY_ALPHA : 0.6
-  BETA_DECAY_FRAMES : 100000
-  MAX_BETA : 1
-  STEPS_NUM : 3
-  EPISODES_TO_LOG : 10
-  LIVES_REWARD : 1
-  ATOMS_NUM : 1
+  reward_scale: 1
+  reward_shift: 0
+  gamma : 0.99
+  learning_rate : 0.0004
+  steps_per_epoch : 4
+  batch_size : 128
+  epsilon : 0 #.90
+  min_epsilon : 0 #.02
+  epsilon_decay_frames : 100000
+  num_epochs_to_copy : 10000
+  name : 'pong_dddqn_config1'
+  env_name:  PongNoFrameskip-v4
+  is_double : True
+  score_to_win : 20.9
+  num_steps_fill_buffer : 10000
+  replay_buffer_type : 'normal'
+  replay_buffer_size : 100000
+  priority_beta : 0.4
+  priority_alpha : 0.6
+  beta_decay_frames : 100000
+  max_beta : 1
+  steps_num : 3
+  episodes_to_log : 10
+  lives_reward : 1
+  atoms_num : 1
