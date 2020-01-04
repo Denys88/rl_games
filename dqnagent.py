@@ -49,9 +49,32 @@ class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         actions_num = action_space.n
+
+        self.config = config
+        self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
+        self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
+        self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
+        self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
+        self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
+        self.games_to_track = tr_helpers.get_or_default(config, 'games_to_track', 100)
+        self.max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
+
+        self.game_rewards = deque([], maxlen=self.games_to_track)
+        self.game_lengths = deque([], maxlen=self.games_to_track)
+
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
+        self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
+        self.current_lr = self.learning_rate_ph
+
+        if self.is_adaptive_lr:
+            self.lr_threshold = config['lr_threshold']
+        if self.is_polynom_decay_lr:
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs, end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
+        if self.is_exp_decay_lr:
+            self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs,  decay_rate = config['decay_rate'])
+
         self.env_name = config['env_name']
         self.network = config['network']
-        self.config = config
         self.state_shape = observation_shape
         self.actions_num = actions_num
         self.writer = SummaryWriter()
@@ -93,6 +116,7 @@ class DQNAgent:
         self.input_next_obs = self.next_obs_ph
  
         if observation_space.dtype == np.uint8:
+            print('scaling obs')
             self.input_obs = tf.to_float(self.input_obs) / 255.0
             self.input_next_obs = tf.to_float(self.input_next_obs) / 255.0
 
@@ -107,9 +131,11 @@ class DQNAgent:
 
         sess.run(tf.global_variables_initializer())
 
+    def update_epoch(self):
+        return self.sess.run([self.update_epoch_op])[0]
+
     def setup_c51_qvalues(self, actions_num):
         self.qvalues_c51 = self.network('agent', self.obs_ph, actions_num)
-
 
     def setup_qvalues(self, actions_num):
         config = {
@@ -159,7 +185,7 @@ class DQNAgent:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
         self.learning_rate = self.config['learning_rate']
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate).minimize(self.td_loss_mean, var_list=self.weights)
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
@@ -248,6 +274,13 @@ class DQNAgent:
 
     def train(self):
         last_mean_rewards = -100500
+        epoch_num = 0
+        frame = 0
+        update_time = 0
+        play_time = 0
+
+        start_time = time.time()
+        total_time = 0
         self.load_weigths_into_target_network()
         for _ in range(0, self.config['num_steps_fill_buffer']):
             self.play_steps(self.steps_num, self.epsilon)
@@ -264,6 +297,7 @@ class DQNAgent:
         shaped_rewards = []
         steps = []
         while True:
+            epoch_num = self.update_epoch()
             t_play_start = time.time()
             self.epsilon = self.epsilon_processor(frame)
             self.beta = self.beta_processor(frame)
@@ -271,9 +305,9 @@ class DQNAgent:
             for _ in range(0, steps_per_epoch):
                 reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
                 if reward != None:
-                    steps.append(step)
-                    rewards.append(reward)
-                    shaped_rewards.append(shaped_reward)
+                    self.game_lengths.append(step)
+                    self.game_rewards.append(reward)
+                    #shaped_rewards.append(shaped_reward)
 
             t_play_end = time.time()
             play_time += t_play_end - t_play_start
@@ -284,50 +318,55 @@ class DQNAgent:
             t_start = time.time()
             if self.is_prioritized:
                 batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
-                _, loss_t, errors_update = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors], batch)
+                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors], batch)
                 self.exp_buffer.update_priorities(idxes, errors_update)
             else:
                 batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
-                _, loss_t = self.sess.run([self.train_step, self.td_loss_mean], batch)
+                _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
             t_end = time.time()
             update_time += t_end - t_start
-
+            total_time += update_time
             if frame % 1000 == 0:
-                print('frames per seconds: ', 1000 / (update_time + play_time))
-                self.writer.add_scalar('frames per seconds: ', 1000 / (update_time + play_time), frame)
-                self.writer.add_scalar('upd_time', update_time, frame)
-                self.writer.add_scalar('play_time', play_time, frame)
-                self.writer.add_scalar('loss', loss_t, frame)
-                self.writer.add_scalar('epsilon', self.epsilon, frame)
+                sum_time = update_time + play_time
+                print('frames per seconds: ', 1000 / (sum_time))
+                self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
+                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/play_time', play_time, frame)
+                self.writer.add_scalar('losses/td_loss', loss_t, frame)
+                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
+                self.writer.add_scalar('info/lr', self.learning_rate*lr_mul, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epsilon', self.epsilon, frame)
                 if self.is_prioritized:
                     self.writer.add_scalar('beta', self.beta, frame)
                     
                 update_time = 0
                 play_time = 0
-            
-            if len(rewards) == episodes_to_log:
-                d = episodes_to_log / lives_reward
-                mean_reward = np.sum(rewards) / d
-                mean_shaped_reward = np.sum(shaped_rewards) / d
-                mean_steps = np.sum(steps) / d 
-                rewards = []
-                shaped_rewards = []
-                steps = []
-                if mean_reward > last_mean_rewards:
-                    print('saving next best rewards: ', mean_reward)
-                    last_mean_rewards = mean_reward
-                    self.save("./nn/" + self.config['name'] + self.env_name)
-                    if last_mean_rewards > self.config['score_to_win']:
-                        print('network won!')
-                        return
-
-                self.writer.add_scalar('steps', mean_steps, frame)
-                self.writer.add_scalar('reward', mean_reward, frame)
-                self.writer.add_scalar('shaped_reward', mean_shaped_reward, frame)
+                num_games = len(self.game_rewards)
+                if num_games > 10:
+                    d = num_games / lives_reward
+                    mean_rewards = np.sum(self.game_rewards) / d 
+                    mean_lengths = np.sum(self.game_lengths) / d
+                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+                    if mean_rewards > last_mean_rewards:
+                        print('saving next best rewards: ', mean_rewards)
+                        last_mean_rewards = mean_rewards
+                        self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                        if last_mean_rewards > self.config['score_to_win']:
+                            print('network won!')
+                            return last_mean_rewards, epoch_num   
                 
                 
                 #clear_output(True)
             # adjust agent parameters
             if frame % num_epochs_to_copy == 0:
                 self.load_weigths_into_target_network()
+            
+            if epoch_num >= self.max_epochs:
+                print('Max epochs reached')
+                self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                return last_mean_rewards, epoch_num            
 

@@ -270,14 +270,14 @@ class A2CAgent:
         last_mean_rewards = -100500
         play_time = 0
         epoch_num = 0
-        max_epochs = tr_helpers.get_or_default(self.config, 'nax_epochs', 1e6)
+        max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
 
         start_time = time.time()
         total_time = 0
 
         while True:
             play_time_start = time.time()
-            epoch_num += 1
+            epoch_num = self.update_epoch()
             frame += batch_size
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
@@ -371,9 +371,9 @@ class A2CAgent:
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
-                    self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                    self.writer.add_scalar('episode_lengths/mean_100', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
                     if mean_rewards > last_mean_rewards:
@@ -382,10 +382,12 @@ class A2CAgent:
                         self.save("./nn/" + self.name + self.env_name)
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            return
+                            self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            return last_mean_rewards, epoch_num  
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
-                    return                           
+                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    return last_mean_rewards, epoch_num                               
                 update_time = 0
             
         

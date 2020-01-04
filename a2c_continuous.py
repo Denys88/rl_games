@@ -278,7 +278,7 @@ class A2CAgent:
 
     def train(self):
 
-        max_epochs = tr_helpers.get_or_default(self.config, 'nax_epochs', 1e6)
+        max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors
         minibatch_size = self.config['minibatch_size']
@@ -402,9 +402,9 @@ class A2CAgent:
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
-                    self.writer.add_scalar('rewards/mean_100', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                    self.writer.add_scalar('episode_lengths/mean_100', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
                     if mean_rewards > last_mean_rewards:
@@ -412,11 +412,12 @@ class A2CAgent:
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.name + self.env_name)
                         if last_mean_rewards > self.config['score_to_win']:
-                            print('Network won!')
-                            return
+                            self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            return last_mean_rewards, epoch_num  
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
-                    return                    
+                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    return last_mean_rewards, epoch_num                      
                 update_time = 0
 
             

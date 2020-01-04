@@ -34,7 +34,6 @@ class NetworkBuilder:
         self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : tf.glorot_uniform_initializer(**kwargs))
         self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : tf.variance_scaling_initializer(**kwargs))
 
-
     def load(self, params):
         pass
 

@@ -1,67 +1,68 @@
-algo:
-  name: a2c_discrete
+params:  
+  algo:
+    name: a2c_discrete
 
-model:
-  name: discrete_a2c
+  model:
+    name: discrete_a2c
 
-load_checkpoint: False
-load_path: path
+  load_checkpoint: False
+  load_path: path
 
-network:
-  name: actor_critic
-  separate: False
-  space: 
-    discrete:
+  network:
+    name: actor_critic
+    separate: False
+    space: 
+      discrete:
 
-  cnn:
+    cnn:
+      activation: relu
+      initializer:
+        name: orthogonal_initializer
+        gain: 1.41421356237
+
+      convs:    
+        - filters: 32
+          kernel_size: 8
+          strides: 4
+          padding: 'VALID'
+        - filters: 64
+          kernel_size: 4
+          strides: 2
+          padding: 'VALID'
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'VALID'
+      
+      
+    units: [512]
     activation: relu
     initializer:
       name: orthogonal_initializer
       gain: 1.41421356237
 
-    convs:    
-      - filters: 32
-        kernel_size: 8
-        strides: 4
-        padding: 'VALID'
-      - filters: 64
-        kernel_size: 4
-        strides: 2
-        padding: 'VALID'
-      - filters: 64
-        kernel_size: 3
-        strides: 1
-        padding: 'VALID'
-    
-    
-  units: [512]
-  activation: relu
-  initializer:
-    name: orthogonal_initializer
-    gain: 1.41421356237
-
-config:
-  reward_scale: 1
-  reward_shift: 0
-  normalize_advantage: True
-  gamma: 0.99
-  tau: 0.9
-  learning_rate: 5e-4
-  name: atari
-  score_to_win: 20.9
-  grad_norm: 0.5
-  entropy_coef: 0.004
-  truncate_grads: True
-  env_name:  PongNoFrameskip-v4
-  ppo: true
-  e_clip: 0.1
-  clip_value: true
-  num_actors: 16
-  steps_num: 16
-  minibatch_size: 64
-  mini_epochs: 8
-  critic_coef: 1
-  lr_schedule:  none
-  lr_threshold: 0.008
-  normalize_input: False
-  seq_len: 8
+  config:
+    reward_scale: 1
+    reward_shift: 0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 5e-4
+    name: atari
+    score_to_win: 20.9
+    grad_norm: 0.5
+    entropy_coef: 0.004
+    truncate_grads: True
+    env_name:  PongNoFrameskip-v4
+    ppo: true
+    e_clip: 0.1
+    clip_value: true
+    num_actors: 16
+    steps_num: 16
+    minibatch_size: 64
+    mini_epochs: 8
+    critic_coef: 1
+    lr_schedule:  None
+    lr_threshold: 0.008
+    normalize_input: False
+    seq_len: 8
