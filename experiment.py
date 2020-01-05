@@ -7,18 +7,13 @@ class Experiment:
         self.best_config = copy.deepcopy(self.config)
         self.experiment_config = experiment_config
         self.best_results = -100500, 0
-        #self.use_best_prev_result = self.experiment_config['use_best_prev_result']
+        self.use_best_prev_result = self.experiment_config.get('use_best_prev_result', True)
         
         self.experiments = self.experiment_config['experiments']
         
-        self.last_exp_idx = 0
-        self.sub_idx = 0
-        if 'start_exp' in self.experiment_config:
-            self.last_exp_idx = self.experiment_config['start_exp']
+        self.last_exp_idx = self.experiment_config.get('start_exp', 0)
+        self.sub_idx = self.experiment_config.get('start_sub_exp', 0)
 
-        if 'start_sub_exp' in self.experiment_config:
-            self.sub_idx = self.experiment_config['start_sub_exp']
-            
         self.done = False
         self.results = {}
         self.create_config()
