@@ -176,7 +176,6 @@ class DQNBuilder(NetworkBuilder):
             if self.is_dueling:
                 if len(self.units) > 1:
                     out = self._build_mlp('dqn_mlp', out, self.units[:-1], self.activation, self.initializer)
-                print('units:', self.units[-1])
                 hidden_value = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), name='hidden_val')
                 hidden_advantage = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), name='hidden_adv')
 

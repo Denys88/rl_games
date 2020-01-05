@@ -49,7 +49,7 @@ class Runner:
             self.load_path = params['load_path']
 
         self.model = self.model_builder.load(params)
-        self.config = params['config']
+        self.config = copy.deepcopy(params['config'])
         
         self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(scale_value = self.config['reward_scale'], shift_value = self.config['reward_shift'])
         self.config['network'] = self.model
@@ -84,9 +84,9 @@ class Runner:
         else:
             self.reset()
             self.load_config(self.default_config)
+            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
-            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
             agent.train()
 
 

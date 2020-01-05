@@ -1,4 +1,5 @@
 import copy
+import yaml
 
 class Experiment:
     def __init__(self, config, experiment_config):
@@ -12,7 +13,15 @@ class Experiment:
         
         self.last_exp_idx = 0
         self.sub_idx = 0
+        if 'start_exp' in self.experiment_config:
+            self.last_exp_idx = self.experiment_config['start_exp']
+
+        if 'start_sub_exp' in self.experiment_config:
+            self.sub_idx = self.experiment_config['start_sub_exp']
+            
+        self.done = False
         self.results = {}
+        self.create_config()
 
     def _set_parameter(self, config, path, value):
         keys = path.split('.')
@@ -27,23 +36,33 @@ class Experiment:
         if self.best_results[0] < rewards:
             self.best_results = rewards, epochs
 
-    def get_next_config(self):
+    def create_config(self):
+        if self.done:
+            self.current_config = None
+            return
         self.current_config = copy.deepcopy(self.config)
         self.current_config['config']['name'] += '_' + str(self.last_exp_idx) + '_' + str(self.sub_idx)
+        print('Experiment name: ' + self.current_config['config']['name'])
         for key in self.experiments[self.last_exp_idx]['exp']:
-            print(key)
             self._set_parameter(self.current_config, key['path'],  key['value'][self.sub_idx])
 
-        max_val = len(self.experiments[self.last_exp_idx]['exp'][0])
+        with open('data.yml', 'w') as outfile:
+            yaml.dump(self.current_config, outfile, default_flow_style=False)
+
+    def get_next_config(self):
+        config = self.current_config
+        max_vals = len(self.experiments[0]['exp'][0]['value'])
         self.sub_idx += 1
-        if self.sub_idx >= max_val:
+        if self.sub_idx >= max_vals:
             self.sub_idx = 0
             self.last_exp_idx += 1
             if self.last_exp_idx >= len(self.experiments):
-                return None
-            self.last_exp_idx += 1
+                self.done = True
+            else:
+                self.last_exp_idx += 1
 
-        return self.current_config
+        self.create_config()
+        return config
 
     #def __iter__(self):
     #    print('__iter__')

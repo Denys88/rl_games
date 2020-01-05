@@ -9,6 +9,7 @@ import env_configurations
 from collections import deque
 from tensorboardX import SummaryWriter
 import networks
+from datetime import datetime
 
 
 default_config = {
@@ -77,7 +78,7 @@ class DQNAgent:
         self.network = config['network']
         self.state_shape = observation_shape
         self.actions_num = actions_num
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
         self.epsilon = self.config['epsilon']
         self.rewards_shaper = self.config['reward_shaper']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
@@ -367,6 +368,6 @@ class DQNAgent:
             
             if epoch_num >= self.max_epochs:
                 print('Max epochs reached')
-                self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(np.sum(self.game_rewards) *  lives_reward / len(self.game_rewards)))
                 return last_mean_rewards, epoch_num            
 

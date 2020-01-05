@@ -71,6 +71,8 @@ params:
     max_epochs: 100000
 
 experiment_config:
+  start_exp: 0
+  start_sub_exp: 3
   experiments:
 #    - exp:
 #      - path: config.learning_rate
@@ -78,11 +80,17 @@ experiment_config:
     - exp:
       - path: network.initializer
         value:
+          - name: variance_scaling_initializer
+            scale: 2
+          - name: glorot_normal_initializer
           - name: glorot_uniform_initializer
           - name: orthogonal_initializer
             gain: 1.41421356237
       - path: network.cnn.initializer
         value:
+          - name: variance_scaling_initializer
+            scale: 2
+          - name: glorot_normal_initializer
           - name: glorot_uniform_initializer
           - name: orthogonal_initializer
             gain: 1.41421356237

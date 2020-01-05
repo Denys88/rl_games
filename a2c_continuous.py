@@ -14,6 +14,7 @@ import gym
 import vecenv
 from tf_moving_mean_std import MovingMeanStd
 import ray
+from datetime import datetime
 
 
 def swap_and_flatten01(arr):
@@ -67,7 +68,8 @@ class A2CAgent:
         self.config = config
         self.state_shape = observation_space.shape
         self.critic_coef = config['critic_coef']
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
+
         self.sess = sess
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
