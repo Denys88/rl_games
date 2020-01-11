@@ -12,7 +12,7 @@ class IVecEnv(object):
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
-        self.env = configurations[config_name]['ENV_CREATOR']()
+        self.env = configurations[config_name]['env_creator']()
         self.obs = self.env.reset()
     
     def step(self, action): 
@@ -28,7 +28,7 @@ class IsaacEnv(IVecEnv):
 
 class RayWorker:
     def __init__(self, config_name):
-        self.env = configurations[config_name]['ENV_CREATOR']()
+        self.env = configurations[config_name]['env_creator']()
         self.obs = self.env.reset()
     
     def step(self, action):
@@ -61,15 +61,15 @@ class RayVecEnv(IVecEnv):
             newdones.append(cdones)
             newinfos.append(cinfos)
 
-        return np.asarray(newobs), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
+        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
 
     def reset(self):
         obs = [worker.reset.remote() for worker in self.workers]
-        return np.asarray(ray.get(obs), dtype=np.float32)
+        return np.asarray(ray.get(obs))
     
 
 def create_vec_env(config_name, num_actors):
-    if configurations[config_name]['VECENV_TYPE'] == 'RAY':
+    if configurations[config_name]['vecenv_type'] == 'RAY':
         return RayVecEnv(config_name, num_actors)
-    if configurations[config_name]['VECENV_TYPE'] == 'ISAAC':
+    if configurations[config_name]['vecenv_type'] == 'ISAAC':
         return IsaacEnv(config_name, num_actors)

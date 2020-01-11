@@ -10,6 +10,7 @@ from tensorflow_utils import TensorFlowVariables
 import gym
 import vecenv
 from tf_moving_mean_std import MovingMeanStd
+from datetime import datetime
 
 def swap_and_flatten01(arr):
     """
@@ -19,42 +20,52 @@ def swap_and_flatten01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, name, observation_space, is_discrete, action_space, config):
-        assert is_discrete 
+    def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
-        self.name = name
+        self.name = base_name
         self.config = config
-        self.env_name = config['ENV_NAME']
-        self.ppo = config['PPO']
-        self.is_adaptive_lr = config['LR_SCHEDULE'] == 'ADAPTIVE'
-        self.is_polynom_decay_lr = config['LR_SCHEDULE'] == 'POLYNOM_DECAY'
-        self.is_exp_decay_lr = config['LR_SCHEDULE'] == 'EXP_DECAY'
+        self.env_name = config['env_name']
+        self.ppo = config['ppo']
+        self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
+        self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
+        self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
         self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
+
         if self.is_adaptive_lr:
-            self.lr_threshold = config['LR_THRESHOLD']
-        self.e_clip = config['E_CLIP']
-        self.clip_value = config['CLIP_VALUE']
-        self.network = config['NETWORK']
-        self.rewards_shaper = config['REWARD_SHAPER']
-        self.num_actors = config['NUM_ACTORS']
+            self.lr_threshold = config['lr_threshold']
+        if self.is_polynom_decay_lr:
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
+        if self.is_exp_decay_lr:
+            self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'],  decay_rate = config['decay_rate'])
+
+
+        self.e_clip = config['e_clip']
+        self.clip_value = config['clip_value']
+        self.network = config['network']
+        self.rewards_shaper = config['reward_shaper']
+        self.num_actors = config['num_actors']
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
-        self.steps_num = config['STEPS_NUM']
-        self.seq_len = self.config['SEQ_LEN']
-        self.normalize_advantage = config['NORMALIZE_ADVANTAGE']
-        self.normalize_input = self.config['NORMALIZE_INPUT']
+        self.steps_num = config['steps_num']
+        self.seq_len = self.config['seq_len']
+        self.normalize_advantage = config['normalize_advantage']
+        self.normalize_input = self.config['normalize_input']
        
         self.state_shape = observation_shape
-        self.critic_coef = config['CRITIC_COEF']
-        self.writer = SummaryWriter()
+        self.critic_coef = config['critic_coef']
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
         self.sess = sess
-        self.grad_norm = config['GRAD_NORM']
-        self.gamma = self.config['GAMMA']
-        self.tau = self.config['TAU']
+        self.grad_norm = config['grad_norm']
+        self.gamma = self.config['gamma']
+        self.tau = self.config['tau']
+
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
-        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)  
+        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
+        self.current_lengths = np.asarray([0]*self.num_actors, dtype=np.float32)
         self.game_rewards = deque([], maxlen=100)
-        self.obs_ph = tf.placeholder('float32', (None, ) + observation_shape, name = 'obs')
-        self.target_obs_ph = tf.placeholder('float32', (None, ) + observation_shape, name = 'target_obs') 
+        self.game_lengths = deque([], maxlen=100)
+
+        self.obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'obs')
+        self.target_obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'target_obs') 
         self.actions_num = action_space.n   
         self.actions_ph = tf.placeholder('int32', (None,), name = 'actions')       
 
@@ -69,26 +80,30 @@ class A2CAgent:
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
-        if self.is_adaptive_lr:
-            self.lr_threshold = config['LR_THRESHOLD']
-        if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['MAX_EPOCHS'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'DECAY_POWER', 1.0))
-        if self.is_exp_decay_lr:
-            self.lr_multiplier = tf.train.exponential_decay(1.0, self.epoch_num,config['MAX_EPOCHS'],  decay_rate = config['DECAY_RATE'])
-        if self.normalize_input:
-            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
-            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=True)
-            self.input_target_obs = self.moving_mean_std.normalize(self.target_obs_ph, train=False)
-        else:
-            self.input_obs = self.obs_ph
-            self.input_target_obs = self.target_obs_ph
+        self.input_obs = self.obs_ph
+        self.input_target_obs = self.target_obs_ph
+ 
+        if observation_space.dtype == np.uint8:
+            self.input_obs = tf.to_float(self.input_obs) / 255.0
+            self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
-        games_num = self.config['MINIBATCH_SIZE'] // self.seq_len # it is used only for current rnn implementation
+        if self.is_adaptive_lr:
+            self.lr_threshold = config['lr_threshold']
+        if self.is_polynom_decay_lr:
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['max_epochs'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
+        if self.is_exp_decay_lr:
+            self.lr_multiplier = tf.train.exponential_decay(1.0, self.epoch_num,config['max_epochs'],  decay_rate = config['decay_rate'])
+        if self.normalize_input:
+            self.moving_mean_std = movingmeanstd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
+            self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
+
+        games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
 
         self.train_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
-            'batch_num' : self.config['MINIBATCH_SIZE'],
+            'batch_num' : self.config['minibatch_size'],
             'games_num' : games_num,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph
@@ -133,13 +148,13 @@ class A2CAgent:
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
 
 
-        self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['ENTROPY_COEF'] * self.entropy
+        self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
         grads = tf.gradients(self.loss, self.weights)
-        if self.config['TRUNCATE_GRADS']:
+        if self.config['truncate_grads']:
             grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
         grads = list(zip(grads, self.weights))
         self.train_op = self.train_step.apply_gradients(grads)
@@ -164,11 +179,11 @@ class A2CAgent:
             return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
 
     def play_steps(self):
-        # Here, we init the lists that will contain the mb of experiences
+        # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
         mb_states = []
         epinfos = []
-        # For n in range number of steps
+        # for n in range number of steps
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
@@ -186,11 +201,16 @@ class A2CAgent:
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             self.current_rewards += rewards
 
-            for reward, done in zip(self.current_rewards, self.dones):
+            self.current_lengths += 1
+
+            for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
                 if done:
                     self.game_rewards.append(reward)
+                    self.game_lengths.append(length)
 
-            self.current_rewards = self.current_rewards * (1.0 -self.dones)
+            self.current_rewards = self.current_rewards * (1.0 - self.dones)
+            self.current_lengths = self.current_lengths * (1.0 - self.dones)
+
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
@@ -239,21 +259,26 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
+
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors
-        minibatch_size = self.config['MINIBATCH_SIZE']
-        mini_epochs_num = self.config['MINI_EPOCHS']
+        minibatch_size = self.config['minibatch_size']
+        mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
-        last_lr = self.config['LEARNING_RATE']
+        last_lr = self.config['learning_rate']
         frame = 0
         update_time = 0
         last_mean_rewards = -100500
         play_time = 0
         epoch_num = 0
-        max_epochs = tr_helpers.get_or_default(self.config, 'NAX_EPOCHS', 1e6)
+        max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
+
+        start_time = time.time()
+        total_time = 0
+
         while True:
             play_time_start = time.time()
-            epoch_num += 1
+            epoch_num = self.update_epoch()
             frame += batch_size
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
@@ -267,6 +292,7 @@ class A2CAgent:
             play_time_end = time.time()
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
+
             if self.network.is_rnn():
                 total_games = batch_size // self.seq_len
                 num_games_batch = minibatch_size // self.seq_len
@@ -292,9 +318,9 @@ class A2CAgent:
                         dict[self.states_ph] = lstm_states[batch]
                         
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.train_op]
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier,  self.train_op]
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-                        a_loss, c_loss, entropy, kl, last_lr, _, _ = self.sess.run(run_ops, dict)
+                        a_loss, c_loss, entropy, kl, last_lr, lr_mul,_, _ = self.sess.run(run_ops, dict)
                         a_losses.append(a_loss)
                         c_losses.append(c_loss)
                         kls.append(kl)
@@ -316,10 +342,10 @@ class A2CAgent:
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
             
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.train_op]
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier, self.train_op]
                             
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-                        a_loss, c_loss, entropy, kl, last_lr, _, _ = self.sess.run(run_ops, dict)
+                        a_loss, c_loss, entropy, kl, last_lr, lr_mul, _, _ = self.sess.run(run_ops, dict)
                         a_losses.append(a_loss)
                         c_losses.append(c_loss)
                         kls.append(kl)
@@ -327,32 +353,42 @@ class A2CAgent:
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
+            total_time = update_time_end - start_time
+
             if True:
-                print('Frames per seconds: ', batch_size / sum_time)
-                self.writer.add_scalar('Frames per seconds: ', batch_size / sum_time, frame)
-                self.writer.add_scalar('upd_time', update_time, frame)
-                self.writer.add_scalar('play_time', play_time, frame)
-                self.writer.add_scalar('a_loss', np.mean(a_losses), frame)
-                self.writer.add_scalar('c_loss', np.mean(c_losses), frame)
-                self.writer.add_scalar('entropy', np.mean(entropies), frame)
-                self.writer.add_scalar('entropy', entropy, frame)
-                self.writer.add_scalar('kl', np.mean(kls), frame)
-                self.writer.add_scalar('last_lr', last_lr, frame)
+                print('frames per seconds: ', batch_size / sum_time)
+                self.writer.add_scalar('performance/fps', batch_size / sum_time, frame)
+                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/play_time', play_time, frame)
+                self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
+                self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
+                self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
+                self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
+                self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
+                self.writer.add_scalar('info/kl', np.mean(kls), frame)
+                self.writer.add_scalar('epochs', epoch_num, frame)
+                
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
-                    self.writer.add_scalar('mean_rewards', mean_rewards, frame)
+                    mean_lengths = np.mean(self.game_lengths)
+                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.name + self.env_name)
-                        if last_mean_rewards > self.config['SCORE_TO_WIN']:
+                        if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            return
+                            self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            return last_mean_rewards, epoch_num  
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
-                    return       
+                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    return last_mean_rewards, epoch_num                               
                 update_time = 0
-
-
             
         
