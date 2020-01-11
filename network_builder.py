@@ -115,9 +115,7 @@ class A2CBuilder(NetworkBuilder):
         reuse = kwargs.pop('reuse')
         batch_num = kwargs.pop('batch_num', 1)
         games_num = kwargs.pop('games_num', 1)
-        print('atata')
-        print(batch_num)
-        print(games_num)
+
         with tf.variable_scope(name, reuse=reuse):   
             actor_input = critic_input = input
             if self.has_cnn:
