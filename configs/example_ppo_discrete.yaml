@@ -34,12 +34,12 @@ params:
           strides: 1
           padding: 'VALID'
       
-      
-    units: [512]
-    activation: relu
-    initializer:
-      name: orthogonal_initializer
-      gain: 1.41421356237
+    mlp:
+      units: [512]
+      activation: relu
+      initializer:
+        name: orthogonal_initializer
+        gain: 1.41421356237
 
   config:
     reward_scale: 1

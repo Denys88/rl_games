@@ -7,7 +7,7 @@ class ModelBuilder:
 
         self.model_factory = object_factory.ObjectFactory()
         self.model_factory.register_builder('discrete_a2c', lambda network, **kwargs : models.ModelA2C(network))
-        self.model_factory.register_builder('discreate_a2c_lstm', lambda network, **kwargs : models.LSTMModelA2C(network))
+        self.model_factory.register_builder('discrete_a2c_lstm', lambda network, **kwargs : models.LSTMModelA2C(network))
         self.model_factory.register_builder('continuous_a2c', lambda network, **kwargs : models.ModelA2CContinuous(network))
         self.model_factory.register_builder('continuous_a2c_logstd', lambda network, **kwargs : models.ModelA2CContinuousLogStd(network))
         self.model_factory.register_builder('continuous_a2c_lstm', lambda network, **kwargs : models.LSTMModelA2CContinuous(network))

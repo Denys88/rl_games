@@ -114,7 +114,8 @@ class LSTMModelA2CContinuousLogStd(BaseModel):
         games_num = dict['games_num']
         batch_num = dict['batch_num']
 
-        mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, games_num, batch_num,  True, reuse)
+        mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name=name, inputs=inputs, actions_num=actions_num, 
+                                                                            games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
 
@@ -148,7 +149,8 @@ class LSTMModelA2CContinuous(BaseModel):
         games_num = dict['games_num']
         batch_num = dict['batch_num']
 
-        mu, var, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name, inputs, actions_num, games_num, batch_num,  True, reuse)
+        mu, var, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
+                                                                        games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
         sigma = tf.sqrt(var)
         norm_dist = tfd.Normal(mu, sigma)
 
@@ -180,7 +182,8 @@ class LSTMModelA2C(BaseModel):
         games_num = dict['games_num']
         batch_num = dict['batch_num']
 
-        logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name, inputs, actions_num, games_num, batch_num, False, reuse)
+        logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
+        games_num=games_num, batch_num=batch_num, continuous=False, reuse=reuse)
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
         one_hot_actions = tf.one_hot(action, actions_num)

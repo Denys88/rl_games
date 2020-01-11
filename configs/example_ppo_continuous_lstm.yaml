@@ -3,7 +3,7 @@ params:
     name: a2c_continuous
 
   model:
-    name: continuous_a2c_logstd
+    name: continuous_a2c_lstm
 
   network:
     name: actor_critic
@@ -11,20 +11,26 @@ params:
     space:
       continuous:
         mu_activation: None
-        sigma_activation: None
+        sigma_activation: softplus
         mu_init:
           name: normc_initializer
           std: 0.01
         sigma_init:
-          name: const_initializer
-          value: 0
-        fixed_sigma: True
+          name: normc_initializer
+          std: 1.0
+        fixed_sigma: False
+
     mlp:
       units: [256, 128, 64]
       activation: relu
       initializer:
         name: normc_initializer
         std: 1
+    
+    lstm:
+      units: 128
+      concated: True
+
   load_checkpoint: False
   load_path: path
 
