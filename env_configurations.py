@@ -60,20 +60,22 @@ class HCObsEnv(gym.ObservationWrapper):
 
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
-    from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
-    import gym_super_mario_bros
+    from nes_py.wrappers import JoypadSpace
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
+    import gym_super_mario_bros
     env = gym_super_mario_bros.make(name)
+    env = JoypadSpace(env, SIMPLE_MOVEMENT)
+
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
-    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
     return env
 
 def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     import gym
-    from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
-    import gym_super_mario_bros
+    from nes_py.wrappers import JoypadSpace
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
+
+    import gym_super_mario_bros
     stage_names = [
         'SuperMarioBros-1-1-v1',
         'SuperMarioBros-1-2-v1',
@@ -82,7 +84,8 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     ]
 
     env = gym_super_mario_bros.make(stage_names[1])
-    env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
+    env = JoypadSpace(env, SIMPLE_MOVEMENT)
+    
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     #env = wrappers.AllowBacktracking(env)
