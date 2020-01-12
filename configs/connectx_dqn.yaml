@@ -1,0 +1,52 @@
+params:  
+  algo:
+    name: dqn
+
+  model:
+    name: dqn
+
+  load_checkpoint: False
+  load_path: path
+
+  network:
+    name: dqn
+    separate: False
+    space: 
+      discrete:
+      
+    mlp:
+      units: [128, 64, 32]
+      activation: relu
+      initializer:
+        name: orthogonal_initializer
+        gain: 1.41421356237
+
+  config:
+    reward_scale: 1
+    reward_shift: 0
+    gamma : 0.99
+    learning_rate : 0.0005
+    steps_per_epoch : 4
+    batch_size : 128
+    epsilon : 0.90
+    min_epsilon : 0.02
+    epsilon_decay_frames : 100000
+    num_epochs_to_copy : 10000
+    name : 'connectx'
+    env_name:  connectx-v1
+    is_double : True
+    score_to_win : 100
+    num_steps_fill_buffer : 10000
+    replay_buffer_type : 'normal'
+    replay_buffer_size : 100000
+    priority_beta : 0.4
+    priority_alpha : 0.6
+    beta_decay_frames : 100000
+    max_beta : 1
+    steps_num : 3
+    episodes_to_log : 10
+    lives_reward : 1
+    atoms_num : 1
+    games_to_track : 20
+    lr_schedule : polynom_decay
+    max_epochs: 100000

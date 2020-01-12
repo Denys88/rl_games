@@ -20,9 +20,13 @@ class ModelA2C(BaseModel):
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, reuse=reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         # Gumbel Softmax
+        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+
+        #tf.random.categorical()
+
+
         one_hot_actions = tf.one_hot(action, actions_num)
         entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
 
