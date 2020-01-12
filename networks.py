@@ -415,7 +415,8 @@ def default_a2c_network(name, inputs, actions_num, continuous=False, reuse=False
             logits = tf.layers.dense(inputs=hidden2, units=actions_num, activation=None)
             return logits, value
 
-def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+def default_a2c_lstm_network(name, inputs, actions_num, games_num, batch_num, continuous=False, reuse=False):
+    env_num = games_num
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES0 = 128
         NUM_HIDDEN_NODES1 = 64
@@ -437,7 +438,8 @@ def default_a2c_lstm_network(name, inputs, actions_num, env_num, batch_num, cont
             return logits, value, states_ph, dones_ph, lstm_state, initial_state
 
 
-def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+def default_a2c_lstm_network_separated(name, inputs, actions_num, games_num, batch_num, continuous=False, reuse=False):
+    env_num = games_num
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES0 = 256
         NUM_HIDDEN_NODES1 = 128
@@ -467,7 +469,9 @@ def default_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch
 
 
 
-def simple_a2c_lstm_network_separated(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+def simple_a2c_lstm_network_separated(name, inputs, actions_num, games_num, batch_num, continuous=False, reuse=False):
+    env_num = games_num
+
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES1 = 32
         NUM_HIDDEN_NODES2 = 32
@@ -595,7 +599,8 @@ def atari_a2c_network(name, inputs, actions_num, continuous=False, reuse=False):
             logits = tf.layers.dense(inputs=hidden, units=actions_num, activation=None)
             return logits, value
 
-def atari_a2c_network_lstm(name, inputs, actions_num, env_num, batch_num, continuous=False, reuse=False):
+def atari_a2c_network_lstm(name, inputs, actions_num, games_num, batch_num, continuous=False, reuse=False):
+    env_num = games_num
     with tf.variable_scope(name, reuse=reuse):
         NUM_HIDDEN_NODES = 512
         LSTM_UNITS = 256
