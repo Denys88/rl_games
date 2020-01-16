@@ -68,7 +68,8 @@ class Runner:
         print('Started to train')
         ray.init(redis_max_memory=1024*1024*100, object_store_memory=1024*1024*100)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['env_name'])
-
+        print('obs_space:', obs_space)
+        print('action_space:', action_space)
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
@@ -89,6 +90,11 @@ class Runner:
                 agent.restore(self.load_path)
             agent.train()
 
+    def create_player(self):
+        return self.player_factory.create(self.algo_name, sess=self.sess, config=self.config)
+
+    def create_agent(self, obs_space, action_space):
+        return self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
 
     def run(self, args):
         if 'checkpoint' in args:

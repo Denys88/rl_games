@@ -10,30 +10,52 @@ params:
 
   network:
     name: dqn
-    separate: False
     space: 
       discrete:
-      
-    mlp:
-      units: [128, 64, 32]
+
+    dueling: True
+    atoms: 1
+    noisy: True
+    cnn:
       activation: relu
       initializer:
-        name: orthogonal_initializer
-        gain: 1.41421356237
+        name: variance_scaling_initializer
+        scale: 2
+
+      convs:    
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
+        - filters: 32
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
+
+    mlp:
+      units: [256]
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
 
   config:
     reward_scale: 1
     reward_shift: 0
     gamma : 0.99
-    learning_rate : 0.0005
+    learning_rate : 0.0001
     steps_per_epoch : 4
     batch_size : 128
-    epsilon : 0.90
-    min_epsilon : 0.02
-    epsilon_decay_frames : 100000
+    epsilon : 0.0
+    min_epsilon : 0
+    epsilon_decay_frames : 0
     num_epochs_to_copy : 10000
     name : 'connectx'
-    env_name:  connectx-v1
+    env_name:  connectx
     is_double : True
     score_to_win : 100
     num_steps_fill_buffer : 10000
@@ -47,6 +69,8 @@ params:
     episodes_to_log : 10
     lives_reward : 1
     atoms_num : 1
-    games_to_track : 20
-    lr_schedule : polynom_decay
-    max_epochs: 100000
+    games_to_track : 100
+    lr_schedule : None
+    max_epochs: 4000000
+    self_play:
+      score_to_update: 0.2

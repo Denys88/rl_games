@@ -9,6 +9,9 @@ class IVecEnv(object):
     def reset(self):
         raise NotImplementedError 
 
+    def set_weights(self, weights):
+        raise NotImplementedError       
+
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):

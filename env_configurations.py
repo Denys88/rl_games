@@ -130,6 +130,11 @@ def create_flex(path):
 
     return env
 
+def create_kaggle(name, **kwargs):
+    from kaggle_env import KaggleEnv
+
+    return KaggleEnv(name, **kwargs)
+
 
 def __init__(self, env):
     gym.RewardWrapper.__init__(self, env)
@@ -229,6 +234,10 @@ configurations = {
     'FlexHumanoidHard' : {
         'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'vecenv_type' : 'ISAAC'
+    },
+    'connectx' : {
+        'env_creator' : lambda **kwargs : create_kaggle('connectx', **kwargs),
+        'vecenv_type' : 'RAY'
     },
 }
 

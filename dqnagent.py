@@ -10,7 +10,7 @@ from collections import deque
 from tensorboardX import SummaryWriter
 import networks
 from datetime import datetime
-
+from tensorflow_utils import TensorFlowVariables
 
 default_config = {
     'GAMMA' : 0.99,
@@ -50,7 +50,6 @@ class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         actions_num = action_space.n
-
         self.config = config
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
@@ -83,14 +82,17 @@ class DQNAgent:
         self.rewards_shaper = self.config['reward_shaper']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
-        self.env = env_configurations.configurations[self.env_name]['env_creator']()
+        if self.env_name:
+            self.env = env_configurations.configurations[self.env_name]['env_creator'](sess=sess)
         self.sess = sess
         self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
         self.is_prioritized = config['replay_buffer_type'] != 'normal'
         self.atoms_num = self.config['atoms_num']
         self.is_distributional = self.atoms_num > 1
-    
+        
+        self.self_play = config.get('self_play', False)
+
         if self.is_distributional:
             self.v_min = self.config['v_min']
             self.v_max = self.config['v_max']
@@ -110,7 +112,7 @@ class DQNAgent:
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None,], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.name = base_name
-        self._reset()
+        
         self.gamma = self.config['gamma']
 
         self.input_obs = self.obs_ph
@@ -129,8 +131,16 @@ class DQNAgent:
         
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+        self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        if self.env_name:
+            sess.run(tf.global_variables_initializer())
+        self._reset()
 
-        sess.run(tf.global_variables_initializer())
+    def get_weights(self):
+        return self.variables.get_flat()
+    
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
 
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
@@ -186,7 +196,8 @@ class DQNAgent:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
         self.learning_rate = self.config['learning_rate']
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
+        if self.env_name:
+            self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
@@ -196,7 +207,8 @@ class DQNAgent:
 
     def _reset(self):
         self.states.clear()
-        self.state = self.env.reset()
+        if self.env_name:
+            self.state = self.env.reset()
         self.total_reward = 0.0
         self.total_shaped_reward = 0.0
         self.step_count = 0
@@ -228,7 +240,7 @@ class DQNAgent:
                 state = self.state
             action = self.get_action(state, epsilon)
             new_state, reward, is_done, _ = self.env.step(action)
-            reward = reward * (1 - is_done)
+            reward = reward# * (1 - is_done)
  
             self.step_count += 1
             self.total_reward += reward
@@ -352,6 +364,7 @@ class DQNAgent:
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
@@ -359,6 +372,14 @@ class DQNAgent:
                         if last_mean_rewards > self.config['score_to_win']:
                             print('network won!')
                             return last_mean_rewards, epoch_num   
+
+                    if self.self_play and num_games == self.games_to_track:
+                        if mean_rewards > self.self_play['score_to_update']:
+                            print('updating weights')
+                            self.game_rewards.clear()
+                            self.game_lengths.clear()
+                            last_mean_rewards = -100500
+                            self.env.update_weights(self.get_weights())
                 
                 
                 #clear_output(True)
