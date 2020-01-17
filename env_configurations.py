@@ -30,8 +30,10 @@ class HCRewardEnv(gym.RewardWrapper):
         return observation, self.reward(reward), done, info
     def reward(self, reward):
         if reward == -100:
-            return -20
+            return -10
+        return reward
        # print('reward:', reward)
+'''
         if reward < 0.005:
             self.stops_decay = 0
             self.num_stops += 1
@@ -41,7 +43,7 @@ class HCRewardEnv(gym.RewardWrapper):
         if self.stops_decay == self.max_stops:
             self.num_stops = 0
             self.stops_decay = 0
-        return reward
+'''
 
 class HCObsEnv(gym.ObservationWrapper):
     def __init__(self, env):
@@ -211,7 +213,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 4, True),
+        'env_creator' : lambda : HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')),
         'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {

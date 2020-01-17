@@ -20,9 +20,13 @@ class ModelA2C(BaseModel):
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, reuse=reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         # Gumbel Softmax
+        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+
+        #tf.random.categorical()
+
+
         one_hot_actions = tf.one_hot(action, actions_num)
         entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
 
@@ -117,18 +121,16 @@ class LSTMModelA2CContinuousLogStd(BaseModel):
         mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name=name, inputs=inputs, actions_num=actions_num, 
                                                                             games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
         std = tf.exp(logstd)
-        norm_dist = tfd.Normal(mean, std)
-
-        action = mean + std * tf.random_normal(tf.shape(mean))
-        norm_dist = tfd.Normal(mu, sigma)
+        action = mu + std * tf.random_normal(tf.shape(mu))
+        norm_dist = tfd.Normal(mu, std)
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
             neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-6), axis=-1)
-            return  neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+            return  neglogp, value, action, entropy, mu, std, states_ph, masks_ph, lstm_state, initial_state
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
-        return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+        return prev_neglogp, value, action, entropy, mu, std, states_ph, masks_ph, lstm_state, initial_state
 
 
 class LSTMModelA2CContinuous(BaseModel):
