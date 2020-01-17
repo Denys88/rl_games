@@ -40,7 +40,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.000
       truncate_grads: true
-      env_name:  BipedalWalkerHardcore-v2
+      env_name:  BipedalWalker-v2
       ppo: true
       e_clip: 0.2
       clip_value: true

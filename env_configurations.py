@@ -22,11 +22,13 @@ class HCRewardEnv(gym.RewardWrapper):
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
+        '''
         if self.num_stops > self.max_stops:
             print('too many stops!')
             reward = -100
             observation = self.reset()
             done = True
+        '''
         return observation, self.reward(reward), done, info
     def reward(self, reward):
         if reward == -100:
