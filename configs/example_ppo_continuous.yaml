@@ -31,7 +31,7 @@ params:
   config:
       reward_scale: 0.1
       reward_shift: 0
-      normalize_advantage: true
+      normalize_advantage: True
       gamma: 0.99
       tau: 0.9
       learning_rate: 1e-4
@@ -39,11 +39,11 @@ params:
       score_to_win: 300
       grad_norm: 0.5
       entropy_coef: 0.000
-      truncate_grads: true
+      truncate_grads: True
       env_name:  BipedalWalker-v2
       ppo: true
       e_clip: 0.2
-      clip_value: true
+      clip_value: True
       num_actors: 16
       steps_num: 256
       minibatch_size: 1024
@@ -51,5 +51,5 @@ params:
       critic_coef: 1
       lr_schedule:  None
       lr_threshold: 0.008
-      normalize_input: false
+      normalize_input: False
       seq_len: 8

@@ -56,7 +56,7 @@ params:
     env_name:  PongNoFrameskip-v4
     ppo: true
     e_clip: 0.1
-    clip_value: true
+    clip_value: True
     num_actors: 16
     steps_num: 16
     minibatch_size: 64
