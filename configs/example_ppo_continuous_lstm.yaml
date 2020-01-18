@@ -10,7 +10,7 @@ params:
     separate: True
     space:
       continuous:
-        mu_activation: tanh
+        mu_activation: None
         sigma_activation: None
         mu_init:
           name: normc_initializer
@@ -31,8 +31,8 @@ params:
       units: 128
       concated: True
 
-  load_checkpoint: False
-  load_path: path
+  load_checkpoint: True
+  load_path: 'nn/runBipedalWalkerHardcore-v2'
 
   config:
       reward_scale: 0.1
@@ -46,7 +46,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.000
       truncate_grads: True
-      env_name:  BipedalWalker-v2
+      env_name:  BipedalWalkerHardcore-v2
       ppo: true
       e_clip: 0.2
       clip_value: True
