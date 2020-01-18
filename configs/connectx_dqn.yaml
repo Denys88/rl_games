@@ -15,7 +15,7 @@ params:
 
     dueling: True
     atoms: 1
-    noisy: True
+    noisy: False
     cnn:
       activation: relu
       initializer:
@@ -50,9 +50,9 @@ params:
     learning_rate : 0.0001
     steps_per_epoch : 4
     batch_size : 128
-    epsilon : 0.0
-    min_epsilon : 0
-    epsilon_decay_frames : 0
+    epsilon : 0.99
+    min_epsilon : 0.02
+    epsilon_decay_frames : 100000
     num_epochs_to_copy : 10000
     name : 'connectx'
     env_name:  connectx
@@ -69,8 +69,8 @@ params:
     episodes_to_log : 10
     lives_reward : 1
     atoms_num : 1
-    games_to_track : 100
+    games_to_track : 1000
     lr_schedule : None
-    max_epochs: 4000000
+    max_epochs: 1000000
     self_play:
       score_to_update: 0.2
