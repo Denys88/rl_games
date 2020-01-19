@@ -149,7 +149,8 @@ class A2CAgent:
 
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
-        
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.loss += self.reg_loss
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 

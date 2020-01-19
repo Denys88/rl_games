@@ -26,12 +26,13 @@ params:
       initializer:
         name: normc_initializer
         std: 1
-    
+      regularizer:
+        name: 'None'    
     lstm:
       units: 128
-      concated: True
+      concated: False
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/runBipedalWalkerHardcore-v2'
 
   config:
@@ -59,3 +60,4 @@ params:
       lr_threshold: 0.008
       normalize_input: False
       seq_len: 8
+      bounds_loss_coef: 0.1

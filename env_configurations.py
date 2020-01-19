@@ -22,20 +22,15 @@ class HCRewardEnv(gym.RewardWrapper):
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
-        '''
         if self.num_stops > self.max_stops:
             print('too many stops!')
             reward = -100
             observation = self.reset()
             done = True
-        '''
         return observation, self.reward(reward), done, info
     def reward(self, reward):
-        if reward == -100:
-            return -10
-        return reward
        # print('reward:', reward)
-'''
+        '''
         if reward < 0.005:
             self.stops_decay = 0
             self.num_stops += 1
@@ -45,8 +40,8 @@ class HCRewardEnv(gym.RewardWrapper):
         if self.stops_decay == self.max_stops:
             self.num_stops = 0
             self.stops_decay = 0
-'''
-
+        '''
+        return np.max([-10, reward])
 class HCObsEnv(gym.ObservationWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
