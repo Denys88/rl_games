@@ -88,7 +88,12 @@ class Runner:
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()
+            
+    def create_player(self):
+        return self.player_factory.create(self.algo_name, sess=self.sess, config=self.config)
 
+    def create_agent(self, obs_space, action_space):
+        return self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
 
     def run(self, args):
         if 'checkpoint' in args:
