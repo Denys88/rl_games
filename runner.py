@@ -89,7 +89,7 @@ class Runner:
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()
-
+            
     def create_player(self):
         return self.player_factory.create(self.algo_name, sess=self.sess, config=self.config)
 

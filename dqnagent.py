@@ -195,6 +195,8 @@ class DQNAgent:
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.td_loss_mean += self.reg_loss
         self.learning_rate = self.config['learning_rate']
         if self.env_name:
             self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)

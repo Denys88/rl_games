@@ -38,7 +38,7 @@ class BasePlayer(object):
             steps = 0
             s = self.env.reset()
             for it in range(5000):
-                action = self.get_action(s, True)
+                action = self.get_action([s], False)
                 s, r, done, _ =  self.env.step(action)
                 cr += r
                 steps += 1

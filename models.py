@@ -121,18 +121,16 @@ class LSTMModelA2CContinuousLogStd(BaseModel):
         mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name=name, inputs=inputs, actions_num=actions_num, 
                                                                             games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
         std = tf.exp(logstd)
-        norm_dist = tfd.Normal(mean, std)
-
-        action = mean + std * tf.random_normal(tf.shape(mean))
-        norm_dist = tfd.Normal(mu, sigma)
+        action = mu + std * tf.random_normal(tf.shape(mu))
+        norm_dist = tfd.Normal(mu, std)
         
         entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
         if prev_actions_ph == None:
             neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(action)+ 1e-6), axis=-1)
-            return  neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+            return  neglogp, value, action, entropy, mu, std, states_ph, masks_ph, lstm_state, initial_state
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
-        return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
+        return prev_neglogp, value, action, entropy, mu, std, states_ph, masks_ph, lstm_state, initial_state
 
 
 class LSTMModelA2CContinuous(BaseModel):

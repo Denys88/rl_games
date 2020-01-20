@@ -22,6 +22,7 @@ def swap_and_flatten01(arr):
 class A2CAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
+        self.is_train = config.get('is_train', True)
         self.name = base_name
         self.config = config
         self.env_name = config['env_name']
@@ -44,7 +45,7 @@ class A2CAgent:
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_actors = config['num_actors']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
+        
         self.steps_num = config['steps_num']
         self.seq_len = self.config['seq_len']
         self.normalize_advantage = config['normalize_advantage']
@@ -127,6 +128,16 @@ class A2CAgent:
             self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _ = self.network(self.run_dict, reuse=True)
 
+        self.saver = tf.train.Saver()
+        self.variables = TensorFlowVariables([self.target_action, self.target_state_values, self.target_neglogp], self.sess)
+        
+        if self.is_train:
+            self.setup_losses()
+            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
+
+        self.sess.run(tf.global_variables_initializer())
+
+    def setup_losses(self):
         curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
@@ -149,7 +160,8 @@ class A2CAgent:
 
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
-        
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.loss += self.reg_loss
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
@@ -158,8 +170,6 @@ class A2CAgent:
             grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
         grads = list(zip(grads, self.weights))
         self.train_op = self.train_step.apply_gradients(grads)
-        self.saver = tf.train.Saver()
-        self.sess.run(tf.global_variables_initializer())
 
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
@@ -177,6 +187,12 @@ class A2CAgent:
             return self.sess.run([self.target_state_values], {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
         else:
             return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
+
+    def get_weights(self):
+        return self.variables.get_flat()
+    
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
 
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
@@ -277,6 +293,8 @@ class A2CAgent:
         total_time = 0
 
         while True:
+            if self.config['self_play'] is not None:
+                env_index = 0
             play_time_start = time.time()
             epoch_num = self.update_epoch()
             frame += batch_size
@@ -384,7 +402,17 @@ class A2CAgent:
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num  
+                            return last_mean_rewards, epoch_num
+
+
+                    if self.self_play and num_games == 100:
+                        if mean_rewards > self.self_play['score_to_update']:
+                            print('updating weights')
+                            self.game_rewards.clear()
+                            self.game_lengths.clear()
+                            last_mean_rewards = -100500
+                            self.env.update_weights([env_index]self.get_weights())
+                            env_index = (env_index + 1) % self.num_actors
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))

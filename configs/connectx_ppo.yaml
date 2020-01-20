@@ -46,3 +46,5 @@ params:
     lr_threshold: 0.008
     normalize_input: False
     seq_len: 8
+    self_play:
+      score_to_update: 0.2

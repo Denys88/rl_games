@@ -98,6 +98,8 @@ class A2CAgent:
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
+        self.bounds_loss_coef = config.get('bounds_loss_coef', None)
+
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
         if self.is_polynom_decay_lr:
@@ -156,6 +158,7 @@ class A2CAgent:
             self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
         else:
             self.actor_loss = tf.reduce_mean(self.neglogp_actions * self.advantages_ph)
+
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
 
         if self.clip_value:
@@ -165,12 +168,12 @@ class A2CAgent:
         else:
             self.critic_loss = tf.reduce_mean(self.c_loss)
         
-        self.kl_dist = policy_kl_tf(self.mu, self.sigma, self.old_mu_ph, self.old_sigma_ph)
-        if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+        self._calc_kl_dist()
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
+        self._apply_bound_loss()
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.loss += self.reg_loss
         self.train_step = tf.train.AdamOptimizer(self.current_lr * self.lr_multiplier)
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
 
@@ -178,9 +181,27 @@ class A2CAgent:
         if self.config['truncate_grads']:
             grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
         grads = list(zip(grads, self.weights))
+
+
         self.train_op = self.train_step.apply_gradients(grads)
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
+
+    def _calc_kl_dist(self):
+        self.kl_dist = policy_kl_tf(self.mu, self.sigma, self.old_mu_ph, self.old_sigma_ph)
+        if self.is_adaptive_lr:
+            self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
+            self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+
+    def _apply_bound_loss(self):
+        if self.bounds_loss_coef:
+            soft_bound = 1.1
+            mu_loss_high = tf.square(tf.maximum(0.0, self.mu - soft_bound))
+            mu_loss_low = tf.square(tf.maximum(0.0, -soft_bound - self.mu))
+            self.bounds_loss = tf.reduce_sum(mu_loss_high + mu_loss_low, axis=1)
+            self.loss += self.bounds_loss * self.bounds_loss_coef
+        else:
+            self.bounds_loss = None
 
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
@@ -308,6 +329,7 @@ class A2CAgent:
 
             a_losses = []
             c_losses = []
+            b_losses = []
             entropies = []
             kls = []
             play_time_end = time.time()
@@ -340,9 +362,26 @@ class A2CAgent:
                         dict[self.states_ph] = lstm_states[batch]
                         
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier]
+                        if self.bounds_loss is not None:
+                            run_ops.append(self.bounds_loss)
+                        
+                        run_ops.append(self.train_op)
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-                        a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, lr_mul, _, _ = self.sess.run(run_ops, dict)
+
+                        res_dict = self.sess.run(run_ops, dict)
+                        a_loss = res_dict[0]
+                        c_loss = res_dict[1]
+                        entropy = res_dict[2]
+                        kl = res_dict[3]
+                        last_lr = res_dict[4]
+                        cmu = res_dict[5]
+                        csigma = res_dict[6]
+                        lr_mul = res_dict[7]
+                        if self.bounds_loss is not None:
+                            b_loss = res_dict[8]
+                            b_losses.append(b_loss)
+
                         mus[mbatch] = cmu
                         sigmas[mbatch] = csigma
                         a_losses.append(a_loss)
@@ -370,16 +409,32 @@ class A2CAgent:
                         dict[self.old_mu_ph] = mus[batch]
                         dict[self.old_sigma_ph] = sigmas[batch]
                         dict[self.learning_rate_ph] = last_lr
-                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier, self.train_op]             
-                            
+                        run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier]
+                        if self.bounds_loss is not None:
+                            run_ops.append(self.bounds_loss)
+                        
+                        run_ops.append(self.train_op)
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
-                        a_loss, c_loss, entropy, kl, last_lr, cmu, csigma, lr_mul, _, _ = self.sess.run(run_ops, dict)
+
+                        res_dict = self.sess.run(run_ops, dict)
+                        a_loss = res_dict[0]
+                        c_loss = res_dict[1]
+                        entropy = res_dict[2]
+                        kl = res_dict[3]
+                        last_lr = res_dict[4]
+                        cmu = res_dict[5]
+                        csigma = res_dict[6]
+                        lr_mul = res_dict[7]       
+                        if self.bounds_loss is not None:
+                            b_loss = res_dict[8]
+                            b_losses.append(b_loss)                            
                         mus[batch] = cmu
                         sigmas[batch] = csigma
                         a_losses.append(a_loss)
                         c_losses.append(c_loss)
                         kls.append(kl)
                         entropies.append(entropy)
+
 
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
@@ -394,6 +449,8 @@ class A2CAgent:
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
+                if len(b_losses) > 0:
+                    self.writer.add_scalar('losses/bounds_loss', np.mean(b_losses), frame)
                 self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)

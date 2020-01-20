@@ -3,7 +3,7 @@ params:
     name: a2c_continuous
 
   model:
-    name: continuous_a2c_lstm
+    name: continuous_a2c_lstm_logstd
 
   network:
     name: actor_critic
@@ -11,33 +11,34 @@ params:
     space:
       continuous:
         mu_activation: None
-        sigma_activation: softplus
+        sigma_activation: None
         mu_init:
           name: normc_initializer
           std: 0.01
         sigma_init:
-          name: normc_initializer
-          std: 1.0
-        fixed_sigma: False
+          name: const_initializer
+          value: 0.0
+        fixed_sigma: True
 
     mlp:
-      units: [256, 128, 64]
+      units: [256, 128]
       activation: relu
       initializer:
         name: normc_initializer
         std: 1
-    
+      regularizer:
+        name: 'None'    
     lstm:
       units: 128
-      concated: True
+      concated: False
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn/runBipedalWalkerHardcore-v2'
 
   config:
       reward_scale: 0.1
       reward_shift: 0
-      normalize_advantage: true
+      normalize_advantage: True
       gamma: 0.99
       tau: 0.9
       learning_rate: 1e-4
@@ -45,11 +46,11 @@ params:
       score_to_win: 300
       grad_norm: 0.5
       entropy_coef: 0.000
-      truncate_grads: true
+      truncate_grads: True
       env_name:  BipedalWalkerHardcore-v2
       ppo: true
       e_clip: 0.2
-      clip_value: true
+      clip_value: True
       num_actors: 16
       steps_num: 256
       minibatch_size: 1024
@@ -57,5 +58,6 @@ params:
       critic_coef: 1
       lr_schedule:  None
       lr_threshold: 0.008
-      normalize_input: false
+      normalize_input: False
       seq_len: 8
+      bounds_loss_coef: 0.1

@@ -70,7 +70,7 @@ class KaggleEnv(gym.Env):
             print('atata:', is_done, shaped_reward)
         return next_state, shaped_reward, is_done, info
     
-    def create_agent(self, config='configs/connectx_dqn.yaml'):
+    def create_agent(self, config='configs/connectx_ppo.yaml'):
         if self.sess is None:
             return
         with tf.variable_scope('kaggle_env'):
@@ -87,13 +87,13 @@ class KaggleEnv(gym.Env):
         if np.sum(observation.board) == 0:
             return np.random.randint(7)
         obs = KaggleEnv.build_obs(not self.is_first, self.is_conv, observation)
-        q_vals = self.agent.get_qvalues([obs])
-        q_vals = np.squeeze(q_vals)
-        for i in range(7):
-            if observation.board[i] != 0:
-                q_vals[i] = -1
-        res = int(np.argmax(q_vals))
-        return res
+        action, _, _ = self.agent.get_action_value([obs])
+        if observation.board[action] == 1:
+            for i in range(7):
+                if observation.board[i] == 0:
+                    return i
+  
+        return int(action)
 
     def random_agent(self, observation, configuration):
         from random import choice
