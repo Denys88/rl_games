@@ -116,7 +116,7 @@ class A2CAgent:
             self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
         if self.normalize_input:
-            self.moving_mean_std = movingmeanstd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
             self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
 
