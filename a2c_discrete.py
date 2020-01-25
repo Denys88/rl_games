@@ -94,7 +94,7 @@ class A2CAgent:
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, self.epoch_num,config['max_epochs'],  decay_rate = config['decay_rate'])
         if self.normalize_input:
-            self.moving_mean_std = movingmeanstd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
             self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
 

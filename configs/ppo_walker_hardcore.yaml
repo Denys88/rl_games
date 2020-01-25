@@ -54,10 +54,10 @@ params:
       mini_epochs: 8
       critic_coef: 1
       lr_schedule:  adaptive
-      lr_threshold: 0.002
-      normalize_input: False
+      lr_threshold: 0.008
+      normalize_input: True
       seq_len: 8
-      bounds_loss_coef: 1
+      bounds_loss_coef: 0
 
 
 experiment_config:
@@ -66,4 +66,4 @@ experiment_config:
   experiments:
     - exp:
       - path: config.bounds_loss_coef
-        value: [1, 0.5, 0]
+        value: [1, 0.5, 0.001]
