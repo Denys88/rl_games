@@ -10,21 +10,21 @@ class KaggleEnv(gym.Env):
     def __init__(self, name="connectx", is_conv=True, **kwargs):
         gym.Env.__init__(self)
         self.sess = kwargs.pop('sess', None)
-   
-        self.env = make(name, **kwargs)
+        #**kwargs
+        self.env = make(name, debug=True)
         self.is_first = True
         self.is_conv = is_conv
         self.shuffle_agents = True
-
+        self.agent = None
         self.action_space = gym.spaces.Discrete(7)
+        self.current_obs = None
         if self.is_conv:
             self.observation_space = gym.spaces.Box(low=0, high=1, shape=(7, 6, 3), dtype=np.uint8)
         else:
             self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6 * 7 *3, ), dtype=np.uint8)
 
-        self.create_agent()
-        self.agents = [None, lambda observation, configuration: self.my_agent(observation, configuration)]#self.random_agent
-        #self.agents = [None, 'random']
+        self.agents = [None, 'random']
+
     def update_weights(self, weigths):
         self.agent.set_weights(weigths)
 
@@ -43,7 +43,7 @@ class KaggleEnv(gym.Env):
 
     def _preprocess(is_conv, one_hot):
         if is_conv:
-            return np.reshape(one_hot, [7, 6, 3])
+            return np.reshape(one_hot * 255, [7, 6, 3]) 
         else:
             return one_hot.flatten().astype(np.float32)
 
@@ -55,24 +55,37 @@ class KaggleEnv(gym.Env):
     def reset(self):
         if self.shuffle_agents:
             self.agents[0], self.agents[1] = self.agents[1], self.agents[0]
+        if self.agent is None:
+            self.create_agent()
+            self.agents = [None, lambda observation, configuration: self.my_agent(observation, configuration)]#self.random_agent
 
         self.is_first = self.agents[0] == None
         self.trainer = self.env.train(self.agents)
-        obs = self.trainer.reset()
-        return KaggleEnv.build_obs(self.is_first, self.is_conv, obs)
+        self.current_obs = self.trainer.reset()
+        obs = KaggleEnv.build_obs(self.is_first, self.is_conv, self.current_obs)
+        return obs
 
     def step(self, action):
         action = int(action)
-        next_state, reward, is_done, info = self.trainer.step(action)
-        next_state = KaggleEnv.build_obs(self.is_first, self.is_conv, next_state)
+
+        self.current_obs, reward, is_done, info = self.trainer.step(action)
+        next_state = KaggleEnv.build_obs(self.is_first, self.is_conv, self.current_obs)
         shaped_reward = self._reward_func(reward)
         if reward is None:
             print('atata:', is_done, shaped_reward)
+            print(self.get_action_mask())
+            print(action)
         return next_state, shaped_reward, is_done, info
-    
+
+
+    def get_action_mask(self):
+        return np.array(self.current_obs.board[0:7]) == 0
+
     def create_agent(self, config='configs/connectx_ppo.yaml'):
         if self.sess is None:
-            return
+            gpu_config = tf.ConfigProto(device_count = {'GPU': 0})
+            self.sess = tf.InteractiveSession(config=gpu_config) 
+
         with tf.variable_scope('kaggle_env'):
             with open(config, 'r') as stream:
                 config = yaml.safe_load(stream)
@@ -81,14 +94,20 @@ class KaggleEnv(gym.Env):
                 runner.sess = self.sess
             config = runner.get_prebuilt_config()
             config['env_name'] = None
+            config['is_train'] = False
+            config['num_actors'] = 1
+            self.use_action_masks = config['use_action_masks']
             self.agent = runner.create_agent(self.observation_space, self.action_space)
 
     def my_agent(self, observation, configuration):
-        if np.sum(observation.board) == 0:
-            return np.random.randint(7)
         obs = KaggleEnv.build_obs(not self.is_first, self.is_conv, observation)
-        action, _, _ = self.agent.get_action_value([obs])
-        if observation.board[action] == 1:
+        if self.use_action_masks:
+            action, _, _, _, _ = self.agent.get_masked_action_values([obs],[self.get_action_mask()])
+        else:
+            action, _, _, _ = self.agent.get_action_values([obs])
+        action = np.squeeze(action)
+
+        if observation.board[action] != 0:
             for i in range(7):
                 if observation.board[i] == 0:
                     return i

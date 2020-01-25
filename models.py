@@ -19,23 +19,39 @@ class ModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
+        action_mask_ph = dict.get('action_mask_ph', None)
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, reuse=reuse)
+        probs = tf.nn.softmax(logits)
+        is_playing_steps = prev_actions_ph == None
         # Gumbel Softmax
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+        
 
-        #tf.random.categorical()
+        if is_playing_steps:
+            
+            u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+            rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
+            if action_mask_ph is not None:
+                rand_logits = rand_logits - tf.reduce_min(rand_logits, axis = -1, keepdims=True) + 1.0
+                rand_logits = rand_logits * tf.to_float(action_mask_ph)
+            action = tf.argmax(rand_logits, axis=-1)
+            one_hot_actions = tf.one_hot(action, actions_num)
+            '''
+            fixed_probs = probs * tf.to_float(action_mask_ph)
+            fixed_probs = fixed_probs / tf.reduce_sum(fixed_probs, axis = -1, keepdims=True)
+            dist = tfd.Multinomial(total_count=1., probs=fixed_probs)
+            one_hot_actions = dist.sample(1)
+            action = tf.argmax(one_hot_actions, axis=-1)
+            '''
 
 
-        one_hot_actions = tf.one_hot(action, actions_num)
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
+        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs))
 
-        if prev_actions_ph == None:
+        if is_playing_steps:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy
-
-        prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy
+            return  neglogp, value, action, entropy, logits
+        else:
+            prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
+            return prev_neglogp, value, None, entropy
 
 
 
@@ -193,7 +209,7 @@ class LSTMModelA2C(BaseModel):
 
         if prev_actions_ph == None:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
+            return  neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state, logits
 
         prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
         return prev_neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state

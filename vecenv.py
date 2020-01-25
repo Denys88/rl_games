@@ -9,6 +9,9 @@ class IVecEnv(object):
     def reset(self):
         raise NotImplementedError    
 
+    def has_action_masks(self):
+        return False
+
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
@@ -86,6 +89,9 @@ class RayWorkerSelfPlay:
     def set_weights(self, weights):
         self.env.update_weights(weights)
 
+    def get_action_mask(self):
+        return self.env.get_action_mask()
+
 class RayVecEnvSelfPlay(IVecEnv):
     def __init__(self, config_name, num_actors):
         self.config_name = config_name
@@ -112,9 +118,18 @@ class RayVecEnvSelfPlay(IVecEnv):
         return np.asarray(ray.get(obs))
 
     def set_weights(self, indices, weights):
+        res = []
         for ind in indices:
-            worker.set_weights.remote(weights)
+            res.append(self.workers[ind].set_weights.remote(weights))
+        
+        ray.get(res)
 
+    def has_action_masks(self):
+        return True
+
+    def get_action_masks(self):
+        mask = [worker.get_action_mask.remote() for worker in self.workers]
+        return np.asarray(ray.get(mask), dtype=np.int32)
 
 def create_vec_env(config_name, num_actors):
     if configurations[config_name]['vecenv_type'] == 'RAY':

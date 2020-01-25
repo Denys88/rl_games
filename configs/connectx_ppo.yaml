@@ -6,45 +6,75 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn/runconnectx'
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
+    #value_activation: tanh
     space: 
       discrete:
-
-    mlp:
-      units: [512,256,128]
+    cnn:
       activation: relu
       initializer:
-        name: orthogonal_initializer
-        gain: 1.41421356237
-
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: None #'l2_regularizer'
+        scale: 0.01
+      convs:    
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
+        - filters: 128
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
+        - filters: 128
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'         
+    mlp:
+      units: [512, 256]
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name:  None #'l2_regularizer'
+        scale: 0.01
   config:
+    games_to_track : 100
     reward_scale: 1
     reward_shift: 0
     normalize_advantage: True
     gamma: 0.99
-    tau: 0.9
-    learning_rate: 1e-4
+    tau: 0.95
+    learning_rate: 1e-5
     name: connectx_ppo
     score_to_win: 20.9
     grad_norm: 0.5
-    entropy_coef: 0.008
+    entropy_coef: 0.05
     truncate_grads: True
     env_name:  connectx
     ppo: true
-    e_clip: 0.2
+    e_clip: 0.1
     clip_value: true
     num_actors: 32
     steps_num: 16
     minibatch_size: 128
-    mini_epochs: 8
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
     seq_len: 8
+    max_epochs: 20000
     self_play:
       score_to_update: 0.2
+    use_action_masks: True

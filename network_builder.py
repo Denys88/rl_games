@@ -116,6 +116,7 @@ class A2CBuilder(NetworkBuilder):
         self.regularizer = params['mlp']['regularizer']
         self.is_discrete = 'discrete' in params['space']
         self.is_continuous = 'continuous'in params['space']
+        self.value_activation = params.get('value_activation', 'None')
         self.has_lstm = 'lstm'in params
         if self.is_continuous:
             self.space_config = params['space']['continuous']
@@ -169,8 +170,8 @@ class A2CBuilder(NetworkBuilder):
 
                 out_critic = out_actor
 
-
-            value = tf.layers.dense(out_critic, units = 1, kernel_initializer = self.init_factory.create(**self.initializer), name='value')  
+            
+            value = tf.layers.dense(out_critic, units = 1, kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.value_activation), name='value')  
 
             if self.is_continuous:
                 mu = tf.layers.dense(out_actor, units = actions_num, activation=self.activations_factory.create(self.space_config['mu_activation']), 

@@ -21,7 +21,8 @@ params:
       initializer:
         name: variance_scaling_initializer
         scale: 2
-
+      regularizer:
+        name: 'None'
       convs:    
         - filters: 64
           kernel_size: 3
@@ -42,7 +43,8 @@ params:
       initializer:
         name: variance_scaling_initializer
         scale: 2
-
+      regularizer:
+        name: 'None'
   config:
     reward_scale: 1
     reward_shift: 0

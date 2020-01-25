@@ -236,7 +236,7 @@ configurations = {
     },
     'connectx' : {
         'env_creator' : lambda **kwargs : create_kaggle('connectx', **kwargs),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'RAY_SELFPLAY'
     },
 }
 

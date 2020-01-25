@@ -26,7 +26,10 @@ class BasePlayer(object):
 
     def get_action(self, obs, is_determenistic = False):
         raise NotImplementedError('step')
-        
+    
+    def get_masked_action(self, obs, mask, is_determenistic = False):
+        raise NotImplementedError('step') 
+
     def reset(self):
         raise NotImplementedError('raise')
 
@@ -97,6 +100,7 @@ class PpoPlayerContinuous(BasePlayer):
         action = np.squeeze(action)
         return  rescale_actions(self.actions_low, self.actions_high, np.clip(action, -1.0, 1.0))
 
+
     def restore(self, fn):
         self.saver.restore(self.sess, fn)
 
@@ -111,8 +115,14 @@ class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, sess, config):
         BasePlayer.__init__(self, sess, config)
         self.network = config['network']
+        self.use_action_masks = config.get('use_action_masks', False)
         self.obs_ph = tf.placeholder(self.obs_space.dtype, (None, ) + self.obs_space.shape, name = 'obs')
         self.actions_num = self.action_space.n
+        if self.use_action_masks:
+            print('using masks for action')
+            self.action_mask_ph = tf.placeholder('int32', (None, self.actions_num), name = 'actions_mask')       
+        else:
+            self.action_mask_ph = None
         self.mask = [False]
         self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
@@ -132,14 +142,15 @@ class PpoPlayerDiscrete(BasePlayer):
             'batch_num' : 1,
             'games_num' : 1,
             'actions_num' : self.actions_num,
-            'prev_actions_ph' : None
+            'prev_actions_ph' : None,
+            'action_mask_ph' : self.action_mask_ph
         }
         self.last_state = None
         if self.network.is_rnn():
-            _ ,_, self.action, _,self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.run_dict, reuse=False)
+            _ ,_, self.action, _,self.states_ph, self.masks_ph, self.lstm_state, self.initial_state, self.logits = self.network(self.run_dict, reuse=False)
             self.last_state = self.initial_state
         else:
-            _ ,_, self.action,  _  = self.network(self.run_dict, reuse=False)
+            _ ,_, self.action,  _, self.logits  = self.network(self.run_dict, reuse=False)
 
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
@@ -152,7 +163,28 @@ class PpoPlayerDiscrete(BasePlayer):
             action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action = self.sess.run([ret_action], {self.obs_ph : obs})
-        return   int(np.squeeze(action))
+
+        if is_determenistic:
+            return int(np.argmax(logits))
+        else:
+            return int(np.squeeze(action))
+
+    def get_masked_action(self, obs, mask, is_determenistic = True):
+        #if is_determenistic:
+        ret_action = self.action
+
+        if self.network.is_rnn():
+            action, self.last_state, logits = self.sess.run([ret_action, self.lstm_state, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
+        else:
+            action, logits = self.sess.run([ret_action, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs})
+
+        print(logits)
+        if is_determenistic:
+            logits = np.array(logits)
+            shifted_logits = (logits - np.min(logits) + 1) * mask
+            return int(np.argmax(shifted_logits))
+        else:
+            return int(np.squeeze(action))
 
     def restore(self, fn):
         self.saver.restore(self.sess, fn)

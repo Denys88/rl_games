@@ -66,7 +66,7 @@ class Runner:
 
     def run_train(self):
         print('Started to train')
-        ray.init(redis_max_memory=1024*1024*100, object_store_memory=1024*1024*100)
+        ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['env_name'])
         print('obs_space:', obs_space)
         print('action_space:', action_space)
