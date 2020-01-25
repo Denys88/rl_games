@@ -55,9 +55,10 @@ params:
       critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
-      normalize_input: True
+      normalize_input: False
       seq_len: 8
       bounds_loss_coef: 0
+      max_epochs: 5000
 
 
 experiment_config:
