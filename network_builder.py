@@ -165,7 +165,7 @@ class A2CBuilder(NetworkBuilder):
 
             else:
                 if self.has_lstm:
-                    out_actor, lstm_state, initial_state, dones_ph, states_ph = self._build_lstm('lstm', out_critic, self.lstm_units, batch_num, games_num)
+                    out_actor, lstm_state, initial_state, dones_ph, states_ph = self._build_lstm('lstm', out_actor, self.lstm_units, batch_num, games_num)
 
                 out_critic = out_actor
 

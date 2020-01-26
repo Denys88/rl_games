@@ -84,7 +84,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_determenistic = True):
         if is_determenistic:
             ret_action = self.mu
         else:

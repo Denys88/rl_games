@@ -20,8 +20,8 @@ params:
           value: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 128]
-      activation: elu
+      units: [512, 256, 128]
+      activation: relu
       initializer:
         name: normc_initializer
         std: 1        
@@ -50,15 +50,15 @@ params:
       clip_value: True
       num_actors: 16
       steps_num: 256
-      minibatch_size: 1024
-      mini_epochs: 8
+      minibatch_size: 2048
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0
-      max_epochs: 5000
+      bounds_loss_coef: 0.5
+      max_epochs: 10000
 
 
 experiment_config:
@@ -67,4 +67,4 @@ experiment_config:
   experiments:
     - exp:
       - path: config.bounds_loss_coef
-        value: [1, 0.5, 0.001]
+        value: [0.5]
