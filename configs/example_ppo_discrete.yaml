@@ -15,6 +15,7 @@ params:
       discrete:
 
     cnn:
+      type: conv2d
       activation: relu
       initializer:
         name: orthogonal_initializer

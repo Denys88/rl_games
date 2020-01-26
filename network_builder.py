@@ -2,7 +2,7 @@ import object_factory
 import tensorflow as tf
 import numpy as np
 import networks
-
+import casual_conv1d
 def normc_initializer(std=1.0):
     def _initializer(shape, dtype=None, partition_info=None):
         out = np.random.randn(*shape).astype(np.float32)
@@ -36,6 +36,10 @@ class NetworkBuilder:
         self.regularizer_factory.register_builder('l1l2_regularizer', lambda **kwargs : tf.contrib.layers.l1l2_regularizer(**kwargs))
         self.regularizer_factory.register_builder('None', lambda **kwargs : None)
 
+
+    def create_is_train(self):
+        self.is_train = tf.get_variable('is_train', shape=(1,), initializer=tf.constant_initializer(True),trainable=False)
+        pass
     def load(self, params):
         pass
 
@@ -48,7 +52,7 @@ class NetworkBuilder:
     def _noisy_dense(self, inputs, units, activation, kernel_initializer, kernel_regularizer, name):
         return networks.noisy_dense(inputs, units, name, True, activation)
 
-    def _build_mlp(self, name, input, units, activation, initializer, regularizer, dense_func = tf.layers.dense):
+    def _build_mlp(self, name, input, units, activation, initializer, regularizer, norm_func_name = None, dense_func = tf.layers.dense):
         out = input
         ind = 0
         for unit in units:
@@ -57,7 +61,11 @@ class NetworkBuilder:
             activation=self.activations_factory.create(activation), 
             kernel_initializer = self.init_factory.create(**initializer), 
             kernel_regularizer = self.regularizer_factory.create(**regularizer),
-            name=name + str(ind))      
+            name=name + str(ind))
+            if norm_func_name == 'layer_norm':
+                out = tf.contrib.layers.layer_norm(out)
+            elif norm_func_name == 'batch_norm':
+                out = tf.layers.batch_normalization(out, training=self.is_train)   
 
         return out
 
@@ -86,6 +94,15 @@ class NetworkBuilder:
         #lstm_outa, lstm_outc = tf.split(lstm_out, 2, axis=1)
         return a_out, c_out, lstm_state, initial_state, dones_ph, states_ph
 
+    def _build_conv(self, ctype, name, input, convs, activation, initializer, regularizer):
+        print('conv_name:', ctype)
+
+        if ctype == 'conv2d':
+            return self._build_cnn(name, input, convs, activation, initializer, regularizer)
+        if ctype == 'conv1d':
+            return self._build_cnn1d(name, input, convs, activation, initializer, regularizer)
+        if ctype == 'casual_conv1d':
+            return self._build_casual_cnn1d(name, input, convs, activation, initializer, regularizer)
 
     def _build_cnn(self, name, input, convs, activation, initializer, regularizer):
         out = input
@@ -104,6 +121,33 @@ class NetworkBuilder:
             out = tf.layers.conv2d(inputs=out, **config)
         return out
 
+    def _build_cnn1d(self, name, input, convs, activation, initializer, regularizer):
+        out = input
+        ind = 0
+        print('_build_cnn1d')
+        for conv in convs:
+            ind += 1
+            config = conv.copy()
+            config['activation'] = self.activations_factory.create(activation)
+            config['kernel_initializer'] = self.init_factory.create(**initializer)
+            config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
+            config['name'] = name + str(ind)
+            out = tf.layers.conv1d(inputs=out, **config)
+        return out
+
+    def _build_casual_cnn1d(self, name, input, convs, activation, initializer, regularizer):
+        out = input
+        ind = 0
+        for conv in convs:
+            ind += 1
+            config = conv.copy()
+            config['activation'] = self.activations_factory.create(activation)
+            config['kernel_initializer'] = self.init_factory.create(**initializer)
+            config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
+            config['name'] = name + str(ind)
+            out = casual_conv1d.CasualConv1d(inputs=out, **config)
+        return out
+
 class A2CBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -116,7 +160,7 @@ class A2CBuilder(NetworkBuilder):
         self.regularizer = params['mlp']['regularizer']
         self.is_discrete = 'discrete' in params['space']
         self.is_continuous = 'continuous'in params['space']
-        self.has_lstm = 'lstm'in params
+        self.has_lstm = 'lstm' in params
         if self.is_continuous:
             self.space_config = params['space']['continuous']
         elif self.is_discrete:
@@ -129,7 +173,6 @@ class A2CBuilder(NetworkBuilder):
         if 'cnn' in params:
             self.has_cnn = True
             self.cnn = params['cnn']
-
         else:
             self.has_cnn = False
 
@@ -143,12 +186,12 @@ class A2CBuilder(NetworkBuilder):
         with tf.variable_scope(name, reuse=reuse):   
             actor_input = critic_input = input
             if self.has_cnn:
-                actor_input = self._build_cnn('actor_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
+                actor_input = self._build_conv(self.cnn['type'], 'actor_cnn',  input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
                 actor_input = tf.contrib.layers.flatten(actor_input)
                 critic_input = actor_input
 
                 if self.separate:
-                    critic_input = self._build_cnn('critic_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
+                    critic_input = self._build_conv(self.cnn['type'], 'critic_cnn',  input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
                     critic_input = tf.contrib.layers.flatten(critic_input)
 
 
