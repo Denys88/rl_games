@@ -185,9 +185,10 @@ class FrameStack(gym.Wrapper):
         else:
             if len(shp) == 1:
                 self.observation_space = spaces.Box(low=-1, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
-
             else:
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
+                print('shape:', self.observation_space)
+
 
     def reset(self):
         ob = self.env.reset()
@@ -209,7 +210,7 @@ class FrameStack(gym.Wrapper):
                 res = np.concatenate([f[..., np.newaxis] for f in self.frames], axis=-1)
                 return np.transpose(res)
             else:
-                return np.concatenate([self.frames], axis=-1)
+                return np.concatenate(self.frames, axis=-1)
         #return LazyFrames(list(self.frames))
 
 class ScaledFloatFrame(gym.ObservationWrapper):
