@@ -48,7 +48,16 @@ class NetworkBuilder:
     def _noisy_dense(self, inputs, units, activation, kernel_initializer, kernel_regularizer, name):
         return networks.noisy_dense(inputs, units, name, True, activation)
 
-    def _build_mlp(self, name, input, units, activation, initializer, regularizer, dense_func = tf.layers.dense):
+    def _build_mlp(self, 
+    name, 
+    input, 
+    units, 
+    activation, 
+    initializer, 
+    regularizer, 
+    norm_func_name = None, 
+    dense_func = tf.layers.dense,
+    is_train=True):
         out = input
         ind = 0
         for unit in units:
@@ -57,7 +66,11 @@ class NetworkBuilder:
             activation=self.activations_factory.create(activation), 
             kernel_initializer = self.init_factory.create(**initializer), 
             kernel_regularizer = self.regularizer_factory.create(**regularizer),
-            name=name + str(ind))      
+            name=name + str(ind))
+            if norm_func_name == 'layer_norm':
+                out = tf.contrib.layers.layer_norm(out)
+            elif norm_func_name == 'batch_norm':
+                out = tf.layers.batch_normalization(out, training=is_train)   
 
         return out
 
@@ -86,8 +99,15 @@ class NetworkBuilder:
         #lstm_outa, lstm_outc = tf.split(lstm_out, 2, axis=1)
         return a_out, c_out, lstm_state, initial_state, dones_ph, states_ph
 
+    def _build_conv(self, ctype, **kwargs):
+        print('conv_name:', ctype)
 
-    def _build_cnn(self, name, input, convs, activation, initializer, regularizer):
+        if ctype == 'conv2d':
+            return self._build_cnn(**kwargs)
+        if ctype == 'conv1d':
+            return self._build_cnn1d(**kwargs)
+
+    def _build_cnn(self, name, input, convs, activation, initializer, regularizer, norm_func_name=None, is_train=True):
         out = input
         ind = 0
         for conv in convs:
@@ -102,6 +122,29 @@ class NetworkBuilder:
             config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
             config['name'] = name + str(ind)
             out = tf.layers.conv2d(inputs=out, **config)
+            if norm_func_name == 'layer_norm':
+                out = tf.contrib.layers.layer_norm(out)
+            elif norm_func_name == 'batch_norm':
+                out = tf.layers.batch_normalization(out, training=is_train)   
+        return out
+
+    def _build_cnn1d(self, name, input, convs, activation, initializer, regularizer, norm_func_name=None, is_train=True):
+        out = input
+        ind = 0
+        print('_build_cnn1d')
+        for conv in convs:
+            ind += 1
+            config = conv.copy()
+            config['activation'] = self.activations_factory.create(activation)
+            config['kernel_initializer'] = self.init_factory.create(**initializer)
+            config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
+            config['name'] = name + str(ind)
+            out = tf.layers.conv1d(inputs=out, **config)
+            print('shapes of layer_' + str(ind), str(out.get_shape().as_list()))
+            if norm_func_name == 'layer_norm':
+                out = tf.contrib.layers.layer_norm(out)
+            elif norm_func_name == 'batch_norm':
+                out = tf.layers.batch_normalization(out, training=is_train)   
         return out
 
 class A2CBuilder(NetworkBuilder):
@@ -117,7 +160,9 @@ class A2CBuilder(NetworkBuilder):
         self.is_discrete = 'discrete' in params['space']
         self.is_continuous = 'continuous'in params['space']
         self.value_activation = params.get('value_activation', 'None')
-        self.has_lstm = 'lstm'in params
+        self.normalization = params.get('normalization', None)
+        self.has_lstm = 'lstm' in params
+
         if self.is_continuous:
             self.space_config = params['space']['continuous']
         elif self.is_discrete:
@@ -130,7 +175,6 @@ class A2CBuilder(NetworkBuilder):
         if 'cnn' in params:
             self.has_cnn = True
             self.cnn = params['cnn']
-
         else:
             self.has_cnn = False
 
@@ -140,23 +184,46 @@ class A2CBuilder(NetworkBuilder):
         reuse = kwargs.pop('reuse')
         batch_num = kwargs.pop('batch_num', 1)
         games_num = kwargs.pop('games_num', 1)
-
+        is_train = kwargs.pop('is_train', True)
         with tf.variable_scope(name, reuse=reuse):   
             actor_input = critic_input = input
             if self.has_cnn:
-                actor_input = self._build_cnn('actor_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
+                cnn_args = {
+                    'name' :'actor_cnn', 
+                    'ctype' : self.cnn['type'], 
+                    'input' : input, 
+                    'convs' :self.cnn['convs'], 
+                    'activation' : self.cnn['activation'], 
+                    'initializer' : self.cnn['initializer'], 
+                    'regularizer' : self.cnn['regularizer'],
+                    'norm_func_name' : self.normalization,
+                    'is_train' : is_train
+                }
+                actor_input = self._build_conv(**cnn_args)
                 actor_input = tf.contrib.layers.flatten(actor_input)
                 critic_input = actor_input
 
                 if self.separate:
-                    critic_input = self._build_cnn('critic_cnn', input, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
+                    cnn_args['name'] = 'critic_cnn' 
+                    critic_input = self._build_conv( **cnn_args)
                     critic_input = tf.contrib.layers.flatten(critic_input)
 
-
-            out_actor = self._build_mlp('actor_fc', actor_input, self.units, self.activation, self.initializer, self.regularizer)
+            mlp_args = {
+                'name' :'actor_fc',  
+                'input' : actor_input, 
+                'units' :self.units, 
+                'activation' : self.activation, 
+                'initializer' : self.initializer, 
+                'regularizer' : self.regularizer,
+                'norm_func_name' : self.normalization,
+                'is_train' : is_train    
+            }
+            out_actor = self._build_mlp(**mlp_args)
 
             if self.separate:
-                out_critic = self._build_mlp('critic_fc', critic_input, self.units, self.activation, self.initializer, self.regularizer)
+                mlp_args['name'] = 'critic_fc'
+                mlp_args['input'] = critic_input
+                out_critic = self._build_mlp(**mlp_args)
                 if self.has_lstm:
                     if self.concated:
                         out_actor, lstm_state, initial_state, dones_ph, states_ph = self._build_lstm2('lstm', [out_actor, out_critic], self.lstm_units, batch_num, games_num)
@@ -166,7 +233,7 @@ class A2CBuilder(NetworkBuilder):
 
             else:
                 if self.has_lstm:
-                    out_actor, lstm_state, initial_state, dones_ph, states_ph = self._build_lstm('lstm', out_critic, self.lstm_units, batch_num, games_num)
+                    out_actor, lstm_state, initial_state, dones_ph, states_ph = self._build_lstm('lstm', out_actor, self.lstm_units, batch_num, games_num)
 
                 out_critic = out_actor
 
@@ -207,11 +274,10 @@ class DQNBuilder(NetworkBuilder):
         self.is_dueling = params['dueling']
         self.atoms = params['atoms']
         self.is_noisy = params['noisy']
-
+        self.normalization = params.get('normalization', None)
         if 'cnn' in params:
             self.has_cnn = True
             self.cnn = params['cnn']
-
         else:
             self.has_cnn = False
 
@@ -219,6 +285,7 @@ class DQNBuilder(NetworkBuilder):
         actions_num = kwargs.pop('actions_num')
         input = kwargs.pop('inputs')
         reuse = kwargs.pop('reuse')
+        is_train = kwargs.pop('is_train', True)
         if self.is_noisy:
             dense_layer = self._noisy_dense
         else:
@@ -226,12 +293,34 @@ class DQNBuilder(NetworkBuilder):
         with tf.variable_scope(name, reuse=reuse):   
             out = input
             if self.has_cnn:
-                out = self._build_cnn('dqn_cnn', out, self.cnn['convs'], self.cnn['activation'], self.cnn['initializer'], self.cnn['regularizer'])
+                cnn_args = {
+                    'name' :'dqn_cnn',
+                    'ctype' : self.cnn['type'], 
+                    'input' : input, 
+                    'convs' :self.cnn['convs'], 
+                    'activation' : self.cnn['activation'], 
+                    'initializer' : self.cnn['initializer'], 
+                    'regularizer' : self.cnn['regularizer'],
+                    'norm_func_name' : self.normalization,
+                    'is_train' : is_train
+                }
+                out = self._build_conv(**cnn_args)
                 out = tf.contrib.layers.flatten(out)
 
+            mlp_args = {
+                'name' :'dqn_mlp',  
+                'input' : out, 
+                'activation' : self.activation, 
+                'initializer' : self.initializer, 
+                'regularizer' : self.regularizer,
+                'norm_func_name' : self.normalization,
+                'is_train' : is_train,
+                'dense_func' : dense_layer    
+            }
             if self.is_dueling:
                 if len(self.units) > 1:
-                    out = self._build_mlp('dqn_mlp', out, self.units[:-1], self.activation, self.initializer, self.regularizer)
+                    mlp_args['units'] = self.units[:-1]
+                    out = self._build_mlp(**mlp_args)
                 hidden_value = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), name='hidden_val')
                 hidden_advantage = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), name='hidden_adv')
 
@@ -239,6 +328,7 @@ class DQNBuilder(NetworkBuilder):
                 advantage = dense_layer(inputs=hidden_advantage, units=actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), activation=tf.identity, name='advantage')
                 q_values = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keepdims=True)
             else:
+                mlp_args['units'] = self.units
                 out = self._build_mlp('dqn_mlp', out, self.units, self.activation, self.initializer, self.regularizer)
                 q_values = dense_layer(out, units = actions_num, kernel_initializer = self.init_factory.create(**self.initializer), activation=None, name='q_values')
             

@@ -1,18 +1,27 @@
 params:  
   algo:
-    name: a2c_discrete
+    name: a2c_continuous
 
   model:
-    name: discrete_a2c
+    name: continuous_a2c_logstd
 
-  load_checkpoint: False
-  load_path: path
+  load_checkpoint: True
+  load_path: 'nn/runCarRacing-v0'
 
   network:
     name: actor_critic
     separate: False
-    space: 
-      discrete:
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: normc_initializer
+          std: 0.01
+        sigma_init:
+          name: const_initializer
+          value: 0
+        fixed_sigma: True
 
     cnn:
       type: conv2d
@@ -45,27 +54,31 @@ params:
       regularizer:
         name: 'None'
   config:
-    reward_scale: 1
+    reward_scale: 0.1
     reward_shift: 0
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
     learning_rate: 5e-4
     name: atari
-    score_to_win: 20.9
+    score_to_win: 900
     grad_norm: 0.5
-    entropy_coef: 0.004
+    entropy_coef: 0.000
     truncate_grads: True
-    env_name:  PongNoFrameskip-v4
+    env_name:  CarRacing-v0
     ppo: true
-    e_clip: 0.1
+    e_clip: 0.2
     clip_value: True
     num_actors: 16
-    steps_num: 16
-    minibatch_size: 64
+    steps_num: 256
+    minibatch_size: 1024
     mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
     seq_len: 8
+    #lr_schedule:  adaptive
+    # lr_threshold: 0.008
+    # bounds_loss_coef: 0.5
+    # max_epochs: 5000

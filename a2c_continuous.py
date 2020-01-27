@@ -116,7 +116,7 @@ class A2CAgent:
             self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
         if self.normalize_input:
-            self.moving_mean_std = movingmeanstd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
+            self.moving_mean_std = MovingMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=True)
             self.input_target_obs = self.moving_mean_std.normalize(self.input_target_obs, train=False)
 
@@ -128,7 +128,7 @@ class A2CAgent:
             'batch_num' : self.config['minibatch_size'],
             'games_num' : games_num,
             'actions_num' : self.actions_num,
-            'prev_actions_ph' : self.actions_ph
+            'prev_actions_ph' : self.actions_ph,
         }
 
         self.run_dict = {
@@ -137,7 +137,7 @@ class A2CAgent:
             'batch_num' : self.num_actors,
             'games_num' : self.num_actors,
             'actions_num' : self.actions_num,
-            'prev_actions_ph' : None
+            'prev_actions_ph' : None,
         }
 
         self.states = None
