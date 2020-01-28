@@ -218,7 +218,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcoreCnn-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 8, False),
+        'env_creator' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v2'), 4, False),
         'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {

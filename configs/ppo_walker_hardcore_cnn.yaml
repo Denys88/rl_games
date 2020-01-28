@@ -32,21 +32,22 @@ params:
         - filters: 64
           kernel_size: 3
           strides: 1
-          padding: 'causal'
+          padding: 'same'
         - filters: 64
-          kernel_size: 23
+          kernel_size: 3
           strides: 1
-          padding: 'causal'
+          padding: 'same'
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
         - filters: 128
           kernel_size: 2
           strides: 1
-          padding: 'causal'
-        - filters: 128
-          kernel_size: 2
-          strides: 1
-          padding: 'causal'
+          padding: 'valid'
+
     mlp:
-      units: [256]
+      units: [256, 128]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -54,19 +55,22 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-
+    #lstm:
+    #  units: 128
+    #  concated: False
   load_checkpoint: False
   load_path: 'nn/walker_0_0ep=813.0rew=287.86985430901296'
 
   config:
-      reward_scale: 0.1
-      reward_shift: 0
+      reward_shaper:
+        scale_value: 0.1
+        min_val: 0
       normalize_advantage: True
       gamma: 0.99
       tau: 0.9
       learning_rate: 1e-4
       name: walker
-      score_to_win: 320
+      score_to_win: 300
       grad_norm: 0.5
       entropy_coef: 0.000
       truncate_grads: True
@@ -84,13 +88,12 @@ params:
       normalize_input: False
       seq_len: 8
       bounds_loss_coef: 0.5
-      max_epochs: 10000
+      max_epochs: 20000
 
-
-experiment_config1:
+experiment_config:
   start_exp: 0
   start_sub_exp: 0
   experiments:
     - exp:
-      - path: config.bounds_loss_coef
-        value: [0.5]
+      - path: config.normalize_input
+        value: [True, False]

@@ -26,7 +26,14 @@ class MovingMeanStd(object):
     def normalize(self, x, train=True):
         x64 = tf.cast(x, tf.float64)
         if train:
-            mean, var = tf.nn.moments(x64, [0])
+            shape = x.get_shape().as_list()
+            if (len(shape) == 2):
+                axis = [0]
+            if (len(shape) == 3):
+                axis = [0, 1]
+            if (len(shape) == 4):
+                axis = [0, 1, 2]                    
+            mean, var = tf.nn.moments(x64, axis)
             new_mean, new_var, new_count = self.update_mean_var_count_from_moments(self.moving_mean, self.moving_variance, self.count, mean, var, tf.cast(tf.shape(x)[0], tf.float64))
             mean_op = self.moving_mean.assign(new_mean)
             var_op = self.moving_variance.assign(tf.maximum(new_var, 1e-2))

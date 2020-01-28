@@ -13,16 +13,16 @@ class LinearValueProcessor:
 
 
 class DefaultRewardsShaper:
-    def __init__(self, clip_value = 0, scale_value = 1, shift_value = 0):
-        self.clip_value = clip_value
+    def __init__(self, scale_value = 1, shift_value = 0, min_val=-np.inf, max_val=np.inf):
         self.scale_value = scale_value
         self.shift_value = shift_value
-
+        self.min_val = min_val
+        self.max_val = max_val
     def __call__(self, reward):
         reward = reward + self.shift_value
         reward = reward * self.scale_value
-        if self.clip_value > 0:
-            reward = np.clip(reward, -self.clip_value, self.clip_value)
+
+        reward = np.clip(reward, self.min_val, self.max_val)
         return reward
 
 def discount_with_dones(rewards, dones, gamma):
