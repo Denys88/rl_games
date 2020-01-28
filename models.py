@@ -19,7 +19,6 @@ class ModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-<<<<<<< Updated upstream
         is_train = prev_actions_ph is not None
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train, reuse=reuse)
         # Gumbel Softmax
@@ -33,34 +32,6 @@ class ModelA2C(BaseModel):
         entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
 
         if prev_actions_ph == None:
-=======
-        action_mask_ph = dict.get('action_mask_ph', None)
-        is_train = prev_actions_ph is not None
-        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,reuse=reuse)
-        probs = tf.nn.softmax(logits)
-        
-        if not is_train:
-            
-            u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-            rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
-            if action_mask_ph is not None:
-                rand_logits = rand_logits - tf.reduce_min(rand_logits, axis = -1, keepdims=True) + 1.0
-                rand_logits = rand_logits * tf.to_float(action_mask_ph)
-            action = tf.argmax(rand_logits, axis=-1)
-            one_hot_actions = tf.one_hot(action, actions_num)
-            '''
-            fixed_probs = probs * tf.to_float(action_mask_ph)
-            fixed_probs = fixed_probs / tf.reduce_sum(fixed_probs, axis = -1, keepdims=True)
-            dist = tfd.Multinomial(total_count=1., probs=fixed_probs)
-            one_hot_actions = dist.sample(1)
-            action = tf.argmax(one_hot_actions, axis=-1)
-            '''
-
-
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs))
-
-        if not is_train:
->>>>>>> Stashed changes
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
             return  neglogp, value, action, entropy
 
