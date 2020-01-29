@@ -224,7 +224,7 @@ class A2CAgent:
                 masks = self.vec_env.get_action_masks()
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
                 #print('obs:', self.obs)
-                #print(logits)
+                #print(neglogpacs[0])
                 #print(masks)
                 #print(actions)
             else:
@@ -436,8 +436,8 @@ class A2CAgent:
                             self.game_rewards.clear()
                             self.game_lengths.clear()
                             last_mean_rewards = -100500
-                            self.vec_env.set_weights(range(self.num_actors), self.get_weights())
-                            #self.vec_env.set_weights(np.array(range(2)) + env_index * 2, self.get_weights())
+                            #self.vec_env.set_weights(range(self.num_actors), self.get_weights())
+                            self.vec_env.set_weights(np.array(range(2)) + env_index * 2, self.get_weights())
                             env_index = (env_index + 1) % (self.num_actors // 2)
                             self.obs = self.vec_env.reset()
                 if epoch_num > max_epochs:

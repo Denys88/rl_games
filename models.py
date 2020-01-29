@@ -20,9 +20,10 @@ class ModelA2C(BaseModel):
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
         action_mask_ph = dict.get('action_mask_ph', None)
+        is_train = prev_actions_ph is not None
+
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,reuse=reuse)
         probs = tf.nn.softmax(logits)
-        is_train = prev_actions_ph is not None
 
         # Gumbel Softmax
         

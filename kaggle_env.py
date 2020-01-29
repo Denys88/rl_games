@@ -93,21 +93,22 @@ class KaggleEnv(gym.Env):
                 runner.load(config)
                 runner.sess = self.sess
             config = runner.get_prebuilt_config()
-            config['env_name'] = None
-            config['is_train'] = False
-            config['num_actors'] = 1
+
             self.use_action_masks = config['use_action_masks']
-            self.agent = runner.create_agent(self.observation_space, self.action_space)
+            self.agent = runner.create_player()
 
     def my_agent(self, observation, configuration):
         obs = KaggleEnv.build_obs(not self.is_first, self.is_conv, observation)
         if self.use_action_masks:
-            action, _, _, _, _ = self.agent.get_masked_action_values([obs],[self.get_action_mask()])
+            mask = np.array(observation.board[0:7]) == 0
+            action = self.agent.get_masked_action([obs],[mask])
         else:
-            action, _, _, _ = self.agent.get_action_values([obs])
+            action = self.agent.get_action([obs])
         action = np.squeeze(action)
 
         if observation.board[action] != 0:
+            print(action)
+            print(mask)
             for i in range(7):
                 if observation.board[i] == 0:
                     return i

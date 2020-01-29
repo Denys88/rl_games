@@ -125,7 +125,7 @@ class NetworkBuilder:
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
             elif norm_func_name == 'batch_norm':
-                out = tf.layers.batch_normalization(out, training=is_train)   
+                out = tf.layers.batch_normalization(out, name='bn_'+ config['name'], training=is_train)   
         return out
 
     def _build_cnn1d(self, name, input, convs, activation, initializer, regularizer, norm_func_name=None, is_train=True):

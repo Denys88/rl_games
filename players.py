@@ -2,6 +2,7 @@ import env_configurations
 import tensorflow as tf
 import numpy as np
 import dqnagent
+from tensorflow_utils import TensorFlowVariables
 from tf_moving_mean_std import MovingMeanStd
 
 def rescale_actions(low, high, action):
@@ -17,9 +18,15 @@ class BasePlayer(object):
         self.env_name = self.config['env_name']
         self.obs_space, self.action_space = env_configurations.get_obs_and_action_spaces(self.env_name)
 
+
     def restore(self, fn):
         raise NotImplementedError('restore')
 
+    def get_weights(self):
+        return self.variables.get_flat()
+    
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator']()
@@ -82,10 +89,10 @@ class PpoPlayerContinuous(BasePlayer):
         }
         self.last_state = None
         if self.network.is_rnn():
-            _ ,_, self.action, _, self.mu, _, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.run_dict, reuse=False)
+            self.neglop, self.value, self.action, _, self.mu, _, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.run_dict, reuse=False)
             self.last_state = self.initial_state
         else:
-            _ ,_, self.action, _, self.mu, _  = self.network(self.run_dict, reuse=False)
+            self.neglop, self.value, self.action, _, self.mu, _  = self.network(self.run_dict, reuse=False)
 
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
@@ -150,10 +157,12 @@ class PpoPlayerDiscrete(BasePlayer):
         }
         self.last_state = None
         if self.network.is_rnn():
-            _ ,_, self.action, _,self.states_ph, self.masks_ph, self.lstm_state, self.initial_state, self.logits = self.network(self.run_dict, reuse=False)
+            self.neglop , self.value, self.action, _,self.states_ph, self.masks_ph, self.lstm_state, self.initial_state, self.logits = self.network(self.run_dict, reuse=False)
             self.last_state = self.initial_state
         else:
-            _ ,_, self.action,  _, self.logits  = self.network(self.run_dict, reuse=False)
+            self.neglop , self.value, self.action,  _, self.logits  = self.network(self.run_dict, reuse=False)
+
+        self.variables = TensorFlowVariables([self.neglop, self.value, self.action], self.sess)
 
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
@@ -172,7 +181,7 @@ class PpoPlayerDiscrete(BasePlayer):
         else:
             return int(np.squeeze(action))
 
-    def get_masked_action(self, obs, mask, is_determenistic = True):
+    def get_masked_action(self, obs, mask, is_determenistic = False):
         #if is_determenistic:
         ret_action = self.action
 
@@ -180,8 +189,6 @@ class PpoPlayerDiscrete(BasePlayer):
             action, self.last_state, logits = self.sess.run([ret_action, self.lstm_state, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action, logits = self.sess.run([ret_action, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs})
-
-        print(logits)
         if is_determenistic:
             logits = np.array(logits)
             shifted_logits = (logits - np.min(logits) + 1) * mask

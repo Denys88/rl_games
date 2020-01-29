@@ -6,15 +6,16 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/runconnectx'
+  load_path: 'nn/connectx_ppoconnectx'
 
   network:
     name: actor_critic
     separate: False
-    #value_activation: tanh
+    normalization: layer_norm
     space: 
       discrete:
     cnn:
+      type: conv2d
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -22,7 +23,15 @@ params:
       regularizer:
         name: None #'l2_regularizer'
         scale: 0.01
-      convs:    
+      convs:
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'   
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 'same'
         - filters: 64
           kernel_size: 3
           strides: 1
@@ -40,7 +49,7 @@ params:
           strides: 1
           padding: 'valid'         
     mlp:
-      units: [512, 256]
+      units: [512]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -50,22 +59,22 @@ params:
         scale: 0.01
   config:
     games_to_track : 100
-    reward_scale: 1
+    reward_scale: 0.1
     reward_shift: 0
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 1e-5
+    learning_rate: 1e-4
     name: connectx_ppo
     score_to_win: 20.9
     grad_norm: 0.5
-    entropy_coef: 0.05
+    entropy_coef: 0.03
     truncate_grads: True
     env_name:  connectx
     ppo: true
     e_clip: 0.1
     clip_value: true
-    num_actors: 32
+    num_actors: 16
     steps_num: 16
     minibatch_size: 128
     mini_epochs: 4
