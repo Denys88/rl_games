@@ -187,7 +187,6 @@ class FrameStack(gym.Wrapper):
                 self.observation_space = spaces.Box(low=-1, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
             else:
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
-                print('shape:', self.observation_space)
 
 
     def reset(self):
@@ -208,6 +207,8 @@ class FrameStack(gym.Wrapper):
         else:
             if len(self.shp) == 1:
                 res = np.concatenate([f[..., np.newaxis] for f in self.frames], axis=-1)
+                #print('shape:', np.shape(res))
+                #print('shape:', np.shape(np.transpose(res)))
                 return np.transpose(res)
             else:
                 return np.concatenate(self.frames, axis=-1)
