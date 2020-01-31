@@ -14,6 +14,7 @@ params:
     atoms: 1
     noisy: False
     cnn:
+      type: conv2d
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -43,31 +44,31 @@ params:
       regularizer:
         name: 'None'
   config:
-    reward_scale: 1
-    reward_shift: 0
+    reward_shaper:
+        scale_value: 1
     gamma : 0.99
-    learning_rate : 0.0005
+    learning_rate : 0.001
     steps_per_epoch : 4
-    batch_size : 128
-    epsilon : 0.90
+    batch_size : 32
+    epsilon : 0.99
     min_epsilon : 0.02
     epsilon_decay_frames : 100000
     num_epochs_to_copy : 10000
-    name : 'pong_dddqn_config1'
-    env_name:  PongNoFrameskip-v4
+    name : 'breakout'
+    env_name:  BreakoutNoFrameskip-v4
     is_double : True
-    score_to_win : 20.9
-    num_steps_fill_buffer : 10000
+    score_to_win : 600
+    num_steps_fill_buffer : 100000
     replay_buffer_type : 'normal'
-    replay_buffer_size : 100000
+    replay_buffer_size : 1000000
     priority_beta : 0.4
     priority_alpha : 0.6
     beta_decay_frames : 100000
     max_beta : 1
     steps_num : 3
-    episodes_to_log : 10
-    lives_reward : 1
+    episodes_to_log : 100
+    lives_reward : 5
     atoms_num : 1
-    games_to_track : 20
+    games_to_track : 100
     lr_schedule : polynom_decay
-    max_epochs: 100000
+    max_epochs: 10000000
