@@ -7,7 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -64,7 +64,7 @@ params:
   config:
       reward_shaper:
         scale_value: 0.1
-        min_val: 0
+        min_val: -1
       normalize_advantage: True
       gamma: 0.99
       tau: 0.9
@@ -95,5 +95,5 @@ experiment_config:
   start_sub_exp: 0
   experiments:
     - exp:
-      - path: config.normalize_input
-        value: [True, False]
+      - path: network.separate
+        value: [False, True]
