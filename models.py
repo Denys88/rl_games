@@ -19,7 +19,8 @@ class ModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, reuse=reuse)
+        is_train = prev_actions_ph is not None
+        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train, reuse=reuse)
         # Gumbel Softmax
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
@@ -49,7 +50,8 @@ class ModelA2CContinuous(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        mu, sigma, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, reuse=reuse)
+        is_train = prev_actions_ph is not None
+        mu, sigma, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train = is_train, reuse=reuse)
         norm_dist = tfd.Normal(mu, sigma)
 
         action = tf.squeeze(norm_dist.sample(1), axis=0)
@@ -74,7 +76,9 @@ class ModelA2CContinuousLogStd(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
-        mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, reuse=reuse)
+        is_train = prev_actions_ph is not None
+
+        mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train=True, reuse=reuse)
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
 
@@ -117,9 +121,10 @@ class LSTMModelA2CContinuousLogStd(BaseModel):
         prev_actions_ph = dict['prev_actions_ph']
         games_num = dict['games_num']
         batch_num = dict['batch_num']
+        is_train = prev_actions_ph is not None
 
         mu, logstd, value, states_ph, masks_ph, lstm_state, initial_state  = self.network(name=name, inputs=inputs, actions_num=actions_num, 
-                                                                            games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
+                                                                            games_num=games_num, batch_num=batch_num,  continuous=True, is_train=is_train, reuse=reuse)
         std = tf.exp(logstd)
         action = mu + std * tf.random_normal(tf.shape(mu))
         norm_dist = tfd.Normal(mu, std)
@@ -150,9 +155,10 @@ class LSTMModelA2CContinuous(BaseModel):
         prev_actions_ph = dict['prev_actions_ph']
         games_num = dict['games_num']
         batch_num = dict['batch_num']
+        is_train = prev_actions_ph is not None
 
         mu, var, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
-                                                                        games_num=games_num, batch_num=batch_num,  continuous=True, reuse=reuse)
+                                                                        games_num=games_num, batch_num=batch_num,  continuous=True, is_train=is_train, reuse=reuse)
         sigma = tf.sqrt(var)
         norm_dist = tfd.Normal(mu, sigma)
 
@@ -183,9 +189,9 @@ class LSTMModelA2C(BaseModel):
         prev_actions_ph = dict['prev_actions_ph']
         games_num = dict['games_num']
         batch_num = dict['batch_num']
-
+        is_train = prev_actions_ph is not None
         logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
-        games_num=games_num, batch_num=batch_num, continuous=False, reuse=reuse)
+        games_num=games_num, batch_num=batch_num, continuous=False, is_train=is_train, reuse=reuse)
         u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
         action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
         one_hot_actions = tf.one_hot(action, actions_num)
@@ -206,5 +212,9 @@ class AtariDQN(BaseModel):
     def __call__(self, dict, reuse=False):
         name = dict['name']
         inputs = dict['inputs']
-        actions_num = dict['actions_num']        
-        return self.network(name=name, inputs=inputs, actions_num=actions_num, reuse=reuse)
+        actions_num = dict['actions_num']
+        '''
+        TODO: fix is_train
+        '''        
+        is_train = name == 'agent'
+        return self.network(name=name, inputs=inputs, actions_num=actions_num, is_train=is_train, reuse=reuse)

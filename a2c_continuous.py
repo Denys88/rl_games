@@ -128,7 +128,7 @@ class A2CAgent:
             'batch_num' : self.config['minibatch_size'],
             'games_num' : games_num,
             'actions_num' : self.actions_num,
-            'prev_actions_ph' : self.actions_ph
+            'prev_actions_ph' : self.actions_ph,
         }
 
         self.run_dict = {
@@ -137,7 +137,7 @@ class A2CAgent:
             'batch_num' : self.num_actors,
             'games_num' : self.num_actors,
             'actions_num' : self.actions_num,
-            'prev_actions_ph' : None
+            'prev_actions_ph' : None,
         }
 
         self.states = None

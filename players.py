@@ -30,9 +30,11 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=10):
+    def run(self, n_games=100):
         self.env = self.create_env()
-
+        import cv2
+        sum_rewards = 0
+        sum_steps = 0
         for _ in range(n_games):
             cr = 0
             steps = 0
@@ -42,10 +44,14 @@ class BasePlayer(object):
                 s, r, done, _ =  self.env.step(action)
                 cr += r
                 steps += 1
-                self.env.render()
+                #self.env.render(mode = 'batch')
                 if done:
                     print('reward:', cr, 'steps:', steps)
+                    sum_rewards += cr
+                    sum_steps += steps
                     break
+
+        print('av reward:', sum_rewards / n_games, 'av steps:', sum_steps / n_games)        
     
 
 class PpoPlayerContinuous(BasePlayer):
@@ -60,12 +66,15 @@ class PpoPlayerContinuous(BasePlayer):
         self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         self.normalize_input = self.config['normalize_input']
+        self.input_obs = self.obs_ph
+
+        if self.obs_space.dtype == np.uint8:
+            self.input_obs = tf.to_float(self.input_obs) / 255.0
+
         if self.normalize_input:
             self.moving_mean_std = MovingMeanStd(shape = self.obs_space.shape, epsilon = 1e-5, decay = 0.99)
-            self.input_obs = self.moving_mean_std.normalize(self.obs_ph, train=False)
-        else:
-            self.input_obs = self.obs_ph
-
+            self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=False)
+            
         self.run_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
@@ -84,7 +93,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = True):
+    def get_action(self, obs, is_determenistic = False):
         if is_determenistic:
             ret_action = self.mu
         else:
