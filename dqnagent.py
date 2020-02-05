@@ -100,7 +100,7 @@ class DQNAgent:
         if not self.is_prioritized:
             self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
         else: 
-            self.exp_buffer = experience.prioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
+            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')
@@ -180,7 +180,7 @@ class DQNAgent:
             # we need to return l1 loss to update priority buffer
             self.abs_errors = tf.abs(self.current_action_qvalues - self.reference_qvalues) + 1e-5
             # the same as multiply gradients later (other way is used in different examples over internet) 
-            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.reduction.NONE) * self.sample_weights_ph
+            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.NONE) * self.sample_weights_ph
             self.td_loss_mean = tf.reduce_mean(self.td_loss) 
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
@@ -230,7 +230,7 @@ class DQNAgent:
                 state = self.state
             action = self.get_action(state, epsilon)
             new_state, reward, is_done, _ = self.env.step(action)
-            reward = reward * (1 - is_done)
+            #reward = reward * (1 - is_done)
  
             self.step_count += 1
             self.total_reward += reward
@@ -321,7 +321,7 @@ class DQNAgent:
             t_start = time.time()
             if self.is_prioritized:
                 batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
-                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors], batch)
+                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
                 self.exp_buffer.update_priorities(idxes, errors_update)
             else:
                 batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
@@ -330,6 +330,7 @@ class DQNAgent:
             update_time += t_end - t_start
             total_time += update_time
             if frame % 1000 == 0:
+
                 sum_time = update_time + play_time
                 print('frames per seconds: ', 1000 / (sum_time))
                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)

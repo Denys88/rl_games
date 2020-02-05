@@ -6,13 +6,13 @@ params:
     name: dqn
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn/breakoutep=3638750.0rew=201.75'
 
   network:
     name: dqn
     dueling: True
     atoms: 1
-    noisy: False
+    noisy: True
     cnn:
       type: conv2d
       activation: relu
@@ -47,12 +47,12 @@ params:
     reward_shaper:
         scale_value: 1
     gamma : 0.99
-    learning_rate : 0.001
+    learning_rate : 0.0001
     steps_per_epoch : 4
-    batch_size : 32
-    epsilon : 0.99
-    min_epsilon : 0.02
-    epsilon_decay_frames : 100000
+    batch_size : 128
+    epsilon : 0.00
+    min_epsilon : 0.00
+    epsilon_decay_frames : 1000000
     num_epochs_to_copy : 10000
     name : 'breakout'
     env_name:  BreakoutNoFrameskip-v4
@@ -70,5 +70,5 @@ params:
     lives_reward : 5
     atoms_num : 1
     games_to_track : 100
-    lr_schedule : polynom_decay
+    lr_schedule : None
     max_epochs: 10000000
