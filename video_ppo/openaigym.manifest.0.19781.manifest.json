@@ -1,1 +1,0 @@
-{"stats": "openaigym.episode_batch.0.19781.stats.json", "videos": [["openaigym.video.0.19781.video000000.mp4", "openaigym.video.0.19781.video000000.meta.json"], ["openaigym.video.0.19781.video000001.mp4", "openaigym.video.0.19781.video000001.meta.json"]], "env_info": {"gym_version": "0.10.9", "env_id": "BipedalWalkerHardcore-v2"}}
