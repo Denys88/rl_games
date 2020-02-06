@@ -287,7 +287,6 @@ class DQNAgent:
         self.load_weigths_into_target_network()
         for _ in range(0, self.config['num_steps_fill_buffer']):
             self.play_steps(self.steps_num, self.epsilon)
-
         steps_per_epoch = self.config['steps_per_epoch']
         num_epochs_to_copy = self.config['num_epochs_to_copy']
         batch_size = self.config['batch_size']
@@ -330,7 +329,8 @@ class DQNAgent:
             update_time += t_end - t_start
             total_time += update_time
             if frame % 1000 == 0:
-
+                import ctypes
+                ctypes.CDLL('libc.so.6').malloc_trim(0) 
                 sum_time = update_time + play_time
                 print('frames per seconds: ', 1000 / (sum_time))
                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
