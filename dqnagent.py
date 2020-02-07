@@ -164,33 +164,30 @@ class DQNAgent:
             }
             self.next_logits = tf.stop_gradient(self.network(config, reuse=True))
             self.next_qvalues_c = tf.nn.softmax(self.next_logits, dim = -1)
-            self.next_qvalues = self.categorical.get_q(self.target_qvalues_c)
+            self.next_qvalues = self.categorical.get_q(self.next_qvalues_c)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
 
-        self.current_action_values = tf.reduce_sum(tf.expand_dims(tf.one_hot(self.actions_ph, actions_num), -1) * self.qvalues_c, reduction_indices = (1,))        
-
+        self.current_action_values = tf.reduce_sum(tf.expand_dims(tf.one_hot(self.actions_ph, actions_num), -1) * self.logits, reduction_indices = (1,))        
         if self.config['is_double'] == True:
             self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
             self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( tf.expand_dims(self.next_selected_actions_onehot, -1) * self.target_qvalues_c , reduction_indices = (1,) ))
-            self.next_state_q_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
         else:
-            self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
-            assert 'false'
-            self.next_state_q_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues_c, reduction_indices=1))
+            self.next_selected_actions = tf.argmax(self.target_qvalues, axis = 1)
+            self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
+            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( tf.expand_dims(self.next_selected_actions_onehot, -1) * self.target_qvalues_c , reduction_indices = (1,) ))
+            
 
         self.proj_dir_ph = tf.placeholder(tf.float32, shape=[None, self.atoms_num], name = 'best_proj_dir')
         log_probs = tf.nn.log_softmax( self.current_action_values, axis=1)
-        self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.next_state_q_target
         if self.is_prioritized:
             self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
-            # we need to return l1 loss to update priority buffer
-            self.abs_errors = tf.abs(self.current_action_qvalues - self.reference_qvalues) + 1e-5
-            # the same as multiply gradients later (other way is used in different examples over internet) 
-            self.td_loss = tf.reduce_sum(-log_probs * self.proj_dir_ph, axis = 1) * self.sample_weights_ph
+            # we need to return loss to update priority buffer
+            self.abs_errors = tf.reduce_sum(-log_probs * self.proj_dir_ph, axis = 1) + 1e-5
+            self.td_loss = self.abs_errors * self.sample_weights_ph
         else:
             self.td_loss = -log_probs * self.proj_dir_ph
 
@@ -377,13 +374,15 @@ class DQNAgent:
                     next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
 
                     projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
+                    
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
                     self.exp_buffer.update_priorities(idxes, errors_update)
                 else:
                     batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
-                    next_state_vals = self.sess.run([self.next_state_values_target], batch)
+                    next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
                     projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
+
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)                
             else:

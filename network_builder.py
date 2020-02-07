@@ -322,17 +322,19 @@ class DQNBuilder(NetworkBuilder):
                 hidden_value = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_val')
                 hidden_advantage = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_adv')
 
-                value = dense_layer(inputs=hidden_value, units=actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), activation=tf.identity, kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='value')
+                value = dense_layer(inputs=hidden_value, units=self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), activation=tf.identity, kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='value')
                 advantage = dense_layer(inputs=hidden_advantage, units=actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='advantage')
+                #advantage = tf.reshape(advantage, shape = [-1, actions_num, self.atoms])
                 q_values = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keepdims=True)
             else:
                 mlp_args['units'] = self.units
                 out = self._build_mlp('dqn_mlp', out, self.units, self.activation, self.initializer, self.regularizer)
-                q_values = dense_layer(out, units = actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=None, name='q_values')
+                q_values = dense_layer(inputs=out, units=actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='q_vals')
+            if self.atoms == 1:
                 return q_values
+            else:
+                return tf.reshape(q_values, shape = [-1, actions_num, self.atoms])
 
-            if self.atoms > 1:
-                logits = tf.reshape(q_values, shape = [-1, actions_num, self.atoms])
-                return logits
+
 
             

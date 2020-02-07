@@ -27,11 +27,11 @@ class CategoricalQ:
         v_max = self.v_max
         delta_z = self.delta_z
         for atom in range(n_atoms):
-            z = (rewards + v_min + atom * delta_z) * gamma
+            z = rewards + (v_min + atom * delta_z) * gamma
             tz_j = np.clip(z, v_min, v_max)
             b_j = (tz_j - v_min) / delta_z
-            l = np.floor(b_j).astype(np.int32)
-            u = np.ceil(b_j).astype(np.int32)
+            l = np.floor(b_j).astype(np.int64)
+            u = np.ceil(b_j).astype(np.int64)
             eq_mask = u == l
             proj_distr[eq_mask, l[eq_mask]] += next_distr[eq_mask, atom]
             ne_mask = u != l
@@ -42,8 +42,8 @@ class CategoricalQ:
             tz_j = np.clip(rewards[dones], v_min, v_max)
 
             b_j = (tz_j - v_min) / delta_z
-            l = np.floor(b_j).astype(np.int32)
-            u = np.ceil(b_j).astype(np.int32)
+            l = np.floor(b_j).astype(np.int64)
+            u = np.ceil(b_j).astype(np.int64)
             eq_mask = u == l
             eq_dones = dones.copy()
             eq_dones[dones] = eq_mask
