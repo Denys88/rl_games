@@ -10,7 +10,7 @@ from collections import deque
 from tensorboardX import SummaryWriter
 import networks
 from datetime import datetime
-
+from categorical import CategoricalQ
 
 default_config = {
     'GAMMA' : 0.99,
@@ -89,13 +89,10 @@ class DQNAgent:
         self.states = deque([], maxlen=self.steps_num)
         self.is_prioritized = config['replay_buffer_type'] != 'normal'
         self.atoms_num = self.config['atoms_num']
-        self.is_distributional = self.atoms_num > 1
+        self.is_categorical = self.atoms_num > 1
     
-        if self.is_distributional:
-            self.v_min = self.config['v_min']
-            self.v_max = self.config['v_max']
-            self.delta_z = (self.v_max - self.v_min) /(self.atoms_num - 1)
-            self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
+        if self.is_categorical:
+            self.categorical = CategoricalQ(self.atoms_num, self.config['v_min'], self.config['v_max'])     
 
         if not self.is_prioritized:
             self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
@@ -112,7 +109,7 @@ class DQNAgent:
         self.name = base_name
         self._reset()
         self.gamma = self.config['gamma']
-
+        self.gamma_step = self.gamma**self.steps_num
         self.input_obs = self.obs_ph
         self.input_next_obs = self.next_obs_ph
  
@@ -125,8 +122,13 @@ class DQNAgent:
         if self.atoms_num == 1:
             self.setup_qvalues(actions_num)
         else:
-            self.setup_c51_qvalues(actions_num)
-        
+            self.setup_cat_qvalues(actions_num)
+
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.td_loss_mean += self.reg_loss
+        self.learning_rate = self.config['learning_rate']
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)        
+
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
 
@@ -135,8 +137,64 @@ class DQNAgent:
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
 
-    def setup_c51_qvalues(self, actions_num):
-        self.qvalues_c51 = self.network('agent', self.obs_ph, actions_num)
+    def setup_cat_qvalues(self, actions_num):
+        config = {
+            'name' : 'agent',
+            'inputs' : self.input_obs,
+            'actions_num' : actions_num,
+        }
+        self.logits = self.network(config, reuse=False)
+        self.qvalues_c = tf.nn.softmax(self.logits, dim = -1)
+        self.qvalues = self.categorical.get_q(self.qvalues_c)
+
+        config = {
+            'name' : 'target',
+            'inputs' : self.input_next_obs,
+            'actions_num' : actions_num,
+        }
+        self.target_logits = self.network(config, reuse=False)
+        self.target_qvalues_c = tf.nn.softmax(self.target_logits, dim = -1)
+        self.target_qvalues = self.categorical.get_q(self.target_qvalues_c)
+
+        if self.config['is_double'] == True:
+            config = {
+                'name' : 'agent',
+                'inputs' : self.input_next_obs,
+                'actions_num' : actions_num,
+            }
+            self.next_logits = tf.stop_gradient(self.network(config, reuse=True))
+            self.next_qvalues_c = tf.nn.softmax(self.next_logits, dim = -1)
+            self.next_qvalues = self.categorical.get_q(self.target_qvalues_c)
+
+        self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
+        self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
+
+
+        self.current_action_values = tf.reduce_sum(tf.expand_dims(tf.one_hot(self.actions_ph, actions_num), -1) * self.qvalues_c, reduction_indices = (1,))        
+
+        if self.config['is_double'] == True:
+            self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
+            self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
+            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( tf.expand_dims(self.next_selected_actions_onehot, -1) * self.target_qvalues_c , reduction_indices = (1,) ))
+            self.next_state_q_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
+        else:
+            self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
+            assert 'false'
+            self.next_state_q_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues_c, reduction_indices=1))
+
+        self.proj_dir_ph = tf.placeholder(tf.float32, shape=[None, self.atoms_num], name = 'best_proj_dir')
+        log_probs = tf.nn.log_softmax( self.current_action_values, axis=1)
+        self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.next_state_q_target
+        if self.is_prioritized:
+            self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
+            # we need to return l1 loss to update priority buffer
+            self.abs_errors = tf.abs(self.current_action_qvalues - self.reference_qvalues) + 1e-5
+            # the same as multiply gradients later (other way is used in different examples over internet) 
+            self.td_loss = tf.reduce_sum(-log_probs * self.proj_dir_ph, axis = 1) * self.sample_weights_ph
+        else:
+            self.td_loss = -log_probs * self.proj_dir_ph
+
+        self.td_loss_mean = tf.reduce_mean(self.td_loss) 
 
     def setup_qvalues(self, actions_num):
         config = {
@@ -173,7 +231,7 @@ class DQNAgent:
         else:
             self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
 
-        self.gamma_step = tf.constant(self.gamma**self.steps_num, dtype=tf.float32)
+        
         self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.next_state_values_target
 
         if self.is_prioritized:
@@ -184,11 +242,6 @@ class DQNAgent:
             self.td_loss_mean = tf.reduce_mean(self.td_loss) 
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
-
-        self.reg_loss = tf.losses.get_regularization_loss()
-        self.td_loss_mean += self.reg_loss
-        self.learning_rate = self.config['learning_rate']
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
@@ -318,13 +371,32 @@ class DQNAgent:
             frame = frame + steps_per_epoch
             
             t_start = time.time()
-            if self.is_prioritized:
-                batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
-                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
-                self.exp_buffer.update_priorities(idxes, errors_update)
+            if self.is_categorical:
+                if self.is_prioritized:
+                    batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
+                    next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
+
+                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
+                    batch[self.proj_dir_ph] = projected
+                    _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
+                    self.exp_buffer.update_priorities(idxes, errors_update)
+                else:
+                    batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
+                    next_state_vals = self.sess.run([self.next_state_values_target], batch)
+                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
+                    batch[self.proj_dir_ph] = projected
+                    _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)                
             else:
-                batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
-                _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
+                if self.is_prioritized:
+                    batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
+                    _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
+                    self.exp_buffer.update_priorities(idxes, errors_update)
+                else:
+                    batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
+                    _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
+
+
+        
             t_end = time.time()
             update_time += t_end - t_start
             total_time += update_time

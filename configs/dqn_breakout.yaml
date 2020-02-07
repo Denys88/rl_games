@@ -11,7 +11,7 @@ params:
   network:
     name: dqn
     dueling: True
-    atoms: 1
+    atoms: 51
     noisy: True
     cnn:
       type: conv2d
@@ -58,9 +58,9 @@ params:
     env_name:  BreakoutNoFrameskip-v4
     is_double : True
     score_to_win : 600
-    num_steps_fill_buffer : 100000
+    num_steps_fill_buffer : 1000
     replay_buffer_type : 'prioritized'
-    replay_buffer_size : 1000000
+    replay_buffer_size : 100000
     priority_beta : 0.4
     priority_alpha : 0.6
     beta_decay_frames : 100000
@@ -68,7 +68,9 @@ params:
     steps_num : 3
     episodes_to_log : 100
     lives_reward : 5
-    atoms_num : 1
+    atoms_num : 51
+    v_min : -10
+    v_max : 10
     games_to_track : 100
     lr_schedule : None
     max_epochs: 10000000
