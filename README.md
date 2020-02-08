@@ -1,23 +1,25 @@
 # Basic RL Algorithms Implementations
 [Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
 
+How to run configs:
+python3 runner.py --train --file configs/dqn_breakout.yaml 
+
 Currently Implemented:
 * DQN
 * Double DQN
 * Dueling DQN
 * Noisy DQN
 * N-Step DQN
+* Categorical
+* Rainbow DQN
 * A2C
 * PPO
 
-TODO:
-* Rainbow DQN
-* A3C, PPO, TRPO, etc
 
 Future Plans:
-* Play Supermario
 * Play Sonic
 * Reproduce Monte Carlo Tree Search from AlphaGo.
+* Starcraft2 MultiAgents
 
 Tensorflow implementations of the DQN atari.
 In pong_runs.py there are some setups. Prioritized Replay doesn't work as good as I expected. Probably there is mistake in implementation.
