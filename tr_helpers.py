@@ -55,3 +55,8 @@ def get_or_default(config, name, def_val):
         return config[name]
     else:
         return def_val
+
+
+def free_mem():
+    import ctypes
+    ctypes.CDLL('libc.so.6').malloc_trim(0) 

@@ -174,7 +174,7 @@ configurations = {
         'env_creator' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
-    'BreakoutNoFremskip-v4' : {
+    'BreakoutNoFrameskip-v4' : {
         'env_creator' : lambda :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
