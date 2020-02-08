@@ -30,7 +30,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=100):
+    def run(self, n_games=500):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
@@ -44,14 +44,14 @@ class BasePlayer(object):
                 s, r, done, _ =  self.env.step(action)
                 cr += r
                 steps += 1
-                #self.env.render(mode = 'batch')
+                self.env.render(mode = 'human')
                 if done:
                     print('reward:', cr, 'steps:', steps)
                     sum_rewards += cr
                     sum_steps += steps
                     break
 
-        print('av reward:', sum_rewards / n_games, 'av steps:', sum_steps / n_games)        
+        print('av reward:', sum_rewards / n_games * 5, 'av steps:', sum_steps / n_games * 5)        
     
 
 class PpoPlayerContinuous(BasePlayer):
@@ -179,7 +179,7 @@ class DQNPlayer(BasePlayer):
     
 
     def get_action(self, obs, is_determenistic = False):
-        return self.dqn.get_action(obs, 0.0)
+        return self.dqn.get_action(np.squeeze(obs), 0.0)
 
     def restore(self, fn):
         self.dqn.restore(fn)
