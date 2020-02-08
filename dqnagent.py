@@ -401,7 +401,7 @@ class DQNAgent:
             total_time += update_time
             if frame % 1000 == 0:
                 mem_free_steps += 1 
-                if mem_free_steps  == 100:
+                if mem_free_steps  == 10:
                     mem_free_steps = 0
                     tr_helpers.free_mem()
                 sum_time = update_time + play_time
