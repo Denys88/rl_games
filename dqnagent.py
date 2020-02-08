@@ -85,28 +85,16 @@ class DQNAgent:
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
         if self.env_name:
-            self.env = env_configurations.configurations[self.env_name]['env_creator'](sess=sess)
+            self.env = env_configurations.configurations[self.env_name]['env_creator']()
         self.sess = sess
         self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
         self.is_prioritized = config['replay_buffer_type'] != 'normal'
         self.atoms_num = self.config['atoms_num']
-<<<<<<< HEAD
-        self.is_distributional = self.atoms_num > 1
-        
-        self.self_play = config.get('self_play', False)
-
-        if self.is_distributional:
-            self.v_min = self.config['v_min']
-            self.v_max = self.config['v_max']
-            self.delta_z = (self.v_max - self.v_min) /(self.atoms_num - 1)
-            self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
-=======
         self.is_categorical = self.atoms_num > 1
     
         if self.is_categorical:
             self.categorical = CategoricalQ(self.atoms_num, self.config['v_min'], self.config['v_max'])     
->>>>>>> master
 
         if not self.is_prioritized:
             self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
@@ -262,15 +250,12 @@ class DQNAgent:
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
-<<<<<<< HEAD
         self.reg_loss = tf.losses.get_regularization_loss()
         self.td_loss_mean += self.reg_loss
         self.learning_rate = self.config['learning_rate']
         if self.env_name:
             self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
 
-=======
->>>>>>> master
     def save(self, fn):
         self.saver.save(self.sess, fn)
 
@@ -312,11 +297,7 @@ class DQNAgent:
                 state = self.state
             action = self.get_action(state, epsilon)
             new_state, reward, is_done, _ = self.env.step(action)
-<<<<<<< HEAD
-            reward = reward# * (1 - is_done)
-=======
             #reward = reward * (1 - is_done)
->>>>>>> master
  
             self.step_count += 1
             self.total_reward += reward
