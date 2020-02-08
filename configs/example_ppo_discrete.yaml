@@ -45,8 +45,8 @@ params:
       regularizer:
         name: 'None'
   config:
-    reward_scale: 1
-    reward_shift: 0
+    reward_shaper:
+        scale_value: 0.1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9

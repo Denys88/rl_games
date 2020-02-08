@@ -44,8 +44,9 @@ params:
       regularizer:
         name: 'None'
   config:
-    reward_scale: 1
-    reward_shift: 0
+    reward_shaper:
+        scale_value: 0.1
+
     gamma : 0.99
     learning_rate : 0.0005
     steps_per_epoch : 4

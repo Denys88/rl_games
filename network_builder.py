@@ -295,7 +295,7 @@ class DQNBuilder(NetworkBuilder):
             if self.has_cnn:
                 cnn_args = {
                     'name' :'dqn_cnn',
-                    'ctype' : self.cnn['type'], 
+                    'ctype' : self.cnn['ctype'], 
                     'input' : input, 
                     'convs' :self.cnn['convs'], 
                     'activation' : self.cnn['activation'], 
