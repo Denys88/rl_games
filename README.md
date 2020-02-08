@@ -1,8 +1,8 @@
 # Basic RL Algorithms Implementations
 [Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
 
-How to run configs:
-python3 runner.py --train --file configs/dqn_breakout.yaml 
+# How to run configs:
+* python3 runner.py --train --file configs/dqn_breakout.yaml
 
 Currently Implemented:
 * DQN
