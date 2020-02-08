@@ -350,6 +350,7 @@ class DQNAgent:
         rewards = []
         shaped_rewards = []
         steps = []
+        losses = deque([], maxlen=100)
         while True:
             epoch_num = self.update_epoch()
             t_play_start = time.time()
@@ -394,21 +395,21 @@ class DQNAgent:
                     _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
 
 
-        
+            losses.append(loss_t)
             t_end = time.time()
             update_time += t_end - t_start
             total_time += update_time
             if frame % 1000 == 0:
                 mem_free_steps += 1 
                 if mem_free_steps  == 100:
-                    mem_free_steps
+                    mem_free_steps = 0
                     tr_helpers.free_mem()
                 sum_time = update_time + play_time
                 print('frames per seconds: ', 1000 / (sum_time))
                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
-                self.writer.add_scalar('losses/td_loss', loss_t, frame)
+                self.writer.add_scalar('losses/td_loss', np.mean(losses), frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/lr', self.learning_rate*lr_mul, frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
