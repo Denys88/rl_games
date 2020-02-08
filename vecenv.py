@@ -44,6 +44,8 @@ class RayWorker:
         self.obs = self.env.reset()
         return self.obs
 
+    def get_action_mask(self):
+        return self.env.get_action_mask()
 
 class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
@@ -65,6 +67,13 @@ class RayVecEnv(IVecEnv):
             newinfos.append(cinfos)
 
         return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
+
+    def has_action_masks(self):
+        return True
+
+    def get_action_masks(self):
+        mask = [worker.get_action_mask.remote() for worker in self.workers]
+        return np.asarray(ray.get(mask), dtype=np.int32)
 
     def reset(self):
         obs = [worker.reset.remote() for worker in self.workers]
