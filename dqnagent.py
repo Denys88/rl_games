@@ -12,6 +12,7 @@ import networks
 from datetime import datetime
 from categorical import CategoricalQ
 
+
 default_config = {
     'GAMMA' : 0.99,
     'LEARNING_RATE' : 1e-3,
@@ -144,7 +145,7 @@ class DQNAgent:
             'actions_num' : actions_num,
         }
         self.logits = self.network(config, reuse=False)
-        self.qvalues_c = tf.nn.softmax(self.logits, dim = -1)
+        self.qvalues_c = tf.nn.softmax(self.logits, axis = 2)
         self.qvalues = self.categorical.get_q(self.qvalues_c)
 
         config = {
@@ -153,7 +154,7 @@ class DQNAgent:
             'actions_num' : actions_num,
         }
         self.target_logits = self.network(config, reuse=False)
-        self.target_qvalues_c = tf.nn.softmax(self.target_logits, dim = -1)
+        self.target_qvalues_c = tf.nn.softmax(self.target_logits, axis = 2)
         self.target_qvalues = self.categorical.get_q(self.target_qvalues_c)
 
         if self.config['is_double'] == True:
@@ -163,7 +164,7 @@ class DQNAgent:
                 'actions_num' : actions_num,
             }
             self.next_logits = tf.stop_gradient(self.network(config, reuse=True))
-            self.next_qvalues_c = tf.nn.softmax(self.next_logits, dim = -1)
+            self.next_qvalues_c = tf.nn.softmax(self.next_logits, axis = 2)
             self.next_qvalues = self.categorical.get_q(self.next_qvalues_c)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
@@ -183,13 +184,13 @@ class DQNAgent:
 
         self.proj_dir_ph = tf.placeholder(tf.float32, shape=[None, self.atoms_num], name = 'best_proj_dir')
         log_probs = tf.nn.log_softmax( self.current_action_values, axis=1)
+
         if self.is_prioritized:
-            self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
             # we need to return loss to update priority buffer
             self.abs_errors = tf.reduce_sum(-log_probs * self.proj_dir_ph, axis = 1) + 1e-5
             self.td_loss = self.abs_errors * self.sample_weights_ph
         else:
-            self.td_loss = -log_probs * self.proj_dir_ph
+            self.td_loss = tf.reduce_sum(-log_probs * self.proj_dir_ph, axis = 1)
 
         self.td_loss_mean = tf.reduce_mean(self.td_loss) 
 
@@ -326,6 +327,7 @@ class DQNAgent:
         return [batch , sample_idxes]
 
     def train(self):
+        mem_free_steps = 0
         last_mean_rewards = -100500
         epoch_num = 0
         frame = 0
@@ -372,9 +374,7 @@ class DQNAgent:
                 if self.is_prioritized:
                     batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
                     next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
-
-                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
-                    
+                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)                    
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
                     self.exp_buffer.update_priorities(idxes, errors_update)
@@ -382,7 +382,6 @@ class DQNAgent:
                     batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
                     next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
                     projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
-
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)                
             else:
@@ -400,8 +399,10 @@ class DQNAgent:
             update_time += t_end - t_start
             total_time += update_time
             if frame % 1000 == 0:
-                import ctypes
-                ctypes.CDLL('libc.so.6').malloc_trim(0) 
+                mem_free_steps += 1 
+                if mem_free_steps  == 100:
+                    mem_free_steps
+                    tr_helpers.free_mem()
                 sum_time = update_time + play_time
                 print('frames per seconds: ', 1000 / (sum_time))
                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
