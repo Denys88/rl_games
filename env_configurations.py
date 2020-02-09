@@ -129,10 +129,11 @@ def create_flex(path):
 
     return env
 
-def create_kaggle(name, **kwargs):
-    from kaggle_env import KaggleEnv
+def create_smac(name, **kwargs):
+    from smac_env import SMACEnv
 
-    return KaggleEnv(name, **kwargs)
+    return SMACEnv(name, **kwargs)
+
 
 
 def __init__(self, env):
@@ -246,9 +247,9 @@ configurations = {
         'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'vecenv_type' : 'ISAAC'
     },
-    'connectx' : {
-        'env_creator' : lambda **kwargs : create_kaggle('connectx', **kwargs),
-        'vecenv_type' : 'RAY_SELFPLAY'
+    'smac' : {
+        'env_creator' : lambda **kwargs : create_smac('3m', **kwargs),
+        'vecenv_type' : 'RAY_SMAC'
     },
 }
 

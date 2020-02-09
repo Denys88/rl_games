@@ -1,0 +1,50 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  load_checkpoint: False
+  load_path: path
+
+  network:
+    name: actor_critic
+    separate: False
+    space: 
+      discrete:
+      
+    mlp:
+      units: [1024, 512, 256]
+      activation: relu
+      initializer:
+        name: orthogonal_initializer
+        gain: 1.41421356237
+      regularizer:
+        name: 'None'
+  config:
+    reward_shaper:
+        scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 1e-4
+    name: sc2
+    score_to_win: 1000
+    grad_norm: 0.5
+    entropy_coef: 0.004
+    truncate_grads: True
+    env_name:  smac
+    ppo: true
+    e_clip: 0.1
+    clip_value: True
+    num_actors: 2
+    steps_num: 128
+    minibatch_size: 64
+    mini_epochs: 8
+    critic_coef: 1
+    lr_schedule:  None
+    lr_threshold: 0.008
+    normalize_input: False
+    seq_len: 8
+    use_action_masks: True

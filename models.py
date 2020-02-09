@@ -29,7 +29,6 @@ class ModelA2C(BaseModel):
         
 
         if not is_train:
-            
             u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
             rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
             if action_mask_ph is not None:

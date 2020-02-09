@@ -61,9 +61,11 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
 
-        self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
-        self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
-        self.current_lengths = np.asarray([0]*self.num_actors, dtype=np.float32)
+        self.num_agents = 3
+
+        self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
+        self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
+        self.current_lengths = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
         self.games_to_log = self.config.get('games_to_track', 100)
         self.game_rewards = deque([], maxlen=self.games_to_log)
         self.game_lengths = deque([], maxlen=self.games_to_log)
@@ -120,8 +122,8 @@ class A2CAgent:
         self.run_dict = {
             'name' : 'agent',
             'inputs' : self.input_target_obs,
-            'batch_num' : self.num_actors,
-            'games_num' : self.num_actors,
+            'batch_num' : self.num_actors * self.num_agents,
+            'games_num' : self.num_actors * self.num_agents,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : None,
             'action_mask_ph' : self.action_mask_ph
@@ -225,7 +227,9 @@ class A2CAgent:
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
                 #print('obs:', self.obs)
                 #print(neglogpacs[0])
+                #print('----------')
                 #print(masks)
+                #print('----------')
                 #print(actions)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
@@ -324,6 +328,7 @@ class A2CAgent:
             epoch_num = self.update_epoch()
             frame += batch_size
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+   
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -429,17 +434,6 @@ class A2CAgent:
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                             return last_mean_rewards, epoch_num
 
-
-                    if self.self_play and len(self.game_rewards) == self.games_to_log:
-                        if mean_rewards > self.self_play['score_to_update']:
-                            print('updating weights')
-                            self.game_rewards.clear()
-                            self.game_lengths.clear()
-                            last_mean_rewards = -100500
-                            #self.vec_env.set_weights(range(self.num_actors), self.get_weights())
-                            self.vec_env.set_weights(np.array(range(2)) + env_index * 2, self.get_weights())
-                            env_index = (env_index + 1) % (self.num_actors // 2)
-                            self.obs = self.vec_env.reset()
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
