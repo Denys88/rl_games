@@ -15,8 +15,8 @@ params:
       discrete:
       
     mlp:
-      units: [1024, 512, 256]
-      activation: relu
+      units: [512, 256, 128]
+      activation: elu
       initializer:
         name: orthogonal_initializer
         gain: 1.41421356237
