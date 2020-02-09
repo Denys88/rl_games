@@ -15,8 +15,8 @@ params:
       discrete:
       
     mlp:
-      units: [1024, 512, 256]
-      activation: relu
+      units: [512, 256, 128]
+      activation: elu
       initializer:
         name: orthogonal_initializer
         gain: 1.41421356237
@@ -38,7 +38,7 @@ params:
     ppo: true
     e_clip: 0.1
     clip_value: True
-    num_actors: 2
+    num_actors: 8
     steps_num: 128
     minibatch_size: 64
     mini_epochs: 8
