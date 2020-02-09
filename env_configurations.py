@@ -248,7 +248,7 @@ configurations = {
         'vecenv_type' : 'ISAAC'
     },
     'smac' : {
-        'env_creator' : lambda **kwargs : create_smac('3m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac('8m_vs_9m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }

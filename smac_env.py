@@ -7,7 +7,7 @@ class SMACEnv(gym.Env):
         gym.Env.__init__(self)
         self.env = StarCraft2Env(map_name=name)
         self.env_info = self.env.get_env_info()
-
+        self._game_num = 0
         self.n_actions = self.env_info["n_actions"]
         self.n_agents = self.env_info["n_agents"]
 
@@ -16,12 +16,16 @@ class SMACEnv(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'] + self.env_info['state_shape'], ), dtype=np.float32)
 
     def _preproc_state_obs(self, state, obs):
-        return np.concatenate((obs, [state] * 3), axis=1)
+        return np.concatenate((obs, [state] * self.n_agents), axis=1)
 
     def get_num_agents(self):
         return self.n_agents
 
     def reset(self):
+        if self._game_num % 2000 == 1:
+            print('saving replay')
+            self.env.save_replay()
+        self._game_num += 1
         obs, state = self.env.reset()
         obses = self._preproc_state_obs(state, obs)
 

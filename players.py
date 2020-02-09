@@ -40,7 +40,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=100, n_game_life = 5, render= False):
+    def run(self, n_games=100, n_game_life = 1, render= True):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
@@ -51,7 +51,7 @@ class BasePlayer(object):
             steps = 0
             s = self.env.reset()
             for _ in range(5000):
-                action = self.get_action([s], False)
+                action = self.get_action(s, False)
                 s, r, done, _ =  self.env.step(action)
                 cr += r
                 steps += 1
@@ -154,11 +154,12 @@ class PpoPlayerDiscrete(BasePlayer):
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=False)
             
 
+        self.num_agents = 3
         self.run_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
-            'batch_num' : 1,
-            'games_num' : 1,
+            'batch_num' : self.num_agents,
+            'games_num' : self.num_agents,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : None,
             'action_mask_ph' : self.action_mask_ph

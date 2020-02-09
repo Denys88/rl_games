@@ -61,7 +61,7 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
 
-        self.num_agents = 3
+        self.num_agents = 8
 
         self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)

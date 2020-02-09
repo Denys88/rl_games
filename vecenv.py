@@ -148,11 +148,11 @@ class RayVecSMACEnv(IVecEnv):
         self.workers = [self.remote_worker.remote(self.config_name) for i in range(self.num_actors)]
 
     def step(self, actions):
-        NUM_AGENTS = 3
+        NUM_AGENTS = 8
         newobs, newrewards, newdones, newinfos = [], [], [], []
         res_obs = []
         for num, worker in enumerate(self.workers):
-            res_obs.append(worker.step.remote(actions[3*num: 3*num+NUM_AGENTS]))
+            res_obs.append(worker.step.remote(actions[NUM_AGENTS*num: NUM_AGENTS*num+NUM_AGENTS]))
 
         for res in res_obs:
             cobs, crewards, cdones, cinfos = ray.get(res)
