@@ -3,10 +3,11 @@ import numpy as np
 from smac.env import StarCraft2Env
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m",  **kwargs):
+    def __init__(self, name="3m", replay_save_freq=5000, **kwargs):
         gym.Env.__init__(self)
         self.env = StarCraft2Env(map_name=name)
         self.env_info = self.env.get_env_info()
+        self.replay_save_freq = replay_save_freq
         self._game_num = 0
         self.n_actions = self.env_info["n_actions"]
         self.n_agents = self.env_info["n_agents"]
@@ -22,7 +23,7 @@ class SMACEnv(gym.Env):
         return self.n_agents
 
     def reset(self):
-        if self._game_num % 4000 == 1:
+        if self._game_num % self.replay_save_freq == 1:
             print('saving replay')
             self.env.save_replay()
         self._game_num += 1

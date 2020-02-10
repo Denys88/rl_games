@@ -239,12 +239,11 @@ class A2CAgent:
                 if done:
                     self.game_rewards.append(reward)
                     self.game_lengths.append(length)
-                    game_res = info.get('battle_won', False)
+                    game_res = info.get('battle_won', 0.5)
                     self.game_scores.append(game_res)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
             self.current_lengths = self.current_lengths * (1.0 - self.dones)
-
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
