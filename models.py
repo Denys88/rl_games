@@ -205,20 +205,29 @@ class LSTMModelA2C(BaseModel):
         prev_actions_ph = dict['prev_actions_ph']
         games_num = dict['games_num']
         batch_num = dict['batch_num']
+        action_mask_ph = dict.get('action_mask_ph', None)
         is_train = prev_actions_ph is not None
+
         logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
         games_num=games_num, batch_num=batch_num, continuous=False, is_train=is_train, reuse=reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
-        one_hot_actions = tf.one_hot(action, actions_num)
+        
+        if not is_train:
+            u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+            rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
+            if action_mask_ph is not None:
+                rand_logits = rand_logits - tf.reduce_min(rand_logits, axis = -1, keepdims=True) + 1.0
+                rand_logits = rand_logits * tf.to_float(action_mask_ph)
+            action = tf.argmax(rand_logits, axis=-1)
+            one_hot_actions = tf.one_hot(action, actions_num)
+            
         entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
 
-        if prev_actions_ph == None:
+        if not is_train:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
             return  neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state, logits
 
         prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
+        return prev_neglogp, value, None, entropy, states_ph, masks_ph, lstm_state, initial_state
 
 
 class AtariDQN(BaseModel):

@@ -134,7 +134,12 @@ def create_smac(name, **kwargs):
 
     return SMACEnv(name, **kwargs)
 
-
+def create_smac_cnn(name, **kwargs):
+    from smac_env import SMACEnv
+    env = SMACEnv(name, **kwargs)
+    n_agents = env.get_number_of_agents()
+    env = wrappers.BatchedFrameStack(env, 4, n_agents)
+    return env
 
 def __init__(self, env):
     gym.RewardWrapper.__init__(self, env)
@@ -249,6 +254,10 @@ configurations = {
     },
     'smac' : {
         'env_creator' : lambda **kwargs : create_smac('8m_vs_9m', **kwargs),
+        'vecenv_type' : 'RAY_SMAC'
+    },
+    'smac_cnn' : {
+        'env_creator' : lambda **kwargs : create_smac_cnn('8m_vs_9m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }

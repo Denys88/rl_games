@@ -12,6 +12,9 @@ class IVecEnv(object):
     def has_action_masks(self):
         return False
 
+    def get_number_of_agents(self):
+        return 1
+
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
@@ -46,6 +49,11 @@ class RayWorker:
 
     def get_action_mask(self):
         return self.env.get_action_mask()
+
+
+    def get_number_of_agents(self):
+        return self.env.get_number_of_agents()
+
 
 class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors):
@@ -146,9 +154,15 @@ class RayVecSMACEnv(IVecEnv):
         self.num_actors = num_actors
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name) for i in range(self.num_actors)]
+        res = self.workers[0].get_number_of_agents.remote()
+        self.num_agents = ray.get(res)
+
+
+    def get_number_of_agents(self):
+        return self.num_agents
 
     def step(self, actions):
-        NUM_AGENTS = 8
+        NUM_AGENTS = self.num_agents
         newobs, newrewards, newdones, newinfos = [], [], [], []
         res_obs = []
         for num, worker in enumerate(self.workers):

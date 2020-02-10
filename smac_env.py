@@ -18,11 +18,11 @@ class SMACEnv(gym.Env):
     def _preproc_state_obs(self, state, obs):
         return np.concatenate((obs, [state] * self.n_agents), axis=1)
 
-    def get_num_agents(self):
+    def get_number_of_agents(self):
         return self.n_agents
 
     def reset(self):
-        if self._game_num % 2000 == 1:
+        if self._game_num % 4000 == 1:
             print('saving replay')
             self.env.save_replay()
         self._game_num += 1

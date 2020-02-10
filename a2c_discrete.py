@@ -33,6 +33,7 @@ class A2CAgent:
         self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
         self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
         self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
+        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
@@ -41,13 +42,13 @@ class A2CAgent:
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'],  decay_rate = config['decay_rate'])
 
-
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_actors = config['num_actors']
-        
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
+        self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
         self.seq_len = self.config['seq_len']
         self.normalize_advantage = config['normalize_advantage']
@@ -61,7 +62,6 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
 
-        self.num_agents = 8
 
         self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
@@ -85,7 +85,6 @@ class A2CAgent:
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
 
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
@@ -143,7 +142,6 @@ class A2CAgent:
         
         if self.is_train:
             self.setup_losses()
-            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
 
         self.sess.run(tf.global_variables_initializer())
 
