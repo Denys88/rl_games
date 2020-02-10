@@ -59,19 +59,19 @@ params:
     name: sc2
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.002
     truncate_grads: True
     env_name:  smac_cnn
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
-    minibatch_size: 128
-    mini_epochs: 8
+    steps_num: 256
+    minibatch_size: 512
+    mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.008
+    lr_schedule:  adaptive
+    lr_threshold: 0.2
     normalize_input: False
     seq_len: 4
     use_action_masks: True
