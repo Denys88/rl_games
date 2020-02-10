@@ -309,7 +309,7 @@ class A2CAgent:
 
         start_time = time.time()
         total_time = 0
-
+        rep_count = 0
         while True:
             if  self.self_play:
                 env_index = 0
@@ -317,7 +317,7 @@ class A2CAgent:
             epoch_num = self.update_epoch()
             frame += batch_size
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
-   
+         
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -416,6 +416,10 @@ class A2CAgent:
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
 
+                    if rep_count % 100 == 0:
+                        self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                        rep_count += 1
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
@@ -426,8 +430,8 @@ class A2CAgent:
                             return last_mean_rewards, epoch_num
 
                 if epoch_num > max_epochs:
-                    print('MAX EPOCHS NUM!')
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    print('MAX EPOCHS NUM!')
                     return last_mean_rewards, epoch_num                               
                 update_time = 0
             
