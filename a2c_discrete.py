@@ -69,7 +69,7 @@ class A2CAgent:
         self.games_to_log = self.config.get('games_to_track', 100)
         self.game_rewards = deque([], maxlen=self.games_to_log)
         self.game_lengths = deque([], maxlen=self.games_to_log)
-
+        self.game_scores = deque([], maxlen=self.games_to_log)
         self.obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'obs')
         self.target_obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'target_obs') 
         self.actions_num = action_space.n   
@@ -223,12 +223,6 @@ class A2CAgent:
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
-                #print('obs:', self.obs)
-                #print(neglogpacs[0])
-                #print('----------')
-                #print(masks)
-                #print('----------')
-                #print(actions)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
 
@@ -246,10 +240,12 @@ class A2CAgent:
 
             self.current_lengths += 1
 
-            for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
+            for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
                     self.game_rewards.append(reward)
                     self.game_lengths.append(length)
+                    game_res = info.get('battle_won', False)
+                    self.game_scores.append(game_res)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
             self.current_lengths = self.current_lengths * (1.0 - self.dones)
@@ -418,10 +414,12 @@ class A2CAgent:
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
+                    mean_scores = np.mean(self.game_scores)
                     self.writer.add_scalar('rewards/mean', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+                    self.writer.add_scalar('win_rate/mean', mean_scores, frame)
 
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)

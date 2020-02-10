@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/sc2smac'
+  load_path: 'nn/sc2smac_cnn'
 
   network:
     name: actor_critic
@@ -51,7 +51,7 @@ params:
         name:  'None'
   config:
     reward_shaper:
-        scale_value: 1
+        scale_value: 0.1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
@@ -59,7 +59,7 @@ params:
     name: sc2
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.01
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac_cnn
     ppo: true
