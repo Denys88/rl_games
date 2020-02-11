@@ -14,10 +14,10 @@ class SMACEnv(gym.Env):
 
         self.action_space = gym.spaces.Discrete(self.n_actions)
 
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'] + self.env_info['state_shape'], ), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
 
     def _preproc_state_obs(self, state, obs):
-        return np.concatenate((obs, [state] * self.n_agents), axis=1)
+        return obs
 
     def get_number_of_agents(self):
         return self.n_agents

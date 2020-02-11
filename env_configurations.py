@@ -141,15 +141,6 @@ def create_smac_cnn(name, **kwargs):
     env = wrappers.BatchedFrameStack(env, 4, n_agents)
     return env
 
-def __init__(self, env):
-    gym.RewardWrapper.__init__(self, env)
-
-def reward(self, reward):
-    if reward == -100:
-        return -5
-    if reward == 0:
-        return -0.1
-    return reward
 
 configurations = {
     'CartPole-v1' : {
@@ -253,11 +244,11 @@ configurations = {
         'vecenv_type' : 'ISAAC'
     },
     'smac' : {
-        'env_creator' : lambda **kwargs : create_smac('8m_vs_9m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac('3m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
-        'env_creator' : lambda **kwargs : create_smac_cnn('8m_vs_9m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac_cnn('5m_vs_6m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }

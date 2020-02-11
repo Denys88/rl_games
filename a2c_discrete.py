@@ -415,7 +415,7 @@ class A2CAgent:
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
 
-                    if rep_count % 100 == 0:
+                    if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1
 
