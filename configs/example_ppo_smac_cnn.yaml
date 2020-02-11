@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
+  load_checkpoint: True
   load_path: 'nn/sc2smac_cnn'
 
   network:
@@ -51,7 +51,7 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
-    learning_rate: 1e-4
+    learning_rate: 1e-8
     name: sc2
     score_to_win: 1000
     grad_norm: 0.5
