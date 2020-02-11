@@ -248,7 +248,7 @@ configurations = {
         'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
-        'env_creator' : lambda **kwargs : create_smac_cnn('5m_vs_6m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac_cnn('3m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }

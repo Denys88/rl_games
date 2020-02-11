@@ -17,6 +17,7 @@ class SMACEnv(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
 
     def _preproc_state_obs(self, state, obs):
+        print(np.shape(obs))
         return obs
 
     def get_number_of_agents(self):
@@ -40,9 +41,5 @@ class SMACEnv(gym.Env):
         return obses, rewards, dones, info
 
     def get_action_mask(self):
-        avail_actions = []
-        for agent_id in range(self.n_agents):
-            avail_actions.append(self.env.get_avail_agent_actions(agent_id))
-
-        return np.array(avail_actions, dtype=np.bool)
+        return np.array(self.env.get_avail_actions(), dtype=np.bool)
 
