@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
+  load_checkpoint: True
   load_path: 'nn/sc2smac_cnn'
 
   network:
@@ -26,18 +26,14 @@ params:
       convs:    
         - filters: 64
           kernel_size: 3
-          strides: 1
-          padding: 'same'
-        - filters: 64
-          kernel_size: 3
-          strides: 1
-          padding: 'same'
-        - filters: 64
-          kernel_size: 3
-          strides: 1
+          strides: 2
           padding: 'same'
         - filters: 128
-          kernel_size: 2
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
+        - filters: 256
+          kernel_size: 3
           strides: 1
           padding: 'valid'
 
@@ -59,11 +55,11 @@ params:
     name: sc2
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.008
+    entropy_coef: 0.02
     truncate_grads: True
     env_name:  smac_cnn
     ppo: true
-    e_clip: 0.2
+    e_clip: 0.1
     clip_value: True
     num_actors: 8
     steps_num: 128
