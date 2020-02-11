@@ -32,17 +32,17 @@ params:
           kernel_size: 3
           strides: 1
           padding: 'same'
-        - filters: 128
+        - filters: 64
           kernel_size: 3
           strides: 1
           padding: 'same'
-        - filters: 256
+        - filters: 128
           kernel_size: 2
           strides: 1
           padding: 'valid'
 
     mlp:
-      units: [512, 256]
+      units: [256, 128]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -66,8 +66,8 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 256
-    minibatch_size: 512
+    steps_num: 128
+    minibatch_size: 256
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
