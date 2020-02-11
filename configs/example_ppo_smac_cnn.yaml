@@ -53,7 +53,7 @@ params:
     reward_shaper:
         scale_value: 0.1
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.995
     tau: 0.9
     learning_rate: 1e-4
     name: sc2
@@ -68,10 +68,10 @@ params:
     num_actors: 8
     steps_num: 128
     minibatch_size: 256
-    mini_epochs: 4
+    mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.4
+    lr_threshold: 0.05
     normalize_input: False
     seq_len: 4
     use_action_masks: True
