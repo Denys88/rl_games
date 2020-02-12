@@ -294,7 +294,7 @@ class A2CAgent:
     def train(self):
 
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors
+        batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
