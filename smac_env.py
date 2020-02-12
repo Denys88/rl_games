@@ -3,7 +3,7 @@ import numpy as np
 from smac.env import StarCraft2Env
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m", replay_save_freq=100, **kwargs):
+    def __init__(self, name="3m", replay_save_freq=5000, **kwargs):
         gym.Env.__init__(self)
         self.env = StarCraft2Env(map_name=name)
         self.env_info = self.env.get_env_info()
@@ -14,7 +14,7 @@ class SMACEnv(gym.Env):
 
         self.action_space = gym.spaces.Discrete(self.n_actions)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'] + 1, ), dtype=np.float32)
-        self.add_data = np.ones((self.n_agents,1))
+        self.add_data = np.ones((self.n_agents, 1))
 
     def _preproc_state_obs(self, state, obs):
         #return np.array(obs)

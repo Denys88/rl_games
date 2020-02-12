@@ -157,7 +157,6 @@ class RayVecSMACEnv(IVecEnv):
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
 
-
     def get_number_of_agents(self):
         return self.num_agents
 
@@ -188,7 +187,6 @@ class RayVecSMACEnv(IVecEnv):
         obs = [worker.reset.remote() for worker in self.workers]
         newobs = ray.get(obs)
         return np.concatenate(newobs, axis=0)
-
 
 
 def create_vec_env(config_name, num_actors):
