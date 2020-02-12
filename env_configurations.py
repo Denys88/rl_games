@@ -248,7 +248,7 @@ configurations = {
         'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
-        'env_creator' : lambda **kwargs : create_smac_cnn('2m_vs_1z', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac_cnn('3s_vs_3z', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }
@@ -260,6 +260,14 @@ def get_obs_and_action_spaces(name):
     action_space = env.action_space
     env.close()
     return observation_space, action_space
+
+def get_env_info(name):
+    env = configurations[name]['env_creator']()
+    observation_space = env.observation_space
+    action_space = env.action_space
+    agents = env.get_number_of_agents()
+    env.close()
+    return observation_space, action_space, agents
 
 def register(name, config):
     configurations[name] = config

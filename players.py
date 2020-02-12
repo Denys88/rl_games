@@ -16,7 +16,8 @@ class BasePlayer(object):
         self.config = config
         self.sess = sess
         self.env_name = self.config['env_name']
-        self.obs_space, self.action_space = env_configurations.get_obs_and_action_spaces(self.env_name)
+        self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env_name)
+        self.env = None
 
 
     def restore(self, fn):
@@ -40,30 +41,42 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=100, n_game_life = 1, render= True):
+    def run(self, n_games=100, n_game_life = 1, render= False):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
         sum_steps = 0
+        sum_game_res = 0
         n_games = n_games * n_game_life
+        has_masks = getattr(self.env, "get_action_mask", None) is not None
+        is_determenistic = True
         for _ in range(n_games):
             cr = 0
             steps = 0
             s = self.env.reset()
+
             for _ in range(5000):
-                action = self.get_action(s, False)
-                s, r, done, _ =  self.env.step(action)
+                if has_masks:
+                    masks = self.env.get_action_mask()
+                    action = self.get_masked_action(s, masks, is_determenistic)
+                else:
+                    action = self.get_action(s, is_determenistic)
+                s, r, done, info =  self.env.step(action)
                 cr += r
                 steps += 1
+
                 if render:
                     self.env.render(mode = 'human')
                 if done:
-                    print('reward:', cr, 'steps:', steps)
+                    game_res = info.get('battle_won', 0.5)
+                    print('reward:', cr, 'steps:', steps, 'w:', game_res)
+                    
+                    sum_game_res += game_res
                     sum_rewards += cr
                     sum_steps += steps
                     break
 
-        print('av reward:', sum_rewards / n_games * n_game_life, 'av steps:', sum_steps / n_games * n_game_life)        
+        print('av reward:', sum_rewards / n_games * n_game_life, 'av steps:', sum_steps / n_games * n_game_life, 'winrate:', sum_game_res / n_games * n_game_life)        
     
 
 class PpoPlayerContinuous(BasePlayer):
@@ -153,8 +166,6 @@ class PpoPlayerDiscrete(BasePlayer):
             self.moving_mean_std = MovingMeanStd(shape = self.obs_space.shape, epsilon = 1e-5, decay = 0.99)
             self.input_obs = self.moving_mean_std.normalize(self.input_obs, train=False)
             
-
-        self.num_agents = 3
         self.run_dict = {
             'name' : 'agent',
             'inputs' : self.input_obs,
@@ -176,16 +187,16 @@ class PpoPlayerDiscrete(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = False):
-        #if is_determenistic:
+    def get_action(self, obs, is_determenistic = True):
         ret_action = self.action
 
         if self.network.is_rnn():
-            action, self.last_state = self.sess.run([ret_action, self.lstm_state], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
+            action, self.last_state, logits = self.sess.run([ret_action, self.lstm_state, self.logits], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
-            action = self.sess.run([ret_action], {self.obs_ph : obs})
+            action = self.sess.run([ret_action, self.logits], {self.obs_ph : obs})
 
         if is_determenistic:
+
             return int(np.argmax(logits))
         else:
             return int(np.squeeze(action))
@@ -201,7 +212,7 @@ class PpoPlayerDiscrete(BasePlayer):
         if is_determenistic:
             logits = np.array(logits)
             shifted_logits = (logits - np.min(logits) + 1) * mask
-            return int(np.argmax(shifted_logits))
+            return np.argmax(shifted_logits, axis = -1).astype(np.int32)
         else:
             return int(np.squeeze(action))
 
