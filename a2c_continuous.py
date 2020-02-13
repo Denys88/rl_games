@@ -303,7 +303,7 @@ class A2CAgent:
 
         max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors
+        batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
