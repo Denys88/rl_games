@@ -28,6 +28,8 @@ class NetworkBuilder:
         self.init_factory.register_builder('glorot_normal_initializer', lambda **kwargs : tf.glorot_normal_initializer(**kwargs))
         self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : tf.glorot_uniform_initializer(**kwargs))
         self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : tf.variance_scaling_initializer(**kwargs))
+        self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : tf.random_uniform_initializer(**kwargs))
+
         self.init_factory.register_builder('None', lambda **kwargs : None)
 
         self.regularizer_factory = object_factory.ObjectFactory()
@@ -66,6 +68,7 @@ class NetworkBuilder:
             activation=self.activations_factory.create(activation), 
             kernel_initializer = self.init_factory.create(**initializer), 
             kernel_regularizer = self.regularizer_factory.create(**regularizer),
+            bias_initializer=tf.random_uniform_initializer(-0.1, 0.1),
             name=name + str(ind))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
@@ -139,7 +142,8 @@ class NetworkBuilder:
             config['kernel_initializer'] = self.init_factory.create(**initializer)
             config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
             config['name'] = name + str(ind)
-            out = tf.layers.conv1d(inputs=out, **config)
+            #config['bias_initializer'] = tf.random_uniform_initializer,
+            out = tf.layers.conv1d(inputs=out, bias_initializer=tf.random_uniform_initializer(-0.1, 0.1), **config)
             print('shapes of layer_' + str(ind), str(out.get_shape().as_list()))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)

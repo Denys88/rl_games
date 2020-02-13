@@ -16,6 +16,8 @@ def swap_and_flatten01(arr):
     """
     swap and then flatten axes 0 and 1
     """
+    if arr is None:
+        return arr
     s = arr.shape
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
@@ -55,11 +57,12 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
 
+        self.ignore_dead_batches = self.config.get('ignore_dead_batches', False)
 
         self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
         self.current_lengths = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
-        self.games_to_log = self.config.get('games_to_track', 100)
+        self.games_to_log = self.config.get('games_to_track', 1000)
         self.game_rewards = deque([], maxlen=self.games_to_log)
         self.game_lengths = deque([], maxlen=self.games_to_log)
         self.game_scores = deque([], maxlen=self.games_to_log)
@@ -77,6 +80,8 @@ class A2CAgent:
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
+        if self.ignore_dead_batches:
+            self.dead_batch_masks_ph = tf.placeholder('float32', (None,), name = 'dead_batch_mask')
 
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
@@ -142,25 +147,45 @@ class A2CAgent:
         curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
             self.prob_ratio = tf.exp(self.old_logp_actions_ph - self.logp_actions)
+            
             self.pg_loss_unclipped = -tf.multiply(self.advantages_ph, self.prob_ratio)
             self.pg_loss_clipped = -tf.multiply(self.advantages_ph, tf.clip_by_value(self.prob_ratio, 1.- curr_e_clip, 1.+ curr_e_clip))
-            self.actor_loss = tf.reduce_mean(tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped))
+            self.actor_loss = tf.maximum(self.pg_loss_unclipped, self.pg_loss_clipped)
         else:
-            self.actor_loss = tf.reduce_mean(self.logp_actions * self.advantages_ph)
+            self.actor_loss = self.logp_actions * self.advantages_ph
 
-
+        if self.ignore_dead_batches:
+            self.actor_loss = self.stop_gradients_by_mask(self.actor_loss, self.dead_batch_masks_ph)
+            self.actor_loss = tf.reduce_sum(self.actor_loss) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
+        else:
+            self.actor_loss = tf.reduce_mean(self.actor_loss)
+            
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
+
         if self.clip_value:
             self.cliped_values = self.old_values_ph + tf.clip_by_value(tf.squeeze(self.state_values) - self.old_values_ph, - curr_e_clip, curr_e_clip)
             self.c_loss_clipped = tf.square(self.cliped_values - self.rewards_ph)
-            self.critic_loss = tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
+            self.critic_loss = tf.maximum(self.c_loss, self.c_loss_clipped)
         else:
-            self.critic_loss = tf.reduce_mean(self.c_loss)
+            self.critic_loss = self.c_loss
+        
+        if self.ignore_dead_batches:
+            self.critic_loss = self.stop_gradients_by_mask(self.critic_loss, self.dead_batch_masks_ph)
+            self.critic_loss = tf.reduce_sum(self.critic_loss) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
+        else:
+            self.critic_loss = tf.reduce_mean(self.critic_loss)
         
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+
+
+        #if self.ignore_dead_batches:
+        #    self.entropy = self.stop_gradients_by_mask(self.entropy, self.dead_batch_masks_ph)
+        #    self.entropy = tf.reduce_sum(self.entropy) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
+       # else:
+        self.entropy = tf.reduce_mean(self.entropy)
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.reg_loss = tf.losses.get_regularization_loss()
@@ -206,17 +231,30 @@ class A2CAgent:
     def set_weights(self, weights):
         return self.variables.set_flat(weights)
 
+
+    def stop_gradients_by_mask(self, target, mask):
+        #mask_h = tf.abs(mask-1)
+        #return tf.stop_gradient(mask_h * target) + mask * target
+        return mask * target
+
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        
         mb_states = []
         epinfos = []
+        mb_dead_masks = None
+        if self.ignore_dead_batches:
+            mb_dead_masks = []
         # for n in range number of steps
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
+                if self.ignore_dead_batches:
+                    dead_mask = masks[:,0] == 0.0
+
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
@@ -229,6 +267,8 @@ class A2CAgent:
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones.copy())
+            if self.ignore_dead_batches:
+                mb_dead_masks.append(dead_mask)
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             self.current_rewards += rewards
@@ -257,9 +297,12 @@ class A2CAgent:
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
+
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
-   
+
+        if self.ignore_dead_batches:
+            mb_dead_masks = np.asarray(mb_dead_masks, dtype=np.bool)   
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -278,9 +321,9 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_states )), epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_states  )), epinfos)
         else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks)), None, epinfos)
 
         return result
 
@@ -294,7 +337,7 @@ class A2CAgent:
     def train(self):
 
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors
+        batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
@@ -310,13 +353,10 @@ class A2CAgent:
         total_time = 0
         rep_count = 0
         while True:
-            if  self.self_play:
-                env_index = 0
             play_time_start = time.time()
             epoch_num = self.update_epoch()
             frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
-         
+            obses, returns, dones, actions, values, neglogpacs, dead_batch_masks, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -351,8 +391,11 @@ class A2CAgent:
                         dict[self.actions_ph] = actions[mbatch]
                         dict[self.obs_ph] = obses[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
+                        if self.ignore_dead_batches:
+                            dict[self.dead_batch_masks_ph] = dead_batch_masks[mbatch]
+
                         dict[self.states_ph] = lstm_states[batch]
-                        
+
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier,  self.train_op]
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
@@ -371,12 +414,16 @@ class A2CAgent:
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
-                        
+                    if self.ignore_dead_batches:
+                        dead_batch_masks = dead_batch_masks[permutation]    
+                                                   
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
-            
+                        if self.ignore_dead_batches:
+                            dict[self.dead_batch_masks_ph] = dead_batch_masks[batch]
+
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier, self.train_op]
                             

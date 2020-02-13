@@ -45,8 +45,7 @@ class ModelA2C(BaseModel):
             '''
 
 
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs))
-
+        entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs)
         if not is_train:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
             return  neglogp, value, action, entropy, logits
@@ -220,7 +219,7 @@ class LSTMModelA2C(BaseModel):
             action = tf.argmax(rand_logits, axis=-1)
             one_hot_actions = tf.one_hot(action, actions_num)
             
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
+        entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits))
 
         if not is_train:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)

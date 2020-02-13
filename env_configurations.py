@@ -138,7 +138,7 @@ def create_smac_cnn(name, **kwargs):
     from smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
     n_agents = env.get_number_of_agents()
-    env = wrappers.BatchedFrameStack(env, 4, n_agents)
+    env = wrappers.BatchedFrameStack(env, 4, n_agents, transpose=False)
     return env
 
 
@@ -248,7 +248,7 @@ configurations = {
         'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
-        'env_creator' : lambda **kwargs : create_smac_cnn('3s_vs_3z', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac_cnn('3m', **kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }
