@@ -156,7 +156,7 @@ class A2CAgent:
 
         if self.ignore_dead_batches:
             self.actor_loss = self.stop_gradients_by_mask(self.actor_loss, self.dead_batch_masks_ph)
-            self.actor_loss = tf.reduce_sum(self.actor_loss) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
+            self.actor_loss = tf.reduce_sum(self.actor_loss) / tf.to_float(tf.reduce_sum(self.dead_batch_masks_ph))
         else:
             self.actor_loss = tf.reduce_mean(self.actor_loss)
             
@@ -171,7 +171,7 @@ class A2CAgent:
         
         if self.ignore_dead_batches:
             self.critic_loss = self.stop_gradients_by_mask(self.critic_loss, self.dead_batch_masks_ph)
-            self.critic_loss = tf.reduce_sum(self.critic_loss) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
+            self.critic_loss = tf.reduce_sum(self.critic_loss) / tf.to_float(tf.reduce_sum(self.dead_batch_masks_ph))
         else:
             self.critic_loss = tf.reduce_mean(self.critic_loss)
         
@@ -250,11 +250,14 @@ class A2CAgent:
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                if self.ignore_dead_batches:
-                    dead_mask = masks[:,0] == 0.0
 
+            if self.use_action_masks or self.ignore_dead_batches:
+                masks = self.vec_env.get_action_masks()
+
+            if self.ignore_dead_batches:
+                dead_mask = masks[:,0] == 0.0
+
+            if self.use_action_masks:
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)

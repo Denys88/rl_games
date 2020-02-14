@@ -272,7 +272,7 @@ def get_obs_and_action_spaces_from_config(config):
 
 def get_env_info(config):
     env_config = config.get('env_config', [])
-    env = configurations[config['env_name']]['env_creator'](env_config)
+    env = configurations[config['env_name']]['env_creator'](**env_config)
     observation_space = env.observation_space
     action_space = env.action_space
     agents = env.get_number_of_agents()

@@ -14,8 +14,8 @@ class SMACEnv(gym.Env):
 
         self.action_space = gym.spaces.Discrete(self.n_actions)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
-        self.add_data = np.zeros((self.n_agents, 1))
 
+        self.random_invalid_step = kwargs.pop('random_invalid_step', False)
     def _preproc_state_obs(self, state, obs):
         return np.array(obs)
         #return np.concatenate((obs, self.add_data), axis=1)
@@ -33,7 +33,17 @@ class SMACEnv(gym.Env):
 
         return obses
 
+    def _preproc_actions(self, actions):
+        mask = self.get_action_mask()
+        for ind, action in enumerate(actions, start=0):
+            avail_actions = np.nonzero(mask[ind])[0]
+            if action not in avail_actions:
+                actions[ind] = np.random.choice(avail_actions)
+        return actions
+
     def step(self, actions):
+        if self.random_invalid_step:
+            actions = self._preproc_actions(actions)
         rewards, dones, info = self.env.step(actions)
         obs = self.env.get_obs()
         state = self.env.get_state()

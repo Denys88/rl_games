@@ -11,7 +11,7 @@ params:
   network:
     name: actor_critic
     separate: True
-    normalization: layer_norm
+    #normalization: layer_norm
     space: 
       discrete:
       
@@ -58,25 +58,26 @@ params:
     learning_rate: 1e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.001
     truncate_grads: True
     env_name:  smac_cnn
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
-    minibatch_size: 256
-    mini_epochs: 4
-    critic_coef: 1
+    steps_num: 64
+    minibatch_size: 2048
+    mini_epochs: 1
+    critic_coef: 2
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: False
     seq_len: 4
-    use_action_masks: True
+    use_action_masks: False
     ignore_dead_batches : True
 
     env_config:
-      name: 3m
+      name: 8m_vs_9m
       frames: 4
       transpose: False
+      random_invalid_step: True

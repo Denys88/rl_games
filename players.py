@@ -31,7 +31,7 @@ class BasePlayer(object):
         return self.variables.set_flat(weights)
 
     def create_env(self):
-        return env_configurations.configurations[self.env_name]['env_creator'](self.env_config)
+        return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
 
     def get_action(self, obs, is_determenistic = False):
         raise NotImplementedError('step')
@@ -42,7 +42,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=100, n_game_life = 1, render= False):
+    def run(self, n_games=1000, n_game_life = 1, render= False):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
