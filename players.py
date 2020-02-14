@@ -16,8 +16,9 @@ class BasePlayer(object):
         self.config = config
         self.sess = sess
         self.env_name = self.config['env_name']
-        self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env_name)
+        self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
         self.env = None
+        self.env_config = self.config.get('env_config', None)
 
 
     def restore(self, fn):
@@ -30,7 +31,7 @@ class BasePlayer(object):
         return self.variables.set_flat(weights)
 
     def create_env(self):
-        return env_configurations.configurations[self.env_name]['env_creator']()
+        return env_configurations.configurations[self.env_name]['env_creator'](self.env_config)
 
     def get_action(self, obs, is_determenistic = False):
         raise NotImplementedError('step')

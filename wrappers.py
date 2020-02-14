@@ -215,7 +215,7 @@ class FrameStack(gym.Wrapper):
         #return LazyFrames(list(self.frames))
 
 class BatchedFrameStack(gym.Wrapper):
-    def __init__(self, env, k, num_agents, transpose = False):
+    def __init__(self, env, k, transpose = False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -225,7 +225,6 @@ class BatchedFrameStack(gym.Wrapper):
         """
         gym.Wrapper.__init__(self, env)
         self.k = k
-        self.num_agents = num_agents
         self.frames = deque([], maxlen=k)
         self.shp = shp = env.observation_space.shape
         self.transpose = transpose

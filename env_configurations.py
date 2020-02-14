@@ -131,14 +131,15 @@ def create_flex(path):
 
 def create_smac(name, **kwargs):
     from smac_env import SMACEnv
-
-    return SMACEnv(name, **kwargs)
+    frames = kwargs.pop('frames', 1)
+    return wrappers.FrameStack(SMACEnv(name, **kwargs), frames, flat = True)
 
 def create_smac_cnn(name, **kwargs):
     from smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
-    n_agents = env.get_number_of_agents()
-    env = wrappers.BatchedFrameStack(env, 4, n_agents, transpose=False)
+    frames = kwargs.pop('frames', 4)
+    transpose = kwargs.pop('transpose', False)
+    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
     return env
 
 
@@ -244,11 +245,11 @@ configurations = {
         'vecenv_type' : 'ISAAC'
     },
     'smac' : {
-        'env_creator' : lambda **kwargs : create_smac('3m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac(**kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
-        'env_creator' : lambda **kwargs : create_smac_cnn('3m', **kwargs),
+        'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
 }
@@ -261,8 +262,17 @@ def get_obs_and_action_spaces(name):
     env.close()
     return observation_space, action_space
 
-def get_env_info(name):
-    env = configurations[name]['env_creator']()
+def get_obs_and_action_spaces_from_config(config):
+    env_config = config.get('env_config', [])
+    env = configurations[config['env_name']]['env_creator'](**env_config)
+    observation_space = env.observation_space
+    action_space = env.action_space
+    env.close()
+    return observation_space, action_space
+
+def get_env_info(config):
+    env_config = config.get('env_config', [])
+    env = configurations[config['env_name']]['env_creator'](env_config)
     observation_space = env.observation_space
     action_space = env.action_space
     agents = env.get_number_of_agents()
