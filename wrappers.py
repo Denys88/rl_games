@@ -215,7 +215,7 @@ class FrameStack(gym.Wrapper):
         #return LazyFrames(list(self.frames))
 
 class BatchedFrameStack(gym.Wrapper):
-    def __init__(self, env, k, transpose = False):
+    def __init__(self, env, k, transpose = False, flatten = False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -228,10 +228,16 @@ class BatchedFrameStack(gym.Wrapper):
         self.frames = deque([], maxlen=k)
         self.shp = shp = env.observation_space.shape
         self.transpose = transpose
+        self.flatten = flatten
         if transpose:
+            assert(not flatten)
             self.observation_space = spaces.Box(low=0, high=1, shape=(shp[0], k), dtype=env.observation_space.dtype)
         else:
-            self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
+            if flatten:
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k *shp[0],), dtype=env.observation_space.dtype)
+
+            else:
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
 
     def reset(self):
         ob = self.env.reset()
@@ -249,7 +255,12 @@ class BatchedFrameStack(gym.Wrapper):
         if self.transpose:
             frames = np.transpose(self.frames, (1, 2, 0))
         else:
-            frames = np.transpose(self.frames, (1, 0, 2))
+            if self.flatten:
+                frames = np.array(self.frames)
+                shape = np.shape(frames)
+                frames = np.reshape(self.frames, (shape[1], shape[0] * shape[2]))
+            else:
+                frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
 

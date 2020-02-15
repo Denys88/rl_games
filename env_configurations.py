@@ -132,7 +132,7 @@ def create_flex(path):
 def create_smac(name, **kwargs):
     from smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
-    return wrappers.FrameStack(SMACEnv(name, **kwargs), frames, flat = True)
+    return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
 def create_smac_cnn(name, **kwargs):
     from smac_env import SMACEnv
