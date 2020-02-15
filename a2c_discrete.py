@@ -113,7 +113,7 @@ class A2CAgent:
             'games_num' : games_num,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph,
-            'action_mask_ph' : None
+            'action_mask_ph' : self.action_mask_ph
         }
 
         self.run_dict = {
@@ -243,9 +243,12 @@ class A2CAgent:
         
         mb_states = []
         epinfos = []
+        mb_masks = None
         mb_dead_masks = None
         if self.ignore_dead_batches:
             mb_dead_masks = []
+        if self.use_action_masks or self.ignore_dead_batches:
+            mb_masks = []
         # for n in range number of steps
         for _ in range(self.steps_num):
             if self.network.is_rnn():
@@ -253,7 +256,7 @@ class A2CAgent:
 
             if self.use_action_masks or self.ignore_dead_batches:
                 masks = self.vec_env.get_action_masks()
-
+                mb_masks.append(masks)
             if self.ignore_dead_batches:
                 dead_mask = masks[:,0] == 0.0
 
@@ -300,7 +303,7 @@ class A2CAgent:
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
-
+        mb_masks = np.asarray(mb_masks, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
@@ -324,9 +327,9 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_states  )), epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_masks, mb_states  )), epinfos)
         else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks)), None, epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_masks)), None, epinfos)
 
         return result
 
@@ -359,7 +362,7 @@ class A2CAgent:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
             frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, dead_batch_masks, lstm_states, _ = self.play_steps()
+            obses, returns, dones, actions, values, neglogpacs, dead_batch_masks, masks, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -394,6 +397,8 @@ class A2CAgent:
                         dict[self.actions_ph] = actions[mbatch]
                         dict[self.obs_ph] = obses[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
+                        if self.use_action_masks:
+                            dict[self.action_mask_ph] = masks[mbatch]
                         if self.ignore_dead_batches:
                             dict[self.dead_batch_masks_ph] = dead_batch_masks[mbatch]
 
@@ -417,6 +422,8 @@ class A2CAgent:
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
+                    if self.use_action_masks:
+                        masks = masks[permutation]
                     if self.ignore_dead_batches:
                         dead_batch_masks = dead_batch_masks[permutation]    
                                                    
@@ -426,7 +433,8 @@ class A2CAgent:
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
                         if self.ignore_dead_batches:
                             dict[self.dead_batch_masks_ph] = dead_batch_masks[batch]
-
+                        if self.use_action_masks:
+                            dict[self.action_mask_ph] = masks[batch]
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier, self.train_op]
                             

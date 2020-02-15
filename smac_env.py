@@ -3,7 +3,7 @@ import numpy as np
 from smac.env import StarCraft2Env
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m", replay_save_freq=5000, **kwargs):
+    def __init__(self, name="3m", replay_save_freq=4000, **kwargs):
         gym.Env.__init__(self)
         self.env = StarCraft2Env(map_name=name)
         self.env_info = self.env.get_env_info()
@@ -34,22 +34,32 @@ class SMACEnv(gym.Env):
         return obses
 
     def _preproc_actions(self, actions):
+        rewards = np.zeros_like(actions)
         mask = self.get_action_mask()
         for ind, action in enumerate(actions, start=0):
             avail_actions = np.nonzero(mask[ind])[0]
             if action not in avail_actions:
                 actions[ind] = np.random.choice(avail_actions)
-        return actions
+                rewards[ind] = -0.05
+        return actions, rewards
 
     def step(self, actions):
+        fixed_rewards = None
         if self.random_invalid_step:
-            actions = self._preproc_actions(actions)
-        rewards, dones, info = self.env.step(actions)
+            actions, fixed_rewards = self._preproc_actions(actions)
+        reward, done, info = self.env.step(actions)
         obs = self.env.get_obs()
         state = self.env.get_state()
         obses = self._preproc_state_obs(state, obs)
+        rewards = np.repeat (reward, self.n_agents)
+        dones = np.repeat (done, self.n_agents)
+        if fixed_rewards is not None:
+            rewards += fixed_rewards
         return obses, rewards, dones, info
 
     def get_action_mask(self):
         return np.array(self.env.get_avail_actions(), dtype=np.bool)
+    
+    def has_action_mask(self):
+        return not self.random_invalid_step
 

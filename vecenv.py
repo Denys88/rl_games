@@ -39,7 +39,7 @@ class RayWorker:
     
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
-        if is_done:
+        if is_done.all():
             next_state = self.reset()
         return next_state, reward, is_done, info
 
@@ -110,8 +110,8 @@ class RayVecSMACEnv(IVecEnv):
         for res in res_obs:
             cobs, crewards, cdones, cinfos = ray.get(res)
             newobs.append(cobs)
-            newrewards.append([crewards] * NUM_AGENTS)
-            newdones.append([cdones] * NUM_AGENTS)
+            newrewards.append(crewards)
+            newdones.append(cdones)
             newinfos.append(cinfos)
         return np.concatenate(newobs, axis=0), np.concatenate(newrewards, axis=0), np.concatenate(newdones, axis=0), newinfos
 

@@ -4,6 +4,9 @@ import numpy as np
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
+def entry_stop_gradients(target, mask):
+    mask_h = tf.abs(mask-1)
+    return tf.stop_gradient(mask_h * target) + mask * target
 
 class BaseModel(object):
     def is_rnn(self):
@@ -23,6 +26,10 @@ class ModelA2C(BaseModel):
         is_train = prev_actions_ph is not None
 
         logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,reuse=reuse)
+        #if action_mask_ph is not None:
+            #masks = tf.layers.dense(tf.to_float(action_mask_ph), actions_num, activation=tf.nn.elu)
+            #logits = masks + logits
+            #logits = entry_stop_gradients(logits, tf.to_float(action_mask_ph))
         probs = tf.nn.softmax(logits)
 
         # Gumbel Softmax
@@ -30,24 +37,22 @@ class ModelA2C(BaseModel):
 
         if not is_train:
             u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-            rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
+            rand_logits = logits - tf.log(-tf.log(u))
             if action_mask_ph is not None:
-                rand_logits = rand_logits - tf.reduce_min(rand_logits, axis = -1, keepdims=True) + 1.0
-                rand_logits = rand_logits * tf.to_float(action_mask_ph)
+                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
+                rand_logits = rand_logits + inf_mask
+                logits = logits + inf_mask
             action = tf.argmax(rand_logits, axis=-1)
             one_hot_actions = tf.one_hot(action, actions_num)
-            '''
-            fixed_probs = probs * tf.to_float(action_mask_ph)
-            fixed_probs = fixed_probs / tf.reduce_sum(fixed_probs, axis = -1, keepdims=True)
-            dist = tfd.Multinomial(total_count=1., probs=fixed_probs)
-            one_hot_actions = dist.sample(1)
-            action = tf.argmax(one_hot_actions, axis=-1)
-            '''
-
+        else:
+            """if action_mask_ph is not None:
+                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
+                logits = logits + inf_mask
+            """
 
         entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs)
         if not is_train:
-            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
+            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.stop_gradient(one_hot_actions))
             return  neglogp, value, action, entropy, logits
         else:
             prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
@@ -94,6 +99,8 @@ class ModelA2CContinuousLogStd(BaseModel):
         is_train = prev_actions_ph is not None
 
         mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train=True, reuse=reuse)
+    
+
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
 
@@ -212,10 +219,11 @@ class LSTMModelA2C(BaseModel):
         
         if not is_train:
             u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-            rand_logits = logits - tf.reduce_max(logits, axis = -1, keepdims=True) - tf.log(-tf.log(u))
+            rand_logits = logits - tf.log(-tf.log(u))
             if action_mask_ph is not None:
-                rand_logits = rand_logits - tf.reduce_min(rand_logits, axis = -1, keepdims=True) + 1.0
-                rand_logits = rand_logits * tf.to_float(action_mask_ph)
+                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
+                rand_logits = rand_logits + inf_mask
+                logits = logits + inf_mask
             action = tf.argmax(rand_logits, axis=-1)
             one_hot_actions = tf.one_hot(action, actions_num)
             

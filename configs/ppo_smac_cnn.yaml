@@ -24,24 +24,20 @@ params:
       regularizer:
         name: 'None'
       convs:    
-        - filters: 128
+        - filters: 64
           kernel_size: 3
-          strides: 1
+          strides: 2
           padding: 'same'
         - filters: 128
           kernel_size: 3
           strides: 1
-          padding: 'same'
+          padding: 'valid'
         - filters: 256
-          kernel_size: 3
-          strides: 1
-          padding: 'same'
-        - filters: 512
           kernel_size: 3
           strides: 1
           padding: 'valid'
     mlp:
-      units: [512, 256]
+      units: [256, 128]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -73,11 +69,11 @@ params:
     lr_threshold: 0.05
     normalize_input: False
     seq_len: 4
-    use_action_masks: False
-    ignore_dead_batches : True
+    use_action_masks: True
+    ignore_dead_batches : False
 
     env_config:
       name: 8m_vs_9m
       frames: 4
-      transpose: False
-      random_invalid_step: True
+      transpose: True
+      random_invalid_step: False

@@ -49,7 +49,10 @@ class BasePlayer(object):
         sum_steps = 0
         sum_game_res = 0
         n_games = n_games * n_game_life
-        has_masks = getattr(self.env, "get_action_mask", None) is not None
+        has_masks = False
+        has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+        if has_masks_func:
+            has_masks = self.env.has_action_mask()
         is_determenistic = True
         for _ in range(n_games):
             cr = 0
@@ -68,12 +71,13 @@ class BasePlayer(object):
 
                 if render:
                     self.env.render(mode = 'human')
-                if done:
+                if done.any():
+                    assert done.all()
                     game_res = info.get('battle_won', 0.5)
-                    print('reward:', cr, 'steps:', steps, 'w:', game_res)
+                    print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
                     
                     sum_game_res += game_res
-                    sum_rewards += cr
+                    sum_rewards += np.mean(cr)
                     sum_steps += steps
                     break
 
@@ -194,11 +198,10 @@ class PpoPlayerDiscrete(BasePlayer):
         if self.network.is_rnn():
             action, self.last_state, logits = self.sess.run([ret_action, self.lstm_state, self.logits], {self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
-            action = self.sess.run([ret_action, self.logits], {self.obs_ph : obs})
+            action, logits = self.sess.run([ret_action, self.logits], {self.obs_ph : obs})
 
         if is_determenistic:
-
-            return int(np.argmax(logits))
+            return np.argmax(logits, axis = -1).astype(np.int32)
         else:
             return int(np.squeeze(action))
 
@@ -212,8 +215,7 @@ class PpoPlayerDiscrete(BasePlayer):
             action, logits = self.sess.run([ret_action, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs})
         if is_determenistic:
             logits = np.array(logits)
-            shifted_logits = (logits - np.min(logits) + 1) * mask
-            return np.argmax(shifted_logits, axis = -1).astype(np.int32)
+            return np.argmax(logits, axis = -1).astype(np.int32)
         else:
             return int(np.squeeze(action))
 
