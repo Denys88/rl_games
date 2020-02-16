@@ -3,7 +3,7 @@ import numpy as np
 from smac.env import StarCraft2Env
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m", replay_save_freq=1000, **kwargs):
+    def __init__(self, name="3m", replay_save_freq=4000, **kwargs):
         gym.Env.__init__(self)
         self.env = StarCraft2Env(map_name=name)
         self.env_info = self.env.get_env_info()
