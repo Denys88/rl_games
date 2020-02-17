@@ -451,15 +451,7 @@ class DQNAgent:
                         self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         if last_mean_rewards > self.config['score_to_win']:
                             print('network won!')
-                            return last_mean_rewards, epoch_num   
-
-                    if self.self_play and num_games == self.games_to_track:
-                        if mean_rewards > self.self_play['score_to_update']:
-                            print('updating weights')
-                            self.game_rewards.clear()
-                            self.game_lengths.clear()
-                            last_mean_rewards = -100500
-                            self.env.update_weights(self.get_weights())
+                            return last_mean_rewards, epoch_num
                 
                 
                 #clear_output(True)

@@ -62,7 +62,8 @@ class A2CAgent:
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_actors = config['num_actors']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
+        self.env_config = config.get('env_config', {})
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
         self.normalize_advantage = config['normalize_advantage']
