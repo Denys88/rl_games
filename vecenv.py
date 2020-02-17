@@ -23,7 +23,6 @@ class IsaacEnv(IVecEnv):
     
     def step(self, action): 
         next_state, reward, is_done, info = self.env.step(action)
-        #reward -= is_done * 100.0
         next_state = self.reset() 
         return next_state, reward, is_done, info
 
@@ -39,7 +38,13 @@ class RayWorker:
     
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
-        if is_done.all():
+
+        if np.isscalar(is_done):
+            episode_done = is_done
+        else:
+            episode_done = is_done.all()
+            
+        if episode_done:
             next_state = self.reset()
         return next_state, reward, is_done, info
 

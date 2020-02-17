@@ -159,7 +159,7 @@ class PpoPlayerDiscrete(BasePlayer):
             self.action_mask_ph = tf.placeholder('int32', (None, self.actions_num), name = 'actions_mask')       
         else:
             self.action_mask_ph = None
-        self.mask = [False]
+        self.mask = [False] * self.num_agents
         self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
 
         self.normalize_input = self.config['normalize_input']
@@ -183,7 +183,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.last_state = None
         if self.network.is_rnn():
             self.neglop , self.value, self.action, _,self.states_ph, self.masks_ph, self.lstm_state, self.initial_state, self.logits = self.network(self.run_dict, reuse=False)
-            self.last_state = self.initial_state
+            self.last_state = self.initial_state * self.num_agents
         else:
             self.neglop , self.value, self.action,  _, self.logits  = self.network(self.run_dict, reuse=False)
 

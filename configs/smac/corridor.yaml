@@ -45,7 +45,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: 2c_vs_64zg
+    name: corridor_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -61,19 +61,19 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 64
-    minibatch_size: 512
-    mini_epochs: 4
+    steps_num: 128
+    minibatch_size: 3072
+    mini_epochs: 1
     critic_coef: 2
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: False
-    seq_len: 4
+    seq_len: 2
     use_action_masks: True
     ignore_dead_batches : False
 
     env_config:
-      name: 2c_vs_64zg
+      name: corridor
       frames: 4
       transpose: True
       random_invalid_step: False

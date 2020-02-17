@@ -44,11 +44,6 @@ class ModelA2C(BaseModel):
                 logits = logits + inf_mask
             action = tf.argmax(rand_logits, axis=-1)
             one_hot_actions = tf.one_hot(action, actions_num)
-        else:
-            """if action_mask_ph is not None:
-                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
-                logits = logits + inf_mask
-            """
 
         entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs)
         if not is_train:

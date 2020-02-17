@@ -80,8 +80,6 @@ class A2CAgent:
         self.old_values_ph = tf.placeholder('float32', (None,), name = 'old_values')
         self.advantages_ph = tf.placeholder('float32', (None,), name = 'advantages')
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        if self.ignore_dead_batches:
-            self.dead_batch_masks_ph = tf.placeholder('float32', (None,), name = 'dead_batch_mask')
 
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
@@ -113,7 +111,7 @@ class A2CAgent:
             'games_num' : games_num,
             'actions_num' : self.actions_num,
             'prev_actions_ph' : self.actions_ph,
-            'action_mask_ph' : self.action_mask_ph
+            'action_mask_ph' : None
         }
 
         self.run_dict = {
@@ -154,11 +152,8 @@ class A2CAgent:
         else:
             self.actor_loss = self.logp_actions * self.advantages_ph
 
-        if self.ignore_dead_batches:
-            self.actor_loss = self.stop_gradients_by_mask(self.actor_loss, self.dead_batch_masks_ph)
-            self.actor_loss = tf.reduce_sum(self.actor_loss) / tf.to_float(tf.reduce_sum(self.dead_batch_masks_ph))
-        else:
-            self.actor_loss = tf.reduce_mean(self.actor_loss)
+
+        self.actor_loss = tf.reduce_mean(self.actor_loss)
             
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
 
@@ -169,23 +164,15 @@ class A2CAgent:
         else:
             self.critic_loss = self.c_loss
         
-        if self.ignore_dead_batches:
-            self.critic_loss = self.stop_gradients_by_mask(self.critic_loss, self.dead_batch_masks_ph)
-            self.critic_loss = tf.reduce_sum(self.critic_loss) / tf.to_float(tf.reduce_sum(self.dead_batch_masks_ph))
-        else:
-            self.critic_loss = tf.reduce_mean(self.critic_loss)
+ 
+        self.critic_loss = tf.reduce_mean(self.critic_loss)
         
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
 
-
-        #if self.ignore_dead_batches:
-        #    self.entropy = self.stop_gradients_by_mask(self.entropy, self.dead_batch_masks_ph)
-        #    self.entropy = tf.reduce_sum(self.entropy) / tf.to_float(tf.count_nonzero(self.dead_batch_masks_ph))
-       # else:
-        self.entropy = tf.reduce_mean(self.entropy)
+        self.entropy = self.entropy
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.reg_loss = tf.losses.get_regularization_loss()
@@ -232,10 +219,6 @@ class A2CAgent:
         return self.variables.set_flat(weights)
 
 
-    def stop_gradients_by_mask(self, target, mask):
-        #mask_h = tf.abs(mask-1)
-        #return tf.stop_gradient(mask_h * target) + mask * target
-        return mask * target
 
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
@@ -243,25 +226,17 @@ class A2CAgent:
         
         mb_states = []
         epinfos = []
-        mb_masks = None
-        mb_dead_masks = None
-        if self.ignore_dead_batches:
-            mb_dead_masks = []
-        if self.use_action_masks or self.ignore_dead_batches:
-            mb_masks = []
+
         # for n in range number of steps
         for _ in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
 
-            if self.use_action_masks or self.ignore_dead_batches:
+            if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
-                mb_masks.append(masks)
-            if self.ignore_dead_batches:
-                dead_mask = masks[:,0] == 0.0
 
             if self.use_action_masks:
-                actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
+                actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
 
@@ -273,8 +248,6 @@ class A2CAgent:
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones.copy())
-            if self.ignore_dead_batches:
-                mb_dead_masks.append(dead_mask)
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             self.current_rewards += rewards
@@ -303,12 +276,8 @@ class A2CAgent:
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
         mb_states = np.asarray(mb_states, dtype=np.float32)
-        mb_masks = np.asarray(mb_masks, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
-
-        if self.ignore_dead_batches:
-            mb_dead_masks = np.asarray(mb_dead_masks, dtype=np.bool)   
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -327,12 +296,10 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_masks, mb_states  )), epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_states  )), epinfos)
         else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_dead_masks, mb_masks)), None, epinfos)
-
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
         return result
-
 
     def save(self, fn):
         self.saver.save(self.sess, fn)
@@ -344,6 +311,7 @@ class A2CAgent:
 
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors * self.num_agents
+        batch_size_envs = self.steps_num * self.num_actors
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
@@ -361,8 +329,8 @@ class A2CAgent:
         while True:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
-            frame += batch_size
-            obses, returns, dones, actions, values, neglogpacs, dead_batch_masks, masks, lstm_states, _ = self.play_steps()
+            frame += batch_size_envs
+            obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -397,10 +365,6 @@ class A2CAgent:
                         dict[self.actions_ph] = actions[mbatch]
                         dict[self.obs_ph] = obses[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
-                        if self.use_action_masks:
-                            dict[self.action_mask_ph] = masks[mbatch]
-                        if self.ignore_dead_batches:
-                            dict[self.dead_batch_masks_ph] = dead_batch_masks[mbatch]
 
                         dict[self.states_ph] = lstm_states[batch]
 
@@ -422,19 +386,11 @@ class A2CAgent:
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
-                    if self.use_action_masks:
-                        masks = masks[permutation]
-                    if self.ignore_dead_batches:
-                        dead_batch_masks = dead_batch_masks[permutation]    
                                                    
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
                                 self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
-                        if self.ignore_dead_batches:
-                            dict[self.dead_batch_masks_ph] = dead_batch_masks[batch]
-                        if self.use_action_masks:
-                            dict[self.action_mask_ph] = masks[batch]
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier, self.train_op]
                             
@@ -444,14 +400,16 @@ class A2CAgent:
                         c_losses.append(c_loss)
                         kls.append(kl)
                         entropies.append(entropy)
+
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
             total_time = update_time_end - start_time
 
             if True:
-                print('frames per seconds: ', batch_size / sum_time)
-                self.writer.add_scalar('performance/fps', batch_size / sum_time, frame)
+                scaled_time = self.num_agents * sum_time
+                print('frames per seconds: ', batch_size / scaled_time)
+                self.writer.add_scalar('performance/fps', batch_size / scaled_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
