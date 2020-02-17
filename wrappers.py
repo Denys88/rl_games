@@ -235,7 +235,6 @@ class BatchedFrameStack(gym.Wrapper):
         else:
             if flatten:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k *shp[0],), dtype=env.observation_space.dtype)
-
             else:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
 
@@ -258,6 +257,7 @@ class BatchedFrameStack(gym.Wrapper):
             if self.flatten:
                 frames = np.array(self.frames)
                 shape = np.shape(frames)
+                frames = np.transpose(self.frames, (1, 0, 2))
                 frames = np.reshape(self.frames, (shape[1], shape[0] * shape[2]))
             else:
                 frames = np.transpose(self.frames, (1, 0, 2))

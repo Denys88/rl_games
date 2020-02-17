@@ -3,7 +3,7 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c
+    name: discrete_a2c_lstm
 
   load_checkpoint: False
   load_path: 'nn/sc2smac'
@@ -22,8 +22,11 @@ params:
         scale: 2 
       regularizer:
         name: 'None'
+    lstm:
+      units: 128
+      concated: False
   config:
-    name: 6h_vs_8z
+    name: 2s_vs_1c
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -32,7 +35,7 @@ params:
     learning_rate: 1e-4
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac
     ppo: true
@@ -40,7 +43,7 @@ params:
     clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 3072
+    minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
@@ -50,6 +53,6 @@ params:
     use_action_masks: True
 
     env_config:
-      name: 6h_vs_8z
-      frames: 2
+      name: 2s_vs_1c
+      frames: 1
       random_invalid_step: False

@@ -68,7 +68,7 @@ class NetworkBuilder:
             activation=self.activations_factory.create(activation), 
             kernel_initializer = self.init_factory.create(**initializer), 
             kernel_regularizer = self.regularizer_factory.create(**regularizer),
-            bias_initializer=tf.random_uniform_initializer(-0.1, 0.1),
+            #bias_initializer=tf.random_uniform_initializer(-0.1, 0.1),
             name=name + str(ind))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
@@ -143,7 +143,8 @@ class NetworkBuilder:
             config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
             config['name'] = name + str(ind)
             #config['bias_initializer'] = tf.random_uniform_initializer,
-            out = tf.layers.conv1d(inputs=out, bias_initializer=tf.random_uniform_initializer(-0.1, 0.1), **config)
+            # bias_initializer=tf.random_uniform_initializer(-0.1, 0.1)
+            out = tf.layers.conv1d(inputs=out, **config)
             print('shapes of layer_' + str(ind), str(out.get_shape().as_list()))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
