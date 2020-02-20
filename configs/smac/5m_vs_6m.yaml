@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/5m_vs_6m2smac_cnn'
 
   network:
@@ -45,7 +45,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: 5m_vs_6m2
+    name: 5m_vs_6m_bias
     reward_shaper:
         scale_value: 1
     normalize_advantage: True

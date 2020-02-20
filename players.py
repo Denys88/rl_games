@@ -217,7 +217,7 @@ class PpoPlayerDiscrete(BasePlayer):
             logits = np.array(logits)
             return np.argmax(logits, axis = -1).astype(np.int32)
         else:
-            return int(np.squeeze(action))
+            return np.squeeze(action).astype(np.int32)
 
     def restore(self, fn):
         self.saver.restore(self.sess, fn)
