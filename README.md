@@ -1,9 +1,9 @@
 # Basic RL Algorithms Implementations
 * Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
-* Every agent controlled independetly and has restricted information
-* All the environments have a default difficulty level 7
+* Every agent was controlled independently and has restricted information
+* All the environments were trained with a default difficulty level 7
 * No curriculum, just baseline PPO
-* Didn't use state for Critic, just agent observations for both critic and actor
+* Full state information wasn't used for critic, actor and critic recieved the same agent observations
 * Most results are significantly better by win rate and were trained on a single PC much faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN (https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
 * No hyperparameter search
 * 4 frames + conv1d actor-critic network
@@ -15,12 +15,11 @@
 * python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
 
 # Results on some environments:
-* 2m_vs_1z took near 2 minutes to achieve 100% WR
+* 2m_vs_1z took near 2 minutes to achive 100% WR
 * corridor took near 2 hours for 95+% WR
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
-<br />
 
 # Plots:
 * 2m_vs_1z:
@@ -37,7 +36,6 @@
 ![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
 
 
-
 [Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
 
 Currently Implemented:
@@ -51,14 +49,12 @@ Currently Implemented:
 * A2C
 * PPO
 
-
 Tensorflow implementations of the DQN atari.
 
 * Double dueling DQN vs DQN with the same parameters
 
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
 Near 90 minutes to learn with this setup.
-
 
 * Different DQN Configurations tests
 
