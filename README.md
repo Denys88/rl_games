@@ -15,7 +15,7 @@
 * python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
 
 # Results on some environments:
-* 2m_vs_1z took near 2 minutes to achive 100% WR
+* 2m_vs_1z took near 2 minutes to achieve 100% WR
 * corridor took near 2 hours for 95+% WR
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
