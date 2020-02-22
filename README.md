@@ -3,6 +3,8 @@
 * Every agent controlled independetly and has restricted information
 * I used default environment settings with difficulty level 7
 * No curriculum, just baseline PPO
+* Most results are significantly better and faster than QMIX, MAVEN or QTRAN
+* Ofcourse sample efficiency is not that good as in offpolicy methods
 
 # How to run configs:
 * python3 runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
@@ -11,17 +13,19 @@
 * 2m_vs_1z took near 2 minutes to achive 100% WR
 * corridor took near 2 hours for 95+% WR
 * MMM2 4 hours for 90+% WR
+* 6h_vs_8z got 82% WR after 8 hours of training
 
+* 2m_vs_1z
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
-
+* 3s5z_vs_3s6z
 ![3s5z_vs_3s6z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
-
+* 3s_vs_5z
 ![3s_vs_5z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
-
+* corridor
 ![corridor](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
-
+* 5m_vs_6m
 ![5m_vs_6m](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
-
+* MMM2
 ![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
 
 
