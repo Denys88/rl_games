@@ -3,17 +3,22 @@
 * Every agent controlled independetly and has restricted information
 * I used default environment settings with difficulty level 7
 * No curriculum, just baseline PPO
+* Didn't use state for Critic, just agent observations for both critic and actor
 * Most results are significantly better and faster than QMIX, MAVEN or QTRAN
-* Ofcourse sample efficiency is not that good as in offpolicy methods
+* Ofcourse sample efficiency is not that good as in off-policy methods
+* No hyperparameter search
+* 4 frames + conv1d actor-critic network
 
 # How to run configs:
 * python3 runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
 * python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
-  
+
+# Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
 * corridor took near 2 hours for 95+% WR
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
+* 5m_vs_6m got 72% WR after 8 hours of training
 
 * 2m_vs_1z
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
