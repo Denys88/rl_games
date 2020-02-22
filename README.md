@@ -1,25 +1,31 @@
 # Basic RL Algorithms Implementations
-* Starcraft 2 Multiple Agents Results (https://github.com/oxwhirl/smac)
-2m_vs_1z took near 2 minutes to achive 100% WR
-corridor took near 2 hours for 95+% WR
+* Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
+* Every agent controlled independetly and has restricted information
+* I used default environment settings with difficulty level 7
+* No curriculum, just baseline PPO
 
-Using just PPO
-
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
-
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
-
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
-
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
-
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
-
-
-
-  How to run configs:
+# How to run configs:
 * python3 runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
 * python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
+  
+* 2m_vs_1z took near 2 minutes to achive 100% WR
+* corridor took near 2 hours for 95+% WR
+* MMM2 4 hours for 90+% WR
+
+![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
+
+![3s5z_vs_3s6z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
+
+![3s_vs_5z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
+
+![corridor](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
+
+![5m_vs_6m](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
+
+![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
+
+
+
 
 
 [Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
