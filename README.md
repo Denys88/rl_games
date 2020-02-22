@@ -1,8 +1,28 @@
 # Basic RL Algorithms Implementations
-[Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
+* Starcraft 2 Multiple Agents Results (https://github.com/oxwhirl/smac)
+2m_vs_1z took near 2 minutes to achive 100% WR
+corridor took near 2 hours for 95+% WR
+
+Using just PPO
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
+
+![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
+
+
 
   How to run configs:
-* python3 runner.py --train --file configs/dqn_breakout.yaml
+* python3 runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
+* python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
+
+
+[Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
 
 Currently Implemented:
 * DQN
@@ -16,13 +36,7 @@ Currently Implemented:
 * PPO
 
 
-Future Plans:
-* Play Sonic
-* Reproduce Monte Carlo Tree Search from AlphaGo.
-* Starcraft2 MultiAgents
-
 Tensorflow implementations of the DQN atari.
-In pong_runs.py there are some setups. Prioritized Replay doesn't work as good as I expected. Probably there is mistake in implementation.
 
 * Double dueling DQN vs DQN with the same parameters
 

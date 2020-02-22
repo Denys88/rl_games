@@ -63,7 +63,7 @@ class A2CAgent:
         self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
         self.current_lengths = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
-        self.games_to_log = self.config.get('games_to_track', 1000)
+        self.games_to_log = self.config.get('games_to_track', 100)
         self.game_rewards = deque([], maxlen=self.games_to_log)
         self.game_lengths = deque([], maxlen=self.games_to_log)
         self.game_scores = deque([], maxlen=self.games_to_log)
@@ -254,7 +254,6 @@ class A2CAgent:
             self.current_rewards += rewards
 
             self.current_lengths += 1
-
             for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
                     self.game_rewards.append(reward)

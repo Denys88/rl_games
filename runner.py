@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import object_factory
 import env_configurations
 import network_builder
@@ -40,10 +41,16 @@ class Runner:
         self.sess = tf.InteractiveSession(config=config)
 
     def load_config(self, params):
+        self.seed = params.get('seed', None)
+
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
         self.load_check_point = params['load_checkpoint']
         self.exp_config = None
+
+        if self.seed:
+            tf.set_random_seed(self.seed)
+            np.random.seed(self.seed)
 
         if self.load_check_point:
             self.load_path = params['load_path']

@@ -75,7 +75,6 @@ class BasePlayer(object):
                     assert done.all()
                     game_res = info.get('battle_won', 0.5)
                     print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
-                    
                     sum_game_res += game_res
                     sum_rewards += np.mean(cr)
                     sum_steps += steps

@@ -35,15 +35,13 @@ class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
         self.obs = self.env.reset()
-    
+
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
-
         if np.isscalar(is_done):
             episode_done = is_done
         else:
             episode_done = is_done.all()
-            
         if episode_done:
             next_state = self.reset()
         return next_state, reward, is_done, info
@@ -106,11 +104,10 @@ class RayVecSMACEnv(IVecEnv):
         return self.num_agents
 
     def step(self, actions):
-        NUM_AGENTS = self.num_agents
         newobs, newrewards, newdones, newinfos = [], [], [], []
         res_obs = []
         for num, worker in enumerate(self.workers):
-            res_obs.append(worker.step.remote(actions[NUM_AGENTS*num: NUM_AGENTS*num+NUM_AGENTS]))
+            res_obs.append(worker.step.remote(actions[self.num_agents*num: self.num_agents*num+self.num_agents]))
 
         for res in res_obs:
             cobs, crewards, cdones, cinfos = ray.get(res)
