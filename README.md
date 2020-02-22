@@ -19,19 +19,19 @@
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
+<br />
 
-
-* 2m_vs_1z
+* 2m_vs_1z:
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
-* 3s5z_vs_3s6z
+* 3s5z_vs_3s6z:
 ![3s5z_vs_3s6z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
-* 3s_vs_5z
+* 3s_vs_5z:
 ![3s_vs_5z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
-* corridor
+* corridor:
 ![corridor](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
-* 5m_vs_6m
+* 5m_vs_6m:
 ![5m_vs_6m](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
-* MMM2
+* MMM2:
 ![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
 
 
