@@ -19,7 +19,7 @@
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
-* 
+
 
 * 2m_vs_1z
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
