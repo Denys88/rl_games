@@ -9,6 +9,8 @@
 * No hyperparameter search
 * 4 frames + conv1d actor-critic network
 
+[![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
+
 # How to run configs:
 * python3 runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
 * python3 runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
@@ -19,6 +21,7 @@
 * MMM2 4 hours for 90+% WR
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
+  
 * 
 
 * 2m_vs_1z
