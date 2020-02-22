@@ -1,11 +1,10 @@
 # Basic RL Algorithms Implementations
 * Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
 * Every agent controlled independetly and has restricted information
-* I used default environment settings with difficulty level 7
+* All the environments have a default difficulty level 7
 * No curriculum, just baseline PPO
 * Didn't use state for Critic, just agent observations for both critic and actor
-* Most results are significantly better and faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN(https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
-* Ofcourse sample efficiency is not that good as in off-policy methods
+* Most results are significantly better by win rate and were trained on a single PC much faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN (https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
 * No hyperparameter search
 * 4 frames + conv1d actor-critic network
 
@@ -23,6 +22,7 @@
 * 5m_vs_6m got 72% WR after 8 hours of training
 <br />
 
+# Plots:
 * 2m_vs_1z:
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
 * 3s5z_vs_3s6z:
@@ -35,8 +35,6 @@
 ![5m_vs_6m](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
 * MMM2:
 ![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
-
-
 
 
 
