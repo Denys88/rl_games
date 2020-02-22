@@ -4,7 +4,7 @@
 * I used default environment settings with difficulty level 7
 * No curriculum, just baseline PPO
 * Didn't use state for Critic, just agent observations for both critic and actor
-* Most results are significantly better and faster than QMIX, MAVEN or QTRAN
+* Most results are significantly better and faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN(https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
 * Ofcourse sample efficiency is not that good as in off-policy methods
 * No hyperparameter search
 * 4 frames + conv1d actor-critic network
@@ -20,6 +20,7 @@
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
 * 
+
 * 2m_vs_1z
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
 * 3s5z_vs_3s6z
