@@ -8,5 +8,6 @@ tensorflow-probability==0.7.0
 opencv-python==4.1.0.25
 gym-super-mario-bros==7.1.6
 pybullet==2.5.0
+smac
 
 

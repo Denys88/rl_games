@@ -10,6 +10,7 @@ from collections import deque
 from tensorboardX import SummaryWriter
 import networks
 from datetime import datetime
+from tensorflow_utils import TensorFlowVariables
 from categorical import CategoricalQ
 
 
@@ -51,7 +52,6 @@ class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         actions_num = action_space.n
-
         self.config = config
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
@@ -84,7 +84,8 @@ class DQNAgent:
         self.rewards_shaper = self.config['reward_shaper']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
-        self.env = env_configurations.configurations[self.env_name]['env_creator']()
+        if self.env_name:
+            self.env = env_configurations.configurations[self.env_name]['env_creator']()
         self.sess = sess
         self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
@@ -108,7 +109,7 @@ class DQNAgent:
         self.is_done_ph = tf.placeholder(tf.float32, shape=[None,], name = 'is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.name = base_name
-        self._reset()
+        
         self.gamma = self.config['gamma']
         self.gamma_step = self.gamma**self.steps_num
         self.input_obs = self.obs_ph
@@ -132,8 +133,16 @@ class DQNAgent:
 
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+        self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        if self.env_name:
+            sess.run(tf.global_variables_initializer())
+        self._reset()
 
-        sess.run(tf.global_variables_initializer())
+    def get_weights(self):
+        return self.variables.get_flat()
+    
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
 
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
@@ -241,6 +250,12 @@ class DQNAgent:
         else:
             self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
 
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.td_loss_mean += self.reg_loss
+        self.learning_rate = self.config['learning_rate']
+        if self.env_name:
+            self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
+
     def save(self, fn):
         self.saver.save(self.sess, fn)
 
@@ -249,7 +264,8 @@ class DQNAgent:
 
     def _reset(self):
         self.states.clear()
-        self.state = self.env.reset()
+        if self.env_name:
+            self.state = self.env.reset()
         self.total_reward = 0.0
         self.total_shaped_reward = 0.0
         self.step_count = 0
@@ -428,13 +444,14 @@ class DQNAgent:
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         if last_mean_rewards > self.config['score_to_win']:
                             print('network won!')
-                            return last_mean_rewards, epoch_num   
+                            return last_mean_rewards, epoch_num
                 
                 
                 #clear_output(True)

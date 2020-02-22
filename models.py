@@ -4,6 +4,9 @@ import numpy as np
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
+def entry_stop_gradients(target, mask):
+    mask_h = tf.abs(mask-1)
+    return tf.stop_gradient(mask_h * target) + mask * target
 
 class BaseModel(object):
     def is_rnn(self):
@@ -19,24 +22,36 @@ class ModelA2C(BaseModel):
         inputs = dict['inputs']
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
+        action_mask_ph = dict.get('action_mask_ph', None)
         is_train = prev_actions_ph is not None
-        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train, reuse=reuse)
+
+        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,reuse=reuse)
+        #if action_mask_ph is not None:
+            #masks = tf.layers.dense(tf.to_float(action_mask_ph), actions_num, activation=tf.nn.elu)
+            #logits = masks + logits
+            #logits = entry_stop_gradients(logits, tf.to_float(action_mask_ph))
+        probs = tf.nn.softmax(logits)
+
         # Gumbel Softmax
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
+        
 
-        #tf.random.categorical()
+        if not is_train:
+            u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+            rand_logits = logits - tf.log(-tf.log(u))
+            if action_mask_ph is not None:
+                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
+                rand_logits = rand_logits + inf_mask
+                logits = logits + inf_mask
+            action = tf.argmax(rand_logits, axis=-1)
+            one_hot_actions = tf.one_hot(action, actions_num)
 
-
-        one_hot_actions = tf.one_hot(action, actions_num)
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
-
-        if prev_actions_ph == None:
-            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy
-
-        prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy
+        entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=probs)
+        if not is_train:
+            neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.stop_gradient(one_hot_actions))
+            return  neglogp, value, action, entropy, logits
+        else:
+            prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
+            return prev_neglogp, value, None, entropy
 
 
 
@@ -79,6 +94,8 @@ class ModelA2CContinuousLogStd(BaseModel):
         is_train = prev_actions_ph is not None
 
         mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train=True, reuse=reuse)
+    
+
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
 
@@ -189,20 +206,30 @@ class LSTMModelA2C(BaseModel):
         prev_actions_ph = dict['prev_actions_ph']
         games_num = dict['games_num']
         batch_num = dict['batch_num']
+        action_mask_ph = dict.get('action_mask_ph', None)
         is_train = prev_actions_ph is not None
+
         logits, value, states_ph, masks_ph, lstm_state, initial_state = self.network(name=name, inputs=inputs, actions_num=actions_num, 
         games_num=games_num, batch_num=batch_num, continuous=False, is_train=is_train, reuse=reuse)
-        u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
-        action = tf.argmax(logits - tf.log(-tf.log(u)), axis=-1)
-        one_hot_actions = tf.one_hot(action, actions_num)
-        entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits)))
+        
+        if not is_train:
+            u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
+            rand_logits = logits - tf.log(-tf.log(u))
+            if action_mask_ph is not None:
+                inf_mask = tf.maximum(tf.log(tf.to_float(action_mask_ph)), tf.float32.min)
+                rand_logits = rand_logits + inf_mask
+                logits = logits + inf_mask
+            action = tf.argmax(rand_logits, axis=-1)
+            one_hot_actions = tf.one_hot(action, actions_num)
+            
+        entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=tf.nn.softmax(logits))
 
-        if prev_actions_ph == None:
+        if not is_train:
             neglogp = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=one_hot_actions)
-            return  neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
+            return  neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state, logits
 
         prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
-        return prev_neglogp, value, action, entropy, states_ph, masks_ph, lstm_state, initial_state
+        return prev_neglogp, value, None, entropy, states_ph, masks_ph, lstm_state, initial_state
 
 
 class AtariDQN(BaseModel):

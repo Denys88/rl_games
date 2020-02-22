@@ -129,56 +129,59 @@ def create_flex(path):
 
     return env
 
+def create_smac(name, **kwargs):
+    from smac_env import SMACEnv
+    frames = kwargs.pop('frames', 1)
+    return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
-def __init__(self, env):
-    gym.RewardWrapper.__init__(self, env)
+def create_smac_cnn(name, **kwargs):
+    from smac_env import SMACEnv
+    env = SMACEnv(name, **kwargs)
+    frames = kwargs.pop('frames', 4)
+    transpose = kwargs.pop('transpose', False)
+    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
+    return env
 
-def reward(self, reward):
-    if reward == -100:
-        return -5
-    if reward == 0:
-        return -0.1
-    return reward
 
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
-        'env_creator' : lambda : gym.make('CartPole-v1'),
+        'env_creator' : lambda **kwargs : gym.make('CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
         'vecenv_type' : 'RAY',
-        'env_creator' : lambda : gym.make('MountainCarContinuous-v0'),
+        'env_creator' : lambda **kwargs  : gym.make('MountainCarContinuous-v0'),
     },
     'MountainCar-v0' : {
         'vecenv_type' : 'RAY',
         'env_creator' : lambda : gym.make('MountainCar-v0'),
     },
     'Acrobot-v1' : {
-        'env_creator' : lambda : gym.make('Acrobot-v1'),
+        'env_creator' : lambda **kwargs  : gym.make('Acrobot-v1'),
         'vecenv_type' : 'RAY'
     },
     'Pendulum-v0' : {
-        'env_creator' : lambda : gym.make('Pendulum-v0'),
+        'env_creator' : lambda **kwargs  : gym.make('Pendulum-v0'),
         'vecenv_type' : 'RAY'
     },
     'LunarLander-v2' : {
-        'env_creator' : lambda : gym.make('LunarLander-v2'),
+        'env_creator' : lambda **kwargs  : gym.make('LunarLander-v2'),
         'vecenv_type' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
-        'env_creator' : lambda :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
+        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
     'BreakoutNoFrameskip-v4' : {
-        'env_creator' : lambda :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4),
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
     'CarRacing-v0' : {
-        'env_creator' : lambda :  wrappers.make_car_racing('CarRacing-v0', skip=4),
+        'env_creator' : lambda **kwargs  :  wrappers.make_car_racing('CarRacing-v0', skip=4),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolAnt-v1' : {
-        'env_creator' : lambda : create_roboschool_env('RoboschoolAnt-v1'),
+        'env_creator' : lambda **kwargs  : create_roboschool_env('RoboschoolAnt-v1'),
         'vecenv_type' : 'RAY'
     },
     'SuperMarioBros-v1' : {
@@ -190,11 +193,11 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'SuperMarioBrosRandomStage1-v1' : {
-        'env_creator' : lambda :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
+        'env_creator' : lambda **kwargs  :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHalfCheetah-v1' : {
-        'env_creator' : lambda : create_roboschool_env('RoboschoolHalfCheetah-v1'),
+        'env_creator' : lambda **kwargs  : create_roboschool_env('RoboschoolHalfCheetah-v1'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoid-v1' : {
@@ -202,23 +205,23 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
-        'env_creator' : lambda : create_roboschool_env('LunarLanderContinuous-v2'),
+        'env_creator' : lambda **kwargs  : create_roboschool_env('LunarLanderContinuous-v2'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
-        'env_creator' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
+        'env_creator' : lambda **kwargs  : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
+        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerCnn-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 4, False),
+        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 4, False),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 1, True),
+        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 1, True),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcoreCnn-v2' : {
@@ -226,20 +229,28 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
-        'env_creator' : lambda : create_quadrupped_env(),
+        'env_creator' : lambda **kwargs  : create_quadrupped_env(),
         'vecenv_type' : 'RAY'
     },
     'FlexAnt' : {
-        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
+        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
         'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoid' : {
-        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
+        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
         'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoidHard' : {
-        'env_creator' : lambda : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
+        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'vecenv_type' : 'ISAAC'
+    },
+    'smac' : {
+        'env_creator' : lambda **kwargs : create_smac(**kwargs),
+        'vecenv_type' : 'RAY_SMAC'
+    },
+    'smac_cnn' : {
+        'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
+        'vecenv_type' : 'RAY_SMAC'
     },
 }
 
@@ -250,6 +261,23 @@ def get_obs_and_action_spaces(name):
     action_space = env.action_space
     env.close()
     return observation_space, action_space
+
+def get_obs_and_action_spaces_from_config(config):
+    env_config = config.get('env_config', {})
+    env = configurations[config['env_name']]['env_creator'](**env_config)
+    observation_space = env.observation_space
+    action_space = env.action_space
+    env.close()
+    return observation_space, action_space
+
+def get_env_info(config):
+    env_config = config.get('env_config', [])
+    env = configurations[config['env_name']]['env_creator'](**env_config)
+    observation_space = env.observation_space
+    action_space = env.action_space
+    agents = env.get_number_of_agents()
+    env.close()
+    return observation_space, action_space, agents
 
 def register(name, config):
     configurations[name] = config

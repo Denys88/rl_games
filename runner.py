@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import object_factory
 import env_configurations
 import network_builder
@@ -40,10 +41,16 @@ class Runner:
         self.sess = tf.InteractiveSession(config=config)
 
     def load_config(self, params):
+        self.seed = params.get('seed', None)
+
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
         self.load_check_point = params['load_checkpoint']
         self.exp_config = None
+
+        if self.seed:
+            tf.set_random_seed(self.seed)
+            np.random.seed(self.seed)
 
         if self.load_check_point:
             self.load_path = params['load_path']
@@ -66,9 +73,10 @@ class Runner:
 
     def run_train(self):
         print('Started to train')
-        ray.init(redis_max_memory=1024*1024*100, object_store_memory=1024*1024*100)
-        obs_space, action_space = env_configurations.get_obs_and_action_spaces(self.config['env_name'])
-
+        ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
+        obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        print('obs_space:', obs_space)
+        print('action_space:', action_space)
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0

@@ -62,7 +62,9 @@ class A2CAgent:
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_actors = config['num_actors']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors)
+        self.env_config = config.get('env_config', {})
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+        self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
         self.normalize_advantage = config['normalize_advantage']
         self.config = config
@@ -303,7 +305,7 @@ class A2CAgent:
 
         max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors
+        batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size

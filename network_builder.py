@@ -28,6 +28,8 @@ class NetworkBuilder:
         self.init_factory.register_builder('glorot_normal_initializer', lambda **kwargs : tf.glorot_normal_initializer(**kwargs))
         self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : tf.glorot_uniform_initializer(**kwargs))
         self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : tf.variance_scaling_initializer(**kwargs))
+        self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : tf.random_uniform_initializer(**kwargs))
+
         self.init_factory.register_builder('None', lambda **kwargs : None)
 
         self.regularizer_factory = object_factory.ObjectFactory()
@@ -66,6 +68,7 @@ class NetworkBuilder:
             activation=self.activations_factory.create(activation), 
             kernel_initializer = self.init_factory.create(**initializer), 
             kernel_regularizer = self.regularizer_factory.create(**regularizer),
+            #bias_initializer=tf.random_uniform_initializer(-0.1, 0.1),
             name=name + str(ind))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
@@ -125,7 +128,7 @@ class NetworkBuilder:
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
             elif norm_func_name == 'batch_norm':
-                out = tf.layers.batch_normalization(out, training=is_train)   
+                out = tf.layers.batch_normalization(out, name='bn_'+ config['name'], training=is_train)   
         return out
 
     def _build_cnn1d(self, name, input, convs, activation, initializer, regularizer, norm_func_name=None, is_train=True):
@@ -139,6 +142,8 @@ class NetworkBuilder:
             config['kernel_initializer'] = self.init_factory.create(**initializer)
             config['kernel_regularizer'] = self.regularizer_factory.create(**regularizer)
             config['name'] = name + str(ind)
+            #config['bias_initializer'] = tf.random_uniform_initializer,
+            # bias_initializer=tf.random_uniform_initializer(-0.1, 0.1)
             out = tf.layers.conv1d(inputs=out, **config)
             print('shapes of layer_' + str(ind), str(out.get_shape().as_list()))
             if norm_func_name == 'layer_norm':
@@ -159,8 +164,10 @@ class A2CBuilder(NetworkBuilder):
         self.regularizer = params['mlp']['regularizer']
         self.is_discrete = 'discrete' in params['space']
         self.is_continuous = 'continuous'in params['space']
+        self.value_activation = params.get('value_activation', 'None')
         self.normalization = params.get('normalization', None)
         self.has_lstm = 'lstm' in params
+
         if self.is_continuous:
             self.space_config = params['space']['continuous']
         elif self.is_discrete:
@@ -235,8 +242,8 @@ class A2CBuilder(NetworkBuilder):
 
                 out_critic = out_actor
 
-
-            value = tf.layers.dense(out_critic, units = 1, kernel_initializer = self.init_factory.create(**self.initializer), name='value')  
+            
+            value = tf.layers.dense(out_critic, units = 1, kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.value_activation), name='value')  
 
             if self.is_continuous:
                 mu = tf.layers.dense(out_actor, units = actions_num, activation=self.activations_factory.create(self.space_config['mu_activation']), 
