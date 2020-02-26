@@ -7,6 +7,8 @@
 * Most results are significantly better by win rate and were trained on a single PC much faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN (https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
 * No hyperparameter search
 * 4 frames + conv1d actor-critic network
+* Miniepoch num was set to 1, higher numbers didn't work
+* Simple MLP networks didnot work good on hard envs
 
 [![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
 
@@ -22,7 +24,7 @@
 * 5m_vs_6m got 72% WR after 8 hours of training
 
 # Plots:
-FPS in these plots is calculated on per agent basis, to get a win rate per number of environmental steps info, the same as used in plots in QMIX, MAVEN, QTRAN or Deep Coordination Graphs (https://arxiv.org/pdf/1910.00091.pdf) papers FPS numbers under the horizontal axis should be devided by number of agents in player's team.
+FPS in these plots is calculated on per env basis except MMM2 (it was scaled by number of agents which is 10), to get a win rate per number of environmental steps info, the same as used in plots in QMIX, MAVEN, QTRAN or Deep Coordination Graphs (https://arxiv.org/pdf/1910.00091.pdf) papers FPS numbers under the horizontal axis should be devided by number of agents in player's team.
 
 * 2m_vs_1z:
 ![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
