@@ -1,4 +1,4 @@
-import object_factory
+import common.object_factory as object_factory
 import models
 import network_builder
 

@@ -1,28 +1,28 @@
 import tensorflow as tf
 import numpy as np
-import object_factory
-import env_configurations
+import common.object_factory
+import common.env_configurations as env_configurations
 import network_builder
 import model_builder
 import a2c_continuous
 import a2c_discrete
 import dqnagent
-import tr_helpers
+import common.tr_helpers as tr_helpers
 import yaml
 import ray
 import players
 import argparse
-import experiment
+import common.experiment as experiment
 import copy
 
 class Runner:
     def __init__(self):
-        self.algo_factory = object_factory.ObjectFactory()
+        self.algo_factory = common.object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
         self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
-        self.player_factory = object_factory.ObjectFactory()
+        self.player_factory = common.object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
         self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs)) 
         self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))

@@ -1,4 +1,4 @@
-import env_configurations
+import common.env_configurations
 import tensorflow as tf
 import numpy as np
 import dqnagent

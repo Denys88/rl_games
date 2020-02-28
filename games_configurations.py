@@ -1,6 +1,6 @@
 import networks
 import models
-import tr_helpers
+import common.tr_helpers
 
 
 

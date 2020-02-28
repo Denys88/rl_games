@@ -1,5 +1,5 @@
 import ray
-from env_configurations import configurations
+from common.env_configurations import configurations
 import numpy as np
 
 class IVecEnv(object):

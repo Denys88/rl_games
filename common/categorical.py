@@ -1,5 +1,4 @@
 import numpy as np
-import tensorflow as tf
 
 
 class CategoricalQ:
@@ -9,11 +8,6 @@ class CategoricalQ:
         self.v_max = v_max
         self.delta_z = (v_max - v_min) / (n_atoms - 1)
         self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
-
-    def get_q(self, probs):
-        res = probs * self.all_z
-        return tf.reduce_sum(res, axis=2)
-             
 
     def distr_projection(self, next_distr, rewards, dones, gamma):
         """

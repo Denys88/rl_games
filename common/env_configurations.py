@@ -1,6 +1,6 @@
 import networks 
-import wrappers
-import tr_helpers
+import common.wrappers as wrappers
+import common.tr_helpers as tr_helpers
 import gym
 import numpy as np
 

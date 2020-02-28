@@ -1,8 +1,5 @@
-
+import common.tr_helpers as tr_helpers
 import networks
-import tr_helpers
-import experience
-import wrappers
 import tensorflow as tf
 import numpy as np
 import collections
@@ -11,7 +8,7 @@ from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
 from tensorflow_utils import TensorFlowVariables
 import gym
-import vecenv
+import common.vecenv as vecenv
 from tf_moving_mean_std import MovingMeanStd
 import ray
 from datetime import datetime
