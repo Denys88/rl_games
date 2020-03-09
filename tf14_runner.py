@@ -1,16 +1,19 @@
 import tensorflow as tf
+import algos_tf14
 import numpy as np
 import common.object_factory
 import common.env_configurations as env_configurations
-import network_builder
-import model_builder
-import a2c_continuous
-import a2c_discrete
-import dqnagent
+
+import algos_tf14.network_builder as network_builder
+import algos_tf14.model_builder as model_builder
+import algos_tf14.a2c_continuous as a2c_continuous
+import algos_tf14.a2c_discrete as a2c_discrete
+import algos_tf14.dqnagent as dqnagent
+
 import common.tr_helpers as tr_helpers
 import yaml
 import ray
-import players
+import algos_tf14.players
 import argparse
 import common.experiment as experiment
 import copy

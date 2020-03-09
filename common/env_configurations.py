@@ -1,6 +1,6 @@
-import networks 
 import common.wrappers as wrappers
 import common.tr_helpers as tr_helpers
+
 import gym
 import numpy as np
 
@@ -130,12 +130,12 @@ def create_flex(path):
     return env
 
 def create_smac(name, **kwargs):
-    from smac_env import SMACEnv
+    from envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
     return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
 def create_smac_cnn(name, **kwargs):
-    from smac_env import SMACEnv
+    from envs.smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)

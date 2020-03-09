@@ -1,7 +1,7 @@
 import common.object_factory as object_factory
-import models
-import network_builder
-
+import algos_tf14
+import algos_tf14.network_builder as network_builder
+import algos_tf14.models as models
 class ModelBuilder:
     def __init__(self):
 

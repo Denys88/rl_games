@@ -1,15 +1,15 @@
 import common.tr_helpers as tr_helpers
-import networks
+import algos_tf14.networks
 import tensorflow as tf
 import numpy as np
 import collections
 import time
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
-from tensorflow_utils import TensorFlowVariables
+from algos_tf14.tensorflow_utils import TensorFlowVariables
 import gym
 import common.vecenv as vecenv
-from tf_moving_mean_std import MovingMeanStd
+from algos_tf14.tf_moving_mean_std import MovingMeanStd
 import ray
 from datetime import datetime
 

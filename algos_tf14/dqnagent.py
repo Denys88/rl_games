@@ -1,15 +1,13 @@
-import models
-import common.tr_helpers
-import common.experience
-import common.env_configurations
 import tensorflow as tf
+import algos_tf14.models
+from common import tr_helpers, experience, env_configurations
 import numpy as np
 import collections
 import time
 from collections import deque
 from tensorboardX import SummaryWriter
 from datetime import datetime
-from tensorflow_utils import TensorFlowVariables
+from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
 
 class DQNAgent:
@@ -60,6 +58,7 @@ class DQNAgent:
         if self.is_categorical:
             self.v_min = self.config['v_min']
             self.v_max = self.config['v_max']
+            self.delta_z = (self.v_max - self.v_min) / (self.atoms_num - 1)
             self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
             self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)     
 

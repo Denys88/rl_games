@@ -5,10 +5,10 @@ import collections
 import time
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
-from tensorflow_utils import TensorFlowVariables
+from algos_tf14.tensorflow_utils import TensorFlowVariables
 import gym
 import common.vecenv as vecenv
-from tf_moving_mean_std import MovingMeanStd
+from algos_tf14.tf_moving_mean_std import MovingMeanStd
 from datetime import datetime
 
 def swap_and_flatten01(arr):

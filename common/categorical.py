@@ -7,7 +7,6 @@ class CategoricalQ:
         self.v_min = v_min
         self.v_max = v_max
         self.delta_z = (v_max - v_min) / (n_atoms - 1)
-        self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
 
     def distr_projection(self, next_distr, rewards, dones, gamma):
         """

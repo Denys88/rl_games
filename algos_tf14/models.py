@@ -1,5 +1,5 @@
 import tensorflow as tf
-import networks
+import algos_tf14.networks
 import numpy as np
 import tensorflow_probability as tfp
 tfd = tfp.distributions
