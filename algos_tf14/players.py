@@ -1,9 +1,9 @@
-import env_configurations
+import common.env_configurations
 import tensorflow as tf
 import numpy as np
-import dqnagent
-from tensorflow_utils import TensorFlowVariables
-from tf_moving_mean_std import MovingMeanStd
+import algos_tf14.dqnagent
+from algos_tf14.tensorflow_utils import TensorFlowVariables
+from algos_tf14.tf_moving_mean_std import MovingMeanStd
 
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0

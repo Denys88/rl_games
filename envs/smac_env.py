@@ -24,7 +24,6 @@ class SMACEnv(gym.Env):
         return self.n_agents
 
     def reset(self):
-        print('reset called')
         if self._game_num % self.replay_save_freq == 1:
             print('saving replay')
             self.env.save_replay()

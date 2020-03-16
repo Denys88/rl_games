@@ -1,28 +1,31 @@
 import tensorflow as tf
+import algos_tf14
 import numpy as np
-import object_factory
-import env_configurations
-import network_builder
-import model_builder
-import a2c_continuous
-import a2c_discrete
-import dqnagent
-import tr_helpers
+import common.object_factory
+import common.env_configurations as env_configurations
+
+import algos_tf14.network_builder as network_builder
+import algos_tf14.model_builder as model_builder
+import algos_tf14.a2c_continuous as a2c_continuous
+import algos_tf14.a2c_discrete as a2c_discrete
+import algos_tf14.dqnagent as dqnagent
+
+import common.tr_helpers as tr_helpers
 import yaml
 import ray
-import players
+import algos_tf14.players
 import argparse
-import experiment
+import common.experiment as experiment
 import copy
 
 class Runner:
     def __init__(self):
-        self.algo_factory = object_factory.ObjectFactory()
+        self.algo_factory = common.object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
         self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
-        self.player_factory = object_factory.ObjectFactory()
+        self.player_factory = common.object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
         self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs)) 
         self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))

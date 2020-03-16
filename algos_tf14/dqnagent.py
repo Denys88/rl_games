@@ -1,52 +1,14 @@
-import models
-import tr_helpers
-import experience
 import tensorflow as tf
+import algos_tf14.models
+from common import tr_helpers, experience, env_configurations
 import numpy as np
 import collections
 import time
-import env_configurations
 from collections import deque
 from tensorboardX import SummaryWriter
-import networks
 from datetime import datetime
-from tensorflow_utils import TensorFlowVariables
-from categorical import CategoricalQ
-
-
-default_config = {
-    'GAMMA' : 0.99,
-    'LEARNING_RATE' : 1e-3,
-    'STEPS_PER_EPOCH' : 20,
-    'BATCH_SIZE' : 64,
-    'EPSILON' : 0.8,
-    'EPSILON_DECAY_FRAMES' : 1e5,
-    'MIN_EPSILON' : 0.02,
-    'NUM_EPOCHS_TO_COPY' : 1000,
-    'NUM_STEPS_FILL_BUFFER' : 10000,
-    'NAME' : 'DQN',
-    'IS_DOUBLE' : False,
-    'SCORE_TO_WIN' : 20,
-    'REPLAY_BUFFER_TYPE' : 'normal', # 'prioritized'
-    'REPLAY_BUFFER_SIZE' :100000,
-    'PRIORITY_BETA' : 0.4,
-    'PRIORITY_ALPHA' : 0.6,
-    'BETA_DECAY_FRAMES' : 1e5,
-    'MAX_BETA' : 1.0,
-    'NETWORK' : models.AtariDQN(networks.dqn_network),
-    'REWARD_SHAPER' : tr_helpers.DefaultRewardsShaper(),
-    'EPISODES_TO_LOG' : 20, 
-    'LIVES_REWARD' : 5, # 5 it is divider to calculate rewards, 5 lifes is one episode in breakout
-    'STEPS_NUM' : 1,
-    'ATOMS_NUM' : 51, # if atoms_num > 1 then it is distributional dqn https://arxiv.org/abs/1510.09142
-    'V_MAX' : 10,
-    'V_MIN' : -10,
-    }
-
-
-
-def kl_loss_log(y_True_log, y_pred_log):
-    return tf.exp(y_True_log) * (y_True_log - y_pred_log)
+from algos_tf14.tensorflow_utils import TensorFlowVariables
+from common.categorical import CategoricalQ
 
 class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
@@ -94,7 +56,11 @@ class DQNAgent:
         self.is_categorical = self.atoms_num > 1
     
         if self.is_categorical:
-            self.categorical = CategoricalQ(self.atoms_num, self.config['v_min'], self.config['v_max'])     
+            self.v_min = self.config['v_min']
+            self.v_max = self.config['v_max']
+            self.delta_z = (self.v_max - self.v_min) / (self.atoms_num - 1)
+            self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
+            self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)     
 
         if not self.is_prioritized:
             self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
@@ -138,6 +104,10 @@ class DQNAgent:
             sess.run(tf.global_variables_initializer())
         self._reset()
 
+    def _get_q(self, probs):
+        res = probs * self.all_z
+        return tf.reduce_sum(res, axis=2)
+
     def get_weights(self):
         return self.variables.get_flat()
     
@@ -155,7 +125,7 @@ class DQNAgent:
         }
         self.logits = self.network(config, reuse=False)
         self.qvalues_c = tf.nn.softmax(self.logits, axis = 2)
-        self.qvalues = self.categorical.get_q(self.qvalues_c)
+        self.qvalues = self._get_q(self.qvalues_c)
 
         config = {
             'name' : 'target',
@@ -164,7 +134,7 @@ class DQNAgent:
         }
         self.target_logits = self.network(config, reuse=False)
         self.target_qvalues_c = tf.nn.softmax(self.target_logits, axis = 2)
-        self.target_qvalues = self.categorical.get_q(self.target_qvalues_c)
+        self.target_qvalues = self._get_q(self.target_qvalues_c)
 
         if self.config['is_double'] == True:
             config = {
@@ -174,7 +144,7 @@ class DQNAgent:
             }
             self.next_logits = tf.stop_gradient(self.network(config, reuse=True))
             self.next_qvalues_c = tf.nn.softmax(self.next_logits, axis = 2)
-            self.next_qvalues = self.categorical.get_q(self.next_qvalues_c)
+            self.next_qvalues = self._get_q(self.next_qvalues_c)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
