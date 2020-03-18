@@ -65,7 +65,7 @@ class A2CBase:
         self.is_rnn = False
         self.states = None
 
-        self.batch_size = self.steps_num * self.num_actors * self.num_agents
+       self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
         self.mini_epochs_num = self.config['mini_epochs']
@@ -111,7 +111,7 @@ class A2CBase:
         pass
 
     def train_actor_critic(self):
-        pass
+        pass 
 
 class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
