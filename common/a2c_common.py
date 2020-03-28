@@ -222,18 +222,18 @@ class DiscreteA2CBase(A2CBase):
                         mb_indexes = game_indexes[batch]
                         mbatch = flat_indexes[mb_indexes].ravel()                        
 
-                        dict = {}
-                        dict['old_values'] = values[mbatch]
-                        dict['old_logp_actions'] = neglogpacs[mbatch]
-                        dict['advantages'] = advantages[mbatch]
-                        dict['rewards'] = returns[mbatch]
-                        dict['actions'] = actions[mbatch]
-                        dict['obs'] = obses[mbatch]
-                        dict['masks'] = dones[mbatch]
-                        dict['states'] = lstm_states[batch]
-                        dict['learning_rate'] = self.last_lr
+                        input_dict = {}
+                        input_dict['old_values'] = values[mbatch]
+                        input_dict['old_logp_actions'] = neglogpacs[mbatch]
+                        input_dict['advantages'] = advantages[mbatch]
+                        input_dict['rewards'] = returns[mbatch]
+                        input_dict['actions'] = actions[mbatch]
+                        input_dict['obs'] = obses[mbatch]
+                        input_dict['masks'] = dones[mbatch]
+                        input_dict['states'] = lstm_states[batch]
+                        input_dict['learning_rate'] = self.last_lr
 
-                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(dict)
+                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
                         a_losses.append(a_loss)
                         c_losses.append(c_loss)
                         kls.append(kl)
@@ -251,17 +251,17 @@ class DiscreteA2CBase(A2CBase):
 
                     for i in range(0, self.num_minibatches):
                         batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
-                        dict = {}
-                        dict['old_values'] = values[batch]
-                        dict['old_logp_actions'] = neglogpacs[batch]
-                        dict['advantages'] = advantages[batch]
-                        dict['rewards'] = returns[batch]
-                        dict['actions'] = actions[batch]
-                        dict['obs'] = obses[batch]
-                        dict['masks'] = dones[batch]
-                        dict['learning_rate'] = self.last_lr
+                        input_dict = {}
+                        input_dict['old_values'] = values[batch]
+                        input_dict['old_logp_actions'] = neglogpacs[batch]
+                        input_dict['advantages'] = advantages[batch]
+                        input_dict['rewards'] = returns[batch]
+                        input_dict['actions'] = actions[batch]
+                        input_dict['obs'] = obses[batch]
+                        input_dict['masks'] = dones[batch]
+                        input_dict['learning_rate'] = self.last_lr
                         
-                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(dict)
+                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
                         a_losses.append(a_loss)
                         c_losses.append(c_loss)
                         kls.append(kl)
