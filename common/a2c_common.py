@@ -110,7 +110,7 @@ class A2CBase:
     def train_epoch(self):
         pass
 
-    def train_actor_critic(self):
+    def train_actor_critic(self, dict):
         pass 
 
 class DiscreteA2CBase(A2CBase):
