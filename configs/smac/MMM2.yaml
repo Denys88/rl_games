@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/MMM_cnn'
+  load_path: 'nn/MMM2_cnn'
 
   network:
     name: actor_critic
@@ -45,7 +45,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: MMM_cnn
+    name: MMM2_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -73,7 +73,7 @@ params:
     ignore_dead_batches : False
 
     env_config:
-      name: MMM
+      name: MMM2
       frames: 4
       transpose: True
       random_invalid_step: False

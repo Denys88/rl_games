@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
   seed: 322
-  load_checkpoint: True
-  load_path: 'nn/3s5z_vs_3s6zsmac_cnn'
+  load_checkpoint: False
+  load_path: 'nn/3s5z_vs_3s6z_cnn'
 
   network:
     name: actor_critic

@@ -14,7 +14,7 @@
 
 # How to run configs:
 * python3 tf14_runner.py --train --file configs/smac/3s5z_vs_3s6z.yaml
-* python3 tf14_runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6zsmac_cnn'
+* python3 tf14_runner.py --play --file configs/smac/3s5z_vs_3s6z.yaml --checkpoint 'nn/3s5z_vs_3s6z_cnn'
 
 # Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
