@@ -25,6 +25,8 @@ class NetworkBuilder:
         self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
         self.init_factory.register_builder('None', lambda **kwargs : None)
 
+        self.layers = []
+
     @staticmethod
     def _create_initializer(func, **kwargs):
         return lambda v : func(v, **kwargs)
@@ -38,24 +40,21 @@ class NetworkBuilder:
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
 
-    def _noisy_dense(self, inputs, units, activation, kernel_initializer, kernel_regularizer, name):
-        pass
+    def _noisy_dense(self, inputs, units):
+        return algos.torch.layers.NoisyFactorizedLinear(inputs, units)
+
     def _build_mlp(self, 
-    input, 
+    input_size, 
     units, 
     activation, 
     initializer, 
     norm_func_name = None):
         out = input
-        ind = 0
+        layers = []
         for unit in units:
-            ind += 1
             out = dense_func(out, units=unit, 
             activation=self.activations_factory.create(activation), 
-            kernel_initializer = self.init_factory.create(**initializer), 
-            kernel_regularizer = self.regularizer_factory.create(**regularizer),
-            #bias_initializer=tf.random_uniform_initializer(-0.1, 0.1),
-            name=name + str(ind))
+,
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
             elif norm_func_name == 'batch_norm':
@@ -175,14 +174,12 @@ class A2CBuilder(NetworkBuilder):
                     critic_input = tf.contrib.layers.flatten(critic_input)
 
             mlp_args = {
-                'name' :'actor_fc',  
                 'input' : actor_input, 
                 'units' :self.units, 
                 'activation' : self.activation, 
                 'initializer' : self.initializer, 
                 'regularizer' : self.regularizer,
                 'norm_func_name' : self.normalization,
-                'is_train' : is_train    
             }
             out_actor = self._build_mlp(**mlp_args)
 
@@ -255,7 +252,7 @@ class DQNBuilder(NetworkBuilder):
         if self.is_noisy:
             dense_layer = self._noisy_dense
         else:
-            dense_layer = tf.layers.dense
+            dense_layer = torch.nn.Linear
         with tf.variable_scope(name, reuse=reuse):   
             out = input
             if self.has_cnn:
