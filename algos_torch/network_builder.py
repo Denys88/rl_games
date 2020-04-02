@@ -47,19 +47,17 @@ class NetworkBuilder:
     input_size, 
     units, 
     activation, 
-    initializer, 
     norm_func_name = None):
-        out = input
+        in_size = input_size
         layers = []
         for unit in units:
-            out = dense_func(out, units=unit, 
-            activation=self.activations_factory.create(activation), 
-,
+            layers.append(dense_func(in_size, units=unit))
+            layers.append(self.activations_factory.create(activation)())
             if norm_func_name == 'layer_norm':
-                out = tf.contrib.layers.layer_norm(out)
+                layers.append(torch.nn.LayerNorm(out))
             elif norm_func_name == 'batch_norm':
-                out = tf.layers.batch_normalization(out, training=is_train)   
-
+                layers.append(torch.nn.BatchNorm1d(out))
+            in_size = unit
         return out
 
     def _build_conv(self, ctype, **kwargs):
@@ -145,33 +143,28 @@ class A2CBuilder(NetworkBuilder):
 
     def build(self, name, **kwargs):
         actions_num = kwargs.pop('actions_num')
-        input = kwargs.pop('inputs')
-        reuse = kwargs.pop('reuse')
+        input_shape = kwargs.pop('input_shape')
         batch_num = kwargs.pop('batch_num', 1)
         games_num = kwargs.pop('games_num', 1)
-        is_train = kwargs.pop('is_train', True)
-        with tf.variable_scope(name, reuse=reuse):   
-            actor_input = critic_input = input
-            if self.has_cnn:
-                cnn_args = {
-                    'name' :'actor_cnn', 
-                    'ctype' : self.cnn['type'], 
-                    'input' : input, 
-                    'convs' :self.cnn['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'initializer' : self.cnn['initializer'], 
-                    'regularizer' : self.cnn['regularizer'],
-                    'norm_func_name' : self.normalization,
-                    'is_train' : is_train
-                }
-                actor_input = self._build_conv(**cnn_args)
-                actor_input = tf.contrib.layers.flatten(actor_input)
-                critic_input = actor_input
+        actor_input = critic_input = input
+        if self.has_cnn:
+            cnn_args = {
+                'name' :'actor_cnn', 
+                'ctype' : self.cnn['type'], 
+                'input' : input, 
+                'convs' :self.cnn['convs'], 
+                'activation' : self.cnn['activation'], 
+                'initializer' : self.cnn['initializer'], 
+                'norm_func_name' : self.normalization,
+            }
+            self._build_conv(**cnn_args)
+            #tf.contrib.layers.flatten(actor_input)
+            #critic_input = actor_input
 
-                if self.separate:
-                    cnn_args['name'] = 'critic_cnn' 
-                    critic_input = self._build_conv( **cnn_args)
-                    critic_input = tf.contrib.layers.flatten(critic_input)
+            if self.separate:
+                cnn_args['name'] = 'critic_cnn' 
+                critic_input = self._build_conv( **cnn_args)
+                #critic_input = tf.contrib.layers.flatten(critic_input)
 
             mlp_args = {
                 'input' : actor_input, 
@@ -213,15 +206,15 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     sigma_out = tf.layers.dense(out_actor, units = actions_num, kernel_initializer=self.init_factory.create(**self.space_config['sigma_init']),activation=self.activations_factory.create(self.space_config['sigma_activation']), name='sigma_out')
 
-                if self.has_lstm:
-                    return mu, mu * 0 + sigma_out, value, states_ph, dones_ph, lstm_state, initial_state
+                #if self.has_lstm:
+                #    return mu, mu * 0 + sigma_out, value, states_ph, dones_ph, lstm_state, initial_state
                 return mu, mu * 0 + sigma_out, value
 
             if self.is_discrete:
-                logits = tf.layers.dense(inputs=out_actor, units=actions_num, name='logits', kernel_initializer = self.init_factory.create(**self.initializer))
+                logits = tf.layers.dense(inputs=out_actor, units=actions_num, name='logits')
                 
-                if self.has_lstm:
-                    return logits, value, states_ph, dones_ph, lstm_state, initial_state
+                #if self.has_lstm:
+                #    return logits, value, states_ph, dones_ph, lstm_state, initial_state
                 return logits, value
 
 
