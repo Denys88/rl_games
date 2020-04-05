@@ -65,7 +65,7 @@ class A2CBase:
         self.is_rnn = False
         self.states = None
 
-       self.batch_size = self.steps_num * self.num_actors * self.num_agents
+        self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
         self.mini_epochs_num = self.config['mini_epochs']
@@ -77,6 +77,7 @@ class A2CBase:
         self.play_time = 0
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
+        self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
 
 
@@ -88,9 +89,11 @@ class A2CBase:
     def restore(self, fn):
         pass
 
-    def get_masked_action_values(self, obs, action_masks):
+    def get_action_values(self, obs):
         pass
 
+    def get_masked_action_values(self, obs, action_masks):
+        pass
 
     def get_values(self, obs):
         pass
@@ -136,7 +139,7 @@ class DiscreteA2CBase(A2CBase):
                 actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
-
+    
             actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
@@ -198,89 +201,99 @@ class DiscreteA2CBase(A2CBase):
         return result
 
     def train_epoch(self):
+        play_time_start = time.time()
         obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+        play_time_end = time.time()
+        update_time_start = time.time()
         advantages = returns - values
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            
+        a_losses = []
+        c_losses = []
+        entropies = []
+        kls = []
 
-            a_losses = []
-            c_losses = []
-            entropies = []
-            kls = []
+        if self.network.is_rnn():
+            total_games = self.batch_size // self.seq_len
+            num_games_batch = self.minibatch_size // self.seq_len
+            game_indexes = np.arange(total_games)
+            flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
+            lstm_states = lstm_states[::self.seq_len]
+            for _ in range(0, self.mini_epochs_num):
+                np.random.shuffle(game_indexes)
 
-            if self.network.is_rnn():
-                total_games = self.batch_size // self.seq_len
-                num_games_batch = self.minibatch_size // self.seq_len
-                game_indexes = np.arange(total_games)
-                flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
-                lstm_states = lstm_states[::self.seq_len]
-                for _ in range(0, self.mini_epochs_num):
-                    np.random.shuffle(game_indexes)
+                for i in range(0, self.num_minibatches):
+                    batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                    mb_indexes = game_indexes[batch]
+                    mbatch = flat_indexes[mb_indexes].ravel()                        
 
-                    for i in range(0, self.num_minibatches):
-                        batch = range(i * num_games_batch, (i + 1) * num_games_batch)
-                        mb_indexes = game_indexes[batch]
-                        mbatch = flat_indexes[mb_indexes].ravel()                        
+                    input_dict = {}
+                    input_dict['old_values'] = values[mbatch]
+                    input_dict['old_logp_actions'] = neglogpacs[mbatch]
+                    input_dict['advantages'] = advantages[mbatch]
+                    input_dict['rewards'] = returns[mbatch]
+                    input_dict['actions'] = actions[mbatch]
+                    input_dict['obs'] = obses[mbatch]
+                    input_dict['masks'] = dones[mbatch]
+                    input_dict['states'] = lstm_states[batch]
+                    input_dict['learning_rate'] = self.last_lr
 
-                        input_dict = {}
-                        input_dict['old_values'] = values[mbatch]
-                        input_dict['old_logp_actions'] = neglogpacs[mbatch]
-                        input_dict['advantages'] = advantages[mbatch]
-                        input_dict['rewards'] = returns[mbatch]
-                        input_dict['actions'] = actions[mbatch]
-                        input_dict['obs'] = obses[mbatch]
-                        input_dict['masks'] = dones[mbatch]
-                        input_dict['states'] = lstm_states[batch]
-                        input_dict['learning_rate'] = self.last_lr
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                    a_losses.append(a_loss)
+                    c_losses.append(c_loss)
+                    kls.append(kl)
+                    entropies.append(entropy)    
+        else:
+            for _ in range(0, self.mini_epochs_num):
+                permutation = np.random.permutation(self.batch_size)
+                obses = obses[permutation]
+                returns = returns[permutation]
+                
+                actions = actions[permutation]
+                values = values[permutation]
+                neglogpacs = neglogpacs[permutation]
+                advantages = advantages[permutation]
 
-                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
-                        a_losses.append(a_loss)
-                        c_losses.append(c_loss)
-                        kls.append(kl)
-                        entropies.append(entropy)    
-            else:
-                for _ in range(0, self.mini_epochs_num):
-                    permutation = np.random.permutation(self.batch_size)
-                    obses = obses[permutation]
-                    returns = returns[permutation]
+                for i in range(0, self.num_minibatches):
+                    batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
+                    input_dict = {}
+                    input_dict['old_values'] = values[batch]
+                    input_dict['old_logp_actions'] = neglogpacs[batch]
+                    input_dict['advantages'] = advantages[batch]
+                    input_dict['rewards'] = returns[batch]
+                    input_dict['actions'] = actions[batch]
+                    input_dict['obs'] = obses[batch]
+                    input_dict['masks'] = dones[batch]
+                    input_dict['learning_rate'] = self.last_lr
                     
-                    actions = actions[permutation]
-                    values = values[permutation]
-                    neglogpacs = neglogpacs[permutation]
-                    advantages = advantages[permutation]
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                    a_losses.append(a_loss)
+                    c_losses.append(c_loss)
+                    kls.append(kl)
+                    entropies.append(entropy)
 
-                    for i in range(0, self.num_minibatches):
-                        batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
-                        input_dict = {}
-                        input_dict['old_values'] = values[batch]
-                        input_dict['old_logp_actions'] = neglogpacs[batch]
-                        input_dict['advantages'] = advantages[batch]
-                        input_dict['rewards'] = returns[batch]
-                        input_dict['actions'] = actions[batch]
-                        input_dict['obs'] = obses[batch]
-                        input_dict['masks'] = dones[batch]
-                        input_dict['learning_rate'] = self.last_lr
-                        
-                        a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
-                        a_losses.append(a_loss)
-                        c_losses.append(c_loss)
-                        kls.append(kl)
-                        entropies.append(entropy)
+        update_time_end = time.time()
+        play_time = play_time_end - play_time_start
+        update_time = update_time_end - update_time_start
+        total_time = update_time_end - play_time_start
+
+        return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
+
 
     def train(self):
+        last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
         rep_count = 0
+        frame = 0
+        self.obs = self.vec_env.reset()
         while True:
-            play_time_start = time.time()
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
 
-            update_time_end = time.time()
-            update_time = update_time_end - self.update_time_start
-            sum_time = update_time + self.play_time
-            total_time = update_time_end - start_time
-
+            play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+            total_time += sum_time
             if True:
                 scaled_time = self.num_agents * sum_time
                 print('frames per seconds: ', self.batch_size / scaled_time)

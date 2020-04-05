@@ -1,5 +1,4 @@
-import tensorflow as tf
-import algos_tf14
+import algos_torch
 import numpy as np
 import common.object_factory
 import common.env_configurations as env_configurations
@@ -22,7 +21,7 @@ class Runner:
     def __init__(self):
         self.algo_factory = common.object_factory.ObjectFactory()
         #self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
-        self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
+        self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
         self.player_factory = common.object_factory.ObjectFactory()
@@ -32,16 +31,9 @@ class Runner:
 
         self.model_builder = model_builder.ModelBuilder()
         self.network_builder = network_builder.NetworkBuilder()
-        self.sess = None
 
     def reset(self):
-        gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=0.8)
-
-        config = tf.ConfigProto(gpu_options=gpu_options)
-        tf.reset_default_graph()
-        if self.sess:
-            self.sess.close()
-        self.sess = tf.InteractiveSession(config=config)
+        pass
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
@@ -89,22 +81,22 @@ class Runner:
                 print('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
-                agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
+                agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
                 self.experiment.set_results(*agent.train())
                 exp = self.experiment.get_next_config()
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
+            agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()
             
     def create_player(self):
-        return self.player_factory.create(self.algo_name, sess=self.sess, config=self.config)
+        return self.player_factory.create(self.algo_name, config=self.config)
 
     def create_agent(self, obs_space, action_space):
-        return self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
+        return self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
 
     def run(self, args):
         if 'checkpoint' in args:
@@ -115,7 +107,7 @@ class Runner:
         elif args['play']:
             print('Started to play')
 
-            player = self.player_factory.create(self.algo_name, sess=self.sess, config=self.config)
+            player = self.player_factory.create(self.algo_name, config=self.config)
             player.restore(self.load_path)
             player.run()
         

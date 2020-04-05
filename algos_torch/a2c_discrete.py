@@ -1,12 +1,25 @@
 import common.a2c_common
-
-class DiscreteA2CAgent(common.DiscreteA2CBase):
+from torch import optim
+import torch 
+from torch import nn
+class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
-        SELF.opt = optim.Adam(model.parameters(), lr=0.001)
+        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        
+        config = {
+            'actions_num' : self.actions_num,
+            'input_shape' : self.state_shape,
+            'games_num' : 1,
+            'batch_num' : 1,
+        } 
+        self.model = self.network.build(config)
+        self.model.cuda()
+        self.last_lr = float(self.last_lr)
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
 
     def update_epoch(self):
-        pass
+        self.epoch_num += 1
+        return self.epoch_num
 
     def save(self, fn):
         pass
@@ -15,10 +28,41 @@ class DiscreteA2CAgent(common.DiscreteA2CBase):
         pass
 
     def get_masked_action_values(self, obs, action_masks):
-        pass
+        obs = torch.Tensor(obs).cuda()
+        input_dict = {
+            'is_train': False,
+            'prev_actions': None, 
+            'inputs' : obs,
+            'action_masks' : action_masks
+        }
+        with torch.no_grad():
+            neglogp, value, action, logits = self.model(input_dict)
+        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), None, neglogp.detach().cpu().numpy(), None
+
+
+    def get_action_values(self, obs):
+        obs = torch.Tensor(obs).cuda()
+        self.model.eval()
+        input_dict = {
+            'is_train': False,
+            'prev_actions': None, 
+            'inputs' : obs,
+        }
+        with torch.no_grad():
+            neglogp, value, action, logits = self.model(input_dict)
+        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None
 
     def get_values(self, obs):
-        pass
+        obs = torch.Tensor(obs).cuda()
+        self.model.eval()
+        input_dict = {
+            'is_train': False,
+            'prev_actions': None, 
+            'inputs' : obs
+        }
+        with torch.no_grad():
+            neglogp, value, action, logits = self.model(input_dict)
+        return value.detach().cpu().numpy()
 
     def get_weights(self):
         pass
@@ -27,26 +71,30 @@ class DiscreteA2CAgent(common.DiscreteA2CBase):
         pass
 
     def train_actor_critic(self, input_dict):
-        input_dict = {}
+        self.model.train()
         value_preds_batch = torch.FloatTensor(input_dict['old_values']).cuda()
         old_action_log_probs_batch = torch.FloatTensor(input_dict['old_logp_actions']).cuda()
         advantage = torch.FloatTensor(input_dict['advantages']).cuda()
         return_batch = torch.FloatTensor(input_dict['rewards']).cuda()
         actions_batch = torch.FloatTensor(input_dict['actions']).cuda()
         obs_batch = torch.FloatTensor(input_dict['obs']).cuda()        
-        #input_dict['masks']
+
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
-        values, action_log_probs, entropy, _ = self.network(obs_batch, actions_batch)
+        input_dict = {
+            'is_train': True,
+            'prev_actions': actions_batch, 
+            'inputs' : obs_batch
+        }
+        action_log_probs, values, entropy = self.model(input_dict)
 
-        ratio = torch.exp(action_log_probs -
-                          old_action_log_probs_batch)
+        ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
         surr1 = ratio * advantage
         surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
                             1.0 + curr_e_clip) * advantage
-        a_loss = -torch.min(surr1, surr2).mean()
+        a_loss = torch.max(-surr1, -surr2).mean()
 
         if self.clip_value:
             value_pred_clipped = value_preds_batch + \
@@ -54,16 +102,16 @@ class DiscreteA2CAgent(common.DiscreteA2CBase):
             value_losses = (values - return_batch).pow(2)
             value_losses_clipped = (
                 value_pred_clipped - return_batch).pow(2)
-            c_loss = 0.5 * torch.max(value_losses,
+            c_loss = torch.max(value_losses,
                                          value_losses_clipped).mean()
         else:
-            c_loss = 0.5 * (return_batch - values).pow(2).mean()
+            c_loss = (return_batch - values).pow(2).mean()
+
+        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
         self.optimizer.zero_grad()
-        (c_loss * self.critic_coef + a_loss -
-         entropy * self.entropy_coef).backward()
-        nn.utils.clip_grad_norm_(self.actor_critic.parameters(),
-                                 self.max_grad_norm)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
 
         return a_loss.item(), c_loss.item(), entropy.item(), kl, lr, lr_mul
