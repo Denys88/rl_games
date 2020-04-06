@@ -75,7 +75,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         value_preds_batch = torch.FloatTensor(input_dict['old_values']).cuda()
         old_action_log_probs_batch = torch.FloatTensor(input_dict['old_logp_actions']).cuda()
         advantage = torch.FloatTensor(input_dict['advantages']).cuda()
-        return_batch = torch.FloatTensor(input_dict['rewards']).cuda()
+        return_batch = torch.FloatTensor(input_dict['returns']).cuda()
         actions_batch = torch.FloatTensor(input_dict['actions']).cuda()
         obs_batch = torch.FloatTensor(input_dict['obs']).cuda()        
 
@@ -95,7 +95,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
                             1.0 + curr_e_clip) * advantage
         a_loss = torch.max(-surr1, -surr2).mean()
-
+        values = torch.squeeze(values)
         if self.clip_value:
             value_pred_clipped = value_preds_batch + \
                 (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)

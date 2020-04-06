@@ -15,7 +15,7 @@ params:
       discrete:
 
     mlp:
-      units: [32,32]
+      units: [32,64]
       activation: relu
       initializer:
         name: variance_scaling_initializer
