@@ -79,7 +79,6 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         return_batch = torch.FloatTensor(input_dict['returns']).cuda()
         actions_batch = torch.FloatTensor(input_dict['actions']).cuda()
         obs_batch = torch.FloatTensor(input_dict['obs']).cuda()        
-
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
@@ -100,14 +99,14 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         if self.clip_value:
             value_pred_clipped = value_preds_batch + \
                 (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
-            value_losses = (values - return_batch).pow(2)
-            value_losses_clipped = (
-                value_pred_clipped - return_batch).pow(2)
+            value_losses = (values - return_batch)**2
+            value_losses_clipped = (value_pred_clipped - return_batch)**2
             c_loss = torch.max(value_losses,
-                                         value_losses_clipped).mean()
+                                         value_losses_clipped)
         else:
-            c_loss = (return_batch - values).pow(2).mean()
+            c_loss = (return_batch - values)**2
 
+        c_loss = c_loss.mean()
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
         self.optimizer.zero_grad()

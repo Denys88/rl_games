@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import numpy as np
 
 class NetworkBuilder:
     def __init__(self, **kwargs):
@@ -64,6 +65,7 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for unit in units:
                 layers.append(dense_func(in_size, unit))
+                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 layers.append(self.activations_factory.create(activation))
                 if norm_func_name == 'layer_norm':
                     layers.append(torch.nn.LayerNorm(unit))
@@ -85,6 +87,7 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv2d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
+                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
@@ -100,6 +103,7 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv1d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
+                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
@@ -156,10 +160,12 @@ class A2CBuilder(NetworkBuilder):
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
                 
-            self.value = torch.nn.Linear(self.units[-1], 1) 
+            self.value = torch.nn.Linear(self.units[-1], 1)
+            nn.init.xavier_normal_(self.value.weight, gain=np.sqrt(2))
             self.value_act = self.activations_factory.create(self.value_activation)
             if self.is_discrete:
                 self.logits = torch.nn.Linear(self.units[-1], actions_num)
+                nn.init.xavier_normal_(self.logits.weight, gain=np.sqrt(2))
                     
         def forward(self, obs):
             if self.separate:
