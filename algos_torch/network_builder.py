@@ -48,6 +48,8 @@ class NetworkBuilder:
             if cnn_layers is None:
                 assert(len(input_shape) == 1)
                 return input_shape[0]
+            else:
+                return nn.Sequential(*cnn_layers)(torch.rand(1, *(input_shape))).flatten(1).data.size(1)
 
         def _noisy_dense(self, inputs, units):
             return algos.torch.layers.NoisyFactorizedLinear(inputs, units)
@@ -78,8 +80,8 @@ class NetworkBuilder:
             if ctype == 'conv1d':
                 return self._build_cnn1d(**kwargs)
 
-        def _build_cnn(self, name, input_shape, convs, activation, initializer, norm_func_name=None):
-            in_channels = input_shape[2]
+        def _build_cnn(self, input_shape, convs, activation, norm_func_name=None):
+            in_channels = input_shape[0]
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv2d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
@@ -92,8 +94,9 @@ class NetworkBuilder:
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
             return layers
 
-        def _build_cnn1d(self, name, input_shape, convs, activation, initializer, norm_func_name=None):
-            in_channels = input_shape[1]
+        def _build_cnn1d(self, input_shape, convs, activation, norm_func_name=None):
+            print('conv1d input shape:', input_shape)
+            in_channels = input_shape[0]
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv1d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
@@ -135,14 +138,13 @@ class A2CBuilder(NetworkBuilder):
                     'activation' : self.cnn['activation'], 
                     'norm_func_name' : self.normalization,
                 }
-                actor_conv = self._build_conv(**cnn_args)
+                self.actor_cnn = self._build_conv(**cnn_args)
 
                 if self.separate:
-                    cnn_args['name'] = 'critic_cnn' 
                     self.critic_cnn = self._build_conv( **cnn_args)
 
             mlp_args = {
-                'input_size' : self._calc_input_size(input_shape), 
+                'input_size' : self._calc_input_size(input_shape, self.actor_cnn), 
                 'units' :self.units, 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,

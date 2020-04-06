@@ -3,7 +3,7 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c_lstm
+    name: discrete_a2c
 
   load_checkpoint: False
   load_path: 'nn/sc2smac'
@@ -22,11 +22,8 @@ params:
         scale: 2 
       regularizer:
         name: 'None'
-    lstm:
-      units: 128
-      concated: False
   config:
-    name: 2s_vs_1c
+    name: 2m_vs_1z
     reward_shaper:
         scale_value: 1
     normalize_advantage: True

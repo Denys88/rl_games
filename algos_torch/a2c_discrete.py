@@ -29,6 +29,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         obs = torch.Tensor(obs).cuda()
+        action_masks = torch.Tensor(action_masks).cuda()
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -37,7 +38,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), None, neglogp.detach().cpu().numpy(), None
+        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None, None
 
 
     def get_action_values(self, obs):

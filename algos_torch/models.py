@@ -39,7 +39,9 @@ class ModelA2C(BaseModel):
                 u = torch.cuda.FloatTensor(logits.size()).uniform_()
                 rand_logits = logits - torch.log(-torch.log(u))
                 if action_masks is not None:
-                    inf_mask, _ = torch.max(F.log(action_masks.float()), np.iinfo(np.float32).max)
+                    log_mask = torch.log(action_masks.float())
+                    min_float = np.finfo(np.float32).min
+                    inf_mask = torch.clamp(log_mask, min=min_float)
                     rand_logits = rand_logits + inf_mask
                     logits = logits + inf_mask
                 _, selected_action = torch.max(rand_logits, dim=1)
