@@ -16,6 +16,7 @@ import ray
 import argparse
 import common.experiment as experiment
 import copy
+import torch
 
 class Runner:
     def __init__(self):
@@ -44,7 +45,8 @@ class Runner:
         self.exp_config = None
 
         if self.seed:
-            tf.set_random_seed(self.seed)
+            torch.manual_seed(self.seed)
+            torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
 
         if self.load_check_point:

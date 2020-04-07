@@ -37,7 +37,7 @@ class NetworkBuilder:
             self.init_factory.register_builder('orthogonal_initializer', lambda **kwargs : _create_initializer(nn.init.orthogonal_,**kwargs))
             self.init_factory.register_builder('glorot_normal_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_normal_,**kwargs))
             self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_uniform_,**kwargs))
-            self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(nn.init.variance_scaling_initializer,**kwargs))
+            self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
             self.init_factory.register_builder('None', lambda **kwargs : None)
 
@@ -65,7 +65,6 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for unit in units:
                 layers.append(dense_func(in_size, unit))
-                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 layers.append(self.activations_factory.create(activation))
                 if norm_func_name == 'layer_norm':
                     layers.append(torch.nn.LayerNorm(unit))
@@ -87,7 +86,6 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv2d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
-                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
@@ -103,7 +101,6 @@ class NetworkBuilder:
             layers = nn.ModuleList()
             for conv in convs:
                 layers.append(torch.nn.Conv1d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
-                nn.init.xavier_normal_(layers[-1].weight, gain=np.sqrt(2))
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
@@ -161,11 +158,17 @@ class A2CBuilder(NetworkBuilder):
                 self.critic_mlp = self._build_mlp(**mlp_args)
                 
             self.value = torch.nn.Linear(self.units[-1], 1)
-            nn.init.xavier_normal_(self.value.weight, gain=np.sqrt(2))
             self.value_act = self.activations_factory.create(self.value_activation)
             if self.is_discrete:
                 self.logits = torch.nn.Linear(self.units[-1], actions_num)
-                nn.init.xavier_normal_(self.logits.weight, gain=np.sqrt(2))
+
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d):
+                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                if isinstance(m, nn.Conv1d):
+                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                if isinstance(m, nn.Linear):
+                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))  
                     
         def forward(self, obs):
             if self.separate:

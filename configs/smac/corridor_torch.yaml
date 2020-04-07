@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/2c_vs_64zgsmac_cnn'
 
   network:
