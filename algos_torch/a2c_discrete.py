@@ -2,6 +2,8 @@ import common.a2c_common
 from torch import optim
 import torch 
 from torch import nn
+import algos_torch.torch_ext
+
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
@@ -22,10 +24,10 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         return self.epoch_num
 
     def save(self, fn):
-        pass
+        algos_torch.torch_ext.save_scheckpoint(fn, self.epoch_num, self.model, self.optimizer)
 
     def restore(self, fn):
-        pass
+        self.epoch_num = algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
 
     def get_masked_action_values(self, obs, action_masks):
         obs = torch.Tensor(obs).cuda()

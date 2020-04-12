@@ -5,6 +5,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 
+
+def _create_initializer(func, **kwargs):
+    return lambda v : func(v, **kwargs)   
+
 class NetworkBuilder:
     def __init__(self, **kwargs):
         pass
@@ -41,9 +45,7 @@ class NetworkBuilder:
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
             self.init_factory.register_builder('None', lambda **kwargs : None)
 
-        @staticmethod
-        def _create_initializer(func, **kwargs):
-            return lambda v : func(v, **kwargs)   
+
 
         def _calc_input_size(self, input_shape,cnn_layers=None):
             if cnn_layers is None:
@@ -159,16 +161,27 @@ class A2CBuilder(NetworkBuilder):
                 
             self.value = torch.nn.Linear(self.units[-1], 1)
             self.value_act = self.activations_factory.create(self.value_activation)
+  
             if self.is_discrete:
                 self.logits = torch.nn.Linear(self.units[-1], actions_num)
 
-            for m in self.modules():
-                if isinstance(m, nn.Conv2d):
-                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
-                if isinstance(m, nn.Conv1d):
-                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
-                if isinstance(m, nn.Linear):
-                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))  
+            mlp_init = self.init_factory.create(**self.initializer)
+            cnn_init = self.init_factory.create(**self.cnn['initializer'])
+
+
+            for m in self.critic_cnn:
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)
+            for m in self.actor_cnn:
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)   
+
+            for m in self.critic_mlp:
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)   
+            for m in self.actor_mlp:
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)
                     
         def forward(self, obs):
             if self.separate:
