@@ -19,8 +19,8 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_uniform_initializer
+        gain: 1.4241 
       regularizer:
         name: 'None'
       convs:    
@@ -40,8 +40,8 @@ params:
       units: [256, 128]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: glorot_uniform_initializer
+        gain: 1.4241  
       regularizer:
         name:  'None'
   config:

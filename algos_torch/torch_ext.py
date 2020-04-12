@@ -6,11 +6,11 @@ import torch.optim as optim
 def save_scheckpoint(filename, epoch, model, optimizer):
     state = {'epoch': epoch + 1, 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict()}
-    torch.save(state, filename)
+    torch.save(state, filename + '.pth')
 
 def load_checkpoint(filename, model, optimizer):
     start_epoch = 0
-    print("=> loading checkpoint '{}'".format(filename))
+    print("=> loading checkpoint '{}'".format(filename + '.pth'))
     checkpoint = torch.load(filename)
     epoch = checkpoint['epoch']
     model.load_state_dict(checkpoint['state_dict'])
