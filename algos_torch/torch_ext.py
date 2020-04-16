@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,3 +22,37 @@ def load_checkpoint(filename, model, optimizer):
                 state[k] = v.cuda()
 
     return epoch
+
+def parameterized_truncated_normal(uniform, mu, sigma, a, b):
+    normal = torch.distributions.normal.Normal(0, 1)
+
+    alpha = (a - mu) / sigma
+    beta = (b - mu) / sigma
+
+    alpha_normal_cdf = normal.cdf(alpha)
+    p = alpha_normal_cdf + (normal.cdf(beta) - alpha_normal_cdf) * uniform
+
+    p = p.numpy()
+    one = np.array(1, dtype=p.dtype)
+    epsilon = np.array(np.finfo(p.dtype).eps, dtype=p.dtype)
+    v = np.clip(2 * p - 1, -one + epsilon, one - epsilon)
+    x = mu + sigma * np.sqrt(2) * torch.erfinv(torch.from_numpy(v))
+    x = torch.clamp(x, a, b)
+
+    return x
+
+
+def truncated_normal(uniform, mu=0.0, sigma=1.0, a=-2, b=2):
+    return parameterized_truncated_normal(uniform, mu, sigma, a, b)
+
+
+def sample_truncated_normal(shape=(), mu=0.0, sigma=1.0, a=-2, b=2):
+    return truncated_normal(torch.from_numpy(np.random.uniform(0, 1, shape)), mu, sigma, a, b)
+
+
+def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
+    fan = torch.nn.init._calculate_correct_fan(tensor, mode)
+    scale = scale / fan
+    sigma = 1.3 * scale
+    with torch.no_grad():
+        return sample_truncated_normal(tensor.size(), sigma=sigma)

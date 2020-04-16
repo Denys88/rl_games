@@ -136,10 +136,16 @@ class DiscreteA2CBase(A2CBase):
                 masks = self.vec_env.get_action_masks()
 
             if self.use_action_masks:
-                actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
+                actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
-    
+            for i in range(self.num_agents * self.num_actors):
+                if masks[i][actions[i]] == 0:
+                    print('atata:', i)
+                    print(masks[i])
+                    print(logits[i])
+                    print(actions[i])
+
             actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)

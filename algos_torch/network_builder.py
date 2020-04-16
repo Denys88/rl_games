@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from algos_torch import torch_ext
 import numpy as np
 
 
@@ -41,8 +42,9 @@ class NetworkBuilder:
             self.init_factory.register_builder('orthogonal_initializer', lambda **kwargs : _create_initializer(nn.init.orthogonal_,**kwargs))
             self.init_factory.register_builder('glorot_normal_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_normal_,**kwargs))
             self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_uniform_,**kwargs))
-            self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
+            self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(torch_ext.variance_scaling_initializer,**kwargs))
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
+            self.init_factory.register_builder('kaiming_normal', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
             self.init_factory.register_builder('None', lambda **kwargs : None)
 
 
@@ -164,10 +166,19 @@ class A2CBuilder(NetworkBuilder):
   
             if self.is_discrete:
                 self.logits = torch.nn.Linear(self.units[-1], actions_num)
+            if self.is_continuous:
+                self.mu = torch.nn.Linear(self.units[-1], actions_num)
+                self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
+                mu_init = self.init_factory.create(**self.space_config['mu_init'])
+                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
+                sigma_init = self.activations_factory.create(self.space_config['sigma_init'])
 
+                if self.space_config['fixed_sigma']:
+                    self.sigma = torch.autograd.Variable(torch.zeros(actions_num),requires_grad=True)
+                else:
+                    self.sigma = torch.nn.Linear(self.units[-1], actions_num)
             mlp_init = self.init_factory.create(**self.initializer)
             cnn_init = self.init_factory.create(**self.cnn['initializer'])
-
 
             for m in self.critic_cnn:
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
@@ -182,7 +193,12 @@ class A2CBuilder(NetworkBuilder):
             for m in self.actor_mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
-                    
+            if self.is_discrete:
+                mlp_init(self.logits.weight)
+            if self.is_continuous:
+                mu_init(self.mu.weight)
+                sigma_init(self.sigma.weight)
+            mlp_init(self.value.weight)        
         def forward(self, obs):
             if self.separate:
                 a_out = c_out = obs
@@ -200,9 +216,18 @@ class A2CBuilder(NetworkBuilder):
                 
                 for l in self.critic_mlp:
                     c_out = l(c_out)
-
-                logits = self.logits(a_out)
                 value = self.value_act(self.value(c_out))
+                if self.is_discrete:
+                    logits = self.logits(a_out)
+                    return logits, value
+                if self.is_continuous:
+                    mu = self.mu_act(self.mu(out))
+                    if self.space_config['fixed_sigma']:
+                        sigma = self.sigma_act(self.sigma)
+                    else:
+                        sigma = self.sigma_act(self.sigma(a_out))
+                    return mu, sigma, value
+
                 return logits, value
             else:
                 out = obs
@@ -213,10 +238,19 @@ class A2CBuilder(NetworkBuilder):
 
                 for l in self.actor_mlp:
                     out = l(out)
-                logits = self.logits(out)
+                
                 value = self.value_act(self.value(out))
-                return logits, value
-
+                if self.is_discrete:
+                    logits = self.logits(out)
+                    return logits, value
+                if self.is_continuous:
+                    mu = self.mu_act(self.mu(out))
+                    if self.space_config['fixed_sigma']:
+                        sigma = self.sigma_act(self.sigma)
+                    else:
+                        sigma = self.sigma_act(self.sigma(out))
+                    return mu, sigma, value
+                    
         def load(self, params):
             self.separate = params['separate']
             self.units = params['mlp']['units']

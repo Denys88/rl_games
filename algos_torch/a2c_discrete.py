@@ -18,7 +18,6 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.model.cuda()
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -40,7 +39,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None, None
+        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), logits.detach().cpu().numpy(), None
 
 
     def get_action_values(self, obs):
@@ -115,5 +114,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
+        with torch.no_grad():
+            kl = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2).mean()
 
-        return a_loss.item(), c_loss.item(), entropy.item(), kl, lr, lr_mul
+        return a_loss.item(), c_loss.item(), entropy.item(), kl.item(), lr, lr_mul

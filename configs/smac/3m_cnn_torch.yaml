@@ -21,11 +21,11 @@ params:
       initializer:
         name: glorot_uniform_initializer
         gain: 1.4241 
-        
+
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_uniform_initializer
+        gain: 1 
       regularizer:
         name: 'None'
       convs:    
@@ -46,7 +46,7 @@ params:
       activation: relu
       initializer:
         name: glorot_uniform_initializer
-        gain: 1.4241 
+        gain: 1 
       regularizer:
         name:  'None'
   config:
@@ -62,7 +62,7 @@ params:
     entropy_coef: 0.001
     truncate_grads: True
     env_name:  smac_cnn
-    ppo: true
+    ppo: True
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -81,4 +81,4 @@ params:
       name: 3m
       frames: 4
       transpose: False
-      random_invalid_step: False
+      random_invalid_step: True

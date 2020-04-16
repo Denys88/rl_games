@@ -19,8 +19,10 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: glorot_uniform_initializer
-        gain: 1.4241 
+        #name: variance_scaling_initializer
+        #scale: 2
+        name: glorot_normal_initializer
+        gain: 1.4142
       regularizer:
         name: 'None'
       convs:    
@@ -40,8 +42,10 @@ params:
       units: [256, 128]
       activation: relu
       initializer:
-        name: glorot_uniform_initializer
-        gain: 1.4241  
+        #name: variance_scaling_initializer
+        #scale: 2
+        name: glorot_normal_initializer
+        gain: 1.4142 
       regularizer:
         name:  'None'
   config:
@@ -76,4 +80,4 @@ params:
       name: MMM2
       frames: 4
       transpose: False
-      random_invalid_step: False
+      random_invalid_step: True

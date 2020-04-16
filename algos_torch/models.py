@@ -35,16 +35,18 @@ class ModelA2C(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             inputs = input_dict.pop('inputs')
             logits, value = self.a2c_network(inputs)
+
             if not is_train:
                 u = torch.cuda.FloatTensor(logits.size()).uniform_()
                 rand_logits = logits - torch.log(-torch.log(u))
                 if action_masks is not None:
-                    log_mask = torch.log(action_masks.float())
-                    min_float = np.finfo(np.float32).min
-                    inf_mask = torch.clamp(log_mask, min=min_float)
-                    rand_logits = rand_logits + inf_mask
-                    logits = logits + inf_mask
-                _, selected_action = torch.max(rand_logits, dim=1)
+                    logits = logits - (1.0 - action_masks) * 1e10
+
+                    #rand_logits = rand_logits + inf_mask
+                    #logits = logits + inf_mask
+                
+                selected_action = torch.distributions.Categorical(logits=logits).sample().long()
+
                 neglogp = F.cross_entropy(logits, selected_action, reduction='none')
                 return  neglogp, value, selected_action, logits
             else:
