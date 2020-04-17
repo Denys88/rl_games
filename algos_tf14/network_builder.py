@@ -114,6 +114,7 @@ class NetworkBuilder:
         out = input
         ind = 0
         for conv in convs:
+            print(out.shape.as_list())
             ind += 1
             config = conv.copy()
             config['filters'] = conv['filters']

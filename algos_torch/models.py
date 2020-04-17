@@ -51,5 +51,5 @@ class ModelA2C(BaseModel):
                 return  neglogp, value, selected_action, logits
             else:
                 entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1).mean()
-                prev_neglogp = F.cross_entropy(logits, prev_actions.long(), reduction='none')
+                prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
                 return prev_neglogp, value, entropy

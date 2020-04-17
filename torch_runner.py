@@ -72,6 +72,9 @@ class Runner:
         print('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        if len(obs_space.shape) == 3:
+            shape = list(obs_space.shape)
+            obs_space.shape = [shape[-1]] + shape[:-1]
         print('obs_space:', obs_space)
         print('action_space:', action_space)
         if self.exp_config:

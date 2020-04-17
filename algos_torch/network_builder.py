@@ -47,7 +47,8 @@ class NetworkBuilder:
             self.init_factory.register_builder('kaiming_normal', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
             self.init_factory.register_builder('None', lambda **kwargs : None)
 
-
+        def is_separate_critic(self):
+            return False
 
         def _calc_input_size(self, input_shape,cnn_layers=None):
             if cnn_layers is None:
@@ -65,6 +66,7 @@ class NetworkBuilder:
         activation,
         dense_func, 
         norm_func_name = None):
+            print('build mlp:', input_size)
             in_size = input_size
             layers = nn.ModuleList()
             for unit in units:
@@ -89,7 +91,10 @@ class NetworkBuilder:
             in_channels = input_shape[0]
             layers = nn.ModuleList()
             for conv in convs:
-                layers.append(torch.nn.Conv2d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
+                layers.append(torch.nn.Conv2d(in_channels=in_channels, 
+                out_channels=conv['filters'], 
+                kernel_size=conv['kernel_size'], 
+                stride=conv['strides'], padding=conv['padding']))
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
@@ -198,7 +203,8 @@ class A2CBuilder(NetworkBuilder):
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 sigma_init(self.sigma.weight)
-            mlp_init(self.value.weight)        
+            mlp_init(self.value.weight)     
+
         def forward(self, obs):
             if self.separate:
                 a_out = c_out = obs
@@ -231,10 +237,9 @@ class A2CBuilder(NetworkBuilder):
                 return logits, value
             else:
                 out = obs
-
                 for l in self.actor_cnn:
                     out = l(out)
-                out = out.view(out.size(0), -1)              
+                out = out.flatten(1)         
 
                 for l in self.actor_mlp:
                     out = l(out)
@@ -251,6 +256,9 @@ class A2CBuilder(NetworkBuilder):
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, sigma, value
                     
+        def is_separate_critic(self):
+            return self.separate
+
         def load(self, params):
             self.separate = params['separate']
             self.units = params['mlp']['units']
