@@ -5,9 +5,9 @@ from torch import nn
 import algos_torch.torch_ext
 import numpy as np
 
-class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
+class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
         
         config = {
             'actions_num' : self.actions_num,
@@ -19,6 +19,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.model.cuda()
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
+        
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
