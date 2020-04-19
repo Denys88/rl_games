@@ -19,7 +19,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.model.cuda()
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-        
+        #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -135,7 +135,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
-        
+
         with torch.no_grad():
             kl_dist = algos_torch.torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch)
             kl_dist = kl_dist.item()

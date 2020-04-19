@@ -205,7 +205,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('LunarLanderContinuous-v2'),
+        'env_creator' : lambda **kwargs  : gym.make('LunarLanderContinuous-v2'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {

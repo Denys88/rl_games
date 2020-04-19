@@ -57,4 +57,4 @@ params:
     lr_threshold : 0.01
     normalize_input : False
     seq_len : 16
-    bounds_loss_coef: 0
+    bounds_loss_coef: 0.001

@@ -351,31 +351,50 @@ class ContinuousA2CBase(A2CBase):
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
         self.actions_low = action_space.low
         self.actions_high = action_space.high
-        self.actions_num = action_space.shape[0]      
+        self.actions_num = action_space.shape[0]
+        batch_size = self.num_agents * self.num_actors
+        #'''
+        self.mb_obs = ((self.steps_num, batch_size) + self.state_shape, dtype = observation_space.dtype)
+        self.mb_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+        self.mb_actions = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+        self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+        self.mb_dones = np.zeros((self.steps_num, batch_size), dtype  = np.bool)
+        self.mb_neglogpacs = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+        self.mb_mus = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+        self.mb_sigmas = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+        #'''
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
+        #mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
         mb_states = []
         epinfos = []
+        #'''
+        mb_obs = self.mb_obs
+        mb_rewards = self.mb_rewards
+        mb_actions = self.mb_actions
+        mb_values = self.mb_values
+        mb_neglogpacs = self.mb_neglogpacs
+        mb_mus = self.mb_mus
+        mb_sigmas = self.mb_sigmas
+        mb_dones = self.mb_dones
+        #'''
+        #mb_states = self.mb_states
         # For n in range number of steps
-        for _ in range(self.steps_num):
+        for n in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
-            mb_obs.append(self.obs.copy())
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones.copy())
-            mb_mus.append(mu)
-            mb_sigmas.append(sigma)
+     
+            
+            mb_obs[n,:] = self.obs
+            mb_dones[n,:] = self.dones
+
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
             self.current_rewards += rewards
             self.current_lengths += 1
-
             for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
                 if done:
                     self.game_rewards.append(reward)
@@ -383,20 +402,17 @@ class ContinuousA2CBase(A2CBase):
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
-            mb_rewards.append(shaped_rewards)
 
+            mb_actions[n,:] = actions
+            mb_values[n,:] = values
+            mb_neglogpacs[n,:] = neglogpacs
+            
+            mb_mus[n,:] = mu
+            mb_sigmas[n,:] = sigma
+            mb_rewards[n,:] = shaped_rewards
+            
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
             self.current_lengths = self.current_lengths * (1.0 - self.dones)
-        #using openai baseline approach
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions, dtype=np.float32)
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
-        mb_mus = np.asarray(mb_mus, dtype=np.float32)
-        mb_sigmas = np.asarray(mb_sigmas, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        mb_states = np.asarray(mb_states, dtype=np.float32)
 
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
@@ -417,6 +433,7 @@ class ContinuousA2CBase(A2CBase):
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
         mb_returns = mb_advs + mb_values
+
         if self.network.is_rnn():
             result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas, mb_states )), epinfos)
         else:
