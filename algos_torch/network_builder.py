@@ -176,14 +176,15 @@ class A2CBuilder(NetworkBuilder):
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
-                sigma_init = self.activations_factory.create(self.space_config['sigma_init'])
+                sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.space_config['fixed_sigma']:
-                    self.sigma = torch.autograd.Variable(torch.zeros(actions_num),requires_grad=True)
+                    self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(self.units[-1], actions_num)
             mlp_init = self.init_factory.create(**self.initializer)
-            cnn_init = self.init_factory.create(**self.cnn['initializer'])
+            if self.has_cnn:
+                cnn_init = self.init_factory.create(**self.cnn['initializer'])
 
             for m in self.critic_cnn:
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
@@ -202,7 +203,11 @@ class A2CBuilder(NetworkBuilder):
                 mlp_init(self.logits.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
-                sigma_init(self.sigma.weight)
+                if self.space_config['fixed_sigma']:
+                    sigma_init(self.sigma)
+                else:
+                    sigma_init(self.sigma.weight)
+
             mlp_init(self.value.weight)     
 
         def forward(self, obs):
@@ -227,14 +232,14 @@ class A2CBuilder(NetworkBuilder):
                     logits = self.logits(a_out)
                     return logits, value
                 if self.is_continuous:
-                    mu = self.mu_act(self.mu(out))
+                    mu = self.mu_act(self.mu(a_out))
                     if self.space_config['fixed_sigma']:
-                        sigma = self.sigma_act(self.sigma)
+                        sigma = mu * 0.0 + self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
                     return mu, sigma, value
-
-                return logits, value
+                else:
+                    return logits, value
             else:
                 out = obs
                 for l in self.actor_cnn:
@@ -245,16 +250,18 @@ class A2CBuilder(NetworkBuilder):
                     out = l(out)
                 
                 value = self.value_act(self.value(out))
+
                 if self.is_discrete:
                     logits = self.logits(out)
                     return logits, value
+
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
                     if self.space_config['fixed_sigma']:
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
-                    return mu, sigma, value
+                    return mu, mu*0 + sigma, value
                     
         def is_separate_critic(self):
             return self.separate

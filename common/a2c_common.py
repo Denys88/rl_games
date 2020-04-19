@@ -17,6 +17,11 @@ def swap_and_flatten01(arr):
     s = arr.shape
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
+def rescale_actions(low, high, action):
+    d = (high - low) / 2.0
+    m = (high + low) / 2.0
+    scaled_action = action * d + m
+    return scaled_action
 
 class A2CBase:
     def __init__(self, base_name, observation_space, action_space, config):
@@ -58,13 +63,11 @@ class A2CBase:
         self.games_to_log = self.config.get('games_to_track', 100)
         self.game_rewards = deque([], maxlen=self.games_to_log)
         self.game_lengths = deque([], maxlen=self.games_to_log)
-        self.game_scores = deque([], maxlen=self.games_to_log)
-        self.actions_num = action_space.n   
+        self.game_scores = deque([], maxlen=self.games_to_log)   
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
         self.is_rnn = False
         self.states = None
-
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
@@ -79,7 +82,8 @@ class A2CBase:
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
-
+        if self.is_adaptive_lr:
+            self.lr_threshold = config['lr_threshold']
 
     def update_epoch(self):
         pass
@@ -119,7 +123,7 @@ class A2CBase:
 class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
-
+        self.actions_num = action_space.n
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
@@ -171,7 +175,7 @@ class DiscreteA2CBase(A2CBase):
         #using openai baseline approach
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions, dtype=np.float32)
+        mb_actions = np.asarray(mb_actions, dtype=np.long)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
@@ -344,7 +348,10 @@ class DiscreteA2CBase(A2CBase):
 class ContinuousA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
-
+        self.bounds_loss_coef = config.get('bounds_loss_coef', None)
+        self.actions_low = action_space.low
+        self.actions_high = action_space.high
+        self.actions_num = action_space.shape[0]      
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
@@ -355,7 +362,6 @@ class ContinuousA2CBase(A2CBase):
             if self.network.is_rnn():
                 mb_states.append(self.states)
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
-            actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())
@@ -420,7 +426,7 @@ class ContinuousA2CBase(A2CBase):
 
     def train_epoch(self):
         play_time_start = time.time()
-        obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+        obses, returns, dones, actions, values, neglogpacs, mus, sigmas, lstm_states, _ = self.play_steps()
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
@@ -429,6 +435,7 @@ class ContinuousA2CBase(A2CBase):
             
         a_losses = []
         c_losses = []
+        b_losses = []
         entropies = []
         kls = []
 
@@ -454,16 +461,21 @@ class ContinuousA2CBase(A2CBase):
                     input_dict['actions'] = actions[mbatch]
                     input_dict['obs'] = obses[mbatch]
                     input_dict['masks'] = dones[mbatch]
-                    input_dict['mu'] = obses[mbatch]
-                    input_dict['sigma'] = dones[mbatch]
+                    input_dict['mu'] = mus[mbatch]
+                    input_dict['sigma'] = sigmas[mbatch]
                     input_dict['states'] = lstm_states[batch]
                     input_dict['learning_rate'] = self.last_lr
 
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
-                    entropies.append(entropy)    
+                    entropies.append(entropy)        
+                    mus[mbatch] = cmu
+                    sigmas[mbatch] = csigma
+                    if self.bounds_loss is not None:
+                        b_losses.append(b_loss)                            
+
         else:
             for _ in range(0, self.mini_epochs_num):
                 permutation = np.random.permutation(self.batch_size)
@@ -474,7 +486,8 @@ class ContinuousA2CBase(A2CBase):
                 values = values[permutation]
                 neglogpacs = neglogpacs[permutation]
                 advantages = advantages[permutation]
-
+                mus = mus[permutation]
+                sigmas = sigmas[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
                     input_dict = {}
@@ -485,22 +498,26 @@ class ContinuousA2CBase(A2CBase):
                     input_dict['actions'] = actions[batch]
                     input_dict['obs'] = obses[batch]
                     input_dict['masks'] = dones[batch]
-                    input_dict['mu'] = obses[batch]
-                    input_dict['sigma'] = dones[batch]
+                    input_dict['mu'] = mus[batch]
+                    input_dict['sigma'] = sigmas[batch]
                     input_dict['learning_rate'] = self.last_lr
                     
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
                     entropies.append(entropy)
+                    mus[batch] = cmu
+                    sigmas[batch] = csigma
+                    if self.bounds_loss_coef is not None:
+                        b_losses.append(b_loss) 
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
 
-        return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
+        return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
 
 
     def train(self):
@@ -514,7 +531,7 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
 
-            play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+            play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
             if True:
                 scaled_time = self.num_agents * sum_time
@@ -524,6 +541,8 @@ class ContinuousA2CBase(A2CBase):
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
+                if len(b_losses) > 0:
+                    self.writer.add_scalar('losses/bounds_loss', np.mean(b_losses), frame)
                 self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
@@ -534,14 +553,13 @@ class ContinuousA2CBase(A2CBase):
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
-                    mean_scores = np.mean(self.game_scores)
+                    #mean_scores = np.mean(self.game_scores)
                     self.writer.add_scalar('rewards/mean', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    self.writer.add_scalar('win_rate/mean', mean_scores, frame)
-                    self.writer.add_scalar('win_rate/time', mean_scores, total_time)
-
+                    #self.writer.add_scalar('win_rate/mean', mean_scores, frame)
+                    #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1

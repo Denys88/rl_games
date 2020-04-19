@@ -5,7 +5,7 @@ import common.env_configurations as env_configurations
 
 import algos_torch.network_builder as network_builder
 import algos_torch.model_builder as model_builder
-#import algos_torch.a2c_continuous as a2c_continuous
+import algos_torch.a2c_continuous as a2c_continuous
 import algos_torch.a2c_discrete as a2c_discrete
 #import algos_torch.dqnagent as dqnagent
 
@@ -21,7 +21,7 @@ import torch
 class Runner:
     def __init__(self):
         self.algo_factory = common.object_factory.ObjectFactory()
-        #self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
+        self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 

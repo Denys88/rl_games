@@ -1,0 +1,60 @@
+params:  
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: glorot_normal_initializer
+          gain: 0.01
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [32, 32]
+      activation: elu
+      initializer:
+        name: glorot_normal_initializer
+        gain: 2
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
+
+  load_checkpoint: False
+  load_path: path
+
+  config:
+    reward_shaper:
+      scale_value: 0.01
+    normalize_advantage : True
+    gamma : 0.99
+    tau : 0.95
+    learning_rate : 3e-4
+    name : 'ant'
+    score_to_win : 20000
+    grad_norm : 0.5
+    entropy_coef : 0.000
+    truncate_grads : True
+    env_name : FlexAnt
+    ppo : True
+    e_clip : 0.2
+    num_actors : 256
+    steps_num : 16
+    minibatch_size : 2048
+    mini_epochs : 8
+    critic_coef : 1
+    clip_value : True
+    lr_schedule : adaptive
+    lr_threshold : 0.01
+    normalize_input : False
+    seq_len : 16
+    bounds_loss_coef: 0

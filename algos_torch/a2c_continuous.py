@@ -5,7 +5,7 @@ from torch import nn
 import algos_torch.torch_ext
 import numpy as np
 
-class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
+class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
         
@@ -42,17 +42,7 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
         self.epoch_num = algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
 
     def get_masked_action_values(self, obs, action_masks):
-        obs = self._preproc_obs(obs)
-        action_masks = torch.Tensor(action_masks).cuda()
-        input_dict = {
-            'is_train': False,
-            'prev_actions': None, 
-            'inputs' : obs,
-            'action_masks' : action_masks
-        }
-        with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), logits.detach().cpu().numpy(), None
+        assert False
 
 
     def get_action_values(self, obs):
@@ -64,8 +54,13 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
             'inputs' : obs,
         }
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None
+            neglogp, value, action, mu, sigma = self.model(input_dict)
+        return action.detach().cpu().numpy(), \
+                value.detach().cpu().numpy(), \
+                neglogp.detach().cpu().numpy(), \
+                mu.detach().cpu().numpy(), \
+                sigma.detach().cpu().numpy(), \
+                None
 
     def get_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -76,7 +71,7 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
             'inputs' : obs
         }
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
+            neglogp, value, action, mu, sigma = self.model(input_dict)
         return value.detach().cpu().numpy()
 
     def get_weights(self):
@@ -90,8 +85,10 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
         value_preds_batch = torch.cuda.FloatTensor(input_dict['old_values'])
         old_action_log_probs_batch = torch.cuda.FloatTensor(input_dict['old_logp_actions'])
         advantage = torch.cuda.FloatTensor(input_dict['advantages'])
+        old_mu_batch = torch.cuda.FloatTensor(input_dict['mu'])
+        old_sigma_batch = torch.cuda.FloatTensor(input_dict['sigma'])
         return_batch = torch.cuda.FloatTensor(input_dict['returns'])
-        actions_batch = torch.cuda.LongTensor(input_dict['actions'])
+        actions_batch = torch.cuda.FloatTensor(input_dict['actions'])
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
         lr = self.last_lr
@@ -104,8 +101,7 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
             'prev_actions': actions_batch, 
             'inputs' : obs_batch
         }
-        action_log_probs, values, entropy = self.model(input_dict)
-
+        action_log_probs, values, entropy, mu, sigma = self.model(input_dict)
         if self.ppo:
             ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
             surr1 = ratio * advantage
@@ -125,15 +121,33 @@ class ContinuousA2CAgent(common.a2c_common.ContinuousA2CBase):
                                          value_losses_clipped)
         else:
             c_loss = (return_batch - values)**2
-
+        
         c_loss = c_loss.mean()
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
-
+        if self.bounds_loss_coef is not None:
+            soft_bound = 1.1
+            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(- mu + soft_bound, 0.0)**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1).mean()
+        else:
+            b_loss = 0
+        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
+        
         with torch.no_grad():
-            kl = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2).mean()
+            kl_dist = algos_torch.torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch)
+            kl_dist = kl_dist.item()
+            if self.is_adaptive_lr:
+                if kl_dist > (2.0 * self.lr_threshold):
+                    self.last_lr = max(self.last_lr / 1.5, 1e-6)
+                if kl_dist < (0.5 * self.lr_threshold):
+                    self.last_lr = min(self.last_lr * 1.5, 1e-2)        
+            
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.last_lr
 
-        return a_loss.item(), c_loss.item(), entropy.item(), kl.item(), lr, lr_mul
+        return a_loss.item(), c_loss.item(), entropy.item(), \
+            kl_dist, self.last_lr, lr_mul, \
+            mu.detach().cpu().numpy(), sigma.detach().cpu().numpy(), b_loss.item()

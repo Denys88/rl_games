@@ -4,7 +4,7 @@ import common.tr_helpers as tr_helpers
 import gym
 import numpy as np
 
-FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
+FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
 class HCRewardEnv(gym.RewardWrapper):

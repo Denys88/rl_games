@@ -229,7 +229,7 @@ class A2CAgent:
             if self.network.is_rnn():
                 mb_states.append(self.states)
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
-            actions = np.squeeze(actions)
+            #actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())

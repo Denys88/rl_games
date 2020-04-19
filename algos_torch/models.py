@@ -62,7 +62,7 @@ class ModelA2CContinuous(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelA2C.Network(self.network_builder.build('a2c', **config))
+        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config))
 
     class Network(nn.Module):
         def __init__(self, a2c_network):
@@ -91,7 +91,10 @@ class ModelA2CContinuousLogStd(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelA2C.Network(self.network_builder.build('a2c', **config))
+        net = self.network_builder.build('a2c', **config)
+        for name, _ in net.named_parameters():
+            print(name)
+        return ModelA2CContinuousLogStd.Network(net)
 
     class Network(nn.Module):
         def __init__(self, a2c_network):
@@ -102,54 +105,21 @@ class ModelA2CContinuousLogStd(BaseModel):
             is_train = input_dict.pop('is_train', True)
             prev_actions = input_dict.pop('prev_actions', None)
             inputs = input_dict.pop('inputs')
+
             mu, logstd, value = self.a2c_network(inputs)
-            sigma = tf.exp(logstd)
+            sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
             if not is_train:
-                selected_action = distr.sample().squeeze()
-                neglogp = self.neglogp(selected_action, mean, sigma, logstd)
+                selected_action = distr.sample()
+                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
                 return  neglogp, value, selected_action, mu, sigma
             else:
-                entropy = distr.entropy().mean()
-                prev_neglogp = self.neglogp(prev_actions, mean, sigma, logstd)
-                return prev_neglogp, value, entropy
+                entropy = distr.entropy().sum(dim=-1).mean()
+                prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
+                return prev_neglogp, value, entropy, mu, sigma
 
         def neglogp(self, x, mean, std, logstd):
-            return 0.5 * (tf.square((x - mean) / std).sum(dim=-1) \
-                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1]) \
+            return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
+                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
 
-class ModelA2CContinuousLogStd(BaseModel):
-    def __init__(self, network):
-        self.network = network
-
-    def __call__(self, dict, reuse=False):
-
-        name = dict['name']
-        inputs = dict['inputs']
-        actions_num = dict['actions_num']
-        prev_actions_ph = dict['prev_actions_ph']
-        is_train = prev_actions_ph is not None
-
-        mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train=True, reuse=reuse)
-    
-
-        std = tf.exp(logstd)
-        norm_dist = tfd.Normal(mean, std)
-
-        action = mean + std * tf.random_normal(tf.shape(mean))
-        #action = tf.squeeze(norm_dist.sample(1), axis=0)
-        #action = tf.clip_by_value(action, -1.0, 1.0)
-        
-        entropy = tf.reduce_mean(tf.reduce_sum(norm_dist.entropy(), axis=-1))
-        if prev_actions_ph is None:
-            neglogp = self.neglogp(action, mean, std, logstd)
-            return  neglogp, value, action, entropy, mean, std
-
-        prev_neglogp = self.neglogp(prev_actions_ph, mean, std, logstd)
-        return prev_neglogp, value, action, entropy, mean, std
-
-    def neglogp(self, x, mean, std, logstd):
-        return 0.5 * tf.reduce_sum(tf.square((x - mean) / std), axis=-1) \
-            + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[-1]) \
-            + tf.reduce_sum(logstd, axis=-1)
