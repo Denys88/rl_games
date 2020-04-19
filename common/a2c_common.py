@@ -346,23 +346,23 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
-    def __init__(self, base_name, observation_space, action_space, config):
+    def __init__(self, base_name, observation_space, action_space, config, init_arrays=True):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
         self.actions_low = action_space.low
         self.actions_high = action_space.high
         self.actions_num = action_space.shape[0]
         batch_size = self.num_agents * self.num_actors
-        #'''
-        self.mb_obs = ((self.steps_num, batch_size) + self.state_shape, dtype = observation_space.dtype)
-        self.mb_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_actions = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_dones = np.zeros((self.steps_num, batch_size), dtype  = np.bool)
-        self.mb_neglogpacs = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_mus = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        self.mb_sigmas = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        #'''
+        if init_arrays:
+            self.mb_obs = np.zeros((self.steps_num, batch_size) + self.state_shape, dtype = observation_space.dtype)
+            self.mb_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+            self.mb_actions = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+            self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+            self.mb_dones = np.zeros((self.steps_num, batch_size), dtype  = np.bool)
+            self.mb_neglogpacs = np.zeros((self.steps_num, batch_size), dtype = np.float32)
+            self.mb_mus = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+            self.mb_sigmas = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         #mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
