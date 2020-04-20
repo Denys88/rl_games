@@ -13,8 +13,6 @@ class BaseModel():
     def is_separate_critic(self):
         return False
 
-    
-
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -53,7 +51,6 @@ class ModelA2C(BaseModel):
                 entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1).mean()
                 prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
                 return prev_neglogp, value, entropy
-
 
 
 class ModelA2CContinuous(BaseModel):

@@ -51,14 +51,11 @@ def parameterized_truncated_normal(uniform, mu, sigma, a, b):
 
     return x
 
-
 def truncated_normal(uniform, mu=0.0, sigma=1.0, a=-2, b=2):
     return parameterized_truncated_normal(uniform, mu, sigma, a, b)
 
-
 def sample_truncated_normal(shape=(), mu=0.0, sigma=1.0, a=-2, b=2):
     return truncated_normal(torch.from_numpy(np.random.uniform(0, 1, shape)), mu, sigma, a, b)
-
 
 def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)

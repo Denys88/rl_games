@@ -21,13 +21,13 @@ params:
         #  name: normc_initializer
         #  std: 0.01
         sigma_init:
-          name: const_initializer     
-          #  value: 0 # tf
+          name: const_initializer
+          # value: 0 # tf 
           val: 0 # pytorch
 
         fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [256, 128, 64]
       activation: elu
 
       initializer:
@@ -47,23 +47,23 @@ params:
 
   config:
     reward_shaper:
-      scale_value: 0.01
+      scale_value: 0.1
     normalize_advantage : True
     gamma : 0.99
     tau : 0.95
     learning_rate : 3e-4
-    name : 'ant_torch'
+    name : 'humanoid_torch'
     score_to_win : 20000
     grad_norm : 0.5
     entropy_coef : 0.0
     truncate_grads : True
-    env_name : FlexAnt
+    env_name : FlexHumanoid
     ppo : True
     e_clip : 0.2
-    num_actors : 256
-    steps_num : 16
-    minibatch_size : 2048
-    mini_epochs : 8
+    num_actors : 400
+    steps_num : 32
+    minibatch_size : 4096
+    mini_epochs : 15
     critic_coef : 1
     clip_value : True
     lr_schedule : adaptive

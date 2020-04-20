@@ -182,6 +182,7 @@ class A2CBuilder(NetworkBuilder):
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(self.units[-1], actions_num)
+
             mlp_init = self.init_factory.create(**self.initializer)
             if self.has_cnn:
                 cnn_init = self.init_factory.create(**self.cnn['initializer'])
@@ -227,6 +228,7 @@ class A2CBuilder(NetworkBuilder):
                 
                 for l in self.critic_mlp:
                     c_out = l(c_out)
+                    
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
                     logits = self.logits(a_out)

@@ -14,7 +14,6 @@ class ModelBuilder:
         #self.model_factory.register_builder('continuous_a2c_lstm_logstd', lambda network, **kwargs : models.LSTMModelA2CContinuousLogStd(network))
         #self.model_factory.register_builder('dqn', lambda network, **kwargs : models.AtariDQN(network))
 
-
         self.network_factory = object_factory.ObjectFactory()
         self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
         #self.network_factory.register_builder('dqn', lambda **kwargs : network_builder.DQNBuilder())
