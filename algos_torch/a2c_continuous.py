@@ -21,18 +21,6 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
-        '''
-        self.mb_obs = ((self.steps_num, batch_size) + self.state_shape, dtype = observation_space.dtype)
-        self.mb_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_actions = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_dones = np.zeros((self.steps_num, batch_size), dtype  = np.bool)
-        self.mb_neglogpacs = np.zeros((self.steps_num, batch_size), dtype = np.float32)
-        self.mb_mus = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        self.mb_sigmas = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-        '''
-
-
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num

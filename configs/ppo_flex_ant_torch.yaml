@@ -14,8 +14,8 @@ params:
         sigma_activation: None
         mu_init:
           # pytorch
-          name: glorot_normal_initializer
-          gain: 0.01
+          name: variance_scaling_initializer
+          scale: 0.02
 
           # tf
         #  name: normc_initializer
@@ -32,8 +32,8 @@ params:
 
       initializer:
         # pytorch
-        name: glorot_normal_initializer
-        gain: 2
+          name: variance_scaling_initializer
+          scale: 0.02
 
       # tf
       #  name: normc_initializer
