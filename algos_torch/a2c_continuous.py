@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import algos_torch.torch_ext
 import numpy as np
+from algos_torch.running_mean_std import RunningMeanStd
 
 class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
@@ -18,8 +19,11 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.model = self.network.build(config)
         self.model.cuda()
         self.last_lr = float(self.last_lr)
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-        #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        #self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
+        self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+
+        if self.normalize_input:
+            self.running_mean_std = RunningMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99).cuda()
 
     def update_epoch(self):
         self.epoch_num += 1
@@ -34,6 +38,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
 
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
+        obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def save(self, fn):
@@ -45,10 +50,20 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
+    def set_eval(self):
+        self.model.eval()
+        if self.normalize_input:
+            self.running_mean_std.eval()
+
+
+    def set_train(self):
+        self.model.train()
+        if self.normalize_input:
+            self.running_mean_std.train()
 
     def get_action_values(self, obs):
+        self.set_eval()
         obs = self._preproc_obs(obs)
-        self.model.eval()
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -82,7 +97,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
 
     def train_actor_critic(self, input_dict):
-        self.model.train()
+        self.set_train()
         value_preds_batch = torch.cuda.FloatTensor(input_dict['old_values'])
         old_action_log_probs_batch = torch.cuda.FloatTensor(input_dict['old_logp_actions'])
         advantage = torch.cuda.FloatTensor(input_dict['advantages'])

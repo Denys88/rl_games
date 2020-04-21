@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import algos_torch.torch_ext
 import numpy as np
+from algos_torch.running_mean_std import RunningMeanStd
 
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
@@ -20,6 +21,20 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        if self.normalize_input:
+            self.running_mean_std = RunningMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99).cuda()
+
+    def set_eval(self):
+        self.model.eval()
+        if self.normalize_input:
+            self.running_mean_std.eval()
+
+
+    def set_train(self):
+        self.model.train()
+        if self.normalize_input:
+            self.running_mean_std.train()
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
