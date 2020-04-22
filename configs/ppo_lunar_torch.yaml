@@ -13,8 +13,8 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: glorot_normal_initializer
-          gain: 0.01
+          name: variance_scaling_initializer
+          scale: 0.02
         sigma_init:
           name: const_initializer
           val: 0
@@ -23,8 +23,8 @@ params:
       units: [64, 64]
       activation: relu
       initializer:
-        name: glorot_normal_initializer
-        gain: 2
+          name: variance_scaling_initializer
+          scale: 2
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
@@ -58,6 +58,6 @@ params:
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
-      normalize_input: False
+      normalize_input: True
       seq_len: 8
       bounds_loss_coef: 0

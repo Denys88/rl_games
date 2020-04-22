@@ -23,7 +23,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99).cuda()
+            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
 
     def update_epoch(self):
         self.epoch_num += 1
@@ -38,7 +38,8 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
 
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
-        obs_batch = self.running_mean_std(obs_batch)
+        if self.normalize_input:
+            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def save(self, fn):

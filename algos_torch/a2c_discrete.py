@@ -22,7 +22,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(shape = observation_space.shape, epsilon = 1e-5, decay = 0.99).cuda()
+            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
 
     def set_eval(self):
         self.model.eval()
