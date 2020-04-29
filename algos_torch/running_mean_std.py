@@ -17,30 +17,29 @@ class RunningMeanStd(nn.Module):
             self.axis = [0]
 
         self.register_buffer("running_mean", torch.zeros(self.insize[0]))
-        self.register_buffer("running_std", torch.ones(self.insize[0]))
+        self.register_buffer("running_var", torch.ones(self.insize[0]))
 
     def forward(self, input):
         if self.training:
             mean = input.mean(self.axis) # along channel axis
-            std = input.std(self.axis)
-            self.running_mean = (self.momentum * self.running_mean) + (1.0-self.momentum) * mean # .to(input.device)
-            self.running_std = (self.momentum * self.running_std) + (1.0-self.momentum) * std
+            var = input.var(self.axis)
+            self.running_mean = (self.momentum * self.running_mean) + (1.0-self.momentum) * mean
+            self.running_var = (self.momentum * self.running_var) + (1.0-self.momentum) * var
 
         else:
             mean = self.running_mean
-            std = self.running_std
+            var = self.running_var
 
         # change shape
         if len(self.insize) == 3:
             current_mean = mean.view([1, self.insize[0], 1, 1]).expand_as(input)
-            current_std = std.view([1, self.insize[0], 1, 1]).expand_as(input)
+            current_var = var.view([1, self.insize[0], 1, 1]).expand_as(input)
         if len(self.insize) == 2:
             current_mean = mean.view([1, self.insize[0], 1]).expand_as(input)
-            current_std = std.view([1, self.insize[0], 1]).expand_as(input)
+            current_var = var.view([1, self.insize[0], 1]).expand_as(input)
         if len(self.insize) == 1:
             current_mean = mean.view([1, self.insize[0]]).expand_as(input)
-            current_std = std.view([1, self.insize[0]]).expand_as(input)            
+            current_var = var.view([1, self.insize[0]]).expand_as(input)            
         # get output
-        y =  (input - current_mean) / (current_std + self.epsilon).sqrt()
-        print(mean, std)
+        y =  (input - current_mean) / torch.sqrt(current_var + self.epsilon)
         return y

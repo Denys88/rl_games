@@ -82,6 +82,16 @@ class A2CBase:
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
+
+        self.curiosity_config = self.config.get('cursiosity', None)
+        self.has_curiosity = self.curiosity_config is not None
+        if self.has_curiosity:
+            self.curiosity_gamma = self.curiosity_config['gamma']
+            self.is_episodic = self.curiosity_config['episodic']
+            self.ep_len = self.curiosity_config.get('episode_length', 0)
+            self.curiosity_lr = self.curiosity_config['lr']
+            self.cur_steps_left = self.ep_len - 1
+
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
 
@@ -120,6 +130,12 @@ class A2CBase:
     def train_actor_critic(self, dict):
         pass 
 
+    def get_intrinsic_reward(self, dict):
+        pass
+
+    def train_intrinsic_reward(self, dict):
+        pass
+
 class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
@@ -127,7 +143,8 @@ class DiscreteA2CBase(A2CBase):
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        
+        if self.has_curiosity:
+            mb_intrinsic_rewards = []
         mb_states = []
         epinfos = []
 
@@ -143,7 +160,7 @@ class DiscreteA2CBase(A2CBase):
                 actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
-  
+
 
             actions = np.squeeze(actions)
             values = np.squeeze(values)
@@ -155,6 +172,10 @@ class DiscreteA2CBase(A2CBase):
             mb_dones.append(self.dones.copy())
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
+            if self.has_curiosity:
+                intrinsic_reward = self.get_intrinsic_reward({"obs" : self.obs})
+                mb_intrinsic_rewards.append(intrinsic_reward)
+
             self.current_rewards += rewards
 
             self.current_lengths += 1
@@ -185,6 +206,7 @@ class DiscreteA2CBase(A2CBase):
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
+
         lastgaelam = 0
         
         for t in reversed(range(self.steps_num)):
@@ -198,16 +220,54 @@ class DiscreteA2CBase(A2CBase):
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
+        if self.has_curiosity:
+            mb_intrinsic_rewards = np.asarray(mb_intrinsic_rewards, dtype=np.float32)
+            mb_intrinsic_returns = np.zeros_like(mb_rewards)
+            mb_intrinsic_advs = np.zeros_like(mb_rewards)
+            lastgaelam = 0
+            for t in reversed(range(self.steps_num)):
+                nextnonterminal = 1.0
+                self.cur_steps_left = self.cur_steps_left - 1
+                if self.cur_steps_left == 0:
+                    self.cur_steps_left = self.ep_len
+                    nextnonterminal = 0.0
+                if t == self.steps_num - 1:
+                    nextvalues = last_values
+                else:
+                    nextvalues = mb_values[t+1]
+                
+                delta = mb_curiosity_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_curiosity_values[t]
+                mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * nextnonterminal * lastgaelam
+
+                mb_curiosity_returns = mb_curiosity_advs + mb_curiosity_values
+
         mb_returns = mb_advs + mb_values
+        batch_dict = {
+            'obs' : mb_obs,
+            'returns' : mb_returns,
+            'dones' : mb_dones,
+            'actions' : mb_actions,
+            'values' : mb_values,
+            'neglogpacs' : mb_neglogpacs,
+        }
+        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict}
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_states  )), epinfos)
-        else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
-        return result
+            batch_dict['states'] = mb_states
+
+        return batch_dict
 
     def train_epoch(self):
         play_time_start = time.time()
-        obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+        batch_dict = self.play_steps() 
+
+        obses = batch_dict['obses']
+        returns = batch_dict['returns']
+        actions = batch_dict['actions']
+        values = batch_dict['values']
+        neglogpacs = batch_dict['neglogpacs']
+        obses = batch_dict['obses']
+        lstm_states = batch_dict.get('states', None)
+
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values

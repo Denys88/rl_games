@@ -299,6 +299,121 @@ class A2CBuilder(NetworkBuilder):
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
 
+class RNDCuriosityBuilder(NetworkBuilder):
+    def __init__(self, **kwargs):
+        NetworkBuilder.__init__(self)
+
+    def load(self, params):
+        self.params = params
+
+    class Network(NetworkBuilder.BaseNetwork):
+        def __init__(self, params, **kwargs):
+            input_shape = kwargs.pop('input_shape')
+            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
+            self.load(params)
+            self.rnd_cnn = []
+            self.net_cnn = []
+            self.rnd_mlp = []
+            self.net_mlp = []
+
+            if self.has_cnn:
+                rnd_cnn_args = {
+                    'ctype' : self.cnn['type'], 
+                    'input_shape' : input_shape, 
+                    'convs' :self.rnd_cnn['convs'], 
+                    'activation' : self.cnn['activation'], 
+                    'norm_func_name' : self.normalization,
+                }
+                net_cnn_args = {
+                    'ctype' : self.cnn['type'], 
+                    'input_shape' : input_shape, 
+                    'convs' :self.net_cnn['convs'], 
+                    'activation' : self.cnn['activation'], 
+                    'norm_func_name' : self.normalization,
+                }
+                self.rnd_cnn = self._build_conv(**rnd_cnn_args)
+                self.net_cnn = self._build_conv(**net_cnn_args)
+
+
+            rnd_mlp_args = {
+                'input_size' : self._calc_input_size(input_shape, self.rnd_cnn), 
+                'units' :self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear
+            }
+
+            net_mlp_args = {
+                'input_size' : self._calc_input_size(input_shape, self.net_cnn), 
+                'units' :self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear
+            }
+            self.rnd_mlp = self._build_mlp(**rnd_mlp_args)
+            self.net_mlp = self._build_mlp(**net_mlp_args)
+
+            mlp_init = self.init_factory.create(**self.initializer)
+            if self.has_cnn:
+                cnn_init = self.init_factory.create(**self.cnn['initializer'])
+
+            for m in self.rnd_cnn:
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)
+            for m in self.net_cnn:
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)   
+
+            for m in self.rnd_mlp:
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)   
+            for m in self.net_mlp:
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)
+
+        def forward(self, obs):
+            rnd_out = net_out = obs
+
+            for l in self.rnd_cnn:
+                rnd_out = l(rnd_out)
+            rnd_out = rnd_out.view(rnd_out.size(0), -1)
+
+            for l in self.net_cnn:
+                net_out = l(net_out)
+            net_out = c_out.view(net_out.size(0), -1)                    
+
+            for l in self.rnd_mlp:
+                rnd_out = l(rnd_out)
+                
+            for l in self.net_mlp:
+                net_out = l(net_out)
+                    
+            return rnd_out, net_out
+
+        def load(self, params):
+            self.rnd_units = params['mlp']['rnd']['units']
+            self.net_units = params['mlp']['net']['units']
+            self.activation = params['mlp']['activation']
+            self.initializer = params['mlp']['initializer']
+            self.regularizer = params['mlp']['regularizer']
+            self.normalization = params.get('normalization', None)
+
+            self.has_lstm = 'lstm' in params
+                
+            if self.has_lstm:
+                self.lstm_units = params['lstm']['units']
+
+            if 'cnn' in params:
+                self.has_cnn = True
+                self.rnd_cnn = params['cnn']['rnd']
+                self.net_cnn = params['cnn']['net']
+            else:
+                self.has_cnn = False
+
+    def build(self, name, **kwargs):
+        net = A2CBuilder.Network(self.params, **kwargs)
+        return net
+
 '''
 class DQNBuilder(NetworkBuilder):
     def __init__(self, **kwargs):

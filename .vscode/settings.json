@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "/home/viktor/anaconda3/envs/tf14_sb/bin/python",
+    "python.pythonPath": "/home/trrrrr/anaconda3/envs/torch/bin/python",
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true,
     "python.linting.mypyEnabled": false,
