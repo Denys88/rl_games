@@ -19,8 +19,8 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.model = self.network.build(config)
         self.model.cuda()
         self.last_lr = float(self.last_lr)
-        #self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-        self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
+        #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
