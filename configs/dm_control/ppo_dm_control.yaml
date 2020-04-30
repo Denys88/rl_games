@@ -34,14 +34,14 @@ params:
 
   config:
       reward_shaper:
-        scale_value: 1
+        scale_value: 0.1
       normalize_advantage: True
       gamma: 0.99
       tau: 0.9
 
       learning_rate: 1e-4
       name: dm_control
-      score_to_win: 300
+      score_to_win: 1000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -60,9 +60,9 @@ params:
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.00
+      bounds_loss_coef: 0.001
 
       env_config:
-        name: PendulumSwingup-v0
+        name: FishUpright-v0
         flat_observation: True
       
