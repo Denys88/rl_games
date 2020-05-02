@@ -57,6 +57,15 @@ class HCObsEnv(gym.ObservationWrapper):
         obs = np.clip(obs, -5.0, 5.0)
         return obs
 
+
+class DMControlObsWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+
+    def observation(self, obs):
+        return obs['observations']
+
+
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
     from nes_py.wrappers import JoypadSpace
@@ -252,6 +261,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
+    'dm_control' : {
+        'env_creator' : lambda **kwargs : DMControlObsWrapper(gym.make('dm2gym:'+ kwargs.pop('name'), environment_kwargs=kwargs)),
+        'vecenv_type' : 'RAY'
+    },
 }
 
 
@@ -260,6 +273,9 @@ def get_obs_and_action_spaces(name):
     observation_space = env.observation_space
     action_space = env.action_space
     env.close()
+    # workaround for deepmind control
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space
 
 def get_obs_and_action_spaces_from_config(config):
@@ -268,6 +284,10 @@ def get_obs_and_action_spaces_from_config(config):
     observation_space = env.observation_space
     action_space = env.action_space
     env.close()
+    # workaround for deepmind control
+
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space
 
 def get_env_info(config):
@@ -275,8 +295,12 @@ def get_env_info(config):
     env = configurations[config['env_name']]['env_creator'](**env_config)
     observation_space = env.observation_space
     action_space = env.action_space
-    agents = env.get_number_of_agents()
+    agents = 1
+    if hasattr(env, "get_number_of_agents"):
+        agents = env.get_number_of_agents()
     env.close()
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space, agents
 
 def register(name, config):

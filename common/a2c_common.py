@@ -250,7 +250,7 @@ class DiscreteA2CBase(A2CBase):
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
         }
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict}
+        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.network.is_rnn():
             batch_dict['states'] = mb_states
 
@@ -260,12 +260,12 @@ class DiscreteA2CBase(A2CBase):
         play_time_start = time.time()
         batch_dict = self.play_steps() 
 
-        obses = batch_dict['obses']
+        obses = batch_dict['obs']
         returns = batch_dict['returns']
+        dones = batch_dict['dones']
         actions = batch_dict['actions']
         values = batch_dict['values']
         neglogpacs = batch_dict['neglogpacs']
-        obses = batch_dict['obses']
         lstm_states = batch_dict.get('states', None)
 
         play_time_end = time.time()

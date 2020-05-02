@@ -12,7 +12,7 @@ import algos_torch.a2c_discrete as a2c_discrete
 import common.tr_helpers as tr_helpers
 import yaml
 import ray
-#import algos_tf14.players
+import algos_torch.players as players
 import argparse
 import common.experiment as experiment
 import copy
@@ -26,8 +26,8 @@ class Runner:
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
         self.player_factory = common.object_factory.ObjectFactory()
-        #self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
-        #self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs)) 
+        self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
+        self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs)) 
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.model_builder = model_builder.ModelBuilder()
@@ -72,9 +72,7 @@ class Runner:
         print('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
-        if len(obs_space.shape) == 3:
-            shape = list(obs_space.shape)
-            obs_space.shape = [shape[-1]] + shape[:-1]
+
         print('obs_space:', obs_space)
         print('action_space:', action_space)
         if self.exp_config:

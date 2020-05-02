@@ -8,11 +8,10 @@ from algos_torch.running_mean_std import RunningMeanStd
 
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
-        
+        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config) 
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : self.state_shape,
+            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -45,16 +44,32 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
             obs_batch = obs_batch.float() / 255.0
         else:
             obs_batch = torch.cuda.FloatTensor(obs_batch)
-
+        if len(obs_batch.size()) == 3:
+            obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if self.normalize_input:
+            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def save(self, fn):
-        algos_torch.torch_ext.save_scheckpoint(fn, self.epoch_num, self.model, self.optimizer)
+        state = {'epoch': self.epoch_num, 'model': self.model.state_dict(),
+                'optimizer': self.optimizer.state_dict()}
+        if self.normalize_input:
+            state['running_mean_std'] = self.running_mean_std.state_dict()
+        algos_torch.torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
-        self.epoch_num = algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
+        algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
+        self.epoch_num = checkpoint['epoch']
+        self.model.load_state_dict(checkpoint['model'])
+        if self.normalize_input:
+            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.cuda()
 
     def get_masked_action_values(self, obs, action_masks):
         obs = self._preproc_obs(obs)
