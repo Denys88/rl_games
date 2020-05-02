@@ -42,7 +42,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=1000, n_game_life = 1, render= False):
+    def run(self, n_games=1000, n_game_life = 1, render= True):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
@@ -71,8 +71,11 @@ class BasePlayer(object):
 
                 if render:
                     self.env.render(mode = 'human')
-                if done.any():
-                    assert done.all()
+
+                if not np.isscalar(done):
+                    done = done.any()
+
+                if done:
                     game_res = info.get('battle_won', 0.5)
                     print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
                     sum_game_res += game_res
@@ -122,7 +125,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_determenistic = True):
         if is_determenistic:
             ret_action = self.mu
         else:

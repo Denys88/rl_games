@@ -295,8 +295,12 @@ def get_env_info(config):
     env = configurations[config['env_name']]['env_creator'](**env_config)
     observation_space = env.observation_space
     action_space = env.action_space
-    agents = env.get_number_of_agents()
+    agents = 1
+    if hasattr(env, "get_number_of_agents"):
+        agents = env.get_number_of_agents()
     env.close()
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space, agents
 
 def register(name, config):

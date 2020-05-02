@@ -13,25 +13,15 @@ def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
     kl = kl.sum(dim=-1).mean() # returning mean between all steps of sum between all actions
     return kl
 
-def save_scheckpoint(filename, epoch, model, optimizer):
-    state = {'epoch': epoch + 1, 'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict()}
+def save_scheckpoint(filename, state):
+    print("=> saving checkpoint '{}'".format(filename + '.pth'))
+
     torch.save(state, filename + '.pth')
 
-def load_checkpoint(filename, model, optimizer):
-    start_epoch = 0
+def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename + '.pth'))
-    checkpoint = torch.load(filename)
-    epoch = checkpoint['epoch']
-    model.load_state_dict(checkpoint['state_dict'])
-    if optimizer:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-    for state in optimizer.state.values():
-        for k, v in state.items():
-            if isinstance(v, torch.Tensor):
-                state[k] = v.cuda()
-
-    return epoch
+    state = torch.load(filename)
+    return state
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     normal = torch.distributions.normal.Normal(0, 1)
@@ -59,8 +49,7 @@ def sample_truncated_normal(shape=(), mu=0.0, sigma=1.0, a=-2, b=2):
 
 def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)
-    scale = scale / fan
-    sigma = np.sqrt(1.3 * scale)
+    sigma = np.sqrt(1.3 * scale / fan)
     with torch.no_grad():
         return sample_truncated_normal(tensor.size(), sigma=sigma)
 
