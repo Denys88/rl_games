@@ -24,7 +24,7 @@ class PpoPlayerContinuous(BasePlayer):
         print(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : self.state_shape,
+            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -90,7 +90,7 @@ class PpoPlayerDiscrete(BasePlayer):
 
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : self.state_shape,
+            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
             'games_num' : 1,
             'batch_num' : 1,
         } 

@@ -30,7 +30,7 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 1e-4
+    learning_rate: 5e-4
     score_to_win: 20
     grad_norm: 0.5
     entropy_coef: 0.001

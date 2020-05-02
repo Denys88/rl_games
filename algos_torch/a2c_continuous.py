@@ -9,10 +9,10 @@ from algos_torch.running_mean_std import RunningMeanStd
 class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
-        
+
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : self.state_shape,
+            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
             'games_num' : 1,
             'batch_num' : 1,
         } 

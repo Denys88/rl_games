@@ -13,6 +13,14 @@ def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
     kl = kl.sum(dim=-1).mean() # returning mean between all steps of sum between all actions
     return kl
 
+def shape_whc_to_cwh(shape):
+    if len(shape) == 2:
+        return (shape[1], shape[0])
+    if len(shape) == 3:
+        return (shape[2], shape[0], shape[1])
+    
+    return shape
+
 def save_scheckpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
 
