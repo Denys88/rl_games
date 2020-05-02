@@ -214,7 +214,7 @@ class A2CBuilder(NetworkBuilder):
         def forward(self, obs):
             if self.separate:
                 a_out = c_out = obs
-
+                
                 for l in self.actor_cnn:
                     a_out = l(a_out)
                 a_out = a_out.view(a_out.size(0), -1)

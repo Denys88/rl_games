@@ -40,7 +40,7 @@ params:
       tau: 0.9
 
       learning_rate: 1e-4
-      name: dm_control
+      name: walker
       score_to_win: 1000
 
       grad_norm: 0.5

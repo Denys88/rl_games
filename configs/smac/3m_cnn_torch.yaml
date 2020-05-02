@@ -80,5 +80,5 @@ params:
     env_config:
       name: 3m
       frames: 4
-      transpose: False
+      transpose: True
       random_invalid_step: True

@@ -83,7 +83,7 @@ class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, config):
         BasePlayer.__init__(self, config)
         self.network = config['network']
-        self.actions_num = self.action_space.shape[0] 
+        self.actions_num = self.action_space.n
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
@@ -117,8 +117,10 @@ class PpoPlayerDiscrete(BasePlayer):
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
-    def get_masked_action(self, obs, action_masks):
-        obs = self._preproc_obs(np.expand_dims(obs, axis=0))
+    def get_masked_action(self, obs, action_masks, is_determenistic = False):
+        if self.num_agents == 1:
+            obs = np.expand_dims(obs, axis=0)
+        obs = self._preproc_obs(obs)
         action_masks = torch.Tensor(action_masks).cuda()
         input_dict = {
             'is_train': False,
@@ -128,11 +130,17 @@ class PpoPlayerDiscrete(BasePlayer):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy()
+        
+        if is_determenistic:
+            return np.argmax(logits.squeeze().detach().cpu().numpy(), axis=1)
+        else:    
+            return action.squeeze().detach().cpu().numpy()
 
 
-    def get_action(self, obs):
-        obs = self._preproc_obs(np.expand_dims(obs, axis=0))
+    def get_action(self, obs, is_determenistic = False):
+        if self.num_agents == 1:
+            obs = np.expand_dims(obs, axis=0)
+        obs = self._preproc_obs(obs)
         self.model.eval()
         input_dict = {
             'is_train': False,
@@ -141,10 +149,14 @@ class PpoPlayerDiscrete(BasePlayer):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.squeeze().detach().cpu().numpy()
+        
+        if is_determenistic:
+            return np.argmax(logits.detach().cpu().numpy(), axis=1).squeeze()
+        else:    
+            return action.squeeze().detach().cpu().numpy()
 
     def restore(self, fn):
-        algos_torch.torch_ext.load_checkpoint(fn)
+        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])

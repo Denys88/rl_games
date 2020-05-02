@@ -20,8 +20,8 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
-      activation: relu
+      units: [512, 256, 128]
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2
@@ -40,7 +40,7 @@ params:
       tau: 0.9
 
       learning_rate: 1e-4
-      name: dm_control
+      name: humanoid
       score_to_win: 1000
 
       grad_norm: 0.5
@@ -60,7 +60,7 @@ params:
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.0000
+      bounds_loss_coef: 0.001
 
       env_config:
         name: HumanoidRun-v0
