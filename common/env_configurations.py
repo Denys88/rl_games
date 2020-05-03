@@ -58,6 +58,35 @@ class HCObsEnv(gym.ObservationWrapper):
         return obs
 
 
+
+class DMControlReward(gym.RewardWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+        
+        self.num_stops = 0
+        self.max_stops = 10
+        self.reward_threshold = 0.0001
+    def reset(self, **kwargs):
+        self.num_stops = 0
+ 
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if reward < self.reward_threshold:
+            self.num_stops += 1
+        else:
+            self.num_stops = max(0, self.num_stops-1)
+        if self.num_stops > self.max_stops:
+            #print('too many stops!')
+            reward = -10
+            observation = self.reset()
+            done = True
+        return observation, self.reward(reward), done, info
+
+    def reward(self, reward):
+        return reward
+
 class DMControlObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -65,6 +94,17 @@ class DMControlObsWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return obs['observations']
 
+
+def create_dm_control_env(**kwargs):
+    frames = kwargs.pop('frames', 1)
+    name = 'dm2gym:'+ kwargs.pop('name')
+    env = gym.make(name, environment_kwargs=kwargs)
+    env = DMControlReward(env)
+    env = DMControlObsWrapper(env)
+
+    if frames > 1:
+        env = wrappers.FrameStack(env, frames, False)
+    return env
 
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
@@ -262,7 +302,7 @@ configurations = {
         'vecenv_type' : 'RAY_SMAC'
     },
     'dm_control' : {
-        'env_creator' : lambda **kwargs : DMControlObsWrapper(gym.make('dm2gym:'+ kwargs.pop('name'), environment_kwargs=kwargs)),
+        'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
 }

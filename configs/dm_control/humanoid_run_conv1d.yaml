@@ -19,8 +19,34 @@ params:
           name: const_initializer
           val: 0
         fixed_sigma: True
+
+    cnn:
+      type: conv1d
+      activation: elu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+      convs:    
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 1
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 1
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 1
+        - filters: 128
+          kernel_size: 2
+          strides: 1
+          padding: 0
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -40,8 +66,8 @@ params:
       tau: 0.9
 
       learning_rate: 1e-4
-      name: humanoid2
-      score_to_win: 5000
+      name: humanoid_conv
+      score_to_win: 1000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -53,16 +79,17 @@ params:
       num_actors: 16
       steps_num: 1024
       minibatch_size: 8192
-      mini_epochs: 14
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.000
+      bounds_loss_coef: 0.001
 
       env_config:
-        name: Humanoid_igRun-v0
+        frames: 4
+        name: HumanoidRun-v0
         flat_observation: True
       
