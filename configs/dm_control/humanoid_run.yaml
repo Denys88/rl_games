@@ -40,7 +40,7 @@ params:
       tau: 0.9
 
       learning_rate: 1e-4
-      name: humanoid2
+      name: humanoid
       score_to_win: 5000
 
       grad_norm: 0.5
@@ -60,9 +60,9 @@ params:
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.000
+      bounds_loss_coef: 0.001
 
       env_config:
-        name: Humanoid_igRun-v0
+        name: HumanoidRun-v0
         flat_observation: True
       
