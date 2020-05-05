@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/2c_vs_64zgsmac_cnn'
+  load_path: 'nn/corridor_cnn'
 
   network:
     name: actor_critic

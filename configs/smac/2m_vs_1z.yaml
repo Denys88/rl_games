@@ -6,7 +6,7 @@ params:
     name: discrete_a2c_lstm
 
   load_checkpoint: False
-  load_path: 'nn/sc2smac'
+  load_path: 'nn/2m_vs_1z_lstm'
 
   network:
     name: actor_critic
