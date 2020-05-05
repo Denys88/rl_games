@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/MMM_cnn'
+  load_path: 'nn/sc2smac_cnn'
 
   network:
     name: actor_critic
@@ -19,29 +19,29 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_normal_initializer
+        gain: 1.4241 
       regularizer:
         name: 'None'
       convs:    
         - filters: 64
           kernel_size: 3
           strides: 2
-          padding: 'same'
+          padding: 1
         - filters: 128
           kernel_size: 3
           strides: 1
-          padding: 'valid'
+          padding: 0
         - filters: 256
           kernel_size: 3
           strides: 1
-          padding: 'valid'
+          padding: 0
     mlp:
       units: [256, 128]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: glorot_normal_initializer
+        gain: 1.4241 
       regularizer:
         name:  'None'
   config:
@@ -65,7 +65,7 @@ params:
     minibatch_size: 2560
     mini_epochs: 1
     critic_coef: 2
-    lr_schedule:  None
+    lr_schedule:  adaptive
     lr_threshold: 0.05
     normalize_input: False
     seq_len: 4
@@ -73,7 +73,7 @@ params:
     ignore_dead_batches : False
 
     env_config:
-      name: MMM
+      name: MMM2
       frames: 4
-      transpose: True
+      transpose: False
       random_invalid_step: False

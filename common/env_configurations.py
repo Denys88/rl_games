@@ -4,8 +4,8 @@ import common.tr_helpers as tr_helpers
 import gym
 import numpy as np
 
-FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
-
+#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
+FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
@@ -56,6 +56,55 @@ class HCObsEnv(gym.ObservationWrapper):
  0.1289, 0.1501, 0.1649, 0.191 , 0.2036, 0.1095]
         obs = np.clip(obs, -5.0, 5.0)
         return obs
+
+
+
+class DMControlReward(gym.RewardWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+        
+        self.num_stops = 0
+        self.max_stops = 100
+        self.reward_threshold = 0.001
+    def reset(self, **kwargs):
+        self.num_stops = 0
+ 
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if reward < self.reward_threshold:
+            self.num_stops += 1
+        else:
+            self.num_stops = max(0, self.num_stops-1)
+        if self.num_stops > self.max_stops:
+            #print('too many stops!')
+            reward = -10
+            observation = self.reset()
+            done = True
+        return observation, self.reward(reward), done, info
+
+    def reward(self, reward):
+        return reward
+
+class DMControlObsWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+
+    def observation(self, obs):
+        return obs['observations']
+
+
+def create_dm_control_env(**kwargs):
+    frames = kwargs.pop('frames', 1)
+    name = 'dm2gym:'+ kwargs.pop('name')
+    env = gym.make(name, environment_kwargs=kwargs)
+    env = DMControlReward(env)
+    env = DMControlObsWrapper(env)
+
+    if frames > 1:
+        env = wrappers.FrameStack(env, frames, False)
+    return env
 
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
@@ -205,7 +254,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('LunarLanderContinuous-v2'),
+        'env_creator' : lambda **kwargs  : gym.make('LunarLanderContinuous-v2'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
@@ -252,6 +301,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY_SMAC'
     },
+    'dm_control' : {
+        'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
 }
 
 
@@ -260,6 +313,9 @@ def get_obs_and_action_spaces(name):
     observation_space = env.observation_space
     action_space = env.action_space
     env.close()
+    # workaround for deepmind control
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space
 
 def get_obs_and_action_spaces_from_config(config):
@@ -268,6 +324,10 @@ def get_obs_and_action_spaces_from_config(config):
     observation_space = env.observation_space
     action_space = env.action_space
     env.close()
+    # workaround for deepmind control
+
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space
 
 def get_env_info(config):
@@ -275,8 +335,12 @@ def get_env_info(config):
     env = configurations[config['env_name']]['env_creator'](**env_config)
     observation_space = env.observation_space
     action_space = env.action_space
-    agents = env.get_number_of_agents()
+    agents = 1
+    if hasattr(env, "get_number_of_agents"):
+        agents = env.get_number_of_agents()
     env.close()
+    if isinstance(observation_space, gym.spaces.dict.Dict):
+        observation_space = observation_space['observations']
     return observation_space, action_space, agents
 
 def register(name, config):

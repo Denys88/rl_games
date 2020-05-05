@@ -34,13 +34,14 @@ class SMACEnv(gym.Env):
         return obses
 
     def _preproc_actions(self, actions):
+        actions = actions.copy()
         rewards = np.zeros_like(actions)
         mask = self.get_action_mask()
         for ind, action in enumerate(actions, start=0):
             avail_actions = np.nonzero(mask[ind])[0]
             if action not in avail_actions:
                 actions[ind] = np.random.choice(avail_actions)
-                rewards[ind] = -0.05
+                #rewards[ind] = -0.05
         return actions, rewards
 
     def step(self, actions):

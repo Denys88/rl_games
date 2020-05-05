@@ -129,6 +129,7 @@ class A2CAgent:
             self.logp_actions ,self.state_values, self.action, self.entropy, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _,  self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state, self.logits = self.network(self.run_dict, reuse=True)
             self.states = self.target_initial_state
+
         else:
             self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.logits = self.network(self.run_dict, reuse=True)
@@ -171,8 +172,6 @@ class A2CAgent:
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
             self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
-
-        self.entropy = self.entropy
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.reg_loss = tf.losses.get_regularization_loss()
@@ -307,7 +306,6 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
-
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors * self.num_agents
         batch_size_envs = self.steps_num * self.num_actors

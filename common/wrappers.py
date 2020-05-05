@@ -178,15 +178,18 @@ class FrameStack(gym.Wrapper):
         self.k = k
         self.flat = flat
         self.frames = deque([], maxlen=k)
-        self.shp = shp = env.observation_space.shape
+        observation_space = env.observation_space
+        if isinstance(observation_space, gym.spaces.dict.Dict):
+            observation_space = observation_space['observations']
+        self.shp = shp = observation_space.shape
         #TODO: remove consts -1 and 1
         if flat:
-            self.observation_space = spaces.Box(low=-1, high=1, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
+            self.observation_space = spaces.Box(low=-1, high=1, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
         else:
             if len(shp) == 1:
-                self.observation_space = spaces.Box(low=-1, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
+                self.observation_space = spaces.Box(low=-1, high=1, shape=(k, shp[0]), dtype=observation_space.dtype)
             else:
-                self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=env.observation_space.dtype)
+                self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
 
 
     def reset(self):

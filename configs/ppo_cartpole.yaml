@@ -1,0 +1,49 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  load_checkpoint: False
+  load_path: path
+
+  network:
+    name: actor_critic
+    separate: True
+    space: 
+      discrete:
+
+    mlp:
+      units: [32,64]
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+  config:
+    reward_shaper:
+        scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 5e-4
+    name: cartpole
+    score_to_win: 500
+    grad_norm: 0.5
+    entropy_coef: 0.0001
+    truncate_grads: True
+    env_name:  CartPole-v1
+    ppo: true
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 4
+    steps_num: 16
+    minibatch_size: 32
+    mini_epochs: 2
+    critic_coef: 1
+    lr_schedule:  None
+    lr_threshold: 0.008
+    normalize_input: False
+    seq_len: 8

@@ -114,6 +114,7 @@ class NetworkBuilder:
         out = input
         ind = 0
         for conv in convs:
+            print(out.shape.as_list())
             ind += 1
             config = conv.copy()
             config['filters'] = conv['filters']
@@ -250,10 +251,10 @@ class A2CBuilder(NetworkBuilder):
                 kernel_initializer = self.init_factory.create(**self.space_config['mu_init']), name='mu')
 
                 if self.space_config['fixed_sigma']:
-                    sigma_out = tf.get_variable(name='sigma_out', shape=(actions_num), initializer=self.init_factory.create(**self.space_config['sigma_init']),trainable=True)
+                    sigma_out = tf.get_variable(name='sigma_out', shape=(actions_num), initializer=self.init_factory.create(**self.space_config['sigma_init']), trainable=True)
 
                 else:
-                    sigma_out = tf.layers.dense(out_actor, units = actions_num, kernel_initializer=self.init_factory.create(**self.space_config['sigma_init']),activation=self.activations_factory.create(self.space_config['sigma_activation']), name='sigma_out')
+                    sigma_out = tf.layers.dense(out_actor, units = actions_num, kernel_initializer=self.init_factory.create(**self.space_config['sigma_init']), activation=self.activations_factory.create(self.space_config['sigma_activation']), name='sigma_out')
 
                 if self.has_lstm:
                     return mu, mu * 0 + sigma_out, value, states_ph, dones_ph, lstm_state, initial_state
