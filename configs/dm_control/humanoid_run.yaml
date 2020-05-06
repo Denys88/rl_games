@@ -63,6 +63,6 @@ params:
       bounds_loss_coef: 0.001
 
       env_config:
-        name: HumanoidRun-v0
+        name: Humanoid_igRun-v0
         flat_observation: True
       

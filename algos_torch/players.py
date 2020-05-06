@@ -63,7 +63,7 @@ class PpoPlayerContinuous(BasePlayer):
         if is_determenistic:
             current_action = mu
         else:
-            current_action = sigma
+            current_action = action
         current_action = np.squeeze(current_action.detach().cpu().numpy())
         return  rescale_actions(self.actions_low, self.actions_high, np.clip(current_action, -1.0, 1.0))
 

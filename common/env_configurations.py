@@ -64,7 +64,7 @@ class DMControlReward(gym.RewardWrapper):
         gym.RewardWrapper.__init__(self, env)
         
         self.num_stops = 0
-        self.max_stops = 100
+        self.max_stops = 1000
         self.reward_threshold = 0.001
     def reset(self, **kwargs):
         self.num_stops = 0

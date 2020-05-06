@@ -51,7 +51,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         algos_torch.torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
-        algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
+        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
         self.epoch_num = checkpoint['epoch']
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
