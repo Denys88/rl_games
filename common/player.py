@@ -10,7 +10,7 @@ class BasePlayer(object):
         self.state_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
         self.state_shape = self.state_space.shape
         self.env = None
-        self.env_config = self.config.get('env_config', None)
+        self.env_config = self.config.get('env_config', {})
 
 
     def restore(self, fn):
