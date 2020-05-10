@@ -60,7 +60,7 @@ params:
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0
+      bounds_loss_coef: 0.001
       env_config:
-        name: BipedalWalker-v3
+        name: BipedalWalkerHardcore-v3
 
