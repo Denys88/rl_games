@@ -204,6 +204,14 @@ class DiscreteA2CBase(A2CBase):
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
+        
+        if self.has_curiosity:
+            mb_intrinsic_values = mb_values[:,1]
+            mb_extrinsic_values = mb_values[:,0]
+        else:
+            mb_extrinsic_values = mb_values
+
+
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
 
@@ -215,10 +223,12 @@ class DiscreteA2CBase(A2CBase):
                 nextvalues = last_values
             else:
                 nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
+                nextvalues = mb_extrinsic_values[t+1]
             
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_values[t]
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
+
+        mb_returns = mb_advs + mb_extrinsic_values
 
         if self.has_curiosity:
             mb_intrinsic_rewards = np.asarray(mb_intrinsic_rewards, dtype=np.float32)
@@ -234,14 +244,15 @@ class DiscreteA2CBase(A2CBase):
                 if t == self.steps_num - 1:
                     nextvalues = last_values
                 else:
-                    nextvalues = mb_values[t+1]
+                    nextvalues = mb_intrinsic_values[t+1]
                 
-                delta = mb_curiosity_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_curiosity_values[t]
+                delta = mb_curiosity_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_intrinsic_values[t]
                 mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * nextnonterminal * lastgaelam
 
-                mb_curiosity_returns = mb_curiosity_advs + mb_curiosity_values
+            mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
 
-        mb_returns = mb_advs + mb_values
+            mb_returns = np.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
+            mb_values = np.concatenate([f[..., np.newaxis] for f in [mb_values, mb_intrinsic_values]], axis=-1)
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
@@ -271,6 +282,9 @@ class DiscreteA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
+        if len(np.shape(advantages)) == 2:
+            advantages = np.sum(advantages, axis=1)
+            
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             

@@ -18,7 +18,7 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
-        fixed_sigma: True
+        fixed_sigma: False
 
     cnn:
       type: conv1d
@@ -46,7 +46,7 @@ params:
           strides: 1
           padding: 0
     mlp:
-      units: [256, 128]
+      units: [128, 64]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -67,7 +67,7 @@ params:
 
       learning_rate: 1e-4
       name: humanoid_conv
-      score_to_win: 1000
+      score_to_win: 15000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -90,6 +90,6 @@ params:
 
       env_config:
         frames: 4
-        name: HumanoidRun-v0
+        name: Humanoid2Run-v0
         flat_observation: True
       

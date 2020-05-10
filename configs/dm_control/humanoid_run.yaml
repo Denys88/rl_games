@@ -20,7 +20,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -41,7 +41,7 @@ params:
 
       learning_rate: 1e-4
       name: humanoid
-      score_to_win: 5000
+      score_to_win: 15000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -60,9 +60,9 @@ params:
 
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.001
+      bounds_loss_coef: 0.000
 
       env_config:
-        name: Humanoid_igRun-v0
+        name: Humanoid2Run-v0
         flat_observation: True
       
