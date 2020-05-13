@@ -10,7 +10,7 @@ class BasePlayer(object):
         self.state_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
         self.state_shape = self.state_space.shape
         self.env = None
-        self.env_config = self.config.get('env_config', None)
+        self.env_config = self.config.get('env_config', {})
 
 
     def restore(self, fn):
@@ -34,7 +34,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=1000, n_game_life = 1, render= True, is_determenistic = False):
+    def run(self, n_games=1000, n_game_life = 1, render= True, is_determenistic = True):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0

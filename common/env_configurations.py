@@ -95,6 +95,14 @@ class DMControlObsWrapper(gym.ObservationWrapper):
         return obs['observations']
 
 
+def create_default_gym_env(**kwargs):
+    frames = kwargs.pop('frames', 1)
+    name = kwargs.pop('name')
+    env = gym.make(name)
+    if frames > 1:
+        env = wrappers.FrameStack(env, frames, False)
+    return env    
+
 def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = 'dm2gym:'+ kwargs.pop('name')
@@ -305,6 +313,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'openai_gym' : {
+        'env_creator' : lambda **kwargs : create_default_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
 }
 
 
@@ -331,7 +343,7 @@ def get_obs_and_action_spaces_from_config(config):
     return observation_space, action_space
 
 def get_env_info(config):
-    env_config = config.get('env_config', [])
+    env_config = config.get('env_config', {})
     env = configurations[config['env_name']]['env_creator'](**env_config)
     observation_space = env.observation_space
     action_space = env.action_space
