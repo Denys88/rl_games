@@ -83,7 +83,7 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
 
-        self.curiosity_config = self.config.get('cursiosity', None)
+        self.curiosity_config = self.config.get('rnd_config', None)
         self.has_curiosity = self.curiosity_config is not None
         if self.has_curiosity:
             self.curiosity_gamma = self.curiosity_config['gamma']
@@ -130,7 +130,7 @@ class A2CBase:
     def train_actor_critic(self, dict):
         pass 
 
-    def get_intrinsic_reward(self, dict):
+    def get_intrinsic_reward(self, obs):
         pass
 
     def train_intrinsic_reward(self, dict):
@@ -161,7 +161,6 @@ class DiscreteA2CBase(A2CBase):
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
 
-
             actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
@@ -173,7 +172,7 @@ class DiscreteA2CBase(A2CBase):
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward({"obs" : self.obs})
+                intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards.append(intrinsic_reward)
 
             self.current_rewards += rewards
@@ -206,11 +205,13 @@ class DiscreteA2CBase(A2CBase):
 
         
         if self.has_curiosity:
-            mb_intrinsic_values = mb_values[:,1]
-            mb_extrinsic_values = mb_values[:,0]
+            mb_intrinsic_values = mb_values[:,:,1]
+            mb_extrinsic_values = mb_values[:,:,0]
+            last_intrinsic_values = last_values[:, 1]
+            last_extrinsic_values = last_values[:, 0]
         else:
             mb_extrinsic_values = mb_values
-
+            last_extrinsic_values = last_values
 
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
@@ -220,7 +221,7 @@ class DiscreteA2CBase(A2CBase):
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - self.dones
-                nextvalues = last_values
+                nextvalues = last_extrinsic_values
             else:
                 nextnonterminal = 1.0 - mb_dones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
@@ -242,17 +243,17 @@ class DiscreteA2CBase(A2CBase):
                     self.cur_steps_left = self.ep_len
                     nextnonterminal = 0.0
                 if t == self.steps_num - 1:
-                    nextvalues = last_values
+                    nextvalues = last_intrinsic_values
                 else:
                     nextvalues = mb_intrinsic_values[t+1]
                 
-                delta = mb_curiosity_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_intrinsic_values[t]
+                delta = mb_intrinsic_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_intrinsic_values[t]
                 mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * nextnonterminal * lastgaelam
 
             mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
 
             mb_returns = np.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
-            mb_values = np.concatenate([f[..., np.newaxis] for f in [mb_values, mb_intrinsic_values]], axis=-1)
+            #mb_values = np.concatenate([f[..., np.newaxis] for f in [mb_extrinsic_values, mb_intrinsic_values]], axis=-1)
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
@@ -282,8 +283,11 @@ class DiscreteA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
-        if len(np.shape(advantages)) == 2:
+        if self.has_curiosity:
+            self.train_intrinsic_reward(batch_dict)
             advantages = np.sum(advantages, axis=1)
+        #if len(np.shape(advantages)) == 2:
+            
             
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

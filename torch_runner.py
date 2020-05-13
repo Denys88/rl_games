@@ -57,6 +57,14 @@ class Runner:
         
         self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**self.config['reward_shaper'])
         self.config['network'] = self.model
+        
+        has_rnd_net = self.config.get('rnd_config', None) != None
+        if has_rnd_net:
+            print('Adding RND Network')
+            network = self.model_builder.network_factory.create(params['config']['rnd_config']['network']['name'])
+            print(network)
+            network.load(params['config']['rnd_config']['network'])
+            self.config['rnd_config']['network'] = network
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']

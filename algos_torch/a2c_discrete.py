@@ -5,6 +5,7 @@ from torch import nn
 import algos_torch.torch_ext
 import numpy as np
 from algos_torch.running_mean_std import RunningMeanStd
+import algos_torch.rnd_curiosity as rnd_curiosity
 
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
@@ -22,6 +23,10 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
+
+        if self.has_curiosity:
+            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
     def set_eval(self):
         self.model.eval()
@@ -109,6 +114,14 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
             neglogp, value, action, logits = self.model(input_dict)
         return value.detach().cpu().numpy()
 
+    def get_intrinsic_reward(self, obs):
+        obs = self._preproc_obs(obs)
+        return self.rnd_curiosity.get_loss(obs)
+
+    def train_intrinsic_reward(self, dict):
+        obs = dict['obs']
+        self.rnd_curiosity.train(obs)
+
     def get_weights(self):
         return torch.nn.utils.parameters_to_vector(self.model.parameters())
     
@@ -156,7 +169,10 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         else:
             c_loss = (return_batch - values)**2
 
-        c_loss = c_loss.mean()
+        if self.has_curiosity:
+            c_loss = c_loss.sum(dim=1).mean()
+        else:
+            c_loss = c_loss.mean()
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
         self.optimizer.zero_grad()
