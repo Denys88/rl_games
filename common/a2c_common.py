@@ -91,6 +91,7 @@ class A2CBase:
             self.ep_len = self.curiosity_config.get('episode_length', 0)
             self.curiosity_lr = self.curiosity_config['lr']
             self.cur_steps_left = self.ep_len - 1
+            self.curiosity_rewards = deque([], maxlen=self.games_to_log)
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
@@ -236,12 +237,15 @@ class DiscreteA2CBase(A2CBase):
             mb_intrinsic_returns = np.zeros_like(mb_rewards)
             mb_intrinsic_advs = np.zeros_like(mb_rewards)
             lastgaelam = 0
+            cur_rewards = 0
             for t in reversed(range(self.steps_num)):
                 nextnonterminal = 1.0
                 self.cur_steps_left = self.cur_steps_left - 1
                 if self.cur_steps_left == 0:
                     self.cur_steps_left = self.ep_len
                     nextnonterminal = 0.0
+                    self.curiosity_rewards.append(cur_rewards)
+                cur_rewards = cur_rewards * nextnonterminal + np.mean(mb_intrinsic_rewards[t])
                 if t == self.steps_num - 1:
                     nextvalues = last_intrinsic_values
                 else:
@@ -403,6 +407,10 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
 
+                    if self.has_curiosity:
+                        if len(self.curiosity_rewards) > 0:
+                            mean_cur_rewards = np.mean(self.curiosity_rewards)
+                            self.writer.add_scalar('rnd/rewards', mean_cur_rewards, frame)
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1

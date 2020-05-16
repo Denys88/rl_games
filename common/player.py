@@ -34,7 +34,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=1000, n_game_life = 1, render= True, is_determenistic = False):
+    def run(self, n_games=100, n_game_life = 1, render= True, is_determenistic = True):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
