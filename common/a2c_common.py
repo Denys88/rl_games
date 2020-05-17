@@ -175,7 +175,6 @@ class DiscreteA2CBase(A2CBase):
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards.append(intrinsic_reward)
-
             self.current_rewards += rewards
 
             self.current_lengths += 1

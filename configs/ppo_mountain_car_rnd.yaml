@@ -28,7 +28,7 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
+      learning_rate: 5e-4
       name: test
       score_to_win: 200
 
@@ -53,21 +53,21 @@ params:
       bounds_loss_coef: 0
 
       rnd_config:
-        scale_value: 500.0
+        scale_value: 256.0
         episodic: True
-        episode_length: 128
+        episode_length: 32
         gamma: 0.99
         mini_epochs: 2
         minibatch_size: 1024
-        lr: 1e-4
+        lr: 5e-4
         network:
           name: rnd_curiosity
           mlp:
             rnd:
-              units: [64, 64, 16]
+              units: [64,64,16]
             net:
-              units: [64, 32, 16]
-            activation: relu
+              units: [32,16]
+            activation: elu
             initializer:
                 name: variance_scaling_initializer
                 scale: 2

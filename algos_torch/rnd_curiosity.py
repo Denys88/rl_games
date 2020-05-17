@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
+from algos_torch.running_mean_std import RunningMeanStd
 
 class RNDCuriosityNetwork(nn.Module):
     def __init__(self, network):
@@ -9,7 +10,7 @@ class RNDCuriosityNetwork(nn.Module):
 
     def forward(self, obs):
         rnd_res, res = self.network(obs)
-        loss = ((res - rnd_res)**2).mean(dim=1)
+        loss = ((res - rnd_res)**2).mean(dim=1, keepdim=True)
         return loss
 
 
@@ -25,12 +26,17 @@ class RNDCurisityTrain:
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
         self._preproc_obs = _preproc_obs
+        self.output_normalization = RunningMeanStd((1,)).cuda()
         self.frame = 0
 
     def get_loss(self, obs):
         self.model.eval()
+        self.output_normalization.train()
         with torch.no_grad():
-            return self.model(obs).detach().cpu().numpy() * self.config['scale_value']
+            loss = self.model(obs)
+            loss = self.output_normalization(loss)
+            loss = loss.squeeze()
+            return loss.cpu().numpy() * self.config['scale_value']
 
     def train(self, obs):
         self.model.train()
