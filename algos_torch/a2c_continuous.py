@@ -113,6 +113,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
 
     def train_actor_critic(self, input_dict):
         self.set_train()
+
         value_preds_batch = torch.cuda.FloatTensor(input_dict['old_values'])
         old_action_log_probs_batch = torch.cuda.FloatTensor(input_dict['old_logp_actions'])
         advantage = torch.cuda.FloatTensor(input_dict['advantages'])

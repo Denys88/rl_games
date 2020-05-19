@@ -75,8 +75,17 @@ class RayVecEnv(IVecEnv):
             self.workers[0].render.remote()
         for (action, worker) in zip(actions, self.workers):
             res_obs.append(worker.step.remote(action))
+        '''
         for res in res_obs:
             cobs, crewards, cdones, cinfos = ray.get(res)
+            newobs.append(cobs)
+            newrewards.append(crewards)
+            newdones.append(cdones)
+            newinfos.append(cinfos)
+        '''
+        all_res = ray.get(res_obs)
+        for res in all_res:
+            cobs, crewards, cdones, cinfos = res
             newobs.append(cobs)
             newrewards.append(crewards)
             newdones.append(cdones)
