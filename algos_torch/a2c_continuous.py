@@ -9,10 +9,10 @@ from algos_torch.running_mean_std import RunningMeanStd
 class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
-
+        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
+            'input_shape' : obs_shape,
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -23,7 +23,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
     def update_epoch(self):
         self.epoch_num += 1
