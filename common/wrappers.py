@@ -5,6 +5,8 @@ from collections import deque
 import gym
 from gym import spaces
 import cv2
+from copy import copy
+
 cv2.ocl.setUseOpenCL(False)
 
 
@@ -352,10 +354,63 @@ class AllowBacktracking(gym.Wrapper):
         return obs, rew, done, info
 
 
+def unwrap(env):
+    if hasattr(env, "unwrapped"):
+        return env.unwrapped
+    elif hasattr(env, "env"):
+        return unwrap(env.env)
+    elif hasattr(env, "leg_env"):
+        return unwrap(env.leg_env)
+    else:
+        return env
+
+class StickyActionEnv(gym.Wrapper):
+    def __init__(self, env, p=0.25):
+        super(StickyActionEnv, self).__init__(env)
+        self.p = p
+        self.last_action = 0
+
+    def reset(self):
+        self.last_action = 0
+        return self.env.reset()
+
+    def step(self, action):
+        if self.unwrapped.np_random.uniform() < self.p:
+            action = self.last_action
+        self.last_action = action
+        obs, reward, done, info = self.env.step(action)
+        return obs, reward, done, info
+
+class MontezumaInfoWrapper(gym.Wrapper):
+    def __init__(self, env, room_address):
+        super(MontezumaInfoWrapper, self).__init__(env)
+        self.room_address = room_address
+        self.visited_rooms = set()
+
+    def get_current_room(self):
+        ram = unwrap(self.env).ale.getRAM()
+        assert len(ram) == 128
+        return int(ram[self.room_address])
+
+    def step(self, action):
+        obs, rew, done, info = self.env.step(action)
+        self.visited_rooms.add(self.get_current_room())
+        if done:
+            if 'episode' not in info:
+                info['episode'] = {}
+            info['episode'].update(visited_rooms=copy(self.visited_rooms))
+            self.visited_rooms.clear()
+        return obs, rew, done, info
+
+    def reset(self):
+        return self.env.reset()
 
 def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
-    # XXX(john): remove timelimit argument after gym is upgraded to allow double wrapping
     env = gym.make(env_id)
+    if 'Montezuma' in env_id:
+        env._max_episode_steps = 16000
+        env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
+        env = StickyActionEnv(env)
     if directory != None:
         env = gym.wrappers.Monitor(env,directory=directory,force=True)
     if not timelimit:
@@ -366,7 +421,7 @@ def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
     env = MaxAndSkipEnv(env, skip=skip)
     return env
 
-def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
+def wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale =False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
@@ -381,6 +436,8 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
     if frame_stack:
         env = FrameStack(env, 4)
     return env
+
+
 
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
@@ -407,3 +464,4 @@ def make_atari_deepmind_test(env_id, noop_max=30, skip=4, directory='video_dddqn
     env = make_atari(env_id, noop_max=noop_max, skip=skip, directory=directory)
 
     return wrap_deepmind(env, episode_life=False, clip_rewards=False)
+

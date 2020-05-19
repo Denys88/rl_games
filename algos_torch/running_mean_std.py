@@ -3,12 +3,14 @@ import torch.nn as nn
 
 
 class RunningMeanStd(nn.Module):
-    def __init__(self, insize, momentum=0.99, epsilon=1e-05):
+    def __init__(self, insize, momentum=0.99, epsilon=1e-05, norm_only=False):
 
         super(RunningMeanStd, self).__init__()
         self.momentum = momentum
         self.insize = insize
         self.epsilon = epsilon
+        self.norm_only = norm_only
+
         if len(self.insize) == 3:
             self.axis = [0,2,3]
         if len(self.insize) == 2:
@@ -41,5 +43,7 @@ class RunningMeanStd(nn.Module):
             current_mean = mean.view([1, self.insize[0]]).expand_as(input)
             current_var = var.view([1, self.insize[0]]).expand_as(input)            
         # get output
+        if self.norm_only:
+            current_mean = 0
         y =  (input - current_mean) / torch.sqrt(current_var + self.epsilon)
         return y

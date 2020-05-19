@@ -9,10 +9,11 @@ import algos_torch.rnd_curiosity as rnd_curiosity
 
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config) 
+        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape) 
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
+            'input_shape' : obs_shape,
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -22,7 +23,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
         #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 

@@ -26,7 +26,7 @@ class RNDCurisityTrain:
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
         self._preproc_obs = _preproc_obs
-        self.output_normalization = RunningMeanStd((1,)).cuda()
+        self.output_normalization = RunningMeanStd((1,), norm_only=True).cuda()
         self.frame = 0
 
     def get_loss(self, obs):

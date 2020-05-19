@@ -320,31 +320,31 @@ class RNDCuriosityBuilder(NetworkBuilder):
                 rnd_cnn_args = {
                     'ctype' : self.cnn['type'], 
                     'input_shape' : input_shape, 
-                    'convs' :self.rnd_cnn['convs'], 
+                    'convs' :self.rnd_cnn_layers['convs'], 
                     'activation' : self.cnn['activation'], 
                     'norm_func_name' : self.normalization,
                 }
                 net_cnn_args = {
                     'ctype' : self.cnn['type'], 
                     'input_shape' : input_shape, 
-                    'convs' :self.net_cnn['convs'], 
+                    'convs' :self.net_cnn_layers['convs'], 
                     'activation' : self.cnn['activation'], 
                     'norm_func_name' : self.normalization,
                 }
                 self.rnd_cnn = self._build_conv(**rnd_cnn_args)
                 self.net_cnn = self._build_conv(**net_cnn_args)
 
-
+            rnd_input_shape = self._calc_input_size(input_shape, self.rnd_cnn)
             rnd_mlp_args = {
-                'input_size' : self._calc_input_size(input_shape, self.rnd_cnn), 
+                'input_size' : rnd_input_shape, 
                 'units' :self.rnd_units[:-1], 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
                 'dense_func' : torch.nn.Linear
             }
-
+            net_input_shape = self._calc_input_size(input_shape, self.net_cnn)
             net_mlp_args = {
-                'input_size' : self._calc_input_size(input_shape, self.net_cnn), 
+                'input_size' : net_input_shape, 
                 'units' :self.net_units[:-1], 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
@@ -352,9 +352,14 @@ class RNDCuriosityBuilder(NetworkBuilder):
             }
             self.rnd_mlp = self._build_mlp(**rnd_mlp_args)
             self.net_mlp = self._build_mlp(**net_mlp_args)
-
-            self.rnd_mlp.append(torch.nn.Linear(self.rnd_units[-2], self.rnd_units[-1]))
-            self.net_mlp.append(torch.nn.Linear(self.net_units[-2], self.net_units[-1]))
+            if len(self.rnd_units) >= 2:
+                self.rnd_mlp.append(torch.nn.Linear(self.rnd_units[-2], self.rnd_units[-1]))
+            else:
+                self.rnd_mlp.append(torch.nn.Linear(rnd_input_shape, self.rnd_units[-1]))
+            if len(self.net_units) >= 2:    
+                self.net_mlp.append(torch.nn.Linear(self.net_units[-2], self.net_units[-1]))
+            else:
+                self.net_mlp.append(torch.nn.Linear(net_input_shape, self.net_units[-1]))
 
             mlp_init = self.init_factory.create(**self.initializer)
             if self.has_cnn:
@@ -409,8 +414,9 @@ class RNDCuriosityBuilder(NetworkBuilder):
 
             if 'cnn' in params:
                 self.has_cnn = True
-                self.rnd_cnn = params['cnn']['rnd']
-                self.net_cnn = params['cnn']['net']
+                self.rnd_cnn_layers = params['cnn']['rnd']
+                self.net_cnn_layers = params['cnn']['net']
+                self.cnn = params['cnn']
             else:
                 self.has_cnn = False
 
