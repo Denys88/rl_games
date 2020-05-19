@@ -21,10 +21,10 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        print(self.state_shape)
+        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
+            'input_shape' : obs_shape,
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -33,7 +33,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.eval()
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()
             
 
@@ -87,10 +87,10 @@ class PpoPlayerDiscrete(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-
+        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
-            'input_shape' : algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape),
+            'input_shape' : obs_shape,
             'games_num' : 1,
             'batch_num' : 1,
         } 
@@ -99,7 +99,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.eval()
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(observation_space.shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()
             
 
