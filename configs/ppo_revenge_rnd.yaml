@@ -47,7 +47,7 @@ params:
         scale: 2 
   config:
     reward_shaper:
-        scale_value: 0.1
+        scale_value: 1.0
         
     normalize_advantage: True
     gamma: 0.999

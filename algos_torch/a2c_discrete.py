@@ -11,6 +11,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
         obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape) 
+
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -28,6 +29,7 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+
 
     def set_eval(self):
         self.model.eval()

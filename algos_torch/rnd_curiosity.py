@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import numpy as np
+import algos_torch.torch_ext as torch_ext
 from algos_torch.running_mean_std import RunningMeanStd
 
 class RNDCuriosityNetwork(nn.Module):
@@ -51,6 +52,7 @@ class RNDCurisityTrain:
             for i in range(num_minibatches):
                 obs_batch = obs[i * mini_batch: (i + 1) * mini_batch]
                 obs_batch = self._preproc_obs(obs_batch)
+                obs_batch = torch_ext.random_sample(obs_batch, 0.25)
                 loss = self.model(obs_batch).mean()
                 self.optimizer.zero_grad()
                 loss.backward()

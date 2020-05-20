@@ -1,49 +1,70 @@
 import torch
 import torch.nn as nn
-
+import numpy as np
 
 class RunningMeanStd(nn.Module):
-    def __init__(self, insize, momentum=0.99, epsilon=1e-05, norm_only=False):
-
+    def __init__(self, insize, momentum=0.99, epsilon=1e-05, per_channel=False, norm_only=False):
         super(RunningMeanStd, self).__init__()
         self.momentum = momentum
         self.insize = insize
         self.epsilon = epsilon
+
         self.norm_only = norm_only
-
-        if len(self.insize) == 3:
-            self.axis = [0,2,3]
-        if len(self.insize) == 2:
-            self.axis = [0,2]
-        if len(self.insize) == 1:
+        self.per_channel = per_channel
+        if per_channel:
+            if len(self.insize) == 3:
+                self.axis = [0,2,3]
+            if len(self.insize) == 2:
+                self.axis = [0,2]
+            if len(self.insize) == 1:
+                self.axis = [0]
+            in_size = self.insize[0] 
+        else:
             self.axis = [0]
+            in_size = insize
 
-        self.register_buffer("running_mean", torch.zeros(self.insize[0]))
-        self.register_buffer("running_var", torch.ones(self.insize[0]))
+        self.register_buffer("running_mean", torch.zeros(in_size, dtype = torch.float64))
+        self.register_buffer("running_var", torch.ones(in_size, dtype = torch.float64))
+        self.register_buffer("count", torch.ones((), dtype = torch.float64))
+
+    def update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count):
+        delta = batch_mean - mean
+        tot_count = count + batch_count
+
+        new_mean = mean + delta * batch_count / tot_count
+        m_a = var * count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + delta**2 * count * batch_count / tot_count
+        new_var = M2 / tot_count
+        new_count = tot_count
+        return new_mean, new_var, new_count
 
     def forward(self, input):
         if self.training:
             mean = input.mean(self.axis) # along channel axis
             var = input.var(self.axis)
-            self.running_mean = (self.momentum * self.running_mean) + (1.0-self.momentum) * mean
-            self.running_var = (self.momentum * self.running_var) + (1.0-self.momentum) * var
-
-        else:
-            mean = self.running_mean
-            var = self.running_var
+            self.running_mean, self.running_var, self.count = self.update_mean_var_count_from_moments(self.running_mean, self.running_var, self.count, 
+                                                    mean, var, input.size()[0] )
 
         # change shape
-        if len(self.insize) == 3:
-            current_mean = mean.view([1, self.insize[0], 1, 1]).expand_as(input)
-            current_var = var.view([1, self.insize[0], 1, 1]).expand_as(input)
-        if len(self.insize) == 2:
-            current_mean = mean.view([1, self.insize[0], 1]).expand_as(input)
-            current_var = var.view([1, self.insize[0], 1]).expand_as(input)
-        if len(self.insize) == 1:
-            current_mean = mean.view([1, self.insize[0]]).expand_as(input)
-            current_var = var.view([1, self.insize[0]]).expand_as(input)            
+        if self.per_channel:
+            if len(self.insize) == 3:
+                current_mean = self.running_mean.view([1, self.insize[0], 1, 1]).expand_as(input)
+                current_var = self.running_var.view([1, self.insize[0], 1, 1]).expand_as(input)
+            if len(self.insize) == 2:
+                current_mean = self.running_mean.view([1, self.insize[0], 1]).expand_as(input)
+                current_var = self.running_var.view([1, self.insize[0], 1]).expand_as(input)
+            if len(self.insize) == 1:
+                current_mean = self.running_mean.view([1, self.insize[0]]).expand_as(input)
+                current_var = self.running_var.view([1, self.insize[0]]).expand_as(input)        
+        else:
+            current_mean = self.running_mean
+            current_var = self.running_var
         # get output
+
         if self.norm_only:
-            current_mean = 0
-        y =  (input - current_mean) / torch.sqrt(current_var + self.epsilon)
+            y = input/ torch.sqrt(current_var.float() + self.epsilon)
+        else:
+            y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
+
         return y
