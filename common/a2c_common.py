@@ -180,9 +180,10 @@ class DiscreteA2CBase(A2CBase):
             self.current_lengths += 1
             for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
+                    game_res = info.get('battle_won', 0.5)
                     self.game_rewards.append(reward)
                     self.game_lengths.append(length)
-                    game_res = info.get('battle_won', 0.5)
+
                     self.game_scores.append(game_res)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)

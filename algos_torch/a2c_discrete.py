@@ -118,7 +118,6 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         return value.detach().cpu().numpy()
 
     def get_intrinsic_reward(self, obs):
-        obs = self._preproc_obs(obs)
         return self.rnd_curiosity.get_loss(obs)
 
     def train_intrinsic_reward(self, dict):

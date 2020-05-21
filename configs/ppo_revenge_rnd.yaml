@@ -60,7 +60,7 @@ params:
     truncate_grads: True
     env_name: atari_gym
     ppo: true
-    e_clip: 0.2
+    e_clip: 0.1
     clip_value: True
     num_actors: 16
     steps_num: 512
@@ -76,7 +76,7 @@ params:
     # bounds_loss_coef: 0.5
     # max_epochs: 5000
     env_config:
-      name: MontezumaRevengeNoFrameskip-v4
+      name: PongNoFrameskip-v4
     
     rnd_config:
         scale_value: 1.0

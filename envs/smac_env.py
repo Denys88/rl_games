@@ -6,7 +6,8 @@ class SMACEnv(gym.Env):
     def __init__(self, name="3m", replay_save_freq=4000, **kwargs):
         gym.Env.__init__(self)
         self.seed = kwargs.pop('seed', None)
-        self.env = StarCraft2Env(map_name=name, seed=self.seed)
+        self.reward_sparse = kwargs.pop('reward_sparse', False)
+        self.env = StarCraft2Env(map_name=name, seed=self.seed, reward_sparse=self.reward_sparse)
         self.env_info = self.env.get_env_info()
         self.replay_save_freq = replay_save_freq
         self._game_num = 0
@@ -51,6 +52,7 @@ class SMACEnv(gym.Env):
             actions, fixed_rewards = self._preproc_actions(actions)
 
         reward, done, info = self.env.step(actions)
+        game_res = info.get('battle_won', 0.5)
 
         obs = self.env.get_obs()
         state = self.env.get_state()

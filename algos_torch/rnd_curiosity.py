@@ -31,12 +31,14 @@ class RNDCurisityTrain:
         self.frame = 0
 
     def get_loss(self, obs):
+        obs = self._preproc_obs(obs)
         self.model.eval()
         self.output_normalization.train()
         with torch.no_grad():
             loss = self.model(obs)
-            loss = self.output_normalization(loss)
             loss = loss.squeeze()
+            loss = self.output_normalization(loss)
+            
             return loss.cpu().numpy() * self.config['scale_value']
 
     def train(self, obs):

@@ -67,4 +67,4 @@ class RunningMeanStd(nn.Module):
         else:
             y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
 
-        return y
+        return torch.clamp(y, min=-5.0, max=5.0)

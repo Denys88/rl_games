@@ -405,7 +405,7 @@ class MontezumaInfoWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
-def make_atari(env_id, timelimit=True, noop_max=30, skip=4, directory=None):
+def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     env = gym.make(env_id)
     if 'Montezuma' in env_id:
         env._max_episode_steps = 16000
@@ -455,7 +455,7 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=30, skip=4):
+def make_atari_deepmind(env_id, noop_max=0, skip=4):
     env = make_atari(env_id, noop_max=noop_max, skip=skip)
     return wrap_deepmind(env, clip_rewards=False)
 
