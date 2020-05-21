@@ -62,9 +62,9 @@ params:
     ppo: true
     e_clip: 0.1
     clip_value: True
-    num_actors: 16
+    num_actors: 32
     steps_num: 512
-    minibatch_size: 1024
+    minibatch_size: 4096
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
@@ -76,7 +76,7 @@ params:
     # bounds_loss_coef: 0.5
     # max_epochs: 5000
     env_config:
-      name: PongNoFrameskip-v4
+      name: MontezumaRevengeNoFrameskip-v4
     
     rnd_config:
         scale_value: 1.0

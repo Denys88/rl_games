@@ -52,7 +52,10 @@ class SMACEnv(gym.Env):
             actions, fixed_rewards = self._preproc_actions(actions)
 
         reward, done, info = self.env.step(actions)
-        game_res = info.get('battle_won', 0.5)
+        if done:
+            battle_won = info.get('battle_won', False)
+            if not battle_won and self.reward_sparse:
+                reward = -1.0
 
         obs = self.env.get_obs()
         state = self.env.get_state()
