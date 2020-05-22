@@ -8,6 +8,7 @@ params:
   network:
     name: actor_critic
     separate: True
+    value_shape: 2
     space:
       continuous:
         mu_activation: None
@@ -40,7 +41,7 @@ params:
       tau: 0.9
 
       learning_rate: 1e-4
-      name: test
+      name: car_continuous_rnd
       score_to_win: 300
 
       grad_norm: 0.5
@@ -58,6 +59,28 @@ params:
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
-      normalize_input: False
+      normalize_input: True
       seq_len: 8
       bounds_loss_coef: 0
+      
+      rnd_config:
+        scale_value: 256.0
+        episodic: True
+        episode_length: 32
+        gamma: 0.99
+        mini_epochs: 2
+        minibatch_size: 1024
+        lr: 5e-4
+        network:
+          name: rnd_curiosity
+          mlp:
+            rnd:
+              units: [64,64,16]
+            net:
+              units: [32,16]
+            activation: elu
+            initializer:
+                name: variance_scaling_initializer
+                scale: 2
+            regularizer:
+              name:  'None'

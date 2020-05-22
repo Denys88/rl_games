@@ -58,11 +58,11 @@ params:
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
-      normalize_input: False
+      normalize_input: True
       seq_len: 8
-      bounds_loss_coef: 0.0
+      bounds_loss_coef: 0.001
 
       env_config:
-        name: Humanoid2Run-v0
+        name: HumanoidRun-v0
         flat_observation: True
       

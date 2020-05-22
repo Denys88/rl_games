@@ -65,14 +65,22 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
                 'optimizer': self.optimizer.state_dict()}
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
+        if self.has_curiosity:
+            state['rnd_nets'] = self.rnd_curiosity.state_dict()
         algos_torch.torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
-        algos_torch.torch_ext.load_checkpoint(fn, self.model, self.optimizer)
+        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
         self.epoch_num = checkpoint['epoch']
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.has_curiosity:
+            self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
+            for state in self.rnd_curiosity.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cuda()
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         for state in self.optimizer.state.values():
             for k, v in state.items():

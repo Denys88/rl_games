@@ -16,8 +16,9 @@ class RNDCuriosityNetwork(nn.Module):
 
 
 
-class RNDCurisityTrain:
+class RNDCurisityTrain(nn.Module):
     def __init__(self, state_shape, model, config, writter, _preproc_obs):
+        nn.Module.__init__(self)
         rnd_config = {
             'input_shape' : state_shape,
         } 
@@ -29,6 +30,7 @@ class RNDCurisityTrain:
         self._preproc_obs = _preproc_obs
         self.output_normalization = RunningMeanStd((1,), norm_only=True).cuda()
         self.frame = 0
+        self.exp_percent = config.get('exp_percent', 1.0)
 
     def get_loss(self, obs):
         obs = self._preproc_obs(obs)
@@ -54,7 +56,7 @@ class RNDCurisityTrain:
             for i in range(num_minibatches):
                 obs_batch = obs[i * mini_batch: (i + 1) * mini_batch]
                 obs_batch = self._preproc_obs(obs_batch)
-                obs_batch = torch_ext.random_sample(obs_batch, 0.25)
+                obs_batch = torch_ext.random_sample(obs_batch, self.exp_percent)
                 loss = self.model(obs_batch).mean()
                 self.optimizer.zero_grad()
                 loss.backward()

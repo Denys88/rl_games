@@ -68,6 +68,6 @@ params:
     clip_value : True
     lr_schedule : adaptive
     lr_threshold : 0.01
-    normalize_input : False
+    normalize_input : True
     seq_len : 16
     bounds_loss_coef: 0.0
