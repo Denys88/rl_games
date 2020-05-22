@@ -83,17 +83,37 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
 
-        self.curiosity_config = self.config.get('cursiosity', None)
+        self.curiosity_config = self.config.get('rnd_config', None)
         self.has_curiosity = self.curiosity_config is not None
         if self.has_curiosity:
             self.curiosity_gamma = self.curiosity_config['gamma']
-            self.is_episodic = self.curiosity_config['episodic']
-            self.ep_len = self.curiosity_config.get('episode_length', 0)
             self.curiosity_lr = self.curiosity_config['lr']
-            self.cur_steps_left = self.ep_len - 1
+            self.curiosity_rewards = deque([], maxlen=self.games_to_log)
+            self.curiosity_mins = deque([], maxlen=self.games_to_log)
+            self.curiosity_maxs = deque([], maxlen=self.games_to_log)
+            self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
+
+    def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
+        mb_intrinsic_advs = np.zeros_like(mb_intrinsic_rewards)
+        lastgaelam = 0
+        self.curiosity_rewards.append(np.sum(np.mean(mb_intrinsic_rewards, axis=1)))
+        self.curiosity_mins.append(np.min(mb_intrinsic_rewards, axis=1))
+        self.curiosity_maxs.append(np.max(mb_intrinsic_rewards, axis=1))
+        for t in reversed(range(self.steps_num)):
+            if t == self.steps_num - 1:
+                nextvalues = last_intrinsic_values
+            else:
+                nextvalues = mb_intrinsic_values[t+1]
+            
+            delta = mb_intrinsic_rewards[t] + self.curiosity_gamma * nextvalues - mb_intrinsic_values[t]
+            mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * lastgaelam
+
+        mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
+        mb_returns = np.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
+        return mb_returns
 
     def update_epoch(self):
         pass
@@ -130,7 +150,7 @@ class A2CBase:
     def train_actor_critic(self, dict):
         pass 
 
-    def get_intrinsic_reward(self, dict):
+    def get_intrinsic_reward(self, obs):
         pass
 
     def train_intrinsic_reward(self, dict):
@@ -161,7 +181,6 @@ class DiscreteA2CBase(A2CBase):
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
 
-
             actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
@@ -173,17 +192,16 @@ class DiscreteA2CBase(A2CBase):
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward({"obs" : self.obs})
+                intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards.append(intrinsic_reward)
-
             self.current_rewards += rewards
 
             self.current_lengths += 1
             for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
+                    game_res = info.get('battle_won', 0.5)
                     self.game_rewards.append(reward)
                     self.game_lengths.append(length)
-                    game_res = info.get('battle_won', 0.5)
                     self.game_scores.append(game_res)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
@@ -204,7 +222,15 @@ class DiscreteA2CBase(A2CBase):
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
-        mb_returns = np.zeros_like(mb_rewards)
+        if self.has_curiosity:
+            mb_intrinsic_values = mb_values[:,:,1]
+            mb_extrinsic_values = mb_values[:,:,0]
+            last_intrinsic_values = last_values[:, 1]
+            last_extrinsic_values = last_values[:, 0]
+        else:
+            mb_extrinsic_values = mb_values
+            last_extrinsic_values = last_values
+
         mb_advs = np.zeros_like(mb_rewards)
 
         lastgaelam = 0
@@ -212,36 +238,20 @@ class DiscreteA2CBase(A2CBase):
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - self.dones
-                nextvalues = last_values
+                nextvalues = last_extrinsic_values
             else:
                 nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
+                nextvalues = mb_extrinsic_values[t+1]
             
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_values[t]
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
+
+        mb_returns = mb_advs + mb_extrinsic_values
 
         if self.has_curiosity:
             mb_intrinsic_rewards = np.asarray(mb_intrinsic_rewards, dtype=np.float32)
-            mb_intrinsic_returns = np.zeros_like(mb_rewards)
-            mb_intrinsic_advs = np.zeros_like(mb_rewards)
-            lastgaelam = 0
-            for t in reversed(range(self.steps_num)):
-                nextnonterminal = 1.0
-                self.cur_steps_left = self.cur_steps_left - 1
-                if self.cur_steps_left == 0:
-                    self.cur_steps_left = self.ep_len
-                    nextnonterminal = 0.0
-                if t == self.steps_num - 1:
-                    nextvalues = last_values
-                else:
-                    nextvalues = mb_values[t+1]
-                
-                delta = mb_curiosity_rewards[t] + self.curiosity_gamma * nextvalues * nextnonterminal  - mb_curiosity_values[t]
-                mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * nextnonterminal * lastgaelam
+            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
 
-                mb_curiosity_returns = mb_curiosity_advs + mb_curiosity_values
-
-        mb_returns = mb_advs + mb_values
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
@@ -271,6 +281,11 @@ class DiscreteA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
+        if self.has_curiosity:
+            self.train_intrinsic_reward(batch_dict)
+            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
+            advantages = np.sum(advantages, axis=1)
+                      
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             
@@ -385,6 +400,14 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
 
+                    if self.has_curiosity:
+                        if len(self.curiosity_rewards) > 0:
+                            mean_cur_rewards = np.mean(self.curiosity_rewards)
+                            mean_min_rewards = np.mean(self.curiosity_mins)
+                            mean_max_rewards = np.mean(self.curiosity_maxs)
+                            self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
+                            self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
+                            self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1
@@ -417,12 +440,15 @@ class ContinuousA2CBase(A2CBase):
             self.mb_obs = np.zeros((self.steps_num, batch_size) + self.state_shape, dtype = observation_space.dtype)
             self.mb_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
             self.mb_actions = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
-            self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
             self.mb_dones = np.zeros((self.steps_num, batch_size), dtype  = np.bool)
             self.mb_neglogpacs = np.zeros((self.steps_num, batch_size), dtype = np.float32)
             self.mb_mus = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
             self.mb_sigmas = np.zeros((self.steps_num, batch_size, self.actions_num), dtype = np.float32)
+            self.mb_values = np.zeros((self.steps_num, batch_size), dtype = np.float32)
 
+            if self.has_curiosity:
+                self.mb_values = np.zeros((self.steps_num, batch_size, 2), dtype = np.float32)
+                self.mb_intrinsic_rewards = np.zeros((self.steps_num, batch_size), dtype = np.float32)
     def play_steps(self):
         # Here, we init the lists that will contain the mb of experiences
         #mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_mus, mb_sigmas = [],[],[],[],[],[],[],[]
@@ -437,6 +463,8 @@ class ContinuousA2CBase(A2CBase):
         mb_mus = self.mb_mus
         mb_sigmas = self.mb_sigmas
         mb_dones = self.mb_dones
+        if self.has_curiosity:
+            mb_intrinsic_rewards = self.mb_intrinsic_rewards
         #'''
         #mb_states = self.mb_states
         # For n in range number of steps
@@ -453,6 +481,9 @@ class ContinuousA2CBase(A2CBase):
 
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(rescale_actions(self.actions_low, self.actions_high, np.clip(actions, -1.0, 1.0)))
+            if self.has_curiosity:
+                intrinsic_reward = self.get_intrinsic_reward(self.obs)
+                mb_intrinsic_rewards[n,:] = intrinsic_reward
             self.current_rewards += rewards
             self.current_lengths += 1
             for reward, length, done in zip(self.current_rewards, self.current_lengths, self.dones):
@@ -477,39 +508,74 @@ class ContinuousA2CBase(A2CBase):
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
-        mb_returns = np.zeros_like(mb_rewards)
+
+        if self.has_curiosity:
+            mb_intrinsic_values = mb_values[:,:,1]
+            mb_extrinsic_values = mb_values[:,:,0]
+            last_intrinsic_values = last_values[:, 1]
+            last_extrinsic_values = last_values[:, 0]
+        else:
+            mb_extrinsic_values = mb_values
+            last_extrinsic_values = last_values
+
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
         
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - self.dones
-                nextvalues = last_values
+                nextvalues = last_extrinsic_values
             else:
                 nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
+                nextvalues = mb_extrinsic_values[t+1]
             
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_values[t]
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
 
-        mb_returns = mb_advs + mb_values
+        mb_returns = mb_advs + mb_extrinsic_values
 
+        if self.has_curiosity:
+            mb_intrinsic_rewards = np.asarray(mb_intrinsic_rewards, dtype=np.float32)
+            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
+
+        batch_dict = {
+            'obs' : mb_obs,
+            'returns' : mb_returns,
+            'dones' : mb_dones,
+            'actions' : mb_actions,
+            'values' : mb_values,
+            'neglogpacs' : mb_neglogpacs,
+            'mus' : mb_mus,
+            'sigmas' : mb_sigmas,
+        }
+        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas, mb_states )), epinfos)
-        else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_mus, mb_sigmas)), None, epinfos)
+            batch_dict['states'] = mb_states
 
-        return result
+        return batch_dict
 
     def train_epoch(self):
         play_time_start = time.time()
-        obses, returns, dones, actions, values, neglogpacs, mus, sigmas, lstm_states, _ = self.play_steps()
+        batch_dict = self.play_steps()
+        obses = batch_dict['obs']
+        returns = batch_dict['returns']
+        dones = batch_dict['dones']
+        actions = batch_dict['actions']
+        values = batch_dict['values']
+        neglogpacs = batch_dict['neglogpacs']
+        mus = batch_dict['mus']
+        sigmas = batch_dict['sigmas']
+        lstm_states = batch_dict.get('states', None)
+
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            
+        if self.has_curiosity:
+            self.train_intrinsic_reward(batch_dict)
+            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
+            advantages = np.sum(advantages, axis=1)            
         a_losses = []
         c_losses = []
         b_losses = []
@@ -637,6 +703,13 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     #self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    if len(self.curiosity_rewards) > 0:
+                        mean_cur_rewards = np.mean(self.curiosity_rewards)
+                        mean_min_rewards = np.mean(self.curiosity_mins)
+                        mean_max_rewards = np.mean(self.curiosity_maxs)
+                        self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
+                        self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
+                        self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1

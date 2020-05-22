@@ -20,7 +20,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -39,9 +39,9 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
-      name: humanoid
-      score_to_win: 5000
+      learning_rate: 3e-4
+      name: dm_humanoid
+      score_to_win: 10000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -52,17 +52,17 @@ params:
       clip_value: True
       num_actors: 16
       steps_num: 1024
-      minibatch_size: 8192
-      mini_epochs: 14
+      minibatch_size: 4096
+      mini_epochs: 15
       critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
-      normalize_input: False
+      normalize_input: True
       seq_len: 8
       bounds_loss_coef: 0.001
 
       env_config:
-        name: Humanoid_igRun-v0
+        name: HumanoidRun-v0
         flat_observation: True
       

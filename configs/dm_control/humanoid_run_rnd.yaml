@@ -21,7 +21,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -37,12 +37,12 @@ params:
       reward_shaper:
         scale_value: 1
       normalize_advantage: True
-      gamma: 0.999
+      gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
-      name: dm_control
-      score_to_win: 1000
+      learning_rate: 3e-4
+      name: dm_humanoid
+      score_to_win: 10000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -52,10 +52,10 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 128
-      minibatch_size: 1024
-      mini_epochs: 4
-      critic_coef: 2
+      steps_num: 1024
+      minibatch_size: 4096
+      mini_epochs: 15
+      critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
 
@@ -64,28 +64,27 @@ params:
       bounds_loss_coef: 0.001
 
       env_config:
-        name: AcrobotSwingup_sparse-v0
+        name: HumanoidRun-v0
         flat_observation: True
-      
 
       rnd_config:
-        scale_value: 4.0
-        exp_percent: 0.25
-        adv_coef: 0.5
+        scale_value: 1.0
         gamma: 0.99
         mini_epochs: 2
-        minibatch_size: 1024
+        minibatch_size: 4096
         lr: 5e-4
+        exp_percent: 0.25
+        adv_coef: 0.5
         network:
           name: rnd_curiosity
           mlp:
             rnd:
-              units: [64,64,16]
+              units: [256,128,32]
             net:
-              units: [16,16]
+              units: [128,32]
             activation: elu
             initializer:
                 name: variance_scaling_initializer
                 scale: 2
             regularizer:
-              name:  'None'
+              name:  'None' 

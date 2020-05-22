@@ -6,22 +6,21 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/6h_vs_8z_cnnsmac_cnn'
+  load_path: 'nn/5m_vs_6m_biassmac_cnn.pth'
 
   network:
     name: actor_critic
     separate: True
     #normalization: layer_norm
     space: 
-      discrete: 
-
+      discrete:
+      
     cnn:
       type: conv1d
-
       activation: relu
       initializer:
-        name: glorot_uniform_initializer
-        gain: 1 
+        name: variance_scaling_initializer
+        scale: 2
       regularizer:
         name: 'None'
       convs:    
@@ -41,12 +40,12 @@ params:
       units: [256, 128]
       activation: relu
       initializer:
-        name: glorot_uniform_initializer
-        gain: 1 
+        name: variance_scaling_initializer
+        scale: 2 
       regularizer:
         name:  'None'
   config:
-    name: 3m
+    name: 5m_vs_6m_bias
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -55,27 +54,25 @@ params:
     learning_rate: 5e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac_cnn
-    ppo: True
+    ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 1536
+    minibatch_size: 2560
     mini_epochs: 1
-    critic_coef: 1
+    critic_coef: 2
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: False
     seq_len: 2
     use_action_masks: True
-    ignore_dead_batches : False
-
+    max_epochs : 10
     env_config:
-      name: 3m
+      name: 5m_vs_6m
       frames: 4
       transpose: True
-      random_invalid_step: True
-  
+      random_invalid_step: False

@@ -62,6 +62,13 @@ def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
         return sample_truncated_normal(tensor.size(), sigma=sigma)
 
 
+def random_sample(obs_batch, prob):
+    num_batches = obs_batch.size()[0]
+    permutation = torch.randperm(num_batches).cuda()
+    start = 0
+    end = int(prob * num_batches)
+    indices = permutation[start:end]
+    return torch.index_select(obs_batch, 0, indices)
 
 
 
@@ -96,6 +103,7 @@ class RangerQH(Optimizer):
         >>> optimizer.step()
     .. _`(Ma and Yarats, 2019)`: https://arxiv.org/abs/1810.06801
     """
+
 
     def __init__(
         self,

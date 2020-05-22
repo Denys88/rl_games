@@ -3,12 +3,13 @@ import torch.nn as nn
 import numpy as np
 
 class RunningMeanStd(nn.Module):
-    def __init__(self, insize, momentum=0.99, epsilon=1e-05, per_channel=False):
-
+    def __init__(self, insize, momentum=0.99, epsilon=1e-05, per_channel=False, norm_only=False):
         super(RunningMeanStd, self).__init__()
         self.momentum = momentum
         self.insize = insize
         self.epsilon = epsilon
+
+        self.norm_only = norm_only
         self.per_channel = per_channel
         if per_channel:
             if len(self.insize) == 3:
@@ -60,5 +61,10 @@ class RunningMeanStd(nn.Module):
             current_mean = self.running_mean
             current_var = self.running_var
         # get output
-        y =  (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
-        return y
+
+        if self.norm_only:
+            y = input/ torch.sqrt(current_var.float() + self.epsilon)
+        else:
+            y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
+
+        return torch.clamp(y, min=-5.0, max=5.0)

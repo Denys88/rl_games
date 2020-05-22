@@ -101,6 +101,12 @@ def create_default_gym_env(**kwargs):
     env = gym.make(name)
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
+    return env 
+
+def create_atari_gym_env(**kwargs):
+    #frames = kwargs.pop('frames', 1)
+    name = kwargs.pop('name')
+    env = wrappers.make_atari_deepmind(name, skip=4)
     return env    
 
 def create_dm_control_env(**kwargs):
@@ -189,6 +195,7 @@ def create_flex(path):
 def create_smac(name, **kwargs):
     from envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
+    print(kwargs)
     return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
 def create_smac_cnn(name, **kwargs):
@@ -315,6 +322,10 @@ configurations = {
     },
     'openai_gym' : {
         'env_creator' : lambda **kwargs : create_default_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'atari_gym' : {
+        'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
 }
