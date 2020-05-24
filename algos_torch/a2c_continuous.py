@@ -83,7 +83,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, mu, sigma = self.model(input_dict)
-        return action.detach(), \
+        return action.detach().cpu(), \
                 value.detach(), \
                 neglogp.detach(), \
                 mu.detach(), \
@@ -100,7 +100,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, mu, sigma = self.model(input_dict)
-        return value.detach()
+        return value.cpu().detach()
 
     def get_weights(self):
         return torch.nn.utils.parameters_to_vector(self.model.parameters())
