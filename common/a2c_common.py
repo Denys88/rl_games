@@ -703,13 +703,14 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     #self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
-                    if len(self.curiosity_rewards) > 0:
-                        mean_cur_rewards = np.mean(self.curiosity_rewards)
-                        mean_min_rewards = np.mean(self.curiosity_mins)
-                        mean_max_rewards = np.mean(self.curiosity_maxs)
-                        self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
-                        self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
-                        self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
+                    if self.has_curiosity:
+                        if len(self.curiosity_rewards) > 0:
+                            mean_cur_rewards = np.mean(self.curiosity_rewards)
+                            mean_min_rewards = np.mean(self.curiosity_mins)
+                            mean_max_rewards = np.mean(self.curiosity_maxs)
+                            self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
+                            self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
+                            self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1
