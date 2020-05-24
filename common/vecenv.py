@@ -65,24 +65,15 @@ class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         self.config_name = config_name
         self.num_actors = num_actors
+        self.use_torch = False
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
-        self.render_one = False
+
     def step(self, actions):
         newobs, newrewards, newdones, newinfos = [], [], [], []
         res_obs = []
-        if self.render_one:
-            self.workers[0].render.remote()
         for (action, worker) in zip(actions, self.workers):
             res_obs.append(worker.step.remote(action))
-        '''
-        for res in res_obs:
-            cobs, crewards, cdones, cinfos = ray.get(res)
-            newobs.append(cobs)
-            newrewards.append(crewards)
-            newdones.append(cdones)
-            newinfos.append(cinfos)
-        '''
         all_res = ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res
