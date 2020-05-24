@@ -138,10 +138,16 @@ class RayVecSMACEnv(IVecEnv):
         return np.concatenate(newobs, axis=0)
 
 
+vecenv_config = {}
+
+def register(config_name, func):
+    vecenv_config[config_name] = func
+
+register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
+register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+
+
 def create_vec_env(config_name, num_actors, **kwargs):
-    if configurations[config_name]['vecenv_type'] == 'RAY':
-        return RayVecEnv(config_name, num_actors, **kwargs)
-    if configurations[config_name]['vecenv_type'] == 'RAY_SMAC':
-        return RayVecSMACEnv(config_name, num_actors, **kwargs)
-    if configurations[config_name]['vecenv_type'] == 'ISAAC':
-        return IsaacEnv(config_name, num_actors, **kwargs)
+    vec_env_name = configurations[config_name]['vecenv_type']
+    return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)

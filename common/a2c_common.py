@@ -510,7 +510,7 @@ class ContinuousA2CBase(A2CBase):
 
             self.current_rewards += rewards
             self.current_lengths += 1
-            for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
+            for reward, length, done in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents]):
                 if done:
                     self.game_rewards.append(reward.cpu().numpy())
                     self.game_lengths.append(length.cpu().numpy())
