@@ -38,6 +38,7 @@ class RayWorker:
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
+        next_state = next_state.astype(np.float32)
         if np.isscalar(is_done):
             episode_done = is_done
         else:
@@ -81,8 +82,7 @@ class RayVecEnv(IVecEnv):
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
-
-        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
+        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards, dtype=np.float32), np.asarray(newdones, dtype=np.uint8), newinfos
 
     def has_action_masks(self):
         return True

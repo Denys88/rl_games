@@ -1,4 +1,6 @@
 import numpy as np
+import torch
+
 class LinearValueProcessor:
     def __init__(self, start_eps, end_eps, end_eps_frames):
         self.start_eps = start_eps
@@ -22,25 +24,8 @@ class DefaultRewardsShaper:
         reward = reward + self.shift_value
         reward = reward * self.scale_value
 
-        reward = np.clip(reward, self.min_val, self.max_val)
+        reward = torch.clamp(reward, self.min_val, self.max_val)
         return reward
-
-def discount_with_dones(rewards, dones, gamma):
-    discounted = []
-    r = 0
-    for reward, done in zip(rewards[::-1], dones[::-1]):
-        r = reward + gamma*r*(1.-done)
-        discounted.append(r)
-    return discounted[::-1]
-
-def compute_gae(rewards, dones, values, gamma, tau):
-    gae = 0
-    returns = []
-    for step in reversed(range(len(rewards))):
-        delta = rewards[step] + gamma * values[step + 1] * (1 - dones[step]) - values[step]
-        gae = delta + gamma * tau * (1 -dones[step]) * gae
-        returns.append(gae + values[step])
-    return returns[::-1]
 
 
 def flatten_first_two_dims(arr):

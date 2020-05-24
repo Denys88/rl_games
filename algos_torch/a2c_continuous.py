@@ -32,18 +32,6 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.epoch_num += 1
         return self.epoch_num
 
-    def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == torch.uint8:
-            #obs_batch = torch.cuda.ByteTensor(obs_batch)
-            obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
-        return obs_batch
-
     def save(self, fn):
         state = {'epoch': self.epoch_num, 'model': self.model.state_dict(),
                 'optimizer': self.optimizer.state_dict()}
@@ -135,7 +123,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         advantage = input_dict['advantages']
         old_mu_batch = input_dict['mu']
         old_sigma_batch = input_dict['sigma']
-        return_batch = input_dict['returns'])
+        return_batch = input_dict['returns']
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
