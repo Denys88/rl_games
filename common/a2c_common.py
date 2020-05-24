@@ -580,15 +580,17 @@ class ContinuousA2CBase(A2CBase):
 
     def train_epoch(self):
         play_time_start = time.time()
-        batch_dict = self.play_steps()
-        obses = batch_dict['obs'].cuda()
+        with torch.no_grad():
+            batch_dict = self.play_steps()
+            
+        obses = batch_dict['obs']
         returns = batch_dict['returns'].cuda()
         dones = batch_dict['dones'].cuda()
         actions = batch_dict['actions'].cuda()
         values = batch_dict['values'].cuda()
-        neglogpacs = batch_dict['neglogpacs'].cuda()
-        mus = batch_dict['mus'].cuda()
-        sigmas = batch_dict['sigmas'].cuda()
+        neglogpacs = batch_dict['neglogpacs']
+        mus = batch_dict['mus']
+        sigmas = batch_dict['sigmas']
         lstm_states = batch_dict.get('states', None)
 
         play_time_end = time.time()
@@ -698,7 +700,7 @@ class ContinuousA2CBase(A2CBase):
     def env_step(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
-        obs, rewards, dones, infos = self.vec_env.step(rescaled_actions.cpu().numpy())
+        obs, rewards, dones, infos = self.vec_env.step(rescaled_actions.numpy())
         return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def train(self):
