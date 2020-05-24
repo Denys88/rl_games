@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
+  load_checkpoint: True
   load_path: 'nn/5m_vs_6m_biassmac_cnn.pth'
 
   network:
@@ -70,7 +70,6 @@ params:
     normalize_input: False
     seq_len: 2
     use_action_masks: True
-    max_epochs : 10
     env_config:
       name: 5m_vs_6m
       frames: 4
