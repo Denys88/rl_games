@@ -231,8 +231,8 @@ class DiscreteA2CBase(A2CBase):
                     self.game_lengths.append(length.cpu().numpy())
                     self.game_scores.append(game_res)
             np_dones = self.dones.cpu().numpy()
-            self.current_rewards = self.current_rewards * (~self.dones)
-            self.current_lengths = self.current_lengths * (~self.dones)
+            self.current_rewards = self.current_rewards * (1-self.dones)
+            self.current_lengths = self.current_lengths * (1-self.dones)
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
@@ -507,17 +507,18 @@ class ContinuousA2CBase(A2CBase):
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
-
+            
             self.current_rewards += rewards
             self.current_lengths += 1
+            
             for reward, length, done in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents]):
                 if done:
                     self.game_rewards.append(reward.cpu().numpy())
                     self.game_lengths.append(length.cpu().numpy())
-
+            
 
             shaped_rewards = self.rewards_shaper(rewards)
-            epinfos.append(infos)
+            #epinfos.append(infos)
 
             mb_actions[n,:] = actions
             mb_values[n,:] = values
@@ -545,13 +546,14 @@ class ContinuousA2CBase(A2CBase):
 
         mb_advs = torch.zeros_like(mb_rewards)
         lastgaelam = 0
-        
+        fdones = self.dones.float()
+        mb_fdones = mb_dones.float()
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
-                nextnonterminal = self.dones.float()
+                nextnonterminal = 1.0 - fdones
                 nextvalues = last_extrinsic_values
             else:
-                nextnonterminal = 1.0 - mb_dones[t+1].float()
+                nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
             
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
