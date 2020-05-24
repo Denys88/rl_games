@@ -221,9 +221,10 @@ class DiscreteA2CBase(A2CBase):
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards.append(intrinsic_reward)
-            self.current_rewards += rewards
 
+            self.current_rewards += rewards
             self.current_lengths += 1
+
             for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
                     game_res = info.get('battle_won', 0.5)
@@ -510,13 +511,10 @@ class ContinuousA2CBase(A2CBase):
             
             self.current_rewards += rewards
             self.current_lengths += 1
+            done_indices = self.dones.nonzero()[::self.num_agents]
+            self.game_rewards.extend(self.current_rewards[done_indices])
+            self.game_lengths.extend(self.current_lengths[done_indices])
             
-            for reward, length, done in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents]):
-                if done:
-                    self.game_rewards.append(reward.cpu().numpy())
-                    self.game_lengths.append(length.cpu().numpy())
-            
-
             shaped_rewards = self.rewards_shaper(rewards)
             #epinfos.append(infos)
 
