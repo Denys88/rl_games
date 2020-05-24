@@ -173,7 +173,6 @@ class A2CBase:
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
-            #obs_batch = torch.cuda.ByteTensor(obs_batch)
             obs_batch = obs_batch.float() / 255.0
         if len(obs_batch.size()) == 3:
             obs_batch = obs_batch.permute((0, 2, 1))
@@ -464,13 +463,13 @@ class ContinuousA2CBase(A2CBase):
         self.actions_low = torch.from_numpy(action_space.low).float().cuda()
         self.actions_high = torch.from_numpy(action_space.high).float().cuda()
         self.actions_num = action_space.shape[0]
-        batch_size = self.num_agents * self.num_actors
-
-
         self.init_tensors()
+
+    def init_tensors(self):
+        A2CBase.init_tensors(self)
+        batch_size = self.num_agents * self.num_actors
         self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
-
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32).cuda()
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
@@ -503,13 +502,13 @@ class ContinuousA2CBase(A2CBase):
             mb_obs[n,:] = self.obs
             mb_dones[n,:] = self.dones
 
-            self.obs[:], rewards, self.dones, infos = self.env_step(actions)
+            self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
 
-            self.current_rewards = self.current_rewards + rewards
+            self.current_rewards += rewards
             self.current_lengths += 1
             for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
                 if done:
@@ -694,7 +693,7 @@ class ContinuousA2CBase(A2CBase):
             obs = torch.ByteTensor(obs).cuda()
         else:
             obs = torch.FloatTensor(obs).cuda()
-        
+        print(obs.dtype)
         return obs
     
     def env_step(self, actions):

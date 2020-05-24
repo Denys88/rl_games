@@ -38,13 +38,15 @@ class RayWorker:
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
-        next_state = next_state.astype(np.float32)
+        
         if np.isscalar(is_done):
             episode_done = is_done
         else:
             episode_done = is_done.all()
         if episode_done:
             next_state = self.reset()
+        if next_state.dtype == np.float64:
+            next_state = next_state.astype(np.float32)
         return next_state, reward, is_done, info
 
     def render(self):
