@@ -647,19 +647,21 @@ class ContinuousA2CBase(A2CBase):
                         b_losses.append(b_loss)                            
 
         else:
-            for _ in range(0, self.mini_epochs_num):
-                permutation = np.random.permutation(self.batch_size)
-                obses = obses[permutation]
-                returns = returns[permutation]
+            permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
+            obses = obses[permutation]
+            returns = returns[permutation]
                 
-                actions = actions[permutation]
-                values = values[permutation]
-                neglogpacs = neglogpacs[permutation]
-                advantages = advantages[permutation]
-                mus = mus[permutation]
-                sigmas = sigmas[permutation]
+            actions = actions[permutation]
+            values = values[permutation]
+            neglogpacs = neglogpacs[permutation]
+            advantages = advantages[permutation]
+            mus = mus[permutation]
+            sigmas = sigmas[permutation]
+            for _ in range(0, self.mini_epochs_num):
+   
                 for i in range(0, self.num_minibatches):
-                    batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
+                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
+                    #batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
                     input_dict = {}
                     input_dict['old_values'] = values[batch]
                     input_dict['old_logp_actions'] = neglogpacs[batch]
