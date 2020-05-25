@@ -12,11 +12,13 @@ else
   cmd=docker
 fi
 
+#$(id -u) \
 NV_GPU="$GPU" ${cmd} run -i \
+    --gpus all \
     --name $name \
     --cap-add=SYS_PTRACE \
     --net host \
-    --user $(id -u) \
+    --user 0 \
     -v `pwd`:/pymarl \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -e DISPLAY=unix$DISPLAY \

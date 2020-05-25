@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
+FROM nvidia/cuda:9.2-cudnn7-devel-ubuntu18.04
 # FROM ubuntu:16.04
 MAINTAINER Christian Schroeder de Witt
 
@@ -15,7 +15,8 @@ RUN apt-get update -y && apt-get install software-properties-common -y && \
 
 # Install curl and other dependencies
 RUN apt-get update -y && apt-get install -y curl libssl-dev openssl libopenblas-dev \
-    libhdf5-dev hdf5-helpers hdf5-tools libhdf5-serial-dev libprotobuf-dev protobuf-compiler git
+    libhdf5-dev hdf5-helpers hdf5-tools libhdf5-serial-dev libprotobuf-dev protobuf-compiler git \
+    libsm6 libxext6 libxrender-dev
 #RUN curl -sk https://raw.githubusercontent.com/torch/distro/master/install-deps | bash && \
 #    rm -rf /var/lib/apt/lists/*
 
@@ -24,6 +25,7 @@ RUN apt-get update -y && apt-get install -y curl libssl-dev openssl libopenblas-
 RUN apt-get update
 RUN apt-get -y install python3
 RUN apt-get -y install python3-pip
+RUN pip3 install opencv-python
 RUN pip3 install --upgrade pip
 RUN pip3 install numpy scipy pyyaml matplotlib
 RUN pip3 install imageio pygame
