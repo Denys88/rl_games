@@ -8,6 +8,7 @@ from algos_torch.running_mean_std import RunningMeanStd
 import algos_torch.rnd_curiosity as rnd_curiosity
 
 class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
+
     def __init__(self, base_name, observation_space, action_space, config, logger):
         common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
         obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape) 
@@ -101,6 +102,18 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
             neglogp, value, action, logits = self.model(input_dict)
         return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), logits.detach().cpu().numpy(), None
 
+    # def get_masked_action_values_test(self, obs, action_masks):
+    #     obs = self._preproc_obs(obs)
+    #     action_masks = torch.Tensor(action_masks).cuda()
+    #     input_dict = {
+    #         'is_train': True,
+    #         'prev_actions': None,
+    #         'inputs' : obs,
+    #         'action_masks' : action_masks
+    #     }
+    #     with torch.no_grad():
+    #         neglogp, value, action, logits = self.model(input_dict)
+    #     return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), logits.detach().cpu().numpy(), None
 
     def get_action_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -113,6 +126,19 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
         return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None
+
+    # def get_action_values_test(self, obs):
+    #     obs = self._preproc_obs(obs)
+    #     self.model.eval()
+    #     input_dict = {
+    #         'is_train': True,
+    #         'prev_actions': None,
+    #         'inputs' : obs,
+    #     }
+    #     with torch.no_grad():
+    #         neglogp, value, action, logits = self.model(input_dict)
+    #     return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None
+
 
     def get_values(self, obs):
         obs = self._preproc_obs(obs)

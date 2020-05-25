@@ -43,7 +43,7 @@ mongo_client = None
 
 
 class Runner:
-    def __init__(self):
+    def __init__(self, logger):
         self.algo_factory = common.object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
@@ -56,6 +56,8 @@ class Runner:
 
         self.model_builder = model_builder.ModelBuilder()
         self.network_builder = network_builder.NetworkBuilder()
+
+        self.logger = logger
 
     def reset(self):
         pass
@@ -103,14 +105,14 @@ class Runner:
 
     def run_train(self):
         #print('Started to train')
-        logger.console_logger.info('Started to train')
+        self.logger.console_logger.info('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
         obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
 
         #print('obs_space:', obs_space)
         #print('action_space:', action_space)
-        logger.console_logger.info('obs_space: {}'.format(obs_space))
-        logger.console_logger.info('action_space: {}'.format(action_space))
+        self.logger.console_logger.info('obs_space: {}'.format(obs_space))
+        self.logger.console_logger.info('action_space: {}'.format(action_space))
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
@@ -118,7 +120,7 @@ class Runner:
             while exp is not None:
                 exp_num += 1
                 #print('Starting experiment number: ' + str(exp_num))
-                logger.console_logger.info('Starting experiment number: ' + str(exp_num))
+                self.logger.console_logger.info('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
                 agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
@@ -127,7 +129,7 @@ class Runner:
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
+            agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger)
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()
@@ -209,7 +211,7 @@ def my_main(_run, _config, _log):
     logger.setup_sacred(_run)
 
     # START THE TRAINING PROCESS
-    runner = Runner()
+    runner = Runner(logger)
     runner.load(_config)
     runner.reset()
     args = vars(arglist)

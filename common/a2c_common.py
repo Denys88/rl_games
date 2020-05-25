@@ -79,6 +79,7 @@ class A2CBase:
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
+        self.num_env_steps_train = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
@@ -95,6 +96,11 @@ class A2CBase:
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
+
+        # WHiRL test reward addition
+        self.test_n_epochs = self.config.get('test_n_epochs', 2000)
+        self.steps_num_test = self.config.get('steps_num_test', 10*65)
+
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = np.zeros_like(mb_intrinsic_rewards)
@@ -129,6 +135,12 @@ class A2CBase:
     def get_masked_action_values(self, obs, action_masks):
         pass
 
+    def get_action_values_test(self, obs):
+        pass
+
+    def get_masked_action_values_test(self, obs, action_masks):
+        pass
+
     def get_values(self, obs):
         pass
 
@@ -160,6 +172,7 @@ class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
         self.actions_num = action_space.n
+
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
@@ -191,6 +204,10 @@ class DiscreteA2CBase(A2CBase):
             mb_dones.append(self.dones.copy())
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
+
+            # Increase step count by self.num_actors (WHIRL)
+            self.num_env_steps_train += self.num_actors
+
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards.append(intrinsic_reward)
@@ -360,6 +377,40 @@ class DiscreteA2CBase(A2CBase):
 
         return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
+    # def test(self):
+    #
+    #     game_scores_test = []
+    #     rewards_test = []
+    #     self.vec_env.reset()
+    #     for _ in range(self.steps_num_test):
+    #         #if self.network.is_rnn():
+    #         #    mb_states.append(self.states)
+    #
+    #         if self.use_action_masks:
+    #             masks = self.vec_env.get_action_masks()
+    #
+    #         if self.use_action_masks:
+    #             actions, values, neglogpacs, logits, self.states = self.get_masked_action_values_test(self.obs, masks)
+    #         else:
+    #             actions, values, neglogpacs, self.states = self.get_action_values_test(self.obs)
+    #
+    #         actions = np.squeeze(actions)
+    #         _, rewards, dones, infos = self.vec_env.step(actions)
+    #
+    #         # Increase step count by self.num_actors (WHIRL)
+    #         # self.num_env_steps_test += self.num_actors
+    #
+    #
+    #
+    #         self.current_lengths += 1
+    #         for rewards, done, info in zip(rewards[::self.num_agents], dones[::self.num_agents], infos):
+    #             if done:
+    #                 game_res = info.get('battle_won', 0.5)
+    #                 game_scores_test.append(game_res)
+    #                 rewards_test.append(rewards)
+    #
+    #     self.vec_env.reset()
+    #     return np.mean(rewards_test), np.mean(game_scores_test)
 
     def train(self):
         last_mean_rewards = -100500
@@ -371,6 +422,12 @@ class DiscreteA2CBase(A2CBase):
         while True:
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
+
+            # if not(epoch_num-1 % self.test_n_epochs):
+            #     # WHIRL TEST ROUTINE
+            #     rew, wrate = self.test()
+            #     self.logger.log_stat("whirl/test_reward/mean", rew, self.num_env_steps_train)
+            #     self.logger.log_stat("whirl/test_win_rate/mean", wrate, self.num_env_steps_train)
 
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
@@ -388,7 +445,19 @@ class DiscreteA2CBase(A2CBase):
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
-                
+
+                self.logger.log_stat("whirl/performance/fps", self.batch_size / scaled_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/upd_time", update_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/play_time", play_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/a_loss", np.mean(a_losses), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/c_loss", np.mean(c_losses), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/entropy", np.mean(entropies), self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/last_lr", last_lr * lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/lr_mul", lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/e_clip", self.e_clip * lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/kl", np.mean(kls), self.num_env_steps_train)
+                self.logger.log_stat("whirl/epochs", epoch_num, self.num_env_steps_train)
+
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
@@ -399,6 +468,12 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.logger.log_stat("whirl/rewards/mean", mean_rewards, self.num_env_steps_train)
+                    self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
+                    self.logger.log_stat("whirl/episode_lengths/mean", mean_lengths, self.num_env_steps_train)
+                    self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
+                    self.logger.log_stat("whirl/win_rate/mean", mean_scores, self.num_env_steps_train)
+                    self.logger.log_stat("whirl/win_rate/time",mean_scores, total_time)
 
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
