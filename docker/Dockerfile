@@ -53,12 +53,12 @@ RUN pip3 install tensorflow-probability==0.7.0
 RUN pip3 install opencv-python==4.1.0.25
 RUN pip3 install gym-super-mario-bros==7.1.6
 RUN pip3 install pybullet==2.5.0
-
+RUN pip3 install torch==1.5.0+cu101 torchvision==0.6.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
 
 #### -------------------------------------------------------------------
 #### install pytorch
 #### -------------------------------------------------------------------
-RUN pip3 install torch==1.5.0
+# RUN pip3 install torch==1.5.0
 
 ## -- SMAC
 ENV smac_ver 1
