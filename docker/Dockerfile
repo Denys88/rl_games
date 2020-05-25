@@ -1,4 +1,4 @@
-FROM nvidia/cuda:8.0-cudnn7-devel-ubuntu16.04
+FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
 # FROM ubuntu:16.04
 MAINTAINER Christian Schroeder de Witt
 
@@ -15,9 +15,9 @@ RUN apt-get update -y && apt-get install software-properties-common -y && \
 
 # Install curl and other dependencies
 RUN apt-get update -y && apt-get install -y curl libssl-dev openssl libopenblas-dev \
-    libhdf5-dev hdf5-helpers hdf5-tools libhdf5-serial-dev libprotobuf-dev protobuf-compiler && \
-    curl -sk https://raw.githubusercontent.com/torch/distro/master/install-deps | bash && \
-    rm -rf /var/lib/apt/lists/*
+    libhdf5-dev hdf5-helpers hdf5-tools libhdf5-serial-dev libprotobuf-dev protobuf-compiler git
+#RUN curl -sk https://raw.githubusercontent.com/torch/distro/master/install-deps | bash && \
+#    rm -rf /var/lib/apt/lists/*
 
 
 #Install python3 pip3
@@ -51,7 +51,6 @@ RUN pip3 install tensorflow-probability==0.7.0
 RUN pip3 install opencv-python==4.1.0.25
 RUN pip3 install gym-super-mario-bros==7.1.6
 RUN pip3 install pybullet==2.5.0
-RUN pip3 install smac
 
 
 #### -------------------------------------------------------------------
@@ -61,7 +60,7 @@ RUN pip3 install torch==1.5.0
 
 ## -- SMAC
 ENV smac_ver 1
-#RUN pip3 install git+https://github.com/oxwhirl/smac.git
+RUN pip3 install git+https://github.com/oxwhirl/smac.git
 ENV SC2PATH /pymarl/3rdparty/StarCraftII
 
 WORKDIR /pymarl
