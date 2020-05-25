@@ -106,17 +106,16 @@ class A2CBase:
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.state_shape, dtype=torch_dtype).cuda()
         self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32)
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
-        mb_intrinsic_advs = np.zeros_like(mb_intrinsic_rewards)
+        mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
         lastgaelam = 0
-        self.curiosity_rewards.append(np.sum(np.mean(mb_intrinsic_rewards, axis=1)))
-        self.curiosity_mins.append(np.min(mb_intrinsic_rewards, axis=1))
-        self.curiosity_maxs.append(np.max(mb_intrinsic_rewards, axis=1))
+        self.curiosity_rewards.append(torch.sum(torch.mean(mb_intrinsic_rewards, axis=1)))
+        self.curiosity_mins.append(torch.min(mb_intrinsic_rewards, axis=1))
+        self.curiosity_maxs.append(torch.max(mb_intrinsic_rewards, axis=1))
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextvalues = last_intrinsic_values
@@ -127,7 +126,7 @@ class A2CBase:
             mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * lastgaelam
 
         mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
-        mb_returns = np.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
+        mb_returns = torch.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
         return mb_returns
 
     def update_epoch(self):
@@ -186,69 +185,91 @@ class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
         A2CBase.__init__(self, base_name, observation_space, action_space, config)
         self.actions_num = action_space.n
+        self.init_tensors()
+
+    def init_tensors(self):
+        A2CBase.init_tensors(self)
+        batch_size = self.num_agents * self.num_actors
+        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long)
+        if self.has_curiosity:
+            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
+            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+
+    def env_reset(self):
+        obs = self.vec_env.reset()
+        if self.observation_space.dtype == np.uint8:
+            obs = torch.ByteTensor(obs).cuda()
+        else:
+            obs = torch.FloatTensor(obs).cuda()
+        return obs
+    
+    def env_step(self, actions):
+        obs, rewards, dones, infos = self.vec_env.step(actions.numpy())
+        return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def play_steps(self):
-        # here, we init the lists that will contain the mb of experiences
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        if self.has_curiosity:
-            mb_intrinsic_rewards = []
         mb_states = []
         epinfos = []
+        #'''
+        mb_obs = self.mb_obs
+        mb_rewards = self.mb_rewards
+        mb_actions = self.mb_actions
+        mb_values = self.mb_values
+        mb_neglogpacs = self.mb_neglogpacs
+        mb_dones = self.mb_dones
 
-        # for n in range number of steps
-        for _ in range(self.steps_num):
+        if self.has_curiosity:
+            mb_intrinsic_rewards = self.mb_intrinsic_rewards
+        #'''
+        #mb_states = self.mb_states
+        # For n in range number of steps
+        for n in range(self.steps_num):
             if self.network.is_rnn():
                 mb_states.append(self.states)
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
-
-            if self.use_action_masks:
-                actions, values, neglogpacs, logits, self.states = self.get_masked_action_values(self.obs, masks)
+                actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
+            values = torch.squeeze(values)
+            neglogpacs = torch.squeeze(neglogpacs)
+     
+            mb_obs[n,:] = self.obs
+            mb_dones[n,:] = self.dones
 
-            actions = np.squeeze(actions)
-            values = np.squeeze(values)
-            neglogpacs = np.squeeze(neglogpacs)
-            mb_obs.append(self.obs.copy())
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones.copy())
+            self.obs, rewards, self.dones, infos = self.env_step(actions)
 
-            self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
-                mb_intrinsic_rewards.append(intrinsic_reward)
-
+                mb_intrinsic_rewards[n,:] = intrinsic_reward
+            
             self.current_rewards += rewards
             self.current_lengths += 1
 
-            for reward, length, done, info in zip(self.current_rewards[::self.num_agents], self.current_lengths[::self.num_agents], self.dones[::self.num_agents], infos):
-                if done:
-                    game_res = info.get('battle_won', 0.5)
-                    self.game_rewards.append(reward.cpu().numpy())
-                    self.game_lengths.append(length.cpu().numpy())
-                    self.game_scores.append(game_res)
-            np_dones = self.dones.cpu().numpy()
-            self.current_rewards = self.current_rewards * (1-self.dones)
-            self.current_lengths = self.current_lengths * (1-self.dones)
+            done_indices = self.dones.nonzero()[::self.num_agents]
+            self.game_rewards.extend(self.current_rewards[done_indices])
+            self.game_lengths.extend(self.current_lengths[done_indices])
+
+            for ind in done_indices:
+                game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
+                self.game_scores.append(game_res)
 
             shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
-            mb_rewards.append(shaped_rewards)
 
-        #using openai baseline approach
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions, dtype=np.long)
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        mb_states = np.asarray(mb_states, dtype=np.float32)
+            mb_actions[n,:] = actions
+            mb_values[n,:] = values
+            mb_neglogpacs[n,:] = neglogpacs
+            mb_rewards[n,:] = shaped_rewards
+            not_dones = 1.0 - self.dones.float()
+
+            self.current_rewards = self.current_rewards * not_dones
+            self.current_lengths = self.current_lengths * not_dones
+
         last_values = self.get_values(self.obs)
-        last_values = np.squeeze(last_values)
+        last_values = torch.squeeze(last_values)
+
 
         if self.has_curiosity:
             mb_intrinsic_values = mb_values[:,:,1]
@@ -259,16 +280,16 @@ class DiscreteA2CBase(A2CBase):
             mb_extrinsic_values = mb_values
             last_extrinsic_values = last_values
 
-        mb_advs = np.zeros_like(mb_rewards)
-
+        mb_advs = torch.zeros_like(mb_rewards)
         lastgaelam = 0
-        
+        fdones = self.dones.float()
+        mb_fdones = mb_dones.float()
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
-                nextnonterminal = 1.0 - self.dones
+                nextnonterminal = 1.0 - fdones
                 nextvalues = last_extrinsic_values
             else:
-                nextnonterminal = 1.0 - mb_dones[t+1]
+                nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
             
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
@@ -277,7 +298,6 @@ class DiscreteA2CBase(A2CBase):
         mb_returns = mb_advs + mb_extrinsic_values
 
         if self.has_curiosity:
-            mb_intrinsic_rewards = np.asarray(mb_intrinsic_rewards, dtype=np.float32)
             mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
 
         batch_dict = {
@@ -287,6 +307,7 @@ class DiscreteA2CBase(A2CBase):
             'actions' : mb_actions,
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
+
         }
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.network.is_rnn():
@@ -299,10 +320,10 @@ class DiscreteA2CBase(A2CBase):
         batch_dict = self.play_steps() 
 
         obses = batch_dict['obs']
-        returns = batch_dict['returns']
-        dones = batch_dict['dones']
-        actions = batch_dict['actions']
-        values = batch_dict['values']
+        returns = batch_dict['returns'].cuda()
+        dones = batch_dict['dones'].cuda()
+        actions = batch_dict['actions'].cuda()
+        values = batch_dict['values'].cuda()
         neglogpacs = batch_dict['neglogpacs']
         lstm_states = batch_dict.get('states', None)
 
@@ -332,7 +353,7 @@ class DiscreteA2CBase(A2CBase):
                 np.random.shuffle(game_indexes)
 
                 for i in range(0, self.num_minibatches):
-                    batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
                     mbatch = flat_indexes[mb_indexes].ravel()                        
 
@@ -354,7 +375,7 @@ class DiscreteA2CBase(A2CBase):
                     entropies.append(entropy)    
         else:
             for _ in range(0, self.mini_epochs_num):
-                permutation = np.random.permutation(self.batch_size)
+                permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
                 obses = obses[permutation]
                 returns = returns[permutation]
                 
@@ -364,7 +385,7 @@ class DiscreteA2CBase(A2CBase):
                 advantages = advantages[permutation]
 
                 for i in range(0, self.num_minibatches):
-                    batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
+                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
                     input_dict = {}
                     input_dict['old_values'] = values[batch]
                     input_dict['old_logp_actions'] = neglogpacs[batch]
@@ -395,7 +416,7 @@ class DiscreteA2CBase(A2CBase):
         total_time = 0
         rep_count = 0
         frame = 0
-        self.obs = self.vec_env.reset()
+        self.obs = self.env_reset()
         while True:
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
@@ -469,6 +490,7 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
+        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32)
         self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         if self.has_curiosity:
