@@ -41,7 +41,7 @@ class RNDCurisityTrain(nn.Module):
             loss = loss.squeeze()
             loss = self.output_normalization(loss)
             
-            return loss.cpu().numpy() * self.config['scale_value']
+            return loss.cpu()
 
     def train(self, obs):
         self.model.train()

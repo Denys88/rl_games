@@ -114,8 +114,8 @@ class A2CBase:
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
         lastgaelam = 0
         self.curiosity_rewards.append(torch.sum(torch.mean(mb_intrinsic_rewards, axis=1)))
-        self.curiosity_mins.append(torch.min(mb_intrinsic_rewards, axis=1))
-        self.curiosity_maxs.append(torch.max(mb_intrinsic_rewards, axis=1))
+        self.curiosity_mins.append(torch.min(mb_intrinsic_rewards))
+        self.curiosity_maxs.append(torch.max(mb_intrinsic_rewards))
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextvalues = last_intrinsic_values
@@ -126,7 +126,7 @@ class A2CBase:
             mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * lastgaelam
 
         mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
-        mb_returns = torch.concatenate([f[..., np.newaxis] for f in [mb_returns, mb_intrinsic_returns]], axis=-1)
+        mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
         return mb_returns
 
     def update_epoch(self):
@@ -333,7 +333,7 @@ class DiscreteA2CBase(A2CBase):
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
-            advantages = np.sum(advantages, axis=1)
+            advantages = torch.sum(advantages, axis=1)
                       
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -624,7 +624,8 @@ class ContinuousA2CBase(A2CBase):
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
-            advantages = np.sum(advantages, axis=1)            
+            advantages = torch.sum(advantages, axis=1)  
+
         a_losses = []
         c_losses = []
         b_losses = []
