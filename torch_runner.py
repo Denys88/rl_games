@@ -77,6 +77,8 @@ class Runner:
 
         if self.load_check_point:
             self.load_path = params['load_path']
+        else:
+            self.load_path = None
 
         self.model = self.model_builder.load(params)
         self.config = copy.deepcopy(params['config'])
@@ -194,15 +196,18 @@ def my_main(_run, _config, _log):
 
     import datetime
 
-    arglist = parse_args()
+    #arglist = parse_args()
     #unique_token = "{}__{}".format(arglist.name, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     # run the framework
     # run(_run, _config, _log, mongo_client, unique_token)
 
 
     logger = Logger(_log)
+
+
+
     # configure tensorboard logger
-    unique_token = "{}__{}".format(arglist.exp_name, datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    unique_token = "{}__{}".format(_config["label"], datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
     use_tensorboard = False
     if use_tensorboard:
         tb_logs_direc = os.path.join(dirname(dirname(abspath(__file__))), "results", "tb_logs")
@@ -210,12 +215,19 @@ def my_main(_run, _config, _log):
         logger.setup_tb(tb_exp_direc)
     logger.setup_sacred(_run)
 
+    _log.info("Experiment Parameters:")
+    import pprint
+    experiment_params = pprint.pformat(_config,
+                                       indent=4,
+                                       width=1)
+    _log.info("\n\n" + experiment_params + "\n")
+
     # START THE TRAINING PROCESS
     runner = Runner(logger)
     runner.load(_config)
     runner.reset()
-    args = vars(arglist)
-    runner.run(args)
+    #args = vars(arglist)
+    runner.run(_config)
 
     #runner.run(args)
 
@@ -289,7 +301,9 @@ if __name__ == '__main__':
     #         except yaml.YAMLError as exc:
     #             assert False, "{}.yaml error: {}".format(config_name, exc)
 
-    config_dict = {}
+    config_dict = {"train":True,
+                   "load_checkpoint":False,
+                   "load_path":None}
     file_config = _get_config(params, "--file", "")
     config_dict = recursive_dict_update(config_dict, file_config)
 
@@ -302,7 +316,7 @@ if __name__ == '__main__':
     #ex.add_config({"name":arglist.exp_name})
 
     # Check if we don't want to save to sacred mongodb
-    no_mongodb = True
+    no_mongodb = False
 
 
     for _i, _v in enumerate(params):
@@ -312,7 +326,7 @@ if __name__ == '__main__':
                 no_mongodb = True
                 break
 
-    config_dict={}
+    config_dict={"train": True}
     db_config_path = "./db_config.private.yaml"
     with open(db_config_path, 'r') as stream:
         config_dict = yaml.safe_load(stream)
@@ -332,7 +346,7 @@ if __name__ == '__main__':
     file_obs_path = os.path.join(results_path, "sacred")
     ex.observers.append(FileStorageObserver.create(file_obs_path))
 
-    ex.run_commandline("")
+    ex.run_commandline(params)
 
 # if __name__ == '__main__':
 #     ap = argparse.ArgumentParser()
