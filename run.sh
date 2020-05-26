@@ -17,5 +17,7 @@ NV_GPU="$GPU" ${cmd} run \
     --name $name \
     --user $(id -u) \
     -v `pwd`:/pymarl \
+    -v `pwd`/results:/results \
+    -v `pwd`/runs:/runs \
     -t rl_games \
     ${@:2}
