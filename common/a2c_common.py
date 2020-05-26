@@ -449,13 +449,13 @@ class DiscreteA2CBase(A2CBase):
                 self.logger.log_stat("whirl/performance/fps", self.batch_size / scaled_time, self.num_env_steps_train)
                 self.logger.log_stat("whirl/performance/upd_time", update_time, self.num_env_steps_train)
                 self.logger.log_stat("whirl/performance/play_time", play_time, self.num_env_steps_train)
-                self.logger.log_stat("whirl/losses/a_loss", np.mean(a_losses), self.num_env_steps_train)
-                self.logger.log_stat("whirl/losses/c_loss", np.mean(c_losses), self.num_env_steps_train)
-                self.logger.log_stat("whirl/losses/entropy", np.mean(entropies), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/a_loss", np.asscalar(np.mean(a_losses)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/c_loss", np.asscalar(np.mean(c_losses)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/entropy", np.asscalar(np.mean(entropies)), self.num_env_steps_train)
                 self.logger.log_stat("whirl/info/last_lr", last_lr * lr_mul, self.num_env_steps_train)
                 self.logger.log_stat("whirl/info/lr_mul", lr_mul, self.num_env_steps_train)
                 self.logger.log_stat("whirl/info/e_clip", self.e_clip * lr_mul, self.num_env_steps_train)
-                self.logger.log_stat("whirl/info/kl", np.mean(kls), self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/kl", np.asscalar(np.mean(kls)), self.num_env_steps_train)
                 self.logger.log_stat("whirl/epochs", epoch_num, self.num_env_steps_train)
 
                 if len(self.game_rewards) > 0:
@@ -468,12 +468,12 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
-                    self.logger.log_stat("whirl/rewards/mean", mean_rewards, self.num_env_steps_train)
+                    self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
                     self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
-                    self.logger.log_stat("whirl/episode_lengths/mean", mean_lengths, self.num_env_steps_train)
+                    self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)
                     self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
-                    self.logger.log_stat("whirl/win_rate/mean", mean_scores, self.num_env_steps_train)
-                    self.logger.log_stat("whirl/win_rate/time",mean_scores, total_time)
+                    self.logger.log_stat("whirl/win_rate/mean", np.asscalar(mean_scores), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/win_rate/time", mean_scores, total_time)
 
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
