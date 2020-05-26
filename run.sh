@@ -13,6 +13,7 @@ else
 fi
 
 NV_GPU="$GPU" ${cmd} run \
+    --gpus all \
     --name $name \
     --user $(id -u) \
     -v `pwd`:/pymarl \
