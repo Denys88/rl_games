@@ -1,8 +1,9 @@
 import torch
 from torch import nn
 import numpy as np
-import algos_torch.torch_ext as torch_ext
-from algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch.running_mean_std import RunningMeanStd
+
 
 class RNDCuriosityNetwork(nn.Module):
     def __init__(self, network):
@@ -13,7 +14,6 @@ class RNDCuriosityNetwork(nn.Module):
         rnd_res, res = self.network(obs)
         loss = ((res - rnd_res)**2).mean(dim=1, keepdim=True)
         return loss
-
 
 
 class RNDCurisityTrain(nn.Module):

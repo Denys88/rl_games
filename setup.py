@@ -1,0 +1,32 @@
+"""Setup script for rl_games"""
+
+import sys
+import os
+
+from setuptools import setup, find_packages
+
+print(find_packages())
+
+setup(name='rl_games',
+      packages=[package for package in find_packages()
+                if package.startswith('rl_games')],
+      version='1.0',
+      install_requires=[
+            'gym>=0.17.2',
+            'torch>=1.5',
+            'numpy>=1.15.4',
+            'ray>=0.8.5',
+            'tensorboard>=1.14.0',
+            'tensorboardX>=1.6',
+            'opencv-python>=4.1.0.25',
+            'setproctitle',
+            'psutil',
+            'pyyaml'
+           # 'gym-super-mario-bros==7.1.6',
+           # 'pybullet>=2.5.0',
+           # 'smac',
+           # 'dm_control',
+           # 'dm2gym',
+           # TOD add yaml
+      ],
+      )

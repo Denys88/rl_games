@@ -1,16 +1,19 @@
-import common.a2c_common
+from rl_games.common import a2c_common
+from rl_games.algos_torch import torch_ext
+
+from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch import rnd_curiosity
+
 from torch import optim
 import torch 
 from torch import nn
-import algos_torch.torch_ext
 import numpy as np
-from algos_torch.running_mean_std import RunningMeanStd
-import algos_torch.rnd_curiosity as rnd_curiosity
 
-class A2CAgent(common.a2c_common.ContinuousA2CBase):
+
+class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
-        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
+        a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -21,12 +24,12 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.model.cuda()
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-        #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
     def update_epoch(self):
         self.epoch_num += 1
@@ -56,7 +59,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         algos_torch.torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
-        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(fn)
         self.epoch_num = checkpoint['epoch']
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
@@ -192,7 +195,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         self.optimizer.step()
 
         with torch.no_grad():
-            kl_dist = algos_torch.torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch)
+            kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch)
             kl_dist = kl_dist.item()
             if self.is_adaptive_lr:
                 if kl_dist > (2.0 * self.lr_threshold):

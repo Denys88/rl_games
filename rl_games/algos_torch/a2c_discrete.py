@@ -1,16 +1,19 @@
-import common.a2c_common
+from rl_games.common import a2c_common
+from rl_games.algos_torch import torch_ext
+
+from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch import rnd_curiosity
+
 from torch import optim
 import torch 
 from torch import nn
-import algos_torch.torch_ext
 import numpy as np
-from algos_torch.running_mean_std import RunningMeanStd
-import algos_torch.rnd_curiosity as rnd_curiosity
 
-class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
+
+class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
-        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape) 
+        a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
 
         config = {
             'actions_num' : self.actions_num,
@@ -22,12 +25,13 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
         self.model.cuda()
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
-        #self.optimizer = algos_torch.torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
 
@@ -67,10 +71,10 @@ class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
             state['running_mean_std'] = self.running_mean_std.state_dict()
         if self.has_curiosity:
             state['rnd_nets'] = self.rnd_curiosity.state_dict()
-        algos_torch.torch_ext.save_scheckpoint(fn, state)
+        torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
-        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(fn)
         self.epoch_num = checkpoint['epoch']
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:

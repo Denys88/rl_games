@@ -1,6 +1,5 @@
-import common.env_configurations as env_configurations
+from rl_games.common import env_configurations
 import numpy as np
-
 
 
 class BasePlayer(object):
@@ -11,7 +10,6 @@ class BasePlayer(object):
         self.state_shape = self.state_space.shape
         self.env = None
         self.env_config = self.config.get('env_config', {})
-
 
     def restore(self, fn):
         raise NotImplementedError('restore')

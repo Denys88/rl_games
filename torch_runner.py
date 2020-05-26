@@ -1,31 +1,31 @@
-import algos_torch
 import numpy as np
-import common.object_factory
-import common.env_configurations as env_configurations
-
-import algos_torch.network_builder as network_builder
-import algos_torch.model_builder as model_builder
-import algos_torch.a2c_continuous as a2c_continuous
-import algos_torch.a2c_discrete as a2c_discrete
-#import algos_torch.dqnagent as dqnagent
-
-import common.tr_helpers as tr_helpers
-import yaml
-import ray
-import algos_torch.players as players
 import argparse
-import common.experiment as experiment
 import copy
 import torch
+import yaml
+import ray
+
+from rl_games import algos_torch
+from rl_games.common import object_factory
+from rl_games.common import env_configurations
+from rl_games.common import experiment
+from rl_games.common import tr_helpers
+from rl_games.common import player
+
+from rl_games.algos_torch import network_builder
+from rl_games.algos_torch import model_builder
+from rl_games.algos_torch import a2c_continuous
+from rl_games.algos_torch import a2c_discrete
+
 
 class Runner:
     def __init__(self):
-        self.algo_factory = common.object_factory.ObjectFactory()
+        self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
-        self.player_factory = common.object_factory.ObjectFactory()
+        self.player_factory = object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
         self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs)) 
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))

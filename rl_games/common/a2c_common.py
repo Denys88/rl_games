@@ -1,10 +1,12 @@
-import common.tr_helpers as tr_helpers
+from rl_games.common import tr_helpers
+from rl_games.common import vecenv
+
 import numpy as np
 import collections
 import time
 from collections import deque, OrderedDict
 import gym
-import common.vecenv as vecenv
+
 from datetime import datetime
 from tensorboardX import SummaryWriter
 

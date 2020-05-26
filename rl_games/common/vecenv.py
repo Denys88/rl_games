@@ -1,5 +1,5 @@
 import ray
-from common.env_configurations import configurations
+from rl_games.common.env_configurations import configurations
 import numpy as np
 
 class IVecEnv(object):

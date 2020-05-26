@@ -1,9 +1,10 @@
-import common.object_factory as object_factory
+from rl_games.common import object_factory
+from rl_games.algos_torch import torch_ext
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from algos_torch import torch_ext
 import numpy as np
 
 

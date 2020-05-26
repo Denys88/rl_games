@@ -1,4 +1,5 @@
 import numpy as np
+
 class LinearValueProcessor:
     def __init__(self, start_eps, end_eps, end_eps_frames):
         self.start_eps = start_eps
@@ -42,13 +43,11 @@ def compute_gae(rewards, dones, values, gamma, tau):
         returns.append(gae + values[step])
     return returns[::-1]
 
-
 def flatten_first_two_dims(arr):
     if arr.ndim > 2:
         return arr.reshape(-1, *arr.shape[-(arr.ndim-2):])
     else:
         return arr.reshape(-1)
-
 
 def get_or_default(config, name, def_val):
     if name in config:
