@@ -1,9 +1,11 @@
-from common.player import BasePlayer
+from rl_games.common.player import BasePlayer
+from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch.running_mean_std import RunningMeanStd
+
 import torch 
 from torch import nn
-import algos_torch.torch_ext
 import numpy as np
-from algos_torch.running_mean_std import RunningMeanStd
+
 
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
@@ -21,7 +23,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -35,7 +37,6 @@ class PpoPlayerContinuous(BasePlayer):
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()
-            
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == np.uint8:
@@ -68,7 +69,7 @@ class PpoPlayerContinuous(BasePlayer):
         return  rescale_actions(self.actions_low, self.actions_high, np.clip(current_action, -1.0, 1.0))
 
     def restore(self, fn):
-        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
@@ -76,7 +77,6 @@ class PpoPlayerContinuous(BasePlayer):
     def reset(self):
         if self.network.is_rnn():
             self.last_state = self.initial_state
-
 
 
 class PpoPlayerDiscrete(BasePlayer):
@@ -88,7 +88,7 @@ class PpoPlayerDiscrete(BasePlayer):
 
         self.normalize_input = self.config['normalize_input']
 
-        obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -101,8 +101,7 @@ class PpoPlayerDiscrete(BasePlayer):
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
-            self.running_mean_std.eval()
-            
+            self.running_mean_std.eval()      
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == np.uint8:
@@ -137,7 +136,6 @@ class PpoPlayerDiscrete(BasePlayer):
         else:    
             return action.squeeze().detach().cpu().numpy()
 
-
     def get_action(self, obs, is_determenistic = False):
         if self.num_agents == 1:
             obs = np.expand_dims(obs, axis=0)
@@ -157,7 +155,7 @@ class PpoPlayerDiscrete(BasePlayer):
             return action.squeeze().detach().cpu().numpy()
 
     def restore(self, fn):
-        checkpoint = algos_torch.torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])

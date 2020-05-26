@@ -10,11 +10,11 @@ print(find_packages())
 setup(name='rl_games',
       packages=[package for package in find_packages()
                 if package.startswith('rl_games')],
-      version='1.0',
+      version='1.0a',
       install_requires=[
             'gym>=0.17.2',
             'torch>=1.5',
-            'numpy>=1.15.4',
+            'numpy>=1.16.0',
             'ray>=0.8.5',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',

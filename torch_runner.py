@@ -10,12 +10,12 @@ from rl_games.common import object_factory
 from rl_games.common import env_configurations
 from rl_games.common import experiment
 from rl_games.common import tr_helpers
-from rl_games.common import player
 
 from rl_games.algos_torch import network_builder
 from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
+from rl_games.algos_torch import players
 
 
 class Runner:
