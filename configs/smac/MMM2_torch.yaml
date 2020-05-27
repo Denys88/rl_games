@@ -19,23 +19,23 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4241 
+        name: variance_scaling_initializer
+        scale: 2
       regularizer:
         name: 'None'
       convs:    
-        - filters: 64
-          kernel_size: 3
-          strides: 2
-          padding: 1
-        - filters: 128
-          kernel_size: 3
-          strides: 1
-          padding: 0
         - filters: 256
           kernel_size: 3
           strides: 1
-          padding: 0
+          padding: 1
+        - filters: 512
+          kernel_size: 3
+          strides: 1
+          padding: 1
+        - filters: 1024
+          kernel_size: 3
+          strides: 1
+          padding: 1
     mlp:
       units: [256, 128]
       activation: relu
@@ -45,7 +45,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: MMM_cnn
+    name: MMM2_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True

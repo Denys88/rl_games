@@ -24,18 +24,18 @@ params:
       regularizer:
         name: 'None'
       convs:    
-        - filters: 64
-          kernel_size: 3
-          strides: 2
-          padding: 1
-        - filters: 128
-          kernel_size: 3
-          strides: 1
-          padding: 0
         - filters: 256
           kernel_size: 3
           strides: 1
-          padding: 0
+          padding: 1
+        - filters: 512
+          kernel_size: 3
+          strides: 1
+          padding: 1
+        - filters: 1024
+          kernel_size: 3
+          strides: 1
+          padding: 1
     mlp:
       units: [256, 128]
       activation: relu
@@ -51,7 +51,7 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 5e-4
+    learning_rate: 1e-4
     score_to_win: 20
     grad_norm: 0.5
     entropy_coef: 0.005
@@ -62,8 +62,8 @@ params:
     clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 4608
-    mini_epochs: 1
+    minibatch_size: 3456
+    mini_epochs: 4
     critic_coef: 2
     lr_schedule:  None
     lr_threshold: 0.05
@@ -73,5 +73,5 @@ params:
     env_config:
       name: 27m_vs_30m
       frames: 4
-      transpose: True
+      transpose: False
       random_invalid_step: False
