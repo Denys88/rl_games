@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/5m_vs_6m_cnn'
+  load_checkpoint: True
+  load_path: 'nn/5msmac_cnn.pth'
 
   network:
     name: actor_critic

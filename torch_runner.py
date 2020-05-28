@@ -79,10 +79,6 @@ class Runner:
     def run_train(self):
         print('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
-        obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
-
-        print('obs_space:', obs_space)
-        print('action_space:', action_space)
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
@@ -92,13 +88,13 @@ class Runner:
                 print('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
-                agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
+                agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
                 self.experiment.set_results(*agent.train())
                 exp = self.experiment.get_next_config()
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)  
+            agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()

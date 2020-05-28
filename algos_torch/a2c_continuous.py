@@ -9,7 +9,7 @@ import algos_torch.rnd_curiosity as rnd_curiosity
 
 class A2CAgent(common.a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, observation_space, action_space, config):
-        common.a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
+        common.a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
         obs_shape = algos_torch.torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,

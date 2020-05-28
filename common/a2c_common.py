@@ -26,15 +26,24 @@ def rescale_actions(low, high, action):
     return scaled_action
 
 class A2CBase:
-    def __init__(self, base_name, observation_space, action_space, config):
-        self.observation_space = observation_space
-        observation_shape = observation_space.shape
+    def __init__(self, base_name, config):
+        self.config = config
+        self.env_config = config.get('env_config', {})
+        self.num_actors = config['num_actors']
+        self.env_name = config['env_name']
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+        self.env_info = self.vec_env.get_env_info()
+
+        print('Env info:')
+        print(self.env_info)
+
+        self.observation_space = self.env_info['observation_space']
+        observation_shape = self.observation_space.shape
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
         self.self_play = config.get('self_play', False)
         self.name = base_name
-        self.config = config
-        self.env_name = config['env_name']
+        
         self.ppo = config['ppo']
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
@@ -45,9 +54,6 @@ class A2CBase:
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
-        self.num_actors = config['num_actors']
-        self.env_config = self.config.get('env_config', {})
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
         self.seq_len = self.config['seq_len']
@@ -182,9 +188,9 @@ class A2CBase:
         return obs_batch
 
 class DiscreteA2CBase(A2CBase):
-    def __init__(self, base_name, observation_space, action_space, config):
-        A2CBase.__init__(self, base_name, observation_space, action_space, config)
-        self.actions_num = action_space.n
+    def __init__(self, base_name, config):
+        A2CBase.__init__(self, base_name, config)
+        self.actions_num = self.env_info['action_space'].n
         self.init_tensors()
 
     def init_tensors(self):
@@ -478,13 +484,14 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
-    def __init__(self, base_name, observation_space, action_space, config, init_arrays=True):
-        A2CBase.__init__(self, base_name, observation_space, action_space, config)
+    def __init__(self, base_name, config):
+        A2CBase.__init__(self, base_name, config)
+        action_space = self.env_info['action_space']
+        self.actions_num = action_space.shape[0]
 
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
         self.actions_low = torch.from_numpy(action_space.low).float()
         self.actions_high = torch.from_numpy(action_space.high).float()
-        self.actions_num = action_space.shape[0]
         self.init_tensors()
 
     def init_tensors(self):
