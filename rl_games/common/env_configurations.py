@@ -156,7 +156,6 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     
     return env
 
-
 def create_quadrupped_env():
     import gym
     import roboschool

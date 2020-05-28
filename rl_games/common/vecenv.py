@@ -2,6 +2,7 @@ import ray
 from rl_games.common.env_configurations import configurations
 import numpy as np
 
+
 class IVecEnv(object):
     def step(self, actions):
         raise NotImplementedError 
@@ -55,7 +56,6 @@ class RayWorker:
 
     def get_action_mask(self):
         return self.env.get_action_mask()
-
 
     def get_number_of_agents(self):
         return self.env.get_number_of_agents()
