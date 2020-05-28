@@ -54,7 +54,7 @@ params:
     learning_rate : 3e-4
     name : 'ant_torch'
     score_to_win : 20000
-    grad_norm : 0.5
+    grad_norm : 2.5
     entropy_coef : 0.0
     truncate_grads : True
     env_name : FlexAnt
@@ -62,9 +62,9 @@ params:
     e_clip : 0.2
     num_actors : 256
     steps_num : 16
-    minibatch_size : 2048
+    minibatch_size : 4096
     mini_epochs : 8
-    critic_coef : 1
+    critic_coef : 2
     clip_value : True
     lr_schedule : adaptive
     lr_threshold : 0.01
