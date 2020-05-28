@@ -77,5 +77,5 @@ params:
     env_config:
       name: 3s_vs_5z
       frames: 4
-      transpose: False
+      transpose: True
       random_invalid_step: False
