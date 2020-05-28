@@ -39,12 +39,15 @@ class RayWorker:
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
+        
         if np.isscalar(is_done):
             episode_done = is_done
         else:
             episode_done = is_done.all()
         if episode_done:
             next_state = self.reset()
+        if next_state.dtype == np.float64:
+            next_state = next_state.astype(np.float32)
         return next_state, reward, is_done, info
 
     def render(self):
@@ -65,24 +68,15 @@ class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         self.config_name = config_name
         self.num_actors = num_actors
+        self.use_torch = False
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
-        self.render_one = False
+
     def step(self, actions):
         newobs, newrewards, newdones, newinfos = [], [], [], []
         res_obs = []
-        if self.render_one:
-            self.workers[0].render.remote()
         for (action, worker) in zip(actions, self.workers):
             res_obs.append(worker.step.remote(action))
-        '''
-        for res in res_obs:
-            cobs, crewards, cdones, cinfos = ray.get(res)
-            newobs.append(cobs)
-            newrewards.append(crewards)
-            newdones.append(cdones)
-            newinfos.append(cinfos)
-        '''
         all_res = ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res
@@ -90,8 +84,7 @@ class RayVecEnv(IVecEnv):
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
-
-        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards), np.asarray(newdones, dtype=np.bool), np.asarray(newinfos)
+        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards, dtype=np.float32), np.asarray(newdones, dtype=np.uint8), newinfos
 
     def has_action_masks(self):
         return True
@@ -145,10 +138,16 @@ class RayVecSMACEnv(IVecEnv):
         return np.concatenate(newobs, axis=0)
 
 
+vecenv_config = {}
+
+def register(config_name, func):
+    vecenv_config[config_name] = func
+
+register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
+register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+
+
 def create_vec_env(config_name, num_actors, **kwargs):
-    if configurations[config_name]['vecenv_type'] == 'RAY':
-        return RayVecEnv(config_name, num_actors, **kwargs)
-    if configurations[config_name]['vecenv_type'] == 'RAY_SMAC':
-        return RayVecSMACEnv(config_name, num_actors, **kwargs)
-    if configurations[config_name]['vecenv_type'] == 'ISAAC':
-        return IsaacEnv(config_name, num_actors, **kwargs)
+    vec_env_name = configurations[config_name]['vecenv_type']
+    return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)

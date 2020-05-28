@@ -50,20 +50,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.epoch_num += 1
         return self.epoch_num
 
-    def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == np.uint8:
-            obs_batch = torch.cuda.ByteTensor(obs_batch)
-            obs_batch = obs_batch.float() / 255.0
-        else:
-            obs_batch = torch.cuda.FloatTensor(obs_batch)
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
-        return obs_batch
-
     def save(self, fn):
         state = {'epoch': self.epoch_num, 'model': self.model.state_dict(),
                 'optimizer': self.optimizer.state_dict()}
@@ -102,7 +88,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), logits.detach().cpu().numpy(), None
+        return action.detach().cpu(), value.detach().cpu(), neglogp.detach(), logits.detach(), None
 
 
     def get_action_values(self, obs):
@@ -115,7 +101,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu().numpy(), value.detach().cpu().numpy(), neglogp.detach().cpu().numpy(), None
+        return action.detach().cpu(), value.detach().cpu(), neglogp.detach(), None
 
     def get_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -127,7 +113,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return value.detach().cpu().numpy()
+        return value.detach().cpu()
 
     def get_intrinsic_reward(self, obs):
         return self.rnd_curiosity.get_loss(obs)
@@ -144,11 +130,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def train_actor_critic(self, input_dict):
         self.model.train()
-        value_preds_batch = torch.cuda.FloatTensor(input_dict['old_values'])
-        old_action_log_probs_batch = torch.cuda.FloatTensor(input_dict['old_logp_actions'])
-        advantage = torch.cuda.FloatTensor(input_dict['advantages'])
-        return_batch = torch.cuda.FloatTensor(input_dict['returns'])
-        actions_batch = torch.cuda.LongTensor(input_dict['actions'])
+        value_preds_batch = input_dict['old_values']
+        old_action_log_probs_batch = input_dict['old_logp_actions']
+        advantage = input_dict['advantages']
+        return_batch = input_dict['returns']
+        actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
         lr = self.last_lr

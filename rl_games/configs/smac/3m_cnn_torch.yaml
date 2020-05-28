@@ -55,7 +55,7 @@ params:
     learning_rate: 5e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac_cnn
     ppo: True
@@ -68,10 +68,9 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: False
+    normalize_input: True
     seq_len: 2
     use_action_masks: True
-    ignore_dead_batches : False
 
     env_config:
       name: 3m
