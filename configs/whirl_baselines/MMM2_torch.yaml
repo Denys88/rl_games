@@ -8,7 +8,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/2c_vs_64zgsmac_cnn'
+  load_path: 'nn/sc2smac_cnn'
 
   network:
     name: actor_critic
@@ -21,7 +21,7 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: glorot_uniform_initializer
+        name: glorot_normal_initializer
         gain: 1.4241 
       regularizer:
         name: 'None'
@@ -42,12 +42,12 @@ params:
       units: [256, 128]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: glorot_normal_initializer
+        gain: 1.4241 
       regularizer:
         name:  'None'
   config:
-    name: corridor_cnn
+    name: MMM_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -63,19 +63,19 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
-    minibatch_size: 3072
+    steps_num: 64
+    minibatch_size: 2560
     mini_epochs: 1
     critic_coef: 2
-    lr_schedule:  None
+    lr_schedule:  adaptive
     lr_threshold: 0.05
     normalize_input: False
-    seq_len: 2
+    seq_len: 4
     use_action_masks: True
     ignore_dead_batches : False
 
     env_config:
-      name: corridor
+      name: MMM2
       frames: 4
       transpose: True
       random_invalid_step: False
