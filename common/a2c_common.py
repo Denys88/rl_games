@@ -468,6 +468,7 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+
                     self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
                     self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
                     self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)

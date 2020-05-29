@@ -21,7 +21,7 @@ def swap_and_flatten01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
         observation_shape = observation_space.shape
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
@@ -142,6 +142,10 @@ class A2CAgent:
 
         self.sess.run(tf.global_variables_initializer())
 
+        self.logger = logger
+
+        self.num_env_steps_train = 0
+
     def setup_losses(self):
         curr_e_clip = self.e_clip * self.lr_multiplier
         if (self.ppo):
@@ -249,6 +253,10 @@ class A2CAgent:
             mb_dones.append(self.dones.copy())
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
+
+            # Increase step count by self.num_actors (WHIRL)
+            self.num_env_steps_train += self.num_actors
+
             self.current_rewards += rewards
 
             self.current_lengths += 1
@@ -417,6 +425,18 @@ class A2CAgent:
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
+
+                self.logger.log_stat("whirl/performance/fps", batch_size / scaled_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/upd_time", update_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/play_time", play_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/a_loss", np.asscalar(np.mean(a_losses)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/c_loss", np.asscalar(np.mean(c_losses)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/losses/entropy", np.asscalar(np.mean(entropies)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/last_lr", last_lr * lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/lr_mul", lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/e_clip", self.e_clip * lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/kl", np.asscalar(np.mean(kls)), self.num_env_steps_train)
+                self.logger.log_stat("whirl/epochs", epoch_num, self.num_env_steps_train)
                 
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
@@ -428,6 +448,13 @@ class A2CAgent:
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
+                    self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
+                    self.logger.log_stat("whirl/win_rate/mean", np.asscalar(mean_scores), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/win_rate/time", mean_scores, total_time)
+
 
                     if rep_count % 10 == 0:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
