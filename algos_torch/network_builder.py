@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from algos_torch import torch_ext
 import numpy as np
-
+import algos_torch.layers
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)   
@@ -165,10 +165,18 @@ class A2CBuilder(NetworkBuilder):
 
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
-                
+
+            out_size = self.units[-1]
+            if self.has_lstm:
+                out_size = self.lstm_units
+                if self.separate:
+                    self.a_lstm = layers.LSTMWithDones(self.units[-1], self.lstm_units)
+                    self.v_lstm = layers.LSTMWithDones(self.units[-1], self.lstm_units)
+                else:
+                    self.lstm = layers.LSTMWithDones(elf.units[-1], self.lstm_units)
             self.value = torch.nn.Linear(self.units[-1], self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
-  
+
             if self.is_discrete:
                 self.logits = torch.nn.Linear(self.units[-1], actions_num)
             if self.is_continuous:
