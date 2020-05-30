@@ -139,10 +139,13 @@ class A2CBase:
 
     def env_reset(self):
         obs = self.vec_env.reset()
-        if self.observation_space.dtype == np.uint8:
-            obs = torch.ByteTensor(obs).cuda()
+        if isinstance(obs, torch.Tensor):
+            self.is_tensor_obses = True
         else:
-            obs = torch.FloatTensor(obs).cuda()
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).cuda()
+            else:
+                obs = torch.FloatTensor(obs).cuda()
         return obs
 
     def update_epoch(self):
