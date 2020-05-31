@@ -61,7 +61,7 @@ class Runner:
         self.model = self.model_builder.load(params)
         self.config = copy.deepcopy(params['config'])
         
-        self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**self.config['reward_shaper'])
+        self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**self.config['reward_shaper'], is_torch=False)
         self.config['network'] = self.model
 
     def load(self, yaml_conf):

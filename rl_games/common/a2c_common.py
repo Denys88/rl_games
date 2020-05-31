@@ -103,6 +103,8 @@ class A2CBase:
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
 
+        self.is_tensor_obses = False
+
     def init_tensors(self):
         if self.observation_space.dtype == np.uint8:
             torch_dtype = torch.uint8
@@ -136,6 +138,14 @@ class A2CBase:
         mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
         mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
         return mb_returns
+
+    def env_reset(self):
+        obs = self.vec_env.reset()
+        if self.observation_space.dtype == np.uint8:
+            obs = torch.ByteTensor(obs).cuda()
+        else:
+            obs = torch.FloatTensor(obs).cuda()
+        return obs
 
     def update_epoch(self):
         pass
@@ -202,18 +212,16 @@ class DiscreteA2CBase(A2CBase):
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-
-    def env_reset(self):
-        obs = self.vec_env.reset()
-        if self.observation_space.dtype == np.uint8:
-            obs = torch.ByteTensor(obs).cuda()
-        else:
-            obs = torch.FloatTensor(obs).cuda()
-        return obs
     
     def env_step(self, actions):
-        obs, rewards, dones, infos = self.vec_env.step(actions.numpy())
-        return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+        if not self.is_tensor_obses:
+            actions = actions.numpy()
+        obs, rewards, dones, infos = self.vec_env.step(actions)
+        
+        if self.is_tensor_obses:
+            return obs, rewards.cpu(), dones.cpu(), infos
+        else:
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def play_steps(self):
         mb_states = []
@@ -417,7 +425,6 @@ class DiscreteA2CBase(A2CBase):
         total_time = update_time_end - play_time_start
 
         return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
-
 
     def train(self):
         last_mean_rewards = -100500
@@ -728,24 +735,24 @@ class ContinuousA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
 
     def env_reset(self):
-            obs = self.vec_env.reset()
+        obs = self.vec_env.reset()
 
-            if isinstance(obs, torch.Tensor):
-                return obs
-                
-            if self.observation_space.dtype == np.uint8:
-                obs = torch.ByteTensor(obs).cuda()
-            else:
-                obs = torch.FloatTensor(obs).cuda()
-            return obs
-        
-    def env_step(self, actions):
-        obs, rewards, dones, infos = self.vec_env.step(actions)
         if isinstance(obs, torch.Tensor):
-            return obs, rewards.cpu(), dones.cpu(), infos
+            return obs
+            
+        if self.observation_space.dtype == np.uint8:
+            obs = torch.ByteTensor(obs).cuda()
         else:
-            obs, rewards, dones, infos = self.vec_env.step(actions.numpy())
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            obs = torch.FloatTensor(obs).cuda()
+        return obs
+    
+    def env_step(self, actions):
+        clamped_actions = torch.clamp(actions, -1.0, 1.0)
+        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        if not self.is_tensor_obses:
+            rescaled_actions = rescaled_actions.numpy()
+        obs, rewards, dones, infos = self.vec_env.step(rescaled_actions)
+        return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def train(self):
         last_mean_rewards = -100500
