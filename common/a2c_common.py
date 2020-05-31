@@ -209,7 +209,7 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long)
+        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long).cuda()
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
