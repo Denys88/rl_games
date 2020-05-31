@@ -83,7 +83,7 @@ class A2CAgent(common.a2c_common.ContinuousA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, mu, sigma = self.model(input_dict)
-        return action.detach().cpu(), \
+        return action.detach(), \
                 value.detach().cpu(), \
                 neglogp.detach(), \
                 mu.detach(), \
