@@ -141,10 +141,13 @@ class A2CBase:
 
     def env_reset(self):
         obs = self.vec_env.reset()
-        if self.observation_space.dtype == np.uint8:
-            obs = torch.ByteTensor(obs).cuda()
+        if isinstance(obs, torch.Tensor):
+            self.is_tensor_obses = True
         else:
-            obs = torch.FloatTensor(obs).cuda()
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).cuda()
+            else:
+                obs = torch.FloatTensor(obs).cuda()
         return obs
 
     def update_epoch(self):
@@ -226,7 +229,7 @@ class DiscreteA2CBase(A2CBase):
     def play_steps(self):
         mb_states = []
         epinfos = []
-        #'''
+
         mb_obs = self.mb_obs
         mb_rewards = self.mb_rewards
         mb_actions = self.mb_actions
@@ -236,8 +239,7 @@ class DiscreteA2CBase(A2CBase):
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
-        #'''
-        #mb_states = self.mb_states
+
         # For n in range number of steps
         for n in range(self.steps_num):
             if self.network.is_rnn():
@@ -541,11 +543,7 @@ class ContinuousA2CBase(A2CBase):
             mb_obs[n,:] = self.obs
             mb_dones[n,:] = self.dones
 
-            #print("actions2: ", actions)
-
             self.obs, rewards, self.dones, infos = self.env_step(actions)
-
-            #print("o, r: ", self.obs, rewards)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
@@ -733,26 +731,19 @@ class ContinuousA2CBase(A2CBase):
         total_time = update_time_end - play_time_start
 
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
-
-    def env_reset(self):
-        obs = self.vec_env.reset()
-
-        if isinstance(obs, torch.Tensor):
-            return obs
-            
-        if self.observation_space.dtype == np.uint8:
-            obs = torch.ByteTensor(obs).cuda()
-        else:
-            obs = torch.FloatTensor(obs).cuda()
-        return obs
     
     def env_step(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+
         if not self.is_tensor_obses:
             rescaled_actions = rescaled_actions.numpy()
         obs, rewards, dones, infos = self.vec_env.step(rescaled_actions)
-        return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+
+        if self.is_tensor_obses:
+            return obs, rewards.cpu(), dones.cpu(), infos
+        else:
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def train(self):
         last_mean_rewards = -100500

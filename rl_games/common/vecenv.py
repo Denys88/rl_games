@@ -22,8 +22,8 @@ class IVecEnv(object):
 
 
 class IsaacEnv(IVecEnv):
-    def __init__(self, config_name, num_actors, config = None):
-        self.env = configurations[config_name]['env_creator']()
+    def __init__(self, config_name, num_actors, **kwargs):
+        self.env = configurations[config_name]['env_creator'](**kwargs)
         self.obs = self.env.reset()
     
     def step(self, action):
@@ -176,7 +176,7 @@ def register(config_name, func):
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
-register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
 
 
 def create_vec_env(config_name, num_actors, **kwargs):
