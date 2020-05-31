@@ -1,6 +1,7 @@
 import ray
 from rl_games.common.env_configurations import configurations
 import numpy as np
+import gym
 
 
 class IVecEnv(object):
@@ -16,20 +17,32 @@ class IVecEnv(object):
     def get_number_of_agents(self):
         return 1
 
+    def get_env_info(self):
+        pass
+
 
 class IsaacEnv(IVecEnv):
     def __init__(self, config_name, num_actors, config = None):
         self.env = configurations[config_name]['env_creator']()
         self.obs = self.env.reset()
     
-    def step(self, action): 
+    def step(self, action):
+    #    print("Isaac actions: ", action)
         next_state, reward, is_done, info = self.env.step(action)
-        next_state = self.reset() 
+    #    print("Isaac o, r: ", next_state, reward)
+        next_state = self.reset()
         return next_state, reward, is_done, info
 
     def reset(self):
         self.obs = self.env.reset()
         return self.obs
+
+    def get_env_info(self):
+        info = {}
+        info['action_space'] = self.env.action_space
+        info['observation_space'] = self.env.observation_space
+        return info
+
 
 
 class RayWorker:
@@ -63,6 +76,16 @@ class RayWorker:
     def get_number_of_agents(self):
         return self.env.get_number_of_agents()
 
+    def get_env_info(self):
+        info = {}
+        observation_space = self.env.observation_space
+        if isinstance(observation_space, gym.spaces.dict.Dict):
+            observation_space = observation_space['observations']
+        info['action_space'] = self.env.action_space
+        info['observation_space'] = observation_space
+
+        return info
+
 
 class RayVecEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
@@ -86,6 +109,10 @@ class RayVecEnv(IVecEnv):
             newinfos.append(cinfos)
         return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards, dtype=np.float32), np.asarray(newdones, dtype=np.uint8), newinfos
 
+    def get_env_info(self):
+        res = self.workers[0].get_env_info.remote()
+        return ray.get(res)
+
     def has_action_masks(self):
         return True
 
@@ -106,6 +133,10 @@ class RayVecSMACEnv(IVecEnv):
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
+
+    def get_env_info(self):
+        res = self.workers[0].get_env_info.remote()
+        return ray.get(res)
 
     def get_number_of_agents(self):
         return self.num_agents
@@ -145,7 +176,7 @@ def register(config_name, func):
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
-register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, kwargs))
 
 
 def create_vec_env(config_name, num_actors, **kwargs):

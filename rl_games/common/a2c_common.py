@@ -28,15 +28,24 @@ def rescale_actions(low, high, action):
     return scaled_action
 
 class A2CBase:
-    def __init__(self, base_name, observation_space, action_space, config):
-        self.observation_space = observation_space
-        observation_shape = observation_space.shape
+    def __init__(self, base_name, config):
+        self.config = config
+        self.env_config = config.get('env_config', {})
+        self.num_actors = config['num_actors']
+        self.env_name = config['env_name']
+        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+        self.env_info = self.vec_env.get_env_info()
+
+        print('Env info:')
+        print(self.env_info)
+
+        self.observation_space = self.env_info['observation_space']
+        observation_shape = self.observation_space.shape
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
         self.self_play = config.get('self_play', False)
         self.name = base_name
-        self.config = config
-        self.env_name = config['env_name']
+        
         self.ppo = config['ppo']
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
@@ -47,9 +56,6 @@ class A2CBase:
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
-        self.num_actors = config['num_actors']
-        self.env_config = self.config.get('env_config', {})
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
         self.seq_len = self.config['seq_len']
@@ -184,9 +190,9 @@ class A2CBase:
         return obs_batch
 
 class DiscreteA2CBase(A2CBase):
-    def __init__(self, base_name, observation_space, action_space, config):
-        A2CBase.__init__(self, base_name, observation_space, action_space, config)
-        self.actions_num = action_space.n
+    def __init__(self, base_name, config):
+        A2CBase.__init__(self, base_name, config)
+        self.actions_num = self.env_info['action_space'].n
         self.init_tensors()
 
     def init_tensors(self):
@@ -234,6 +240,7 @@ class DiscreteA2CBase(A2CBase):
                 actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
                 actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
+                
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
      
@@ -272,7 +279,6 @@ class DiscreteA2CBase(A2CBase):
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
-
         if self.has_curiosity:
             mb_intrinsic_values = mb_values[:,:,1]
             mb_extrinsic_values = mb_values[:,:,0]
@@ -286,6 +292,7 @@ class DiscreteA2CBase(A2CBase):
         lastgaelam = 0
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - fdones
@@ -309,7 +316,6 @@ class DiscreteA2CBase(A2CBase):
             'actions' : mb_actions,
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
-
         }
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.network.is_rnn():
@@ -332,6 +338,7 @@ class DiscreteA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
+
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
@@ -480,13 +487,14 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
-    def __init__(self, base_name, observation_space, action_space, config, init_arrays=True):
-        A2CBase.__init__(self, base_name, observation_space, action_space, config)
+    def __init__(self, base_name, config):
+        A2CBase.__init__(self, base_name, config)
+        action_space = self.env_info['action_space']
+        self.actions_num = action_space.shape[0]
 
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
         self.actions_low = torch.from_numpy(action_space.low).float()
         self.actions_high = torch.from_numpy(action_space.high).float()
-        self.actions_num = action_space.shape[0]
         self.init_tensors()
 
     def init_tensors(self):
@@ -514,8 +522,7 @@ class ContinuousA2CBase(A2CBase):
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
-        #'''
-        #mb_states = self.mb_states
+
         # For n in range number of steps
         for n in range(self.steps_num):
             if self.network.is_rnn():
@@ -527,7 +534,11 @@ class ContinuousA2CBase(A2CBase):
             mb_obs[n,:] = self.obs
             mb_dones[n,:] = self.dones
 
+            #print("actions2: ", actions)
+
             self.obs, rewards, self.dones, infos = self.env_step(actions)
+
+            #print("o, r: ", self.obs, rewards)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
@@ -556,7 +567,6 @@ class ContinuousA2CBase(A2CBase):
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
-
         if self.has_curiosity:
             mb_intrinsic_values = mb_values[:,:,1]
             mb_extrinsic_values = mb_values[:,:,0]
@@ -570,6 +580,7 @@ class ContinuousA2CBase(A2CBase):
         lastgaelam = 0
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - fdones
@@ -717,18 +728,24 @@ class ContinuousA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
 
     def env_reset(self):
-        obs = self.vec_env.reset()
-        if self.observation_space.dtype == np.uint8:
-            obs = torch.ByteTensor(obs).cuda()
-        else:
-            obs = torch.FloatTensor(obs).cuda()
-        return obs
-    
+            obs = self.vec_env.reset()
+
+            if isinstance(obs, torch.Tensor):
+                return obs
+                
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).cuda()
+            else:
+                obs = torch.FloatTensor(obs).cuda()
+            return obs
+        
     def env_step(self, actions):
-        clamped_actions = torch.clamp(actions, -1.0, 1.0)
-        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
-        obs, rewards, dones, infos = self.vec_env.step(rescaled_actions.numpy())
-        return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+        obs, rewards, dones, infos = self.vec_env.step(actions)
+        if isinstance(obs, torch.Tensor):
+            return obs, rewards.cpu(), dones.cpu(), infos
+        else:
+            obs, rewards, dones, infos = self.vec_env.step(actions.numpy())
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def train(self):
         last_mean_rewards = -100500

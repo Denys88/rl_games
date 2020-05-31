@@ -9,10 +9,9 @@ import torch
 from torch import nn
 import numpy as np
 
-
-class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
-    def __init__(self, base_name, observation_space, action_space, config):
-        a2c_common.DiscreteA2CBase.__init__(self, base_name, observation_space, action_space, config)
+class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
+    def __init__(self, base_name, config):
+        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
         obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
 
         config = {
@@ -34,12 +33,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
-
     def set_eval(self):
         self.model.eval()
         if self.normalize_input:
             self.running_mean_std.eval()
-
 
     def set_train(self):
         self.model.train()

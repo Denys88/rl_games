@@ -11,8 +11,8 @@ import numpy as np
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
-    def __init__(self, base_name, observation_space, action_space, config):
-        a2c_common.ContinuousA2CBase.__init__(self, base_name, observation_space, action_space, config)
+    def __init__(self, base_name, config):
+        a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
         obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
         config = {
             'actions_num' : self.actions_num,
@@ -42,7 +42,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             state['running_mean_std'] = self.running_mean_std.state_dict()
         if self.has_curiosity:
             state['rnd_nets'] = self.rnd_curiosity.state_dict()
-        algos_torch.torch_ext.save_scheckpoint(fn, state)
+        torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
@@ -69,7 +69,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.model.eval()
         if self.normalize_input:
             self.running_mean_std.eval()
-
 
     def set_train(self):
         self.model.train()
