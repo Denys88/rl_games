@@ -3,17 +3,16 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c_lstm
+    name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/2m_vs_1z_lstm'
+  load_path: 'nn/2m_vs_1z'
 
   network:
     name: actor_critic
     separate: True
     space: 
       discrete:
-      
     mlp:
       units: [256, 128]
       activation: relu
@@ -22,17 +21,14 @@ params:
         scale: 2 
       regularizer:
         name: 'None'
-    lstm:
-      units: 128
-      concated: False
   config:
-    name: 2s_vs_1c
+    name: 2s_vs_1z
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 1e-4
+    learning_rate: 5e-4
     score_to_win: 1000
     grad_norm: 0.5
     entropy_coef: 0.005
@@ -48,7 +44,7 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: False
+    normalize_input: True
     seq_len: 4
     use_action_masks: True
 
