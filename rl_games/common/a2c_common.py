@@ -44,6 +44,10 @@ class A2CBase:
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
         self.self_play = config.get('self_play', False)
+        self.save_freq = config.get('save_frequency', 0)
+        self.save_best_after = config.get('save_best_after', 100)
+        self.print_stats = config.get('print_stats', True)
+
         self.name = base_name
         
         self.ppo = config['ppo']
@@ -111,6 +115,7 @@ class A2CBase:
         else:
             torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
+
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
@@ -123,9 +128,11 @@ class A2CBase:
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
         lastgaelam = 0
+
         self.curiosity_rewards.append(torch.sum(torch.mean(mb_intrinsic_rewards, axis=1)))
         self.curiosity_mins.append(torch.min(mb_intrinsic_rewards))
         self.curiosity_maxs.append(torch.max(mb_intrinsic_rewards))
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextvalues = last_intrinsic_values
@@ -152,6 +159,7 @@ class A2CBase:
 
     def update_epoch(self):
         pass
+
     def save(self, fn):
         pass
 
@@ -435,6 +443,7 @@ class DiscreteA2CBase(A2CBase):
         rep_count = 0
         frame = 0
         self.obs = self.env_reset()
+
         while True:
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
@@ -443,8 +452,14 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             if True:
                 scaled_time = self.num_agents * sum_time
-                print('frames per seconds: ', self.batch_size / scaled_time)
-                self.writer.add_scalar('performance/fps', self.batch_size / scaled_time, frame)
+                scaled_play_time = self.num_agents * update_time
+                if self.print_stats:
+                    fps_step = self.batch_size / scaled_play_time
+                    fps_total = self.batch_size / scaled_time
+                    print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
+                    
+                self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
@@ -460,9 +475,11 @@ class DiscreteA2CBase(A2CBase):
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
                     mean_scores = np.mean(self.game_scores)
-                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
@@ -475,11 +492,12 @@ class DiscreteA2CBase(A2CBase):
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
-                    if rep_count % 10 == 0:
-                        self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                        rep_count += 1
 
-                    if mean_rewards > last_mean_rewards:
+                    if self.save_freq > 0:
+                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= last_mean_rewards):
+                            self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+
+                    if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'] + self.env_name)
@@ -502,8 +520,10 @@ class ContinuousA2CBase(A2CBase):
         self.actions_num = action_space.shape[0]
 
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
-        self.actions_low = torch.from_numpy(action_space.low).float()
-        self.actions_high = torch.from_numpy(action_space.high).float()
+
+        # todo introduce device instead of cuda()
+        self.actions_low = torch.from_numpy(action_space.low).float().cuda()
+        self.actions_high = torch.from_numpy(action_space.high).float().cuda()
         self.init_tensors()
 
     def init_tensors(self):
@@ -519,7 +539,7 @@ class ContinuousA2CBase(A2CBase):
     def play_steps(self):
         mb_states = []
         epinfos = []
-        #'''
+
         mb_obs = self.mb_obs
         mb_rewards = self.mb_rewards
         mb_actions = self.mb_actions
@@ -551,6 +571,7 @@ class ContinuousA2CBase(A2CBase):
             
             self.current_rewards += rewards
             self.current_lengths += 1
+
             done_indices = self.dones.nonzero()[::self.num_agents]
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
@@ -636,6 +657,7 @@ class ContinuousA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
+
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -656,9 +678,9 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = np.arange(total_games)
             flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
             lstm_states = lstm_states[::self.seq_len]
+
             for _ in range(0, self.mini_epochs_num):
                 np.random.shuffle(game_indexes)
-
                 for i in range(0, self.num_minibatches):
                     batch = range(i * num_games_batch, (i + 1) * num_games_batch)
                     mb_indexes = game_indexes[batch]
@@ -698,8 +720,8 @@ class ContinuousA2CBase(A2CBase):
             advantages = advantages[permutation]
             mus = mus[permutation]
             sigmas = sigmas[permutation]
+
             for _ in range(0, self.mini_epochs_num):
-   
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
                     #batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
@@ -752,16 +774,24 @@ class ContinuousA2CBase(A2CBase):
         rep_count = 0
         frame = 0
         self.obs = self.env_reset()
+
         while True:
             epoch_num = self.update_epoch()
             frame += self.batch_size_envs
 
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
+
             if True:
                 scaled_time = self.num_agents * sum_time
-                print('frames per seconds: ', self.batch_size / scaled_time)
-                self.writer.add_scalar('performance/fps', self.batch_size / scaled_time, frame)
+                scaled_play_time = self.num_agents * update_time
+                if self.print_stats:
+                    fps_step = self.batch_size / scaled_play_time
+                    fps_total = self.batch_size / scaled_time
+                    print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
+
+                self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
@@ -779,12 +809,16 @@ class ContinuousA2CBase(A2CBase):
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
                     #mean_scores = np.mean(self.game_scores)
-                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    #self.writer.add_scalar('win_rate/mean', mean_scores, frame)
+                    #self.writer.add_scalar('win_rate/frame', mean_scores, frame)
+                    #self.writer.add_scalar('win_rate/iter', mean_scores, epoch_num)
                     #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
                             mean_cur_rewards = np.mean(self.curiosity_rewards)
@@ -793,11 +827,12 @@ class ContinuousA2CBase(A2CBase):
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
-                    if rep_count % 10 == 0:
-                        self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                        rep_count += 1
 
-                    if mean_rewards > last_mean_rewards:
+                    if self.save_freq > 0:
+                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= last_mean_rewards):
+                            self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+
+                    if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'] + self.env_name)

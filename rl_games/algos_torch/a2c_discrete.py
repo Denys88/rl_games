@@ -9,9 +9,10 @@ import torch
 from torch import nn
 import numpy as np
 
-class DiscreteA2CAgent(common.a2c_common.DiscreteA2CBase):
+
+class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
-        common.a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
+        a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
         obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
 
         config = {
