@@ -219,14 +219,14 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long)
+        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long).cuda()
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
     
     def env_step(self, actions):
         if not self.is_tensor_obses:
-            actions = actions.numpy()
+            actions = actions.cpu().numpy()
         obs, rewards, dones, infos = self.vec_env.step(actions)
         
         if self.is_tensor_obses:
@@ -348,8 +348,8 @@ class DiscreteA2CBase(A2CBase):
         obses = batch_dict['obs']
         returns = batch_dict['returns'].cuda()
         dones = batch_dict['dones'].cuda()
-        actions = batch_dict['actions'].cuda()
         values = batch_dict['values'].cuda()
+        actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         lstm_states = batch_dict.get('states', None)
 
@@ -529,7 +529,7 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32)
+        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
         if self.has_curiosity:
@@ -647,8 +647,8 @@ class ContinuousA2CBase(A2CBase):
         obses = batch_dict['obs']
         returns = batch_dict['returns'].cuda()
         dones = batch_dict['dones'].cuda()
-        actions = batch_dict['actions'].cuda()
         values = batch_dict['values'].cuda()
+        actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         mus = batch_dict['mus']
         sigmas = batch_dict['sigmas']
@@ -759,9 +759,9 @@ class ContinuousA2CBase(A2CBase):
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
 
         if not self.is_tensor_obses:
-            rescaled_actions = rescaled_actions.numpy()
+            rescaled_actions = rescaled_actions.cpu().numpy()
         obs, rewards, dones, infos = self.vec_env.step(rescaled_actions)
-
+        
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:

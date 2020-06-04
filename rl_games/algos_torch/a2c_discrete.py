@@ -86,7 +86,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu(), value.detach().cpu(), neglogp.detach(), logits.detach(), None
+        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), None
 
 
     def get_action_values(self, obs):
@@ -99,7 +99,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
-        return action.detach().cpu(), value.detach().cpu(), neglogp.detach(), None
+        return action.detach(), value.detach().cpu(), neglogp.detach(), None
 
     def get_values(self, obs):
         obs = self._preproc_obs(obs)
