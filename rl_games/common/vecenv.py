@@ -1,7 +1,8 @@
 import ray
-from common.env_configurations import configurations
+from rl_games.common.env_configurations import configurations
 import numpy as np
 import gym
+
 
 class IVecEnv(object):
     def step(self, actions):
@@ -21,13 +22,13 @@ class IVecEnv(object):
 
 
 class IsaacEnv(IVecEnv):
-    def __init__(self, config_name, num_actors, config = None):
-        self.env = configurations[config_name]['env_creator']()
+    def __init__(self, config_name, num_actors, **kwargs):
+        self.env = configurations[config_name]['env_creator'](**kwargs)
         self.obs = self.env.reset()
     
-    def step(self, action): 
+    def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
-        next_state = self.reset() 
+        next_state = self.reset()
         return next_state, reward, is_done, info
 
     def reset(self):
@@ -39,7 +40,6 @@ class IsaacEnv(IVecEnv):
         info['action_space'] = self.env.action_space
         info['observation_space'] = self.env.observation_space
         return info
-
 
 
 class RayWorker:
@@ -69,7 +69,6 @@ class RayWorker:
 
     def get_action_mask(self):
         return self.env.get_action_mask()
-
 
     def get_number_of_agents(self):
         return self.env.get_number_of_agents()
@@ -172,11 +171,10 @@ vecenv_config = {}
 def register(config_name, func):
     vecenv_config[config_name] = func
 
-register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
-register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
-register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
-
-
 def create_vec_env(config_name, num_actors, **kwargs):
     vec_env_name = configurations[config_name]['vecenv_type']
     return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
+
+register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
+register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))

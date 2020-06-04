@@ -1,8 +1,9 @@
-import algos_torch.layers
+import rl_games.algos_torch.layers
 import numpy as np
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+
 
 class BaseModel():
     def __init__(self):

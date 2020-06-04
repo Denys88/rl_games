@@ -1,11 +1,11 @@
-import common.wrappers as wrappers
-import common.tr_helpers as tr_helpers
+from rl_games.common import wrappers
+from rl_games.common import tr_helpers
 
 import gym
 import numpy as np
 
-#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
-FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
+#FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
@@ -28,6 +28,7 @@ class HCRewardEnv(gym.RewardWrapper):
             observation = self.reset()
             done = True
         return observation, self.reward(reward), done, info
+
     def reward(self, reward):
        # print('reward:', reward)
         '''
@@ -58,7 +59,6 @@ class HCObsEnv(gym.ObservationWrapper):
         return obs
 
 
-
 class DMControlReward(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -66,6 +66,7 @@ class DMControlReward(gym.RewardWrapper):
         self.num_stops = 0
         self.max_stops = 1000
         self.reward_threshold = 0.001
+
     def reset(self, **kwargs):
         self.num_stops = 0
  
@@ -86,6 +87,7 @@ class DMControlReward(gym.RewardWrapper):
 
     def reward(self, reward):
         return reward
+
 
 class DMControlObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -159,7 +161,6 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     
     return env
 
-
 def create_quadrupped_env():
     import gym
     import roboschool
@@ -170,7 +171,6 @@ def create_roboschool_env(name):
     import gym
     import roboschool
     return gym.make(name)
-
 
 def create_multiflex(path, num_instances=1):
     from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env_muli_env
@@ -198,13 +198,13 @@ def create_flex(path):
     return env
 
 def create_smac(name, **kwargs):
-    from envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
     print(kwargs)
     return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
 def create_smac_cnn(name, **kwargs):
-    from envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)

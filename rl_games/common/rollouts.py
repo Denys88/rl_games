@@ -1,12 +1,10 @@
 
-
 class Rollout:
     def __init__(self, gamma):
         self.gamma = gamma
 
     def play_steps(self, env, max_steps_count = 1):
         pass
-
 
 
 class DiscretePpoRollout(Rollout):

@@ -1,7 +1,9 @@
-import common.object_factory as object_factory
-import algos_torch
-import algos_torch.network_builder as network_builder
-import algos_torch.models as models
+from rl_games.common import object_factory
+import rl_games.algos_torch
+from rl_games.algos_torch import network_builder
+from rl_games.algos_torch import models
+
+
 class ModelBuilder:
     def __init__(self):
 

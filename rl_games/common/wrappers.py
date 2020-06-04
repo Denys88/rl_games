@@ -2,14 +2,13 @@ import numpy as np
 import os
 os.environ.setdefault('PATH', '')
 from collections import deque
+
 import gym
 from gym import spaces
 import cv2
 from copy import copy
 
 cv2.ocl.setUseOpenCL(False)
-
-
 
 
 class NoopResetEnv(gym.Wrapper):
