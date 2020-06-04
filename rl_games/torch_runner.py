@@ -117,7 +117,7 @@ class Runner:
             player = self.player_factory.create(self.algo_name, config=self.config)
             player.restore(self.load_path)
             player.run()
-        elif
+        else:
             self.run_train()
         
         ray.shutdown()

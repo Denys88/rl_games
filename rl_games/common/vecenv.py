@@ -27,9 +27,7 @@ class IsaacEnv(IVecEnv):
         self.obs = self.env.reset()
     
     def step(self, action):
-    #    print("Isaac actions: ", action)
         next_state, reward, is_done, info = self.env.step(action)
-    #    print("Isaac o, r: ", next_state, reward)
         next_state = self.reset()
         return next_state, reward, is_done, info
 
@@ -42,7 +40,6 @@ class IsaacEnv(IVecEnv):
         info['action_space'] = self.env.action_space
         info['observation_space'] = self.env.observation_space
         return info
-
 
 
 class RayWorker:
@@ -174,11 +171,10 @@ vecenv_config = {}
 def register(config_name, func):
     vecenv_config[config_name] = func
 
-register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
-register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
-register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
-
-
 def create_vec_env(config_name, num_actors, **kwargs):
     vec_env_name = configurations[config_name]['vecenv_type']
     return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
+
+register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
+register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
+register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
