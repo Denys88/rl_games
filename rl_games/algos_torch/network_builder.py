@@ -1,11 +1,13 @@
-import common.object_factory as object_factory
+from rl_games.common import object_factory
+from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch import layers
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from algos_torch import torch_ext
 import numpy as np
-import algos_torch.layers
+
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)   
@@ -58,7 +60,7 @@ class NetworkBuilder:
                 return nn.Sequential(*cnn_layers)(torch.rand(1, *(input_shape))).flatten(1).data.size(1)
 
         def _noisy_dense(self, inputs, units):
-            return algos.torch.layers.NoisyFactorizedLinear(inputs, units)
+            return layers.NoisyFactorizedLinear(inputs, units)
 
         def _build_mlp(self, 
         input_size, 

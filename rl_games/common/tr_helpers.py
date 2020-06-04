@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class LinearValueProcessor:
     def __init__(self, start_eps, end_eps, end_eps_frames):
         self.start_eps = start_eps
@@ -12,7 +11,6 @@ class LinearValueProcessor:
             return self.end_eps
         df = frame / self.end_eps_frames
         return df * self.end_eps + (1.0 - df) * self.start_eps
-
 
 class DefaultRewardsShaper:
     def __init__(self, scale_value = 1, shift_value = 0, min_val=-np.inf, max_val=np.inf, is_torch=True):
@@ -39,13 +37,11 @@ def flatten_first_two_dims(arr):
     else:
         return arr.reshape(-1)
 
-
 def get_or_default(config, name, def_val):
     if name in config:
         return config[name]
     else:
         return def_val
-
 
 def free_mem():
     import ctypes
