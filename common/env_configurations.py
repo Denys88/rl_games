@@ -99,8 +99,13 @@ def create_default_gym_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
     env = gym.make(name)
-    if frames > 1:
-        env = wrappers.FrameStack(env, frames, False)
+    is_procgen = kwargs.pop('procgen', False)
+    if is_procgen:
+        if frames > 1:
+            env = wrappers.ProcgenStack(env, frames, True)
+    else:
+        if frames > 1:
+            env = wrappers.FrameStack(env, frames, False)
     return env 
 
 def create_atari_gym_env(**kwargs):

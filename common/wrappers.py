@@ -269,6 +269,52 @@ class BatchedFrameStack(gym.Wrapper):
         return frames
 
 
+class ProcgenStack(gym.Wrapper):
+    def __init__(self, env, k = 2, greyscale=True):
+        gym.Wrapper.__init__(self, env)
+        self.k = k
+        self.curr_frame = 0
+        self.frames = deque([], maxlen=k)
+
+        self.greyscale=greyscale
+        self.prev_frame = None
+        shp = env.observation_space.shape
+        if greyscale:
+            shape = (shp[:-1] + (shp[-1] + k - 1,))
+        else:
+            shape = (shp[:-1] + (shp[-1] * k,))
+        self.observation_space = spaces.Box(low=0, high=255, shape=shape, dtype=np.uint8)
+
+    def reset(self):
+        frames = self.env.reset()
+        self.frames.append(frames)
+
+        if self.greyscale:
+            self.prev_frame = np.expand_dims(cv2.cvtColor(frames, cv2.COLOR_RGB2GRAY), axis=-1)
+            for _ in range(self.k-1):
+                self.frames.append(self.prev_frame)
+        else:
+            for _ in range(self.k-1):
+                self.frames.append(frames)
+
+        return self._get_ob()
+
+    def step(self, action):
+        frames, reward, done, info = self.env.step(action)
+
+        if self.greyscale:
+            self.frames[self.k-1] = self.prev_frame
+            self.prev_frame = np.expand_dims(cv2.cvtColor(frames, cv2.COLOR_RGB2GRAY), axis=-1)
+
+        self.frames.append(frames)
+        return self._get_ob(), reward, done, info
+
+    def _get_ob(self):
+        assert len(self.frames) == self.k
+        stacked_frames = np.concatenate(self.frames, axis=-1)
+        return stacked_frames
+
+
 class ScaledFloatFrame(gym.ObservationWrapper):
     def __init__(self, env):
         gym.ObservationWrapper.__init__(self, env)
