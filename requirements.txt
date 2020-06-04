@@ -7,7 +7,7 @@ psutil
 torch>=1.5
 tensorboard==1.14.0
 tensorboardX==1.6
-tensorflow-gpu==1.14.0
+tensorflow-gpu==1.15.2
 tensorflow-probability==0.7.0
 opencv-python==4.1.0.25
 gym-super-mario-bros==7.1.6
