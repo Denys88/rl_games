@@ -48,6 +48,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.epoch_num = checkpoint['epoch']
         self.model.load_state_dict(checkpoint['model'])
+
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
         if self.has_curiosity:
@@ -56,6 +57,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 for k, v in state.items():
                     if isinstance(v, torch.Tensor):
                         state[k] = v.cuda()
+
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         for state in self.optimizer.state.values():
             for k, v in state.items():
