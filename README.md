@@ -13,13 +13,12 @@
 [![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
 
 # How to run configs:
-Pytorch
+# Pytorch
 * python runner.py --train --file configs/smac/3m_torch.yaml
 * python runner.py --play --file configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-Tensorflow
+# Tensorflow
 * python runner.py --tf --train --file configs/smac/3m_torch.yaml
 * python runner.py --tf --play --file configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-
 * tensorboard --logdir runs
 # Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
