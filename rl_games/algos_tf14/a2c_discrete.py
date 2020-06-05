@@ -1,15 +1,19 @@
-import common.tr_helpers as tr_helpers
+from rl_games.common import tr_helpers, vecenv
+#from rl_games.algos_tf14 import networks
+from rl_games.algos_tf14.tensorflow_utils import TensorFlowVariables
+from rl_games.algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 import tensorflow as tf
 import numpy as np
 import collections
 import time
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
-from algos_tf14.tensorflow_utils import TensorFlowVariables
+
 import gym
-import common.vecenv as vecenv
-from algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 from datetime import datetime
+
 
 def swap_and_flatten01(arr):
     """
@@ -436,7 +440,7 @@ class A2CAgent:
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.config['name'] + self.env_name)
+                        self.save("./nn/" + self.config['name'])
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))

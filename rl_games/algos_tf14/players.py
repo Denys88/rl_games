@@ -1,15 +1,18 @@
-import common.env_configurations
+from rl_games.common import env_configurations
+from rl_games.algos_tf14 import dqnagent
+from rl_games.algos_tf14.tensorflow_utils import TensorFlowVariables
+from rl_games.algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 import tensorflow as tf
 import numpy as np
-import algos_tf14.dqnagent
-from algos_tf14.tensorflow_utils import TensorFlowVariables
-from algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
     scaled_action =  action * d + m
     return scaled_action
+
 
 class BasePlayer(object):
     def __init__(self, sess, config):
@@ -19,7 +22,6 @@ class BasePlayer(object):
         self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
         self.env = None
         self.env_config = self.config.get('env_config', None)
-
 
     def restore(self, fn):
         raise NotImplementedError('restore')
@@ -31,7 +33,7 @@ class BasePlayer(object):
         return self.variables.set_flat(weights)
 
     def create_env(self):
-        return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
+        return env_configurations.configurations[self.env_name]['env_creator']()
 
     def get_action(self, obs, is_determenistic = False):
         raise NotImplementedError('step')
@@ -138,7 +140,6 @@ class PpoPlayerContinuous(BasePlayer):
         action = np.squeeze(action)
         return  rescale_actions(self.actions_low, self.actions_high, np.clip(action, -1.0, 1.0))
 
-
     def restore(self, fn):
         self.saver.restore(self.sess, fn)
 
@@ -146,7 +147,6 @@ class PpoPlayerContinuous(BasePlayer):
         if self.network.is_rnn():
             self.last_state = self.initial_state
         #self.mask = [True]
-
 
 
 class PpoPlayerDiscrete(BasePlayer):
@@ -232,9 +232,7 @@ class PpoPlayerDiscrete(BasePlayer):
 class DQNPlayer(BasePlayer):
     def __init__(self, sess, config):
         BasePlayer.__init__(self, sess, config)
-        self.dqn = dqnagent.DQNAgent(sess, 'player', self.obs_space, self.action_space, config)
-
-    
+        self.dqn = dqnagent.DQNAgent(sess, 'player', self.obs_space, self.action_space, config)  
 
     def get_action(self, obs, is_determenistic = False):
         return self.dqn.get_action(np.squeeze(obs), 0.0)

@@ -1,19 +1,24 @@
+from rl_games.common import tr_helpers, vecenv, experience, env_configurations
+from rl_games.common.categorical import CategoricalQ
+from rl_games.algos_tf14 import networks, models
+from rl_games.algos_tf14.tensorflow_utils import TensorFlowVariables
+from rl_games.algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 import tensorflow as tf
-import algos_tf14.models
-from common import tr_helpers, experience, env_configurations
+
 import numpy as np
 import collections
 import time
 from collections import deque
 from tensorboardX import SummaryWriter
 from datetime import datetime
-from algos_tf14.tensorflow_utils import TensorFlowVariables
-from common.categorical import CategoricalQ
+
 
 class DQNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
         observation_shape = observation_space.shape
         actions_num = action_space.n
+        
         self.config = config
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
@@ -86,7 +91,6 @@ class DQNAgent:
             self.input_obs = tf.to_float(self.input_obs) / 255.0
             self.input_next_obs = tf.to_float(self.input_next_obs) / 255.0
 
-
         if self.atoms_num == 1:
             self.setup_qvalues(actions_num)
         else:
@@ -149,7 +153,6 @@ class DQNAgent:
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
-
         self.current_action_values = tf.reduce_sum(tf.expand_dims(tf.one_hot(self.actions_ph, actions_num), -1) * self.logits, reduction_indices = (1,))        
         if self.config['is_double'] == True:
             self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
@@ -158,8 +161,7 @@ class DQNAgent:
         else:
             self.next_selected_actions = tf.argmax(self.target_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
-            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( tf.expand_dims(self.next_selected_actions_onehot, -1) * self.target_qvalues_c , reduction_indices = (1,) ))
-            
+            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( tf.expand_dims(self.next_selected_actions_onehot, -1) * self.target_qvalues_c , reduction_indices = (1,) ))       
 
         self.proj_dir_ph = tf.placeholder(tf.float32, shape=[None, self.atoms_num], name = 'best_proj_dir')
         log_probs = tf.nn.log_softmax( self.current_action_values, axis=1)
@@ -198,7 +200,6 @@ class DQNAgent:
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
-
         self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
 
         if self.config['is_double'] == True:
@@ -208,7 +209,6 @@ class DQNAgent:
         else:
             self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
 
-        
         self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.next_state_values_target
 
         if self.is_prioritized:
@@ -242,7 +242,6 @@ class DQNAgent:
 
     def get_qvalues(self, state):
         return self.sess.run(self.qvalues, {self.obs_ph: state})
-
 
     def get_action(self, state, epsilon=0.0):
         if np.random.random() < epsilon:
@@ -295,7 +294,6 @@ class DQNAgent:
             self._reset()
         return done_reward, done_shaped_reward, done_steps
 
-
     def load_weigths_into_target_network(self):
         self.sess.run(self.assigns_op)
 
@@ -337,6 +335,7 @@ class DQNAgent:
         shaped_rewards = []
         steps = []
         losses = deque([], maxlen=100)
+
         while True:
             epoch_num = self.update_epoch()
             t_play_start = time.time()
@@ -380,7 +379,6 @@ class DQNAgent:
                     batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
                     _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
 
-
             losses.append(loss_t)
             t_end = time.time()
             update_time += t_end - t_start
@@ -422,7 +420,6 @@ class DQNAgent:
                         if last_mean_rewards > self.config['score_to_win']:
                             print('network won!')
                             return last_mean_rewards, epoch_num
-                
                 
                 #clear_output(True)
             # adjust agent parameters

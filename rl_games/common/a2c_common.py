@@ -452,7 +452,7 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             if True:
                 scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * update_time
+                scaled_play_time = self.num_agents * play_time
                 if self.print_stats:
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time
@@ -761,7 +761,7 @@ class ContinuousA2CBase(A2CBase):
         if not self.is_tensor_obses:
             rescaled_actions = rescaled_actions.cpu().numpy()
         obs, rewards, dones, infos = self.vec_env.step(rescaled_actions)
-        
+
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
@@ -784,7 +784,7 @@ class ContinuousA2CBase(A2CBase):
 
             if True:
                 scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * update_time
+                scaled_play_time = self.num_agents * play_time
                 if self.print_stats:
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time

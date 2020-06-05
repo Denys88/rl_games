@@ -1,7 +1,9 @@
 import tensorflow as tf
-import algos_tf14.networks
 import numpy as np
 import tensorflow_probability as tfp
+
+from rl_games.algos_tf14 import networks
+
 tfd = tfp.distributions
 
 def entry_stop_gradients(target, mask):
@@ -33,8 +35,6 @@ class ModelA2C(BaseModel):
         probs = tf.nn.softmax(logits)
 
         # Gumbel Softmax
-        
-
         if not is_train:
             u = tf.random_uniform(tf.shape(logits), dtype=logits.dtype)
             rand_logits = logits - tf.log(-tf.log(u))
@@ -52,8 +52,6 @@ class ModelA2C(BaseModel):
         else:
             prev_neglogp = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=prev_actions_ph)
             return prev_neglogp, value, None, entropy
-
-
 
 
 class ModelA2CContinuous(BaseModel):
@@ -80,7 +78,6 @@ class ModelA2CContinuous(BaseModel):
         return prev_neglogp, value, action, entropy, mu, sigma
 
 
-
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         self.network = network
@@ -94,7 +91,6 @@ class ModelA2CContinuousLogStd(BaseModel):
         is_train = prev_actions_ph is not None
 
         mean, logstd, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=True, is_train=True, reuse=reuse)
-    
 
         std = tf.exp(logstd)
         norm_dist = tfd.Normal(mean, std)
@@ -115,6 +111,7 @@ class ModelA2CContinuousLogStd(BaseModel):
         return 0.5 * tf.reduce_sum(tf.square((x - mean) / std), axis=-1) \
             + 0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[-1]) \
             + tf.reduce_sum(logstd, axis=-1)
+
 
 class LSTMModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
@@ -189,7 +186,6 @@ class LSTMModelA2CContinuous(BaseModel):
 
         prev_neglogp = tf.reduce_sum(-tf.log(norm_dist.prob(prev_actions_ph) + 1e-6), axis=-1)
         return prev_neglogp, value, action, entropy, mu, sigma, states_ph, masks_ph, lstm_state, initial_state
-
 
 
 class LSTMModelA2C(BaseModel):

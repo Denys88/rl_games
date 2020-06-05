@@ -1,7 +1,9 @@
-import common.object_factory as object_factory
-import algos_tf14
-import algos_tf14.network_builder as network_builder
-import algos_tf14.models as models
+from rl_games.common import object_factory
+import rl_games.algos_tf14
+from rl_games.algos_tf14 import network_builder
+from rl_games.algos_tf14 import models
+
+
 class ModelBuilder:
     def __init__(self):
 

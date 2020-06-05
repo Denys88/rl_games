@@ -1,15 +1,16 @@
-import common.tr_helpers as tr_helpers
-import algos_tf14.networks
+from rl_games.common import tr_helpers, vecenv
+from rl_games.algos_tf14 import networks
+from rl_games.algos_tf14.tensorflow_utils import TensorFlowVariables
+from rl_games.algos_tf14.tf_moving_mean_std import MovingMeanStd
+
 import tensorflow as tf
 import numpy as np
 import collections
 import time
 from collections import deque, OrderedDict
 from tensorboardX import SummaryWriter
-from algos_tf14.tensorflow_utils import TensorFlowVariables
+
 import gym
-import common.vecenv as vecenv
-from algos_tf14.tf_moving_mean_std import MovingMeanStd
 import ray
 from datetime import datetime
 
@@ -41,6 +42,7 @@ def policy_kl_tf(p0_mu, p0_sigma, p1_mu, p1_sigma):
     kl = c1 + c2 + c3
     kl = tf.reduce_mean(tf.reduce_sum(kl, axis=-1))  # returning mean between all steps of sum between all actions
     return kl
+
 
 class A2CAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config):
@@ -105,7 +107,6 @@ class A2CAgent:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'],  decay_rate = config['decay_rate'])
-
 
         self.input_obs = self.obs_ph
         self.input_target_obs = self.target_obs_ph
@@ -181,7 +182,6 @@ class A2CAgent:
             grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
         grads = list(zip(grads, self.weights))
 
-
         self.train_op = self.train_step.apply_gradients(grads)
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
@@ -255,6 +255,7 @@ class A2CAgent:
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)
             self.current_lengths = self.current_lengths * (1.0 - self.dones)
+
         #using openai baseline approach
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
@@ -299,7 +300,6 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
-
         max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors * self.num_agents
@@ -434,16 +434,22 @@ class A2CAgent:
                         kls.append(kl)
                         entropies.append(entropy)
 
-
             update_time_end = time.time()
             update_time = update_time_end - update_time_start
             sum_time = update_time + play_time
 
             total_time = update_time_end - start_time
 
-            if True:
-                print('Frames per seconds: ', batch_size / sum_time)
-                self.writer.add_scalar('performance/fps', batch_size / sum_time, frame)
+            if True:         
+                scaled_time = sum_time # self.num_agents * 
+                scaled_play_time = play_time # self.num_agents * 
+                if self.print_stats:
+                    fps_step = batch_size / scaled_play_time
+                    fps_total = batch_size / scaled_time
+                    print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
+                    
+                self.writer.add_scalar('performance/total_fps', batch_size / sum_time, frame)
+                self.writer.add_scalar('performance/step_fps', batch_size / play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
@@ -460,18 +466,19 @@ class A2CAgent:
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
-                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.name + self.env_name)
+                        self.save("./nn/" + self.name)
                         if last_mean_rewards > self.config['score_to_win']:
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num  
+                            return last_mean_rewards, epoch_num
+
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))

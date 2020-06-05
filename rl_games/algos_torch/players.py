@@ -13,6 +13,7 @@ def rescale_actions(low, high, action):
     scaled_action =  action * d + m
     return scaled_action
 
+
 class PpoPlayerContinuous(BasePlayer):
     def __init__(self, config):
         BasePlayer.__init__(self, config)

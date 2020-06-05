@@ -1,7 +1,7 @@
-import common.object_factory as object_factory
 import tensorflow as tf
 import numpy as np
-from algos_tf14 import networks
+from rl_games.algos_tf14 import networks
+from rl_games.common import object_factory
 
 def normc_initializer(std=1.0):
     def _initializer(shape, dtype=None, partition_info=None):

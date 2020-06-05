@@ -1,5 +1,4 @@
 import numpy as np
-import argparse
 import copy
 import torch
 import yaml
@@ -68,7 +67,6 @@ class Runner:
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
         self.load_config(copy.deepcopy(self.default_config))
-    #    self.load_config(self.default_config)
 
         if 'experiment_config' in yaml_conf:
             self.exp_config = yaml_conf['experiment_config']
@@ -95,8 +93,8 @@ class Runner:
             self.reset()
             self.load_config(self.default_config)
             agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
-        #    if self.load_check_point or (self.load_path is not None):
-        #        agent.restore(self.load_path)
+            if self.load_check_point or (self.load_path is not None):
+                agent.restore(self.load_path)
             agent.train()
             
     def create_player(self):
@@ -121,26 +119,3 @@ class Runner:
             self.run_train()
         
         ray.shutdown()
-
-
-if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-t", "--train", required=False, help="train network", action='store_true')
-    ap.add_argument("-p", "--play", required=False, help="play network", action='store_true')
-    ap.add_argument("-c", "--checkpoint", required=False, help="path to checkpoint")
-    ap.add_argument("-f", "--file", required=True, help="path to config")
-
-    args = vars(ap.parse_args())
-    config_name = args['file']
-    print('Loading config: ', config_name)
-    with open(config_name, 'r') as stream:
-        config = yaml.safe_load(stream)
-        runner = Runner()
-        try:
-            runner.load(config)
-        except yaml.YAMLError as exc:
-            print(exc)
-    
-    runner.reset()
-    runner.run(args)
-        
