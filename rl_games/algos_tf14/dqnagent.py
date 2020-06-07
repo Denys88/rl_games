@@ -68,9 +68,9 @@ class DQNAgent:
             self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)     
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
+            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'], observation_space)
         else: 
-            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
+            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'], observation_space)
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')

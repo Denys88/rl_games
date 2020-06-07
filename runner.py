@@ -1,9 +1,7 @@
 import numpy as np
 import argparse
 import copy
-import torch
 import yaml
-import ray
 
 '''from rl_games import algos_torch
 from rl_games.common import object_factory
