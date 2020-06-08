@@ -6,10 +6,10 @@ class BasePlayer(object):
     def __init__(self, config):
         self.config = config
         self.env_name = self.config['env_name']
-        self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
-        self.state_shape = list(self.observation_space.shape)
-        self.env = None
         self.env_config = self.config.get('env_config', {})
+        self.env = self.create_env()
+        self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env)
+        self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
 
     def _preproc_obs(self, obs_batch):
@@ -70,7 +70,6 @@ class BasePlayer(object):
         raise NotImplementedError('raise')
 
     def run(self, n_games=100, n_game_life = 1, render= True, is_determenistic = False):
-        self.env = self.create_env()
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
