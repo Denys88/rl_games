@@ -132,8 +132,7 @@ class A2CBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            batch_num = kwargs.pop('batch_num', 1)
-            games_num = kwargs.pop('games_num', 1)
+            games_num = kwargs.pop('seq_length', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
@@ -221,7 +220,10 @@ class A2CBuilder(NetworkBuilder):
 
             mlp_init(self.value.weight)     
 
-        def forward(self, obs):
+        def forward(self, obs_dict):
+            obs = obs_dict['obs']
+            dones = obs_dict.get('dones', None)
+            states = obs_dict.get('states', None)
             if self.separate:
                 a_out = c_out = obs
                 
@@ -238,7 +240,14 @@ class A2CBuilder(NetworkBuilder):
                 
                 for l in self.critic_mlp:
                     c_out = l(c_out)
-                    
+
+                if self.has_lstm:
+                    batch_size = a_out.size()[0]
+                    num_seqs = batch_size / seq_length
+                    a_out = a_out.reshape(batch_size, num_seqs, -1)
+                    a_out = self.lstm_a(a_out, dones, states)
+                    c_out = self.lstm_c(c_out, dones, states)
+
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
                     logits = self.logits(a_out)
@@ -261,6 +270,12 @@ class A2CBuilder(NetworkBuilder):
                 for l in self.actor_mlp:
                     out = l(out)
                 
+                if self.has_lstm:
+                    batch_size = out.size()[0]
+                    num_seqs = batch_size / seq_length
+                    out = out.reshape(batch_size, num_seqs, -1)
+                    out = self.lstm(out, dones, states)
+
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:
