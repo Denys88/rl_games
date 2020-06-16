@@ -2,6 +2,7 @@ from rl_games.common import env_configurations
 import numpy as np
 import torch
 
+
 class BasePlayer(object):
     def __init__(self, config):
         self.config = config
@@ -24,7 +25,6 @@ class BasePlayer(object):
         return obs_batch
 
     def env_step(self, env, actions):
-        
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
@@ -69,7 +69,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=10000, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = True):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -84,6 +84,7 @@ class BasePlayer(object):
         for _ in range(n_games):
             if games_played >= n_games:
                 break
+
             s = self.env_reset(self.env)
             batch_size = 1
             if len(s.size()) > len(self.state_shape):
@@ -106,12 +107,13 @@ class BasePlayer(object):
 
                 done_indices = done.nonzero()[::self.num_agents]
                 done_count = len(done_indices)
+
                 games_played += done_count
                 
                 if done_count > 0:
                     cur_rewards = cr[done_indices].sum().item()
-
                     cur_steps = steps[done_indices].sum().item()
+
                     cr = cr * (1.0 - done.float())
                     steps = steps * (1.0 - done.float())
                     sum_rewards += cur_rewards
@@ -120,10 +122,10 @@ class BasePlayer(object):
 
                     if info is not None:
                         game_res = info.get('battle_won', 0.5)
+
                     print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
                     sum_game_res += game_res
-                    
-                    if batch_size == 1 or games_played >=n_games:
+                    if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
 
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
