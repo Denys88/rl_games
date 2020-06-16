@@ -4,8 +4,8 @@ from rl_games.common import tr_helpers
 import gym
 import numpy as np
 
-FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
-#FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
+FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
@@ -358,15 +358,12 @@ def get_obs_and_action_spaces_from_config(config):
         observation_space = observation_space['observations']
     return observation_space, action_space
 
-def get_env_info(config):
-    env_config = config.get('env_config', {})
-    env = configurations[config['env_name']]['env_creator'](**env_config)
+def get_env_info(env):
     observation_space = env.observation_space
     action_space = env.action_space
     agents = 1
     if hasattr(env, "get_number_of_agents"):
         agents = env.get_number_of_agents()
-    env.close()
     if isinstance(observation_space, gym.spaces.dict.Dict):
         observation_space = observation_space['observations']
     return observation_space, action_space, agents
