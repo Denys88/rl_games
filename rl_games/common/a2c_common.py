@@ -453,6 +453,7 @@ class DiscreteA2CBase(A2CBase):
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
+                
                 if self.print_stats:
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time
@@ -475,6 +476,7 @@ class DiscreteA2CBase(A2CBase):
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
                     mean_scores = np.mean(self.game_scores)
+                    
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
@@ -489,6 +491,7 @@ class DiscreteA2CBase(A2CBase):
                             mean_cur_rewards = np.mean(self.curiosity_rewards)
                             mean_min_rewards = np.mean(self.curiosity_mins)
                             mean_max_rewards = np.mean(self.curiosity_maxs)
+                            
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
@@ -500,7 +503,7 @@ class DiscreteA2CBase(A2CBase):
                     if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.config['name'] + self.env_name)
+                        self.save("./nn/" + self.config['name'])
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
@@ -823,7 +826,7 @@ class ContinuousA2CBase(A2CBase):
                     if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.config['name'] + self.env_name)
+                        self.save("./nn/" + self.config['name'])
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))

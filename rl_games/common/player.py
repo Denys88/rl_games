@@ -69,7 +69,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=100, n_game_life = 1, render= True, is_determenistic = False):
+    def run(self, n_games=10000, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -77,6 +77,7 @@ class BasePlayer(object):
         games_played = 0
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+        
         if has_masks_func:
             has_masks = self.env.has_action_mask()
 
@@ -87,6 +88,7 @@ class BasePlayer(object):
             batch_size = 1
             if len(s.size()) > len(self.state_shape):
                 batch_size = s.size()[0]
+            
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
             for _ in range(5000):
@@ -105,6 +107,7 @@ class BasePlayer(object):
                 done_indices = done.nonzero()[::self.num_agents]
                 done_count = len(done_indices)
                 games_played += done_count
+                
                 if done_count > 0:
                     cur_rewards = cr[done_indices].sum().item()
 
@@ -114,6 +117,7 @@ class BasePlayer(object):
                     sum_rewards += cur_rewards
                     sum_steps += cur_steps
                     game_res = 0
+
                     if info is not None:
                         game_res = info.get('battle_won', 0.5)
                     print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
