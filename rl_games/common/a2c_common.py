@@ -78,8 +78,8 @@ class A2CBase:
         self.game_scores = deque([], maxlen=self.games_to_log)   
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
-        self.is_rnn = False
-        self.states = None
+        self.is_rnn = self.network.is_rnn()
+        self.states = self.network.get_default_rnn_state()
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
@@ -124,6 +124,12 @@ class A2CBase:
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+
+        if self.is_rnn:
+            num_seqs = self.steps_num//self.seq_len * batch_size
+            self.mb_states = 
+            [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
@@ -244,14 +250,26 @@ class DiscreteA2CBase(A2CBase):
         mb_values = self.mb_values
         mb_neglogpacs = self.mb_neglogpacs
         mb_dones = self.mb_dones
+        mb_states = self.mb_states
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
         # For n in range number of steps
+        if self.is_rnn:
+            mb_masks = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+            indices = torch.zeros((batch_size), dtype = torch.long)
+
         for n in range(self.steps_num):
-            if self.network.is_rnn():
-                mb_states.append(self.states)
+            if self.is_rnn:
+
+                seq_indices = indices % self.seq_len
+                state_indices = (seq_indices == 0).nonzero()
+                state_pos = indices // self.seq_len
+
+                for s, mb_s in zip(self.states, mb_states)
+                    mb_s[:, state_pos[state_indices], :] = s[:, state_indices, :]
+                indices += 1
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -273,8 +291,13 @@ class DiscreteA2CBase(A2CBase):
             
             self.current_rewards += rewards
             self.current_lengths += 1
+            all_done_indices = self.dones.nonzero()
+            done_indices = all_done_indices[::self.num_agents]
+            if self.is_rnn:
+                for i in range(len(self.states)):
+                    self.states[i][all_done_indices,:,:,:] = self.states[i][all_done_indices,:,:,:] * 0.0
+                     
 
-            done_indices = self.dones.nonzero()[::self.num_agents]
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
 

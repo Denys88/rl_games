@@ -18,8 +18,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'games_num' : 1,
-            'batch_num' : 1,
+            'seq_length' : 1,
         } 
         self.model = self.network.build(config)
         self.model.cuda()

@@ -52,6 +52,12 @@ class NetworkBuilder:
         def is_separate_critic(self):
             return False
 
+        def is_rnn(self):
+            return False
+
+        def get_default_rnn_state(self):
+            return None
+
         def _calc_input_size(self, input_shape,cnn_layers=None):
             if cnn_layers is None:
                 assert(len(input_shape) == 1)
@@ -132,7 +138,8 @@ class A2CBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            games_num = kwargs.pop('seq_length', 1)
+            self.seq_length = seq_length = kwargs.pop('seq_length', 1)
+            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
@@ -171,10 +178,10 @@ class A2CBuilder(NetworkBuilder):
             if self.has_lstm:
                 out_size = self.lstm_units
                 if self.separate:
-                    self.a_lstm = layers.LSTMWithDones(self.units[-1], self.lstm_units)
-                    self.v_lstm = layers.LSTMWithDones(self.units[-1], self.lstm_units)
+                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_ units, 1)
+                    self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
                 else:
-                    self.lstm = layers.LSTMWithDones(elf.units[-1], self.lstm_units)
+                    self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
             self.value = torch.nn.Linear(self.units[-1], self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
 
@@ -222,7 +229,6 @@ class A2CBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
-            dones = obs_dict.get('dones', None)
             states = obs_dict.get('states', None)
             if self.separate:
                 a_out = c_out = obs
@@ -243,10 +249,10 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.has_lstm:
                     batch_size = a_out.size()[0]
-                    num_seqs = batch_size / seq_length
-                    a_out = a_out.reshape(batch_size, num_seqs, -1)
-                    a_out = self.lstm_a(a_out, dones, states)
-                    c_out = self.lstm_c(c_out, dones, states)
+                    num_seqs = batch_size // seq_length
+                    a_out = a_out.reshape(num_seqs, seq_length, -1)
+                    a_out = self.lstm_a(a_out, states)
+                    c_out = self.lstm_c(c_out, states)
 
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
@@ -271,9 +277,9 @@ class A2CBuilder(NetworkBuilder):
                     out = l(out)
                 
                 if self.has_lstm:
-                    batch_size = out.size()[0]
-                    num_seqs = batch_size / seq_length
-                    out = out.reshape(batch_size, num_seqs, -1)
+                    batch_size = a_out.size()[0]
+                    num_seqs = batch_size // seq_length
+                    a_out = a_out.reshape(num_seqs, seq_length, -1)
                     out = self.lstm(out, dones, states)
 
                 value = self.value_act(self.value(out))
@@ -292,6 +298,13 @@ class A2CBuilder(NetworkBuilder):
                     
         def is_separate_critic(self):
             return self.separate
+
+        def is_rnn(self):
+            return self.has_lstm
+
+        def get_default_rnn_state(self):
+            num_layers = 1
+            return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
 
         def load(self, params):
             self.separate = params['separate']
