@@ -257,19 +257,17 @@ class DiscreteA2CBase(A2CBase):
 
         # For n in range number of steps
         if self.is_rnn:
-            mb_masks = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-            indices = torch.zeros((batch_size), dtype = torch.long)
+            mb_rnn_masks = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+            indices = torch.zeros((batch_size), dtype = torch.long).cuda()
 
         for n in range(self.steps_num):
             if self.is_rnn:
-
                 seq_indices = indices % self.seq_len
                 state_indices = (seq_indices == 0).nonzero()
                 state_pos = indices // self.seq_len
 
                 for s, mb_s in zip(self.states, mb_states)
                     mb_s[:, state_pos[state_indices], :] = s[:, state_indices, :]
-                indices += 1
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -293,7 +291,12 @@ class DiscreteA2CBase(A2CBase):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero()
             done_indices = all_done_indices[::self.num_agents]
+
             if self.is_rnn:
+                indices[all_done_indices] += self.seq_len - seq_indices - 1
+                indices += 1
+                mb_rnn_masks[indices,:] = 1
+                
                 for i in range(len(self.states)):
                     self.states[i][all_done_indices,:,:,:] = self.states[i][all_done_indices,:,:,:] * 0.0
                      
