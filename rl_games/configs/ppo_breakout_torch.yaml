@@ -44,6 +44,9 @@ params:
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
+    lstm:
+      units: 256
+      concated: False
   config:
     reward_shaper:
         scale_value: 0.1

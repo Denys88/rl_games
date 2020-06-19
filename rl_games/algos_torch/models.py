@@ -28,30 +28,32 @@ class ModelA2C(BaseModel):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
 
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+        
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             action_masks = input_dict.pop('action_masks', None)
             prev_actions = input_dict.pop('prev_actions', None)
-            inputs = input_dict.pop('inputs')
-            logits, value = self.a2c_network(inputs)
+            logits, value, states = self.a2c_network(input_dict)
 
             if not is_train:
                 u = torch.cuda.FloatTensor(logits.size()).uniform_()
                 rand_logits = logits - torch.log(-torch.log(u))
                 if action_masks is not None:
                     logits = logits - (1.0 - action_masks) * 1e10
-
-                    #rand_logits = rand_logits + inf_mask
-                    #logits = logits + inf_mask
                 
                 selected_action = torch.distributions.Categorical(logits=logits).sample().long()
 
                 neglogp = F.cross_entropy(logits, selected_action, reduction='none')
-                return  neglogp, value, selected_action, logits
+                return  neglogp, value, selected_action, logits, states
             else:
                 entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1).mean()
                 prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
-                return prev_neglogp, value, entropy
+                return prev_neglogp, value, entropy, states
 
 
 class ModelA2CContinuous(BaseModel):

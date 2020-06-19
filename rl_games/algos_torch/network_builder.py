@@ -178,7 +178,7 @@ class A2CBuilder(NetworkBuilder):
             if self.has_lstm:
                 out_size = self.lstm_units
                 if self.separate:
-                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_ units, 1)
+                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
                     self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
                 else:
                     self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
@@ -229,7 +229,8 @@ class A2CBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
-            states = obs_dict.get('states', None)
+            print(obs.size())
+            states = obs_dict.get('rnn_states', None)
             if self.separate:
                 a_out = c_out = obs
                 
@@ -277,16 +278,16 @@ class A2CBuilder(NetworkBuilder):
                     out = l(out)
                 
                 if self.has_lstm:
-                    batch_size = a_out.size()[0]
-                    num_seqs = batch_size // seq_length
-                    a_out = a_out.reshape(num_seqs, seq_length, -1)
-                    out = self.lstm(out, dones, states)
+                    batch_size = out.size()[0]
+                    num_seqs = batch_size // self.seq_length
+                    out = out.reshape(num_seqs, self.seq_length, -1)
+                    out, states = self.lstm(out, states)
 
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:
                     logits = self.logits(out)
-                    return logits, value
+                    return logits, value, states
 
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
@@ -294,7 +295,7 @@ class A2CBuilder(NetworkBuilder):
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
-                    return mu, mu*0 + sigma, value
+                    return mu, mu*0 + sigma, value, states
                     
         def is_separate_critic(self):
             return self.separate
@@ -304,7 +305,7 @@ class A2CBuilder(NetworkBuilder):
 
         def get_default_rnn_state(self):
             num_layers = 1
-            return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
+            return (torch.zeros((num_layers, self.seq_length, self.lstm_units)).cuda(), torch.zeros((num_layers, self.seq_length, self.lstm_units)).cuda())
 
         def load(self, params):
             self.separate = params['separate']

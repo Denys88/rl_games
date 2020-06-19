@@ -78,8 +78,6 @@ class A2CBase:
         self.game_scores = deque([], maxlen=self.games_to_log)   
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
-        self.is_rnn = self.network.is_rnn()
-        self.states = self.network.get_default_rnn_state()
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
@@ -124,11 +122,6 @@ class A2CBase:
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
-
-        if self.is_rnn:
-            num_seqs = self.steps_num//self.seq_len * batch_size
-            self.mb_states = 
-            [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
 
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
@@ -255,18 +248,21 @@ class DiscreteA2CBase(A2CBase):
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
+        batch_size = self.num_agents * self.num_actors
         # For n in range number of steps
         if self.is_rnn:
             mb_rnn_masks = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
             indices = torch.zeros((batch_size), dtype = torch.long).cuda()
 
         for n in range(self.steps_num):
+            print(indices)
             if self.is_rnn:
+                mb_rnn_masks[indices,:] = 1
                 seq_indices = indices % self.seq_len
                 state_indices = (seq_indices == 0).nonzero()
                 state_pos = indices // self.seq_len
 
-                for s, mb_s in zip(self.states, mb_states)
+                for s, mb_s in zip(self.states, mb_states):
                     mb_s[:, state_pos[state_indices], :] = s[:, state_indices, :]
 
             if self.use_action_masks:
@@ -294,9 +290,7 @@ class DiscreteA2CBase(A2CBase):
 
             if self.is_rnn:
                 indices[all_done_indices] += self.seq_len - seq_indices - 1
-                indices += 1
-                mb_rnn_masks[indices,:] = 1
-                
+                indices += 1                
                 for i in range(len(self.states)):
                     self.states[i][all_done_indices,:,:,:] = self.states[i][all_done_indices,:,:,:] * 0.0
                      

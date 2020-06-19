@@ -18,10 +18,19 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'seq_length' : 1,
+            'seq_length' : self.seq_len,
+            'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
         self.model.cuda()
+
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()
+            batch_size = self.num_agents * self.num_actors
+            num_seqs = self.steps_num//self.seq_len * batch_size
+            self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
         #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
@@ -80,8 +89,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
-            'action_masks' : action_masks
+            'obs' : obs,
+            'action_masks' : action_masks,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
@@ -94,7 +104,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
+            'obs' : obs,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
@@ -106,7 +117,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs
+            'obs' : obs,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
