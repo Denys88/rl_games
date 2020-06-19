@@ -39,7 +39,6 @@ class ModelA2C(BaseModel):
             action_masks = input_dict.pop('action_masks', None)
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
-
             if not is_train:
                 u = torch.cuda.FloatTensor(logits.size()).uniform_()
                 rand_logits = logits - torch.log(-torch.log(u))
@@ -51,7 +50,7 @@ class ModelA2C(BaseModel):
                 neglogp = F.cross_entropy(logits, selected_action, reduction='none')
                 return  neglogp, value, selected_action, logits, states
             else:
-                entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1).mean()
+                entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1)
                 prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
                 return prev_neglogp, value, entropy, states
 

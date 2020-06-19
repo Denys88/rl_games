@@ -138,7 +138,6 @@ class A2CBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            self.seq_length = seq_length = kwargs.pop('seq_length', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
@@ -178,17 +177,17 @@ class A2CBuilder(NetworkBuilder):
             if self.has_lstm:
                 out_size = self.lstm_units
                 if self.separate:
-                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
-                    self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
+                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
+                    self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
                 else:
-                    self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1)
-            self.value = torch.nn.Linear(self.units[-1], self.value_shape)
+                    self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
+            self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
 
             if self.is_discrete:
-                self.logits = torch.nn.Linear(self.units[-1], actions_num)
+                self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:
-                self.mu = torch.nn.Linear(self.units[-1], actions_num)
+                self.mu = torch.nn.Linear(out_size, actions_num)
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
@@ -197,7 +196,7 @@ class A2CBuilder(NetworkBuilder):
                 if self.space_config['fixed_sigma']:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
-                    self.sigma = torch.nn.Linear(self.units[-1], actions_num)
+                    self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
             if self.has_cnn:
@@ -229,8 +228,8 @@ class A2CBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
-            print(obs.size())
             states = obs_dict.get('rnn_states', None)
+            seq_length = obs_dict.get('seq_length', 1)
             if self.separate:
                 a_out = c_out = obs
                 
@@ -279,10 +278,10 @@ class A2CBuilder(NetworkBuilder):
                 
                 if self.has_lstm:
                     batch_size = out.size()[0]
-                    num_seqs = batch_size // self.seq_length
-                    out = out.reshape(num_seqs, self.seq_length, -1)
+                    num_seqs = batch_size // seq_length
+                    out = out.reshape(num_seqs, seq_length, -1)
                     out, states = self.lstm(out, states)
-
+                    out = out.squeeze()
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:
@@ -305,7 +304,7 @@ class A2CBuilder(NetworkBuilder):
 
         def get_default_rnn_state(self):
             num_layers = 1
-            return (torch.zeros((num_layers, self.seq_length, self.lstm_units)).cuda(), torch.zeros((num_layers, self.seq_length, self.lstm_units)).cuda())
+            return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
 
         def load(self, params):
             self.separate = params['separate']

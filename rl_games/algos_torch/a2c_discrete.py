@@ -18,17 +18,17 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'seq_length' : self.seq_len,
             'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
         self.model.cuda()
 
         self.is_rnn = self.model.is_rnn()
+        self.states = None
         if self.is_rnn:
             self.states = self.model.get_default_rnn_state()
             batch_size = self.num_agents * self.num_actors
-            num_seqs = self.steps_num//self.seq_len * batch_size
+            num_seqs = self.steps_num // self.seq_len * batch_size
             self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
 
         self.last_lr = float(self.last_lr)
@@ -93,9 +93,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'action_masks' : action_masks,
             'rnn_states' : self.states
         }
+
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
-        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), None
+            neglogp, value, action, logits, states = self.model(input_dict)
+        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), states
 
 
     def get_action_values(self, obs):
@@ -108,8 +109,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
-        return action.detach(), value.detach().cpu(), neglogp.detach(), None
+            neglogp, value, action, logits, states = self.model(input_dict)
+        return action.detach(), value.detach().cpu(), neglogp.detach(), states
 
     def get_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -121,7 +122,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
+            neglogp, value, action, logits, states = self.model(input_dict)
         return value.detach().cpu()
 
     def get_intrinsic_reward(self, obs):
@@ -145,17 +146,25 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         return_batch = input_dict['returns']
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
+        print(obs_batch.size())
         obs_batch = self._preproc_obs(obs_batch)
+        print(obs_batch.size())
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
 
-        input_dict = {
+        batch_dict = {
             'is_train': True,
             'prev_actions': actions_batch, 
-            'inputs' : obs_batch
+            'obs' : obs_batch,
         }
+
+        if self.is_rnn:
+            rnn_masks = input_dict['rnn_masks']
+            batch_dict['rnn_states'] = input_dict['rnn_states']
+            batch_dict['seq_length'] = self.seq_len
+
         action_log_probs, values, entropy = self.model(input_dict)
 
         if self.ppo:
@@ -163,9 +172,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             surr1 = ratio * advantage
             surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
                                 1.0 + curr_e_clip) * advantage
-            a_loss = torch.max(-surr1, -surr2).mean()
+            a_loss = torch.max(-surr1, -surr2)
         else:
-            a_loss = (action_log_probs * advantage).mean()
+            a_loss = (action_log_probs * advantage)
 
         values = torch.squeeze(values)
         if self.clip_value:
@@ -179,9 +188,19 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             c_loss = (return_batch - values)**2
 
         if self.has_curiosity:
-            c_loss = c_loss.sum(dim=1).mean()
+            c_loss = c_loss.sum(dim=1)
         else:
+            c_loss = c_loss
+
+        if self.is_rnn:
+            sum_mask = rnn_masks.sum()
+            a_loss = (a_loss * rnn_masks).sum() / sum_mask
+            c_loss = (c_loss * rnn_masks).sum() / sum_mask
+            entropy = (entropy * rnn_masks).sum() / sum_mask
+        else:
+            a_loss = a_loss.mean()
             c_loss = c_loss.mean()
+            entropy = entropy.mean()
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
         self.optimizer.zero_grad()
