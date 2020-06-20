@@ -18,8 +18,8 @@ params:
       type: conv2d
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_normal_initializer
+        gain: 1.4142 
       regularizer:
         name: 'None'
       convs:    
@@ -42,8 +42,8 @@ params:
       regularizer:
         name: 'None'
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_normal_initializer
+        gain: 1.4142 
   config:
     reward_shaper:
         scale_value: 1
@@ -64,7 +64,7 @@ params:
     num_actors: 16
     steps_num: 256
     minibatch_size: 1024
-    mini_epochs: 4
+    mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008

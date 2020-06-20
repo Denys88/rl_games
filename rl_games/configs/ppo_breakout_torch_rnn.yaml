@@ -49,7 +49,7 @@ params:
       concated: False
   config:
     reward_shaper:
-        scale_value: 0.1
+        scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -67,12 +67,12 @@ params:
     num_actors: 16
     steps_num: 256
     minibatch_size: 1024
-    mini_epochs: 4
+    mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 4
+    seq_len: 8
     #lr_schedule:  adaptive
     # lr_threshold: 0.008
     # bounds_loss_coef: 0.5
