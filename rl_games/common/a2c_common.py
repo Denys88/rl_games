@@ -252,14 +252,15 @@ class DiscreteA2CBase(A2CBase):
         mb_rnn_masks = None
         if self.is_rnn:
             mb_states = self.mb_states
-            mb_rnn_masks = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+            mb_rnn_masks = torch.zeros((batch_size * self.steps_num), dtype = torch.float32).cuda()
+            steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
             indices = torch.zeros((batch_size), dtype = torch.long).cuda()
 
         for n in range(self.steps_num):
             if self.is_rnn:
                 if indices.max().item() >= self.steps_num:
                     break
-                mb_rnn_masks[indices,:] = 1
+                mb_rnn_masks[indices + steps_mask] = 1
                 seq_indices = indices % self.seq_len
                 state_indices = (seq_indices == 0).nonzero()
                 state_pos = indices // self.seq_len
@@ -358,12 +359,13 @@ class DiscreteA2CBase(A2CBase):
             'actions' : mb_actions,
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
-            'rnn_masks' : mb_rnn_masks
+            #'rnn_masks' : mb_rnn_masks
         }
 
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.is_rnn:
             batch_dict['rnn_states'] = mb_states
+            batch_dict['rnn_masks'] = mb_rnn_masks
 
         return batch_dict
 
@@ -397,9 +399,9 @@ class DiscreteA2CBase(A2CBase):
         kls = []
 
         if self.is_rnn:
+            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
-            print(total_games, num_games_batch)
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
@@ -415,7 +417,7 @@ class DiscreteA2CBase(A2CBase):
                     input_dict['returns'] = returns[mbatch]
                     input_dict['actions'] = actions[mbatch]
                     input_dict['obs'] = obses[mbatch]
-                    input_dict['rnn_states'] = [s[batch] for s in rnn_states]
+                    input_dict['rnn_states'] = [s[:,batch,:] for s in rnn_states]
                     input_dict['rnn_masks'] = rnn_masks[mbatch]
                     input_dict['learning_rate'] = self.last_lr
 

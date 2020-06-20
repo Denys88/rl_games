@@ -60,14 +60,14 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: BreakoutNoFrameskip-v4
+    env_name: PongNoFrameskip-v4
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 4
-    steps_num: 16
-    minibatch_size: 32
-    mini_epochs: 8
+    num_actors: 16
+    steps_num: 256
+    minibatch_size: 1024
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008

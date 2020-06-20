@@ -146,9 +146,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         return_batch = input_dict['returns']
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
-        print(obs_batch.size())
         obs_batch = self._preproc_obs(obs_batch)
-        print(obs_batch.size())
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
@@ -165,7 +163,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-        action_log_probs, values, entropy = self.model(input_dict)
+        action_log_probs, values, entropy, _ = self.model(batch_dict)
 
         if self.ppo:
             ratio = torch.exp(old_action_log_probs_batch - action_log_probs)

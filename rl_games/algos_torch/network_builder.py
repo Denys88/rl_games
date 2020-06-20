@@ -139,7 +139,6 @@ class A2CBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
-
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
             self.actor_cnn = []
@@ -281,7 +280,7 @@ class A2CBuilder(NetworkBuilder):
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
                     out, states = self.lstm(out, states)
-                    out = out.squeeze()
+                    out = out.reshape(out.size()[0] * out.size()[1], -1)
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:
