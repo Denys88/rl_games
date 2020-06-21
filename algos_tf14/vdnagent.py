@@ -86,19 +86,26 @@ class VDNAgent:
             self.input_next_obs = tf.to_float(self.input_next_obs) / 255.0
         self.setup_qvalues(actions_num)
         
-        if self.env_name:
-            self.sess.run(tf.global_variables_initializer())
-#         self.reg_loss = tf.losses.get_regularization_loss()
-#         self.td_loss_mean += self.reg_loss
-#         self.learning_rate = self.config['learning_rate']
-#         self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)        
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.td_loss_mean += self.reg_loss
+        self.learning_rate = self.config['learning_rate']
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)        
 
-#         self.saver = tf.train.Saver()
-#         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
-#         self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        self.saver = tf.train.Saver()
+        self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+        self.variables = TensorFlowVariables(self.qvalues, self.sess)
         if self.env_name:
             sess.run(tf.global_variables_initializer())
         self._reset()
+    
+    def get_weights(self):
+        return self.variables.get_flat()
+    
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
+    
+    def update_epoch(self):
+        return self.sess.run([self.update_epoch_op])[0]
     
     def setup_qvalues(self, actions_num):
         config = {
@@ -132,59 +139,37 @@ class VDNAgent:
         if self.config['is_double'] == True:
             self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
             self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
-            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
+            self.next_obs_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
         else:
-            self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
-        
-    def play_steps(self, steps, epsilon=0.0):
-        done_reward = None
-        done_shaped_reward = None
-        done_steps = None
-        steps_rewards = 0
-        cur_gamma = 1
-        cur_obs_act_rew_len = len(self.obs_act_rew)
-
-        # always break after one
-        while True:
-            if cur_obs_act_rew_len > 0:
-                obs = self.obs_act_rew[-1][0]
-            else:
-                obs = self.current_obs
-            obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
-
-            action = self.get_action(obs, self.env.get_action_mask(), epsilon)
-            print(action)
-            print(self.sess.run(self.qvalues, {self.obs_ph: obs}))
-            print(self.sess.run(self.next_state_values_target, {self.obs_ph: obs, self.actions_ph: action}))
-            new_obs, reward, is_done, _ = self.env.step(action)
-            #reward = reward * (1 - is_done)
- 
-            self.step_count += 1
-            self.total_reward += reward
-            shaped_reward = self.rewards_shaper(reward)
-            self.total_shaped_reward += shaped_reward
-            self.obs_act_rew.append([new_obs, action, shaped_reward])
-
-            if len(self.obs_act_rew) < steps:
-                break
-
-            for i in range(steps):
-                sreward = self.obs_act_rew[i][2]
-                steps_rewards += sreward * cur_gamma
-                cur_gamma = cur_gamma * self.gamma
-
-            next_obs, current_action, _ = self.obs_act_rew[0]
-            self.exp_buffer.add(self.current_obs, current_action, steps_rewards, new_obs, is_done)
-            self.current_obs = next_obs
-            break
+            self.next_obs_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
             
-        if all(is_done):
-            done_reward = self.total_reward
-            done_steps = self.step_count
-            done_shaped_reward = self.total_shaped_reward
-            self._reset()
-        return done_reward, done_shaped_reward, done_steps
-                
+        ##MIXING:
+        self.current_action_qvalues_mix = tf.reduce_sum(self.current_action_qvalues, axis=0)
+        self.target_action_qvalues_mix = tf.reduce_sum(self.next_obs_values_target, axis=0)
+        
+        self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.target_action_qvalues_mix
+        
+        if self.is_prioritized:
+            # we need to return l1 loss to update priority buffer
+            self.abs_errors = tf.abs(self.current_action_qvalues_mix - self.reference_qvalues) + 1e-5
+            # the same as multiply gradients later (other way is used in different examples over internet) 
+            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues_mix, self.reference_qvalues, reduction=tf.losses.Reduction.NONE) * self.sample_weights_ph
+            self.td_loss_mean = tf.reduce_mean(self.td_loss) 
+        else:
+            self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues_mix, self.reference_qvalues, reduction=tf.losses.Reduction.MEAN)
+            
+        self.reg_loss = tf.losses.get_regularization_loss()
+        self.td_loss_mean += self.reg_loss
+        self.learning_rate = self.config['learning_rate']
+        if self.env_name:
+            self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)
+            
+    def save(self, fn):
+        self.saver.save(self.sess, fn)
+
+    def restore(self, fn):
+        self.saver.restore(self.sess, fn)
+        
     def _reset(self):
         self.obs_act_rew.clear()
         if self.env_name:
@@ -205,16 +190,168 @@ class VDNAgent:
     def get_qvalues(self, obs):
         return self.sess.run(self.qvalues, {self.obs_ph: obs})
         
-    def train(self):
-        for _ in range(5):
-            self.play_steps(steps=3)
-            
-        
-        
-        
-        
-        
-        
-        
-        
+    def play_steps(self, steps, epsilon=0.0):
+        done_reward = None
+        done_shaped_reward = None
+        done_steps = None
+        steps_rewards = 0
+        cur_gamma = 1
+        cur_obs_act_rew_len = len(self.obs_act_rew)
 
+        # always break after one
+        while True:
+            if cur_obs_act_rew_len > 0:
+                obs = self.obs_act_rew[-1][0]
+            else:
+                obs = self.current_obs
+            obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
+            state = self.env.get_state()
+
+            action = self.get_action(obs, self.env.get_action_mask(), epsilon)
+            new_obs, reward, is_done, _ = self.env.step(action)
+            #reward = reward * (1 - is_done)
+ 
+            self.step_count += 1
+            self.total_reward += reward
+            shaped_reward = self.rewards_shaper(reward)
+            self.total_shaped_reward += shaped_reward
+            self.obs_act_rew.append([new_obs, action, shaped_reward, state])
+
+            if len(self.obs_act_rew) < steps:
+                break
+
+            for i in range(steps):
+                sreward = self.obs_act_rew[i][2]
+                steps_rewards += sreward * cur_gamma
+                cur_gamma = cur_gamma * self.gamma
+
+            next_obs, current_action, _, current_st = self.obs_act_rew[0]
+            self.exp_buffer.add(self.current_obs, current_action, current_st, steps_rewards, new_obs, is_done)
+            self.current_obs = next_obs
+            break
+            
+        if all(is_done):
+            done_reward = self.total_reward
+            done_steps = self.step_count
+            done_shaped_reward = self.total_shaped_reward
+            self._reset()
+        return done_reward, done_shaped_reward, done_steps
+    
+    def load_weights_into_target_network(self):
+        self.sess.run(self.assigns_op)
+
+    def sample_batch(self, exp_replay, batch_size):
+        obs_batch, act_batch, st_batch, reward_batch, next_obs_batch, is_done_batch  = exp_replay.sample(batch_size)
+        return {
+        self.obs_ph:obs_batch, self.actions_ph:act_batch, self.state_ph: st_batch, 
+        self.rewards_ph:reward_batch, self.is_done_ph:is_done_batch, self.next_obs_ph:next_obs_batch
+        }
+
+    def sample_prioritized_batch(self, exp_replay, batch_size, beta):
+        obs_batch, act_batch, st_batch, reward_batch, next_obs_batch, is_done_batch,  sample_weights, sample_idxes = exp_replay.sample(batch_size, beta)
+        batch = { self.obs_ph:obs_batch, self.actions_ph:act_batch, self.state_ph: st_batch, self.rewards_ph:reward_batch, 
+        self.is_done_ph:is_done_batch, self.next_obs_ph:next_obs_batch, self.sample_weights_ph: sample_weights }
+        return [batch , sample_idxes]
+
+    def train(self):
+        mem_free_steps = 0
+        last_mean_rewards = -100500
+        epoch_num = 0
+        frame = 0
+        update_time = 0
+        play_time = 0
+
+        start_time = time.time()
+        total_time = 0
+        self.load_weights_into_target_network()
+        for _ in range(0, self.config['num_steps_fill_buffer']):
+            self.play_steps(self.steps_num, self.epsilon)
+        steps_per_epoch = self.config['steps_per_epoch']
+        num_epochs_to_copy = self.config['num_epochs_to_copy']
+        batch_size = self.config['batch_size']
+        lives_reward = self.config['lives_reward']
+        episodes_to_log = self.config['episodes_to_log']
+        frame = 0
+        play_time = 0
+        update_time = 0
+        rewards = []
+        shaped_rewards = []
+        steps = []
+        losses = deque([], maxlen=100)
+        
+#         while True:
+#             epoch_num = self.update_epoch()
+#             t_play_start = time.time()
+#             self.epsilon = self.epsilon_processor(frame)
+#             self.beta = self.beta_processor(frame)
+
+#             for _ in range(0, steps_per_epoch):
+#                 reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
+#                 if reward != None:
+#                     self.game_lengths.append(step)
+#                     self.game_rewards.append(reward)
+#                     #shaped_rewards.append(shaped_reward)
+
+#             t_play_end = time.time()
+#             play_time += t_play_end - t_play_start
+            
+#             # train
+#             frame = frame + steps_per_epoch
+#             t_start = time.time()
+#             if self.is_prioritized:
+#                 batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
+#                 _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
+#                 self.exp_buffer.update_priorities(idxes, errors_update)
+#             else:
+#                 batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
+#                 _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
+                
+#             losses.append(loss_t)
+#             t_end = time.time()
+#             update_time += t_end - t_start
+#             total_time += update_time
+#             if frame % 1000 == 0:
+#                 mem_free_steps += 1 
+#                 if mem_free_steps  == 10:
+#                     mem_free_steps = 0
+#                     tr_helpers.free_mem()
+#                 sum_time = update_time + play_time
+#                 print('frames per seconds: ', 1000 / (sum_time))
+#                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
+#                 self.writer.add_scalar('performance/upd_time', update_time, frame)
+#                 self.writer.add_scalar('performance/play_time', play_time, frame)
+#                 self.writer.add_scalar('losses/td_loss', np.mean(losses), frame)
+#                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
+#                 self.writer.add_scalar('info/lr', self.learning_rate*lr_mul, frame)
+#                 self.writer.add_scalar('info/epochs', epoch_num, frame)
+#                 self.writer.add_scalar('info/epsilon', self.epsilon, frame)
+#                 if self.is_prioritized:
+#                     self.writer.add_scalar('beta', self.beta, frame)
+                    
+#                 update_time = 0
+#                 play_time = 0
+#                 num_games = len(self.game_rewards)
+#                 if num_games > 10:
+#                     d = num_games / lives_reward
+#                     mean_rewards = np.sum(self.game_rewards) / d 
+#                     mean_lengths = np.sum(self.game_lengths) / d
+#                     self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+#                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+#                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+#                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
+#                     if mean_rewards > last_mean_rewards:
+#                         print('saving next best rewards: ', mean_rewards)
+#                         last_mean_rewards = mean_rewards
+#                         self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+#                         if last_mean_rewards > self.config['score_to_win']:
+#                             print('network won!')
+#                             return last_mean_rewards, epoch_num
+                        
+#             if frame % num_epochs_to_copy == 0:
+#                 self.load_weigths_into_target_network()
+            
+#             if epoch_num >= self.max_epochs:
+#                 print('Max epochs reached')
+#                 self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(np.sum(self.game_rewards) *  lives_reward / len(self.game_rewards)))
+#                 return last_mean_rewards, epoch_num 
