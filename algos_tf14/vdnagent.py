@@ -9,6 +9,7 @@ from tensorboardX import SummaryWriter
 from datetime import datetime
 from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
+import tensorflow_probability as tfp
 
 class VDNAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config, logger):
@@ -180,7 +181,7 @@ class VDNAgent:
         
     def get_action(self, obs, avail_acts, epsilon=0.0):
         if np.random.random() < epsilon:
-            action = self.env.action_space.sample()
+            action = tfp.distributions.Categorical(probs=avail_acts.astype(float)).sample().eval(session=self.sess)
         else:
             qvals = self.get_qvalues(obs)
             qvals[avail_acts == False] = -9999999
@@ -279,79 +280,79 @@ class VDNAgent:
         steps = []
         losses = deque([], maxlen=100)
         
-#         while True:
-#             epoch_num = self.update_epoch()
-#             t_play_start = time.time()
-#             self.epsilon = self.epsilon_processor(frame)
-#             self.beta = self.beta_processor(frame)
+        while True:
+            epoch_num = self.update_epoch()
+            t_play_start = time.time()
+            self.epsilon = self.epsilon_processor(frame)
+            self.beta = self.beta_processor(frame)
 
-#             for _ in range(0, steps_per_epoch):
-#                 reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
-#                 if reward != None:
-#                     self.game_lengths.append(step)
-#                     self.game_rewards.append(reward)
-#                     #shaped_rewards.append(shaped_reward)
+            for _ in range(0, steps_per_epoch):
+                reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
+                if reward != None:
+                    self.game_lengths.append(step)
+                    self.game_rewards.append(reward)
+                    #shaped_rewards.append(shaped_reward)
 
-#             t_play_end = time.time()
-#             play_time += t_play_end - t_play_start
+            t_play_end = time.time()
+            play_time += t_play_end - t_play_start
             
-#             # train
-#             frame = frame + steps_per_epoch
-#             t_start = time.time()
-#             if self.is_prioritized:
-#                 batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
-#                 _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
-#                 self.exp_buffer.update_priorities(idxes, errors_update)
-#             else:
-#                 batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
-#                 _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
+            # train
+            frame = frame + steps_per_epoch
+            t_start = time.time()
+            if self.is_prioritized:
+                batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
+                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
+                self.exp_buffer.update_priorities(idxes, errors_update)
+            else:
+                batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
+                _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
                 
-#             losses.append(loss_t)
-#             t_end = time.time()
-#             update_time += t_end - t_start
-#             total_time += update_time
-#             if frame % 1000 == 0:
-#                 mem_free_steps += 1 
-#                 if mem_free_steps  == 10:
-#                     mem_free_steps = 0
-#                     tr_helpers.free_mem()
-#                 sum_time = update_time + play_time
-#                 print('frames per seconds: ', 1000 / (sum_time))
-#                 self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
-#                 self.writer.add_scalar('performance/upd_time', update_time, frame)
-#                 self.writer.add_scalar('performance/play_time', play_time, frame)
-#                 self.writer.add_scalar('losses/td_loss', np.mean(losses), frame)
-#                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
-#                 self.writer.add_scalar('info/lr', self.learning_rate*lr_mul, frame)
-#                 self.writer.add_scalar('info/epochs', epoch_num, frame)
-#                 self.writer.add_scalar('info/epsilon', self.epsilon, frame)
-#                 if self.is_prioritized:
-#                     self.writer.add_scalar('beta', self.beta, frame)
+            losses.append(loss_t)
+            t_end = time.time()
+            update_time += t_end - t_start
+            total_time += update_time
+            if frame % 1000 == 0:
+                mem_free_steps += 1 
+                if mem_free_steps  == 10:
+                    mem_free_steps = 0
+                    tr_helpers.free_mem()
+                sum_time = update_time + play_time
+                print('frames per seconds: ', 1000 / (sum_time))
+                self.writer.add_scalar('performance/fps', 1000 / sum_time, frame)
+                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/play_time', play_time, frame)
+                self.writer.add_scalar('losses/td_loss', np.mean(losses), frame)
+                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
+                self.writer.add_scalar('info/lr', self.learning_rate*lr_mul, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epsilon', self.epsilon, frame)
+                if self.is_prioritized:
+                    self.writer.add_scalar('beta', self.beta, frame)
                     
-#                 update_time = 0
-#                 play_time = 0
-#                 num_games = len(self.game_rewards)
-#                 if num_games > 10:
-#                     d = num_games / lives_reward
-#                     mean_rewards = np.sum(self.game_rewards) / d 
-#                     mean_lengths = np.sum(self.game_lengths) / d
-#                     self.writer.add_scalar('rewards/mean', mean_rewards, frame)
-#                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-#                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
-#                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+                update_time = 0
+                play_time = 0
+                num_games = len(self.game_rewards)
+                if num_games > 10:
+                    d = num_games / lives_reward
+                    mean_rewards = np.sum(self.game_rewards) / d 
+                    mean_lengths = np.sum(self.game_lengths) / d
+                    self.writer.add_scalar('rewards/mean', mean_rewards, frame)
+                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
+                    self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
-#                     if mean_rewards > last_mean_rewards:
-#                         print('saving next best rewards: ', mean_rewards)
-#                         last_mean_rewards = mean_rewards
-#                         self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-#                         if last_mean_rewards > self.config['score_to_win']:
-#                             print('network won!')
-#                             return last_mean_rewards, epoch_num
+                    if mean_rewards > last_mean_rewards:
+                        print('saving next best rewards: ', mean_rewards)
+                        last_mean_rewards = mean_rewards
+                        self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                        if last_mean_rewards > self.config['score_to_win']:
+                            print('network won!')
+                            return last_mean_rewards, epoch_num
                         
-#             if frame % num_epochs_to_copy == 0:
-#                 self.load_weigths_into_target_network()
+            if frame % num_epochs_to_copy == 0:
+                self.load_weigths_into_target_network()
             
-#             if epoch_num >= self.max_epochs:
-#                 print('Max epochs reached')
-#                 self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(np.sum(self.game_rewards) *  lives_reward / len(self.game_rewards)))
-#                 return last_mean_rewards, epoch_num 
+            if epoch_num >= self.max_epochs:
+                print('Max epochs reached')
+                self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(np.sum(self.game_rewards) *  lives_reward / len(self.game_rewards)))
+                return last_mean_rewards, epoch_num 
