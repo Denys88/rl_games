@@ -110,44 +110,18 @@ class VDNAgent:
     
     def setup_qvalues(self, actions_num):
         config = {
-            'name' : 'agent',
-            'inputs' : self.input_obs,
+            'input_obs' : self.input_obs,
+            'input_next_obs': self.input_next_obs,
             'actions_num' : actions_num,
+            'is_double': self.config['is_double'],
+            'actions_ph': self.actions_ph
         }
-        #(n_agents, n_actions)
-        self.qvalues = self.network(config, reuse=False)
-        config = {
-            'name' : 'target',
-            'inputs' : self.input_next_obs,
-            'actions_num' : actions_num,
-        }
-        self.target_qvalues = tf.stop_gradient(self.network(config, reuse=False))
-        
-        if self.config['is_double'] == True:
-            config = {
-                'name' : 'agent',
-                'inputs' : self.input_next_obs,
-                'actions_num' : actions_num,
-            }
-            self.next_qvalues = tf.stop_gradient(self.network(config, reuse=True))
+
+        self.current_action_qvalues_mix, self.target_action_qvalues_mix = self.network(config)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
-        
-        #(n_agents, 1)
-        self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
-        
-        if self.config['is_double'] == True:
-            self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
-            self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
-            self.next_obs_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
-        else:
-            self.next_obs_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
-            
-        ##MIXING:
-        self.current_action_qvalues_mix = tf.reduce_sum(self.current_action_qvalues, axis=0)
-        self.target_action_qvalues_mix = tf.reduce_sum(self.next_obs_values_target, axis=0)
-        
+
         self.reference_qvalues = self.rewards_ph + self.gamma_step *self.is_not_done * self.target_action_qvalues_mix
         
         if self.is_prioritized:

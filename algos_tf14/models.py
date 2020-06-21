@@ -245,3 +245,40 @@ class AtariDQN(BaseModel):
         '''        
         is_train = name == 'agent'
         return self.network(name=name, inputs=inputs, actions_num=actions_num, is_train=is_train, reuse=reuse)
+
+
+class VDN_DQN(BaseModel):
+    def __init__(self, network):
+        self.network = network
+
+    def __call__(self, dict):
+        input_obs = dict['input_obs']
+        input_next_obs = dict['input_next_obs']
+        actions_num = dict['actions_num']
+        is_double = dict['is_double']
+        actions_ph = dict['actions_ph']
+
+        '''
+        TODO: fix is_train
+        '''
+        # is_train = name == 'agent'
+
+        # (n_agents, n_actions)
+        qvalues = self.network(name='agent', inputs=input_obs, actions_num=actions_num, is_train=True, reuse=False)
+        target_qvalues = tf.stop_gradient(self.network(name='target', inputs=input_next_obs, actions_num=actions_num, is_train=False, reuse=False))
+        current_action_qvalues = tf.reduce_sum(tf.one_hot(actions_ph, actions_num) * qvalues,
+                                                    reduction_indices=1)
+        if is_double:
+            next_qvalues = tf.stop_gradient(self.network(name='agent', inputs=input_next_obs, actions_num=actions_num, is_train=True, reuse=True))
+            next_selected_actions = tf.argmax(next_qvalues, axis=1)
+            next_selected_actions_onehot = tf.one_hot(next_selected_actions, actions_num)
+            next_obs_values_target = tf.stop_gradient(
+                tf.reduce_sum(target_qvalues * next_selected_actions_onehot, reduction_indices=[1, ]))
+        else:
+            next_obs_values_target = tf.stop_gradient(tf.reduce_max(target_qvalues, reduction_indices=1))
+
+        ##MIXING:
+        current_action_qvalues_mix = tf.reduce_sum(current_action_qvalues, axis=0)
+        target_action_qvalues_mix = tf.reduce_sum(next_obs_values_target, axis=0)
+
+        return current_action_qvalues_mix, target_action_qvalues_mix
