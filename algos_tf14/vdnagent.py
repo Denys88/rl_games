@@ -50,7 +50,9 @@ class VDNAgent:
             self.env = env_configurations.configurations[self.env_name]['env_creator'](name=config['name'])
         self.sess = sess
         self.steps_num = self.config['steps_num']
-        self.states = deque([], maxlen=self.steps_num)
+        
+        self.obs_act_rew = deque([], maxlen=self.steps_num)
+        
         self.is_prioritized = config['replay_buffer_type'] != 'normal'
         self.atoms_num = self.config['atoms_num']
         assert self.atoms_num == 1
@@ -83,7 +85,20 @@ class VDNAgent:
             self.input_obs = tf.to_float(self.input_obs) / 255.0
             self.input_next_obs = tf.to_float(self.input_next_obs) / 255.0
         self.setup_qvalues(actions_num)
-        self.sess.run(tf.global_variables_initializer())
+        
+        if self.env_name:
+            self.sess.run(tf.global_variables_initializer())
+#         self.reg_loss = tf.losses.get_regularization_loss()
+#         self.td_loss_mean += self.reg_loss
+#         self.learning_rate = self.config['learning_rate']
+#         self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)        
+
+#         self.saver = tf.train.Saver()
+#         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
+#         self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        if self.env_name:
+            sess.run(tf.global_variables_initializer())
+        self._reset()
     
     def setup_qvalues(self, actions_num):
         config = {
@@ -91,6 +106,7 @@ class VDNAgent:
             'inputs' : self.input_obs,
             'actions_num' : actions_num,
         }
+        #(n_agents, n_actions)
         self.qvalues = self.network(config, reuse=False)
         config = {
             'name' : 'target',
@@ -99,42 +115,85 @@ class VDNAgent:
         }
         self.target_qvalues = tf.stop_gradient(self.network(config, reuse=False))
         
-    def play_episode(self, epsilon=0.0):
-        mb_obs = []
-        mb_rewards = []
-        mb_actions = []
-        mb_avail_actions = []
-        mb_dones = []
-        mb_states = []
-        step_count = 0
+        if self.config['is_double'] == True:
+            config = {
+                'name' : 'agent',
+                'inputs' : self.input_next_obs,
+                'actions_num' : actions_num,
+            }
+            self.next_qvalues = tf.stop_gradient(self.network(config, reuse=True))
+
+        self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
+        self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
         
-        obs = self.env.reset()
-        obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
-        mb_obs.append(obs)
-        mb_states.append(self.env.get_state())
-        avail_acts = self.env.get_action_mask()
-        mb_avail_actions.append(avail_acts)
+        #(n_agents, 1)
+        self.current_action_qvalues = tf.reduce_sum(tf.one_hot(self.actions_ph, actions_num) * self.qvalues, reduction_indices = 1)
+        
+        if self.config['is_double'] == True:
+            self.next_selected_actions = tf.argmax(self.next_qvalues, axis = 1)
+            self.next_selected_actions_onehot = tf.one_hot(self.next_selected_actions, actions_num)
+            self.next_state_values_target = tf.stop_gradient( tf.reduce_sum( self.target_qvalues * self.next_selected_actions_onehot , reduction_indices=[1,] ))
+        else:
+            self.next_state_values_target = tf.stop_gradient(tf.reduce_max(self.target_qvalues, reduction_indices=1))
+        
+    def play_steps(self, steps, epsilon=0.0):
+        done_reward = None
+        done_shaped_reward = None
+        done_steps = None
+        steps_rewards = 0
+        cur_gamma = 1
+        cur_obs_act_rew_len = len(self.obs_act_rew)
+
+        # always break after one
         while True:
-            step_count += 1
-            step_act = self.get_action(obs, avail_acts, epsilon)
-            next_obs, rewards, dones, _ = self.env.step(step_act)
-            mb_actions.append(step_act)
-            mb_obs.append(next_obs)
-            mb_rewards.append(rewards)
-            mb_dones.append(dones)
-            mb_states.append(self.env.get_state())
-            
-            obs = next_obs
+            if cur_obs_act_rew_len > 0:
+                obs = self.obs_act_rew[-1][0]
+            else:
+                obs = self.current_obs
             obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
-            avail_acts = self.env.get_action_mask()
-            mb_avail_actions.append(avail_acts)
-            
-            if all(dones) or self.steps_num < step_count:
+
+            action = self.get_action(obs, self.env.get_action_mask(), epsilon)
+            print(action)
+            print(self.sess.run(self.qvalues, {self.obs_ph: obs}))
+            print(self.sess.run(self.next_state_values_target, {self.obs_ph: obs, self.actions_ph: action}))
+            new_obs, reward, is_done, _ = self.env.step(action)
+            #reward = reward * (1 - is_done)
+ 
+            self.step_count += 1
+            self.total_reward += reward
+            shaped_reward = self.rewards_shaper(reward)
+            self.total_shaped_reward += shaped_reward
+            self.obs_act_rew.append([new_obs, action, shaped_reward])
+
+            if len(self.obs_act_rew) < steps:
                 break
+
+            for i in range(steps):
+                sreward = self.obs_act_rew[i][2]
+                steps_rewards += sreward * cur_gamma
+                cur_gamma = cur_gamma * self.gamma
+
+            next_obs, current_action, _ = self.obs_act_rew[0]
+            self.exp_buffer.add(self.current_obs, current_action, steps_rewards, new_obs, is_done)
+            self.current_obs = next_obs
+            break
             
-            
+        if all(is_done):
+            done_reward = self.total_reward
+            done_steps = self.step_count
+            done_shaped_reward = self.total_shaped_reward
+            self._reset()
+        return done_reward, done_shaped_reward, done_steps
+                
+    def _reset(self):
+        self.obs_act_rew.clear()
+        if self.env_name:
+            self.current_obs = self.env.reset()
+        self.total_reward = 0.0
+        self.total_shaped_reward = 0.0
+        self.step_count = 0
+        
     def get_action(self, obs, avail_acts, epsilon=0.0):
-        print(obs.shape)
         if np.random.random() < epsilon:
             action = self.env.action_space.sample()
         else:
@@ -147,7 +206,9 @@ class VDNAgent:
         return self.sess.run(self.qvalues, {self.obs_ph: obs})
         
     def train(self):
-        self.play_episode()
+        for _ in range(5):
+            self.play_steps(steps=3)
+            
         
         
         
