@@ -11,7 +11,7 @@ from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
 
 class DQNAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
         observation_shape = observation_space.shape
         actions_num = action_space.n
         self.config = config
@@ -47,7 +47,7 @@ class DQNAgent:
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
         if self.env_name:
-            self.env = env_configurations.configurations[self.env_name]['env_creator']()
+            self.env = env_configurations.configurations[self.env_name]['env_creator'](name=config['name'])
         self.sess = sess
         self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
