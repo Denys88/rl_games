@@ -254,6 +254,7 @@ class DiscreteA2CBase(A2CBase):
             mb_states = self.mb_states
             mb_rnn_masks = torch.zeros((batch_size * self.steps_num), dtype = torch.float32).cuda()
             steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
+            steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
             indices = torch.zeros((batch_size), dtype = torch.long).cuda()
 
         for n in range(self.steps_num):
@@ -265,8 +266,9 @@ class DiscreteA2CBase(A2CBase):
                 state_indices = (seq_indices == 0).nonzero()
                 state_pos = indices // self.seq_len
                 for s, mb_s in zip(self.states, mb_states):
-                    mb_s[:, state_pos[state_indices], :] = s[:, state_indices, :]
-            
+                    #print(state_pos[state_indices] + steps_state[state_indices])
+                    #print(state_indices)
+                    mb_s[:, state_pos[state_indices] + steps_state[state_indices], :] = s[:, state_indices, :]
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -293,6 +295,7 @@ class DiscreteA2CBase(A2CBase):
 
             if self.is_rnn:
                 if len(all_done_indices) > 0:
+                    all_done_indices = all_done_indices.squeeze(-1)
                     indices[all_done_indices] += self.seq_len - seq_indices[all_done_indices] - 1
                     for i in range(len(self.states)):
                         self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
@@ -318,7 +321,8 @@ class DiscreteA2CBase(A2CBase):
 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-
+        
+        #atata = keke
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 

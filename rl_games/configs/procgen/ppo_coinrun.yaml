@@ -17,7 +17,7 @@ params:
     
     cnn:
       type: conv2d
-      activation: elu
+      activation: relu
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
@@ -39,25 +39,28 @@ params:
           padding: 0
       
     mlp:
-      units: [512, 256]
-      activation: elu
+      units: [512]
+      activation: relu
       regularizer:
         name: 'None'
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
+    lstm:
+      units: 256
+      concated: False
   config:
     reward_shaper:
-        scale_value: 1
+        scale_value: 0.1
         
     normalize_advantage: True
     gamma: 0.99
-    tau: 0.9
-    learning_rate: 3e-4
+    tau: 0.95
+    learning_rate: 5e-4
     name: atari
     score_to_win: 900
     grad_norm: 0.5
-    entropy_coef: 0.01
+    entropy_coef: 0.001
     truncate_grads: True
     env_name: openai_gym
     ppo: true
@@ -66,12 +69,12 @@ params:
     num_actors: 16
     steps_num: 128
     minibatch_size: 1024
-    mini_epochs: 3
+    mini_epochs: 2
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 8
+    seq_len: 4
     #lr_schedule:  adaptive
     # lr_threshold: 0.008
     # bounds_loss_coef: 0.5
@@ -79,4 +82,4 @@ params:
     env_config:
         name: "procgen:procgen-coinrun-v0"
         procgen: True
-        frames: 4
+        frames: 1

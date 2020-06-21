@@ -178,8 +178,12 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
                     self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
+                    self.a_layer_norm = torch.nn.LayerNorm(self.lstm_units)
+                    self.v_layer_norm = torch.nn.LayerNorm(self.lstm_units)
                 else:
                     self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
+                    self.layer_norm = torch.nn.LayerNorm(self.lstm_units)
+                    
             self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
 
@@ -250,13 +254,22 @@ class A2CBuilder(NetworkBuilder):
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
-                    a_out = self.lstm_a(a_out, states)
-                    c_out = self.lstm_c(c_out, states)
+                    c_out = c_out.reshape(num_seqs, seq_length, -1)
+                    a_out, a_states = self.a_lstm(a_out, states[:2])
+                    c_out, v_states = self.v_lstm(c_out, states[2:])
+                    a_out = self.a_layer_norm(a_out)
+                    a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
+                    c_out = self.v_layer_norm(c_out)
+                    c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
+                    states = a_states + v_states
+
+                     
 
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
                     logits = self.logits(a_out)
-                    return logits, value
+                    return logits, value, states
+
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(a_out))
                     if self.space_config['fixed_sigma']:
@@ -264,8 +277,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
                     return mu, sigma, value
-                else:
-                    return logits, value
+
             else:
                 out = obs
                 for l in self.actor_cnn:
@@ -280,7 +292,9 @@ class A2CBuilder(NetworkBuilder):
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
                     out, states = self.lstm(out, states)
-                    out = out.reshape(out.size()[0] * out.size()[1], -1)
+                    out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
+                    out = self.layer_norm(out)
+
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:
@@ -293,7 +307,7 @@ class A2CBuilder(NetworkBuilder):
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
-                    return mu, mu*0 + sigma, value, states
+                    return mu, mu*0 + sigma, value
                     
         def is_separate_critic(self):
             return self.separate
@@ -303,7 +317,14 @@ class A2CBuilder(NetworkBuilder):
 
         def get_default_rnn_state(self):
             num_layers = 1
-            return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
+            if self.separate:
+                return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
+                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(),
+                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
+                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
+            else:
+                return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
+                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
 
         def load(self, params):
             self.separate = params['separate']

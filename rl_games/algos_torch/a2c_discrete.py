@@ -28,7 +28,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.is_rnn:
             self.states = self.model.get_default_rnn_state()
             batch_size = self.num_agents * self.num_actors
-            num_seqs = self.steps_num // self.seq_len * batch_size
+            num_seqs = self.steps_num * batch_size // self.seq_len
             self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
 
         self.last_lr = float(self.last_lr)
