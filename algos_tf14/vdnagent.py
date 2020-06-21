@@ -106,33 +106,44 @@ class VDNAgent:
         mb_avail_actions = []
         mb_dones = []
         mb_states = []
+        step_count = 0
         
         obs = self.env.reset()
         obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
         mb_obs.append(obs)
         mb_states.append(self.env.get_state())
-        mb_avail_actions.append(self.env.get_action_mask())
-
+        avail_acts = self.env.get_action_mask()
+        mb_avail_actions.append(avail_acts)
         while True:
-            step_act = self.get_action(obs, epsilon)
-            print(step_act)
-            break
+            step_count += 1
+            step_act = self.get_action(obs, avail_acts, epsilon)
+            next_obs, rewards, dones, _ = self.env.step(step_act)
+            mb_actions.append(step_act)
+            mb_obs.append(next_obs)
+            mb_rewards.append(rewards)
+            mb_dones.append(dones)
+            mb_states.append(self.env.get_state())
+            
+            obs = next_obs
+            obs = np.reshape(obs, ((self.n_agents,) + self.obs_shape))
+            avail_acts = self.env.get_action_mask()
+            mb_avail_actions.append(avail_acts)
+            
+            if all(dones) or self.steps_num < step_count:
+                break
             
             
-            
-            
-    def get_action(self, obs, epsilon=0.0):
+    def get_action(self, obs, avail_acts, epsilon=0.0):
         print(obs.shape)
         if np.random.random() < epsilon:
             action = self.env.action_space.sample()
         else:
             qvals = self.get_qvalues(obs)
-            print(qvals.shape)
-            action = np.argmax(qvals)
+            qvals[avail_acts == False] = -9999999
+            action = np.argmax(qvals, axis=1)
         return action  
     
     def get_qvalues(self, obs):
-        print(obs.shape)
         return self.sess.run(self.qvalues, {self.obs_ph: obs})
         
     def train(self):
