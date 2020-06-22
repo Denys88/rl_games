@@ -281,11 +281,12 @@ class VDNAgent:
             t_start = time.time()
             if self.is_prioritized:
                 batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
-                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
+                _, loss_t, errors_update, lr_mul = self.sess.run([self.train_op, self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
                 self.exp_buffer.update_priorities(idxes, errors_update)
             else:
                 batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
-                _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
+                print(self.sess.run(self.qvalues, batch).shape)
+                _, loss_t, lr_mul = self.sess.run([self.train_op, self.train_step, self.td_loss_mean, self.lr_multiplier], batch)
                 
             losses.append(loss_t)
             t_end = time.time()
