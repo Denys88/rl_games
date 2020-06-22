@@ -48,7 +48,8 @@ class VDNAgent:
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
         if self.env_name:
-            self.env = env_configurations.configurations[self.env_name]['env_creator'](name=config['name'])
+            self.env_config = config.get('env_config', {})
+            self.env = env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
         self.sess = sess
         self.steps_num = self.config['steps_num']
         
@@ -94,16 +95,16 @@ class VDNAgent:
 
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
-        self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        # self.variables = TensorFlowVariables(self.qvalues, self.sess)
         if self.env_name:
             sess.run(tf.global_variables_initializer())
         self._reset()
     
-    def get_weights(self):
-        return self.variables.get_flat()
-    
-    def set_weights(self, weights):
-        return self.variables.set_flat(weights)
+    # def get_weights(self):
+    #     return self.variables.get_flat()
+    #
+    # def set_weights(self, weights):
+    #     return self.variables.set_flat(weights)
     
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
