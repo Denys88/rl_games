@@ -15,6 +15,27 @@ params:
     dueling: True
     atoms: 1
     noisy: False
+    cnn:
+      type: conv1d
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+      convs:
+        - filters: 64
+          kernel_size: 3
+          strides: 2
+          padding: 'same'
+        - filters: 128
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
+        - filters: 256
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
     mlp:
       units: [256]
       activation: relu
@@ -30,7 +51,7 @@ params:
     gamma: 0.99
     learning_rate: 0.0005
     steps_per_epoch: 4
-    batch_size: 128
+    batch_size: 64
     epsilon: 1.0
     min_epsilon: 0.05
     epsilon_decay_frames: 100000
@@ -39,7 +60,7 @@ params:
     name: 3s5z_vs_3s6z
     is_double: True
     score_to_win: 20
-    num_steps_fill_buffer: 10000
+    num_steps_fill_buffer: 200
     replay_buffer_type: 'normal'
     replay_buffer_size: 100000
     priority_beta: 0.4
@@ -52,7 +73,7 @@ params:
     games_to_track: 20
     lr_schedule: None
     max_epochs: 100000
-    grad_norm: 0.5
+    grad_norm: 10
     mix_with_state: False
     truncate_grads: True
 
