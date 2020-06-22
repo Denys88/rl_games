@@ -281,4 +281,4 @@ class VDN_DQN(BaseModel):
         current_action_qvalues_mix = tf.reduce_sum(current_action_qvalues, axis=0)
         target_action_qvalues_mix = tf.reduce_sum(next_obs_values_target, axis=0)
 
-        return current_action_qvalues_mix, target_action_qvalues_mix
+        return qvalues, current_action_qvalues_mix, target_action_qvalues_mix

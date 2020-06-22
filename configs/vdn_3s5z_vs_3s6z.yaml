@@ -54,6 +54,7 @@ params:
     max_epochs: 100000
     grad_norm: 0.5
     mix_with_state: False
+    truncate_grads: True
 
     env_config:
       name: 3s5z_vs_3s6z

@@ -27,7 +27,7 @@ class VDNAgent:
         self.game_rewards = deque([], maxlen=self.games_to_track)
         self.game_lengths = deque([], maxlen=self.games_to_track)
 
-        self.epoch_num = tf.Variable( tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
+        self.epoch_num = tf.Variable(tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
@@ -91,20 +91,25 @@ class VDNAgent:
         self.reg_loss = tf.losses.get_regularization_loss()
         self.td_loss_mean += self.reg_loss
         self.learning_rate = self.config['learning_rate']
-        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier).minimize(self.td_loss_mean, var_list=self.weights)        
+        self.train_step = tf.train.AdamOptimizer(self.learning_rate * self.lr_multiplier)#.minimize(self.td_loss_mean, var_list=self.weights)
+        grads = tf.gradients(self.td_loss_mean, self.weights)
+        if self.config['truncate_grads']:
+            grads, _ = tf.clip_by_global_norm(grads, self.grad_norm)
+        grads = list(zip(grads, self.weights))
+        self.train_op = self.train_step.apply_gradients(grads)
 
         self.saver = tf.train.Saver()
         self.assigns_op = [tf.assign(w_target, w_self, validate_shape=True) for w_self, w_target in zip(self.weights, self.target_weights)]
-        # self.variables = TensorFlowVariables(self.qvalues, self.sess)
+        self.variables = TensorFlowVariables(self.qvalues, self.sess)
         if self.env_name:
             sess.run(tf.global_variables_initializer())
         self._reset()
     
-    # def get_weights(self):
-    #     return self.variables.get_flat()
-    #
-    # def set_weights(self, weights):
-    #     return self.variables.set_flat(weights)
+    def get_weights(self):
+        return self.variables.get_flat()
+
+    def set_weights(self, weights):
+        return self.variables.set_flat(weights)
     
     def update_epoch(self):
         return self.sess.run([self.update_epoch_op])[0]
@@ -118,7 +123,7 @@ class VDNAgent:
             'actions_ph': self.actions_ph
         }
 
-        self.current_action_qvalues_mix, self.target_action_qvalues_mix = self.network(config)
+        self.qvalues, self.current_action_qvalues_mix, self.target_action_qvalues_mix = self.network(config)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
