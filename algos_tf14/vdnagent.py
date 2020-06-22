@@ -325,7 +325,7 @@ class VDNAgent:
                             return last_mean_rewards, epoch_num
                         
             if frame % num_epochs_to_copy == 0:
-                self.load_weigths_into_target_network()
+                self.load_weights_into_target_network()
             
             if epoch_num >= self.max_epochs:
                 print('Max epochs reached')
