@@ -2,7 +2,7 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.algos_torch import rnd_curiosity
+from rl_games.algos_torch import central_value, rnd_curiosity
 
 from torch import optim
 import torch 
@@ -29,7 +29,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
     def update_epoch(self):
         self.epoch_num += 1
@@ -131,6 +131,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
+
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
@@ -175,7 +176,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1).mean()
         else:
             b_loss = 0
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)

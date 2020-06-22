@@ -2,7 +2,7 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.algos_torch import rnd_curiosity
+from rl_games.algos_torch import central_value, rnd_curiosity
 
 from torch import optim
 import torch 
@@ -30,8 +30,12 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
+        if self.use_assymetric_critic:
+            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
     def set_eval(self):
@@ -53,6 +57,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'optimizer': self.optimizer.state_dict()}
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
+        if self.use_assymetric_critic:
+            state['assymetric_vf_nets'] = self.central_value.state_dict()
         if self.has_curiosity:
             state['rnd_nets'] = self.rnd_curiosity.state_dict()
         torch_ext.save_scheckpoint(fn, state)
@@ -63,6 +69,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.use_assymetric_critic:
+            # todo
+            pass
         if self.has_curiosity:
             self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
             for state in self.rnd_curiosity.optimizer.state.values():
@@ -87,7 +96,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         with torch.no_grad():
             neglogp, value, action, logits = self.model(input_dict)
         return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), None
-
 
     def get_action_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -171,7 +179,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             c_loss = c_loss.sum(dim=1).mean()
         else:
             c_loss = c_loss.mean()
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -184,5 +192,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 if kl_dist > (2.0 * self.lr_threshold):
                     self.last_lr = max(self.last_lr / 1.5, 1e-6)
                 if kl_dist < (0.5 * self.lr_threshold):
-                    self.last_lr = min(self.last_lr * 1.5, 1e-2)    
+                    self.last_lr = min(self.last_lr * 1.5, 1e-2)
+
         return a_loss.item(), c_loss.item(), entropy.item(), kl_dist, self.last_lr, lr_mul

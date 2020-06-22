@@ -12,6 +12,8 @@ from tensorboardX import SummaryWriter
 import torch 
 from torch import nn
 
+from time import sleep
+
 def swap_and_flatten01(arr):
     """
     swap and then flatten axes 0 and 1
@@ -27,6 +29,7 @@ def rescale_actions(low, high, action):
     scaled_action = action * d + m
     return scaled_action
 
+
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
@@ -38,11 +41,14 @@ class A2CBase:
 
         print('Env info:')
         print(self.env_info)
+        sleep(10)
 
         self.observation_space = self.env_info['observation_space']
-        observation_shape = self.observation_space.shape
+        self.state_space = self.env_info.get('state_space', None)
+
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
+        self.use_assymetric_critic = config.get('use_assymetric_critic', False)
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
@@ -59,6 +65,7 @@ class A2CBase:
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
+        self.central_network = config['central_network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
@@ -66,7 +73,10 @@ class A2CBase:
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
        
-        self.state_shape = observation_shape
+        self.obs_shape = self.observation_space.shape
+        self.state_shape = None
+        if self.state_space.shape != None:
+            self.state_shape = self.state_space.shape
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -94,6 +104,8 @@ class A2CBase:
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
+        
+        # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
         self.has_curiosity = self.curiosity_config is not None
         if self.has_curiosity:
@@ -119,7 +131,11 @@ class A2CBase:
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
-        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.state_shape, dtype=torch_dtype).cuda()
+        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype).cuda()
+
+        if self.use_assymetric_critic:
+            self.mb_vobs = torch.zeros((self.steps_num, batch_size) + self.state_shape, dtype=torch_dtype).cuda()
+
         self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
@@ -656,6 +672,8 @@ class ContinuousA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         mus = batch_dict['mus']
         sigmas = batch_dict['sigmas']
+
+        # todo rename!
         lstm_states = batch_dict.get('states', None)
 
         play_time_end = time.time()
@@ -665,9 +683,13 @@ class ContinuousA2CBase(A2CBase):
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
+        if self.use_assymetric_critic:
+            # todo
+            pass
+
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
-            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
+            advantages[:, 1] = advantages[:, 1] * self.rnd_adv_coef
             advantages = torch.sum(advantages, axis=1)  
 
         a_losses = []
@@ -714,7 +736,7 @@ class ContinuousA2CBase(A2CBase):
                         b_losses.append(b_loss)                            
 
         else:
-            permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
+            '''permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
             obses = obses[permutation]
             returns = returns[permutation]
                 
@@ -723,7 +745,7 @@ class ContinuousA2CBase(A2CBase):
             neglogpacs = neglogpacs[permutation]
             advantages = advantages[permutation]
             mus = mus[permutation]
-            sigmas = sigmas[permutation]
+            sigmas = sigmas[permutation]'''
 
             for _ in range(0, self.mini_epochs_num):
                 for i in range(0, self.num_minibatches):

@@ -3,6 +3,8 @@ from rl_games.common.env_configurations import configurations
 import numpy as np
 import gym
 
+from time import sleep
+
 
 class IVecEnv(object):
     def step(self, actions):
@@ -76,10 +78,20 @@ class RayWorker:
     def get_env_info(self):
         info = {}
         observation_space = self.env.observation_space
+
         if isinstance(observation_space, gym.spaces.dict.Dict):
             observation_space = observation_space['observations']
+
         info['action_space'] = self.env.action_space
         info['observation_space'] = observation_space
+        info['state_space'] = None
+        info['use_global_observations'] = False
+
+        if hasattr(self.env, use_cenral_value):
+            info['use_global_observations'] = self.env.use_cenral_value
+
+        if hasattr(self.env, state_space):
+            info['state_space'] = self.env.state_space
 
         return info
 
@@ -89,6 +101,7 @@ class RayVecEnv(IVecEnv):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
+        
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
@@ -121,15 +134,21 @@ class RayVecEnv(IVecEnv):
         obs = [worker.reset.remote() for worker in self.workers]
         return np.asarray(ray.get(obs))
 
-
+# todo rename multi-agent
 class RayVecSMACEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         self.config_name = config_name
         self.num_actors = num_actors
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
+        
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
+
+        res = self.workers[0].get_env_info.remote()
+        env_info = ray.get(res)
+
+        self.use_global_obs = info['use_global_observations']
 
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
@@ -139,18 +158,32 @@ class RayVecSMACEnv(IVecEnv):
         return self.num_agents
 
     def step(self, actions):
-        newobs, newrewards, newdones, newinfos = [], [], [], []
-        res_obs = []
+        newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
+        newobsdict = {}
+        res_obs, res_state = [], []
+
         for num, worker in enumerate(self.workers):
-            res_obs.append(worker.step.remote(actions[self.num_agents*num: self.num_agents*num+self.num_agents]))
+            res_obs.append(worker.step.remote(actions[self.num_agents * num: self.num_agents * num + self.num_agents]))
 
         for res in res_obs:
             cobs, crewards, cdones, cinfos = ray.get(res)
-            newobs.append(cobs)
+            if self.use_global_obs:
+                newobs.append(cobs["obs"])
+                newstates.append(cobs["state"])
+            else
+                newobs.append(cobs)
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
-        return np.concatenate(newobs, axis=0), np.concatenate(newrewards, axis=0), np.concatenate(newdones, axis=0), newinfos
+
+        if self.use_global_obs:
+            newobsdict["obs"] = np.concatenate(newobs, axis=0)
+            newobsdict["states"] = np.concatenate(newstates, axis=0)
+            ret_obs = newobsdict
+        else:
+            ret_obs = np.concatenate(newobs, axis=0)
+
+        return ret_obs, np.concatenate(newrewards, axis=0), np.concatenate(newdones, axis=0), newinfos
 
     def has_action_masks(self):
         return True
