@@ -72,10 +72,11 @@ class VDNAgent:
         self.n_agents = self.env.env_info['n_agents']
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
+            self.exp_buffer = experience.ReplayBufferCentralState(config['replay_buffer_size'])
         else:
-            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
-            self.sample_weights_ph = tf.placeholder(tf.float32, shape=[None, 1], name='sample_weights')
+            raise NotImplementedError("Not implemented! PrioritizedReplayBuffer with CentralState")
+            #self.exp_buffer = experience.PrioritizedReplayBufferCentralState(config['replay_buffer_size'], config['priority_alpha'])
+            #self.sample_weights_ph = tf.placeholder(tf.float32, shape=[None, 1], name='sample_weights')
 
         self.batch_size_ph = tf.placeholder(tf.int32, name='batch_size_ph')
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.obs_shape, name='obs_ph')
