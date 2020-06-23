@@ -1,0 +1,84 @@
+label: ""
+name: ""
+params:
+  algo:
+    name: vdn
+
+  model:
+    name: vdn
+
+  load_checkpoint: False
+  load_path: ""
+
+  network:
+    name: dqn
+    dueling: True
+    atoms: 1
+    noisy: False
+    cnn:
+      type: conv1d
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+      convs:
+        - filters: 64
+          kernel_size: 3
+          strides: 2
+          padding: 'same'
+        - filters: 128
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
+        - filters: 256
+          kernel_size: 3
+          strides: 1
+          padding: 'valid'
+    mlp:
+      units: [256]
+      activation: relu
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+
+  config:
+    reward_shaper:
+      scale_value: 0.1
+    gamma: 0.99
+    learning_rate: 0.0005
+    steps_per_epoch: 4
+    batch_size: 64
+    epsilon: 1.0
+    min_epsilon: 0.05
+    epsilon_decay_frames: 100000
+    num_epochs_to_copy: 10000
+    env_name:  smac_cnn
+    name: MMM2
+    is_double: True
+    score_to_win: 20
+    num_steps_fill_buffer: 100000
+    replay_buffer_type: 'normal'
+    replay_buffer_size: 1000000
+    priority_beta: 0.4
+    priority_alpha: 0.6
+    beta_decay_frames: 100000
+    max_beta: 1
+    steps_num: 10
+#    episodes_to_log: 10
+    atoms_num: 1
+    games_to_track: 20
+    lr_schedule: None
+    max_epochs: 100000
+    grad_norm: 10
+    mix_with_state: False
+    truncate_grads: True
+
+    env_config:
+      name: MMM2
+      frames: 4
+      transpose: True
+      random_invalid_step: False
