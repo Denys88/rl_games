@@ -13,7 +13,7 @@ import tensorflow_probability as tfp
 
 
 class VDNAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger, central_state_space=None):
         observation_shape = observation_space.shape
         actions_num = action_space.n
         self.config = config

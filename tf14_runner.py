@@ -112,6 +112,7 @@ class Runner:
         ret = env_configurations.get_obs_and_action_spaces_from_config(self.config)
         if len(ret) == 2:
             obs_space, action_space = ret
+            central_state_space = None
         else:
             obs_space, action_space, central_state_space = ret
         # print('obs_space:', obs_space)
