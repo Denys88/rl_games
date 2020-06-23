@@ -9,6 +9,7 @@ import algos_tf14.model_builder as model_builder
 import algos_tf14.a2c_continuous as a2c_continuous
 import algos_tf14.a2c_discrete as a2c_discrete
 import algos_tf14.dqnagent as dqnagent
+import algos_tf14.vdnagent as vdnagent
 
 import common.tr_helpers as tr_helpers
 import yaml
@@ -49,6 +50,7 @@ class Runner:
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
         self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
+        self.algo_factory.register_builder('vdn', lambda **kwargs : vdnagent.VDNAgent(**kwargs))
 
         self.player_factory = common.object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))

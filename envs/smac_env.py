@@ -44,6 +44,9 @@ class SMACEnv(gym.Env):
                 actions[ind] = np.random.choice(avail_actions)
                 #rewards[ind] = -0.05
         return actions, rewards
+    
+    def get_state(self):
+        return self.env.get_state()
 
     def get_state(self):
         return self.env.get_state()
