@@ -107,7 +107,11 @@ class Runner:
         # print('Started to train')
         self.logger.console_logger.info('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
-        obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        ret = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        if len(ret) == 2:
+            obs_space, action_space = ret
+        else:
+            obs_space, action_space, central_state_space = ret
         # print('obs_space:', obs_space)
         # print('action_space:', action_space)
         self.logger.console_logger.info('obs_space: {}'.format(obs_space))
@@ -128,7 +132,7 @@ class Runner:
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger)
+            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger, central_state_space=central_state_space)
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()

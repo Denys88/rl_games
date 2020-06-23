@@ -110,6 +110,6 @@ venv.bak/
 /nn
 /runs
 db_config.private.yaml
-configs/whirl_baselines/*
 exp_scripts/
 .idea/
+analysis/

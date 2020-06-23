@@ -21,8 +21,14 @@ def swap_and_flatten01(arr):
     return arr.swapaxes(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class A2CAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger, central_state_space=None):
         observation_shape = observation_space.shape
+
+        self.use_central_states = False
+        if central_state_space is not None:
+            self.use_central_states = True
+            central_state_shape = central_state_space.shape
+            
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
         self.self_play = config.get('self_play', False)
@@ -67,6 +73,8 @@ class A2CAgent:
         self.game_lengths = deque([], maxlen=self.games_to_log)
         self.game_scores = deque([], maxlen=self.games_to_log)
         self.obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'obs')
+        if self.use_central_states:
+            self.central_states_ph = tf.placeholder(central_state_space.dtype, (None, ) + central_state_shape, name = 'central_state')
         self.target_obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'target_obs') 
         self.actions_num = action_space.n   
         self.actions_ph = tf.placeholder('int32', (None,), name = 'actions')       
@@ -84,6 +92,9 @@ class A2CAgent:
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
         self.current_lr = self.learning_rate_ph
 
+        #if self.use_central_states:
+        #    self.input_obs = self.central_states_ph
+        #else:
         self.input_obs = self.obs_ph
         self.input_target_obs = self.target_obs_ph
  
@@ -114,6 +125,9 @@ class A2CAgent:
             'action_mask_ph' : None
         }
 
+        if self.use_central_states:
+            self.train_dict["central_states"] = self.central_states_ph
+
         self.run_dict = {
             'name' : 'agent',
             'inputs' : self.input_target_obs,
@@ -124,11 +138,14 @@ class A2CAgent:
             'action_mask_ph' : self.action_mask_ph
         }
 
-        self.states = None
+        if self.use_central_states:
+            self.train_dict["central_states"] = self.central_states_ph
+
+        self.rnn_states = None
         if self.network.is_rnn():
-            self.logp_actions ,self.state_values, self.action, self.entropy, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
+            self.logp_actions, self.state_values, self.action, self.entropy, self.rnn_states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _,  self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state, self.logits = self.network(self.run_dict, reuse=True)
-            self.states = self.target_initial_state
+            self.rnn_states = self.target_initial_state
 
         else:
             self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
@@ -196,7 +213,7 @@ class A2CAgent:
         run_ops = [self.target_action, self.target_state_values, self.target_neglogp]
         if self.network.is_rnn():
             run_ops.append(self.target_lstm_state)
-            return self.sess.run(run_ops, {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
+            return self.sess.run(run_ops, {self.target_obs_ph : obs, self.target_states_ph : self.rnn_states, self.target_masks_ph : self.dones})
         else:
             return (*self.sess.run(run_ops, {self.target_obs_ph : obs}), None)
 
@@ -204,14 +221,14 @@ class A2CAgent:
         run_ops = [self.target_action, self.target_state_values, self.target_neglogp, self.logits]
         if self.network.is_rnn():
             run_ops.append(self.target_lstm_state)
-            return self.sess.run(run_ops, {self.action_mask_ph: action_masks, self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
+            return self.sess.run(run_ops, {self.action_mask_ph: action_masks, self.target_obs_ph : obs, self.target_states_ph : self.rnn_states, self.target_masks_ph : self.dones})
         else:
             return (*self.sess.run(run_ops, {self.action_mask_ph: action_masks, self.target_obs_ph : obs}), None)
 
 
     def get_values(self, obs):
         if self.network.is_rnn():
-            return self.sess.run([self.target_state_values], {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
+            return self.sess.run([self.target_state_values], {self.target_obs_ph : obs, self.target_states_ph : self.rnn_states, self.target_masks_ph : self.dones})
         else:
             return self.sess.run([self.target_state_values], {self.target_obs_ph : obs})
 
@@ -226,33 +243,40 @@ class A2CAgent:
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        
-        mb_states = []
+
+        if self.use_central_states:
+            mb_central_states = []
+
+        mb_rnn_states = []
         epinfos = []
 
         # for n in range number of steps
         for _ in range(self.steps_num):
             if self.network.is_rnn():
-                mb_states.append(self.states)
+                mb_rnn_states.append(self.rnn_states)
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
 
             if self.use_action_masks:
-                actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
+                actions, values, neglogpacs, _, self.rnn_states = self.get_masked_action_values(self.obs, masks)
             else:
-                actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
+                actions, values, neglogpacs, self.rnn_states = self.get_action_values(self.obs)
 
             actions = np.squeeze(actions)
             values = np.squeeze(values)
             neglogpacs = np.squeeze(neglogpacs)
             mb_obs.append(self.obs.copy())
+            if self.use_central_states:
+                mb_central_states.append(self.central_states.copy())
             mb_actions.append(actions)
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones.copy())
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
+            if self.use_central_states:
+                self.central_states[:] = infos["central_states"]
 
             # Increase step count by self.num_actors (WHIRL)
             self.num_env_steps_train += self.num_actors
@@ -276,12 +300,14 @@ class A2CAgent:
 
         #using openai baseline approach
         mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
+        if self.use_central_states:
+            mb_central_states = np.asarray(mb_central_states, dtype=self.obs.dtype)
         mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
         mb_actions = np.asarray(mb_actions, dtype=np.float32)
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        mb_states = np.asarray(mb_states, dtype=np.float32)
+        mb_rnn_states = np.asarray(mb_rnn_states, dtype=np.float32)
         last_values = self.get_values(self.obs)
         last_values = np.squeeze(last_values)
 
@@ -302,7 +328,7 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_states  )), epinfos)
+            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rnn_states  )), epinfos)
         else:
             result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
         return result
@@ -371,7 +397,7 @@ class A2CAgent:
                         dict[self.obs_ph] = obses[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
 
-                        dict[self.states_ph] = lstm_states[batch]
+                        dict[self.rnn_states_ph] = lstm_states[batch]
 
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier,  self.train_op]

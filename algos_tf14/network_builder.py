@@ -187,12 +187,15 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         actions_num = kwargs.pop('actions_num')
         input = kwargs.pop('inputs')
+        critic_input = kwargs.pop('critic_inputs', None)
+        has_critic_input = critic_input is not None
         reuse = kwargs.pop('reuse')
         batch_num = kwargs.pop('batch_num', 1)
         games_num = kwargs.pop('games_num', 1)
         is_train = kwargs.pop('is_train', True)
-        with tf.variable_scope(name, reuse=reuse):   
-            actor_input = critic_input = input
+        with tf.variable_scope(name, reuse=reuse):
+            actor_input = input
+            critic_input = critic_input if has_critic_input is None else actor_input
             if self.has_cnn:
                 cnn_args = {
                     'name' :'actor_cnn', 
@@ -207,15 +210,18 @@ class A2CBuilder(NetworkBuilder):
                 }
                 actor_input = self._build_conv(**cnn_args)
                 actor_input = tf.contrib.layers.flatten(actor_input)
-                critic_input = actor_input
 
                 if self.separate:
-                    cnn_args['name'] = 'critic_cnn' 
+                    cnn_args['name'] = 'critic_cnn'
+                    if has_critic_input:
+                        cnn_args['input'] = critic_input
                     critic_input = self._build_conv( **cnn_args)
                     critic_input = tf.contrib.layers.flatten(critic_input)
+                else:
+                    critic_input = actor_input
 
             mlp_args = {
-                'name' :'actor_fc',  
+                'name' :'actor_fc',
                 'input' : actor_input, 
                 'units' :self.units, 
                 'activation' : self.activation, 
