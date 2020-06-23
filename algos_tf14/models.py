@@ -245,3 +245,61 @@ class AtariDQN(BaseModel):
         '''        
         is_train = name == 'agent'
         return self.network(name=name, inputs=inputs, actions_num=actions_num, is_train=is_train, reuse=reuse)
+
+
+class VDN_DQN(BaseModel):
+    def __init__(self, network):
+        self.network = network
+
+    def __call__(self, dict):
+        input_obs = dict['input_obs']
+        input_next_obs = dict['input_next_obs']
+        actions_num = dict['actions_num']
+        is_double = dict['is_double']
+        # (bs * n_agents, 1)
+        actions_ph = dict['actions_ph']
+        batch_size_ph = dict['batch_size_ph']
+        n_agents = dict['n_agents']
+
+        '''
+        TODO: fix is_train
+        '''
+        # is_train = name == 'agent'
+
+        # (bs * n_agents, n_actions)
+        qvalues = self.network(name='agent', inputs=input_obs, actions_num=actions_num, is_train=True, reuse=False)
+        # (bs, n_agents, n_actions)
+        qvalues = tf.reshape(qvalues, [batch_size_ph, n_agents, actions_num])
+        # (bs * n_agents, n_actions)
+        target_qvalues = tf.stop_gradient(self.network(name='target', inputs=input_next_obs, actions_num=actions_num, is_train=False, reuse=False))
+        # (bs, n_agents, n_actions)
+        target_qvalues = tf.reshape(target_qvalues, [batch_size_ph, n_agents, actions_num])
+
+        # (bs * n_agents, 1, actions_num)
+        # (bs, n_agents, actions_num)
+        one_hot_actions = tf.reshape(tf.one_hot(actions_ph, actions_num), [batch_size_ph, n_agents, actions_num])
+        # (bs, n_agents, 1)
+        current_action_qvalues = tf.reduce_sum(one_hot_actions * qvalues, axis=2)
+
+        if is_double:
+            # (bs * n_agents, n_actions)
+            next_qvalues = tf.stop_gradient(self.network(name='agent', inputs=input_next_obs, actions_num=actions_num, is_train=True, reuse=True))
+            # (bs * n_agents, 1)
+            next_selected_actions = tf.argmax(next_qvalues, axis=1)
+            # (bs*n_agents, 1, n_actions)
+            # (bs, n_agents, actions_num)
+            next_selected_actions_onehot = tf.reshape(tf.one_hot(next_selected_actions, actions_num), [batch_size_ph, n_agents, actions_num])
+            # (bs, n_agents, 1)
+            next_obs_values_target = tf.stop_gradient(
+                tf.reduce_sum(target_qvalues * next_selected_actions_onehot, axis=2))
+        else:
+            # (bs, n_agents, 1)
+            next_obs_values_target = tf.stop_gradient(tf.reduce_max(target_qvalues, axis=2))
+
+        ##MIXING:
+        # (bs, 1)
+        current_action_qvalues_mix = tf.reshape(tf.reduce_sum(current_action_qvalues, axis=1), [batch_size_ph, 1])
+        # (bs, 1, 1)
+        target_action_qvalues_mix = tf.reshape(tf.reduce_sum(next_obs_values_target, axis=1), [batch_size_ph, 1])
+
+        return qvalues, current_action_qvalues_mix, target_action_qvalues_mix
