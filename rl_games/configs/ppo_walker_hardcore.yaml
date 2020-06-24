@@ -31,7 +31,7 @@ params:
     lstm:
       units: 128
       concated: False    
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
 
   config:
@@ -58,8 +58,8 @@ params:
       critic_coef: 1
       lr_schedule:  None
       lr_threshold: 0.008
-      normalize_input: False
-      seq_len: 4
+      normalize_input: True
+      seq_len: 16
       bounds_loss_coef: 0.0
       max_epochs: 100000
 

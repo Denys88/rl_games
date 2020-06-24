@@ -35,7 +35,7 @@ class BasePlayer(object):
             if np.isscalar(rewards):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(np.float32(obs)).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def env_reset(self, env):
         obs = env.reset()
@@ -69,7 +69,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = True):
+    def run(self, n_games=5000, n_game_life = 1, render = True, is_determenistic = True):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -104,13 +104,16 @@ class BasePlayer(object):
 
                 if render:
                     self.env.render(mode = 'human')
-
-                done_indices = done.nonzero()[::self.num_agents]
+                all_done_indices = done.nonzero()
+                done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
 
                 games_played += done_count
                 
                 if done_count > 0:
+                    if self.is_rnn:
+                        for i in range(len(self.states)):
+                            self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()
 
