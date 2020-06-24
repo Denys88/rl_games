@@ -44,18 +44,20 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=1000, n_game_life = 1, render= True):
+    def run(self, n_games=1000, n_game_life = 1, render= False):
         self.env = self.create_env()
         import cv2
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
         n_games = n_games * n_game_life
+        
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
         if has_masks_func:
             has_masks = self.env.has_action_mask()
         is_determenistic = True
+        
         for _ in range(n_games):
             cr = 0
             steps = 0

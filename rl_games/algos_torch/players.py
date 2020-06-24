@@ -19,8 +19,8 @@ class PpoPlayerContinuous(BasePlayer):
         BasePlayer.__init__(self, config)
         self.network = config['network']
         self.actions_num = self.action_space.shape[0] 
-        self.actions_low = self.action_space.low
-        self.actions_high = self.action_space.high
+        self.actions_low = torch.from_numpy(self.action_space.low).float().cuda()
+        self.actions_high = torch.from_numpy(self.action_space.high).float().cuda()
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
@@ -40,21 +40,22 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std.eval()
 
     def get_action(self, obs, is_determenistic = False):
-        obs = self._preproc_obs(np.expand_dims(obs, axis=0))
+        if len(obs.size()) == len(self.state_shape):
+            obs = obs.unsqueeze(0)
+        obs = self._preproc_obs(obs)
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'obs' : obs,
-            'rnn_states' : self.states
+            'inputs' : obs,
         }
         with torch.no_grad():
-            neglogp, value, action, mu, sigma, states = self.model(input_dict)
+            neglogp, value, action, mu, sigma = self.model(input_dict)
         if is_determenistic:
             current_action = mu
         else:
             current_action = action
-        current_action = np.squeeze(current_action.detach().cpu().numpy())
-        return  rescale_actions(self.actions_low, self.actions_high, np.clip(current_action, -1.0, 1.0))
+        current_action = torch.squeeze(current_action.detach())
+        return  rescale_actions(self.actions_low, self.actions_high, torch.clamp(current_action, -1.0, 1.0))
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
@@ -92,8 +93,8 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = False):
-        if self.num_agents == 1:
-            obs = np.expand_dims(obs, axis=0)
+        if len(obs.size()) == len(self.state_shape):
+            obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         action_masks = torch.Tensor(action_masks).cuda()
         input_dict = {
@@ -106,11 +107,13 @@ class PpoPlayerDiscrete(BasePlayer):
             neglogp, value, action, logits = self.model(input_dict)
         
         if is_determenistic:
-            return np.argmax(logits.squeeze().detach().cpu().numpy(), axis=1)
+            return torch.argmax(logits.squeeze().detach(), axis=1)
         else:    
-            return action.squeeze().detach().cpu().numpy()
+            return action.squeeze()
 
     def get_action(self, obs, is_determenistic = False):
+        if len(obs.size()) == len(self.state_shape):
+            obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         self.model.eval()
         input_dict = {
@@ -122,9 +125,9 @@ class PpoPlayerDiscrete(BasePlayer):
             neglogp, value, action, logits = self.model(input_dict)
         
         if is_determenistic:
-            return np.argmax(logits.detach().cpu().numpy(), axis=1).squeeze()
+            return torch.argmax(logits.detach(), axis=1).squeeze()
         else:    
-            return action.squeeze().detach().cpu().numpy()
+            return action.squeeze().detach()
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)

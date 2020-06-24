@@ -184,6 +184,16 @@ class A2CBase:
         mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
         return mb_returns
 
+    def env_step(self, actions):
+        if not self.is_tensor_obses:
+            actions = actions.cpu().numpy()
+        obs, rewards, dones, infos = self.vec_env.step(actions)
+
+        if self.is_tensor_obses:
+            return obs, rewards.cpu(), dones.cpu(), infos
+        else:
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+
     def env_reset(self):
         obs = self.vec_env.reset()
         if isinstance(obs, torch.Tensor):
@@ -261,16 +271,6 @@ class DiscreteA2CBase(A2CBase):
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-    
-    def env_step(self, actions):
-        if not self.is_tensor_obses:
-            actions = actions.cpu().numpy()
-        obs, rewards, dones, infos = self.vec_env.step(actions)
-        
-        if self.is_tensor_obses:
-            return obs, rewards.cpu(), dones.cpu(), infos
-        else:
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def play_steps(self):
         mb_states = []
@@ -504,6 +504,7 @@ class DiscreteA2CBase(A2CBase):
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
+                
                 if self.print_stats:
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time
@@ -526,6 +527,7 @@ class DiscreteA2CBase(A2CBase):
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
                     mean_scores = np.mean(self.game_scores)
+                    
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
@@ -540,6 +542,7 @@ class DiscreteA2CBase(A2CBase):
                             mean_cur_rewards = np.mean(self.curiosity_rewards)
                             mean_min_rewards = np.mean(self.curiosity_mins)
                             mean_max_rewards = np.mean(self.curiosity_maxs)
+                            
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
@@ -551,7 +554,7 @@ class DiscreteA2CBase(A2CBase):
                     if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.config['name'] + self.env_name)
+                        self.save("./nn/" + self.config['name'])
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
@@ -619,8 +622,9 @@ class ContinuousA2CBase(A2CBase):
      
             mb_obs[n,:] = self.obs
             mb_dones[n,:] = self.dones
-
-            self.obs, rewards, self.dones, infos = self.env_step(actions)
+            clamped_actions = torch.clamp(actions, -1.0, 1.0)
+            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+            self.obs, rewards, self.dones, infos = self.env_step(rescaled_actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
@@ -815,19 +819,6 @@ class ContinuousA2CBase(A2CBase):
 
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
     
-    def env_step(self, actions):
-        clamped_actions = torch.clamp(actions, -1.0, 1.0)
-        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
-
-        if not self.is_tensor_obses:
-            rescaled_actions = rescaled_actions.cpu().numpy()
-        obs, rewards, dones, infos = self.vec_env.step(rescaled_actions)
-
-        if self.is_tensor_obses:
-            return obs, rewards.cpu(), dones.cpu(), infos
-        else:
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
-
     def train(self):
         last_mean_rewards = -100500
         start_time = time.time()
@@ -896,7 +887,7 @@ class ContinuousA2CBase(A2CBase):
                     if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         last_mean_rewards = mean_rewards
-                        self.save("./nn/" + self.config['name'] + self.env_name)
+                        self.save("./nn/" + self.config['name'])
                         if last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))

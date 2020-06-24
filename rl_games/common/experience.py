@@ -5,7 +5,7 @@ from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
 
 
 class ReplayBuffer(object):
-    def __init__(self, size):
+    def __init__(self, size, ob_space):
         """Create Replay buffer.
         Parameters
         ----------
@@ -13,32 +13,47 @@ class ReplayBuffer(object):
             Max number of transitions to store in the buffer. When the buffer
             overflows the old memories are dropped.
         """
-        self._storage = []
+        self._obses = np.zeros((size,) + ob_space.shape, dtype=ob_space.dtype)
+        self._next_obses = np.zeros((size,) + ob_space.shape, dtype=ob_space.dtype)
+        self._rewards = np.zeros(size)
+        self._actions = np.zeros(size, dtype=np.int32)
+        self._dones = np.zeros(size, dtype=np.bool)
+
         self._maxsize = size
         self._next_idx = 0
+        self._curr_size = 0
 
     def __len__(self):
-        return len(self._storage)
+        return self._curr_size
 
     def add(self, obs_t, action, reward, obs_tp1, done):
-        data = (obs_t, action, reward, obs_tp1, done)
 
-        if self._next_idx >= len(self._storage):
-            self._storage.append(data)
-        else:
-            self._storage[self._next_idx] = data
+        self._curr_size = min(self._curr_size + 1, self._maxsize )
+
+        self._obses[self._next_idx] = obs_t
+        self._next_obses[self._next_idx] = obs_tp1
+        self._rewards[self._next_idx] = reward
+        self._actions[self._next_idx] = action
+        self._dones[self._next_idx] = done
+
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
+    def _get(self, idx):
+        return self._obses[idx], self._actions[idx], self._rewards[idx], self._next_obses[idx], self._dones[idx]
+
     def _encode_sample(self, idxes):
-        obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
+        batch_size = len(idxes)
+        obses_t, actions, rewards, obses_tp1, dones = [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size, [None] * batch_size
+        it = 0
         for i in idxes:
-            data = self._storage[i]
+            data = self._get(i)
             obs_t, action, reward, obs_tp1, done = data
-            obses_t.append(np.array(obs_t, copy=False))
-            actions.append(np.array(action, copy=False))
-            rewards.append(reward)
-            obses_tp1.append(np.array(obs_tp1, copy=False))
-            dones.append(done)
+            obses_t[it] = np.array(obs_t, copy=False)
+            actions[it] = np.array(action, copy=False)
+            rewards[it] = reward
+            obses_tp1[it] = np.array(obs_tp1, copy=False)
+            dones[it] = done
+            it = it + 1
         return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
 
     def sample(self, batch_size):
@@ -61,12 +76,12 @@ class ReplayBuffer(object):
             done_mask[i] = 1 if executing act_batch[i] resulted in
             the end of an episode and 0 otherwise.
         """
-        idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
+        idxes = [random.randint(0, self._curr_size - 1) for _ in range(batch_size)]
         return self._encode_sample(idxes)
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, alpha):
+    def __init__(self, size, alpha, ob_space):
         """Create Prioritized Replay buffer.
         Parameters
         ----------
@@ -80,7 +95,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         --------
         ReplayBuffer.__init__
         """
-        super(PrioritizedReplayBuffer, self).__init__(size)
+        super(PrioritizedReplayBuffer, self).__init__(size, ob_space)
         assert alpha >= 0
         self._alpha = alpha
 
@@ -101,7 +116,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
     def _sample_proportional(self, batch_size):
         res = []
-        p_total = self._it_sum.sum(0, len(self._storage) - 1)
+        p_total = self._it_sum.sum(0, self._curr_size - 1)
         every_range_len = p_total / batch_size
         for i in range(batch_size):
             mass = random.random() * every_range_len + i * every_range_len
@@ -147,11 +162,11 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
         weights = []
         p_min = self._it_min.min() / self._it_sum.sum()
-        max_weight = (p_min * len(self._storage)) ** (-beta)
+        max_weight = (p_min * self._curr_size) ** (-beta)
 
         for idx in idxes:
             p_sample = self._it_sum[idx] / self._it_sum.sum()
-            weight = (p_sample * len(self._storage)) ** (-beta)
+            weight = (p_sample * self._curr_size) ** (-beta)
             weights.append(weight / max_weight)
         weights = np.array(weights)
         encoded_sample = self._encode_sample(idxes)
@@ -173,8 +188,9 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         assert len(idxes) == len(priorities)
         for idx, priority in zip(idxes, priorities):
             assert priority > 0
-            assert 0 <= idx < len(self._storage)
+            assert 0 <= idx < self._curr_size
             self._it_sum[idx] = priority ** self._alpha
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
+

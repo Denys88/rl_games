@@ -7,10 +7,46 @@ class BasePlayer(object):
     def __init__(self, config):
         self.config = config
         self.env_name = self.config['env_name']
-        self.state_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
-        self.state_shape = self.state_space.shape
-        self.env = None
         self.env_config = self.config.get('env_config', {})
+        self.env = self.create_env()
+        self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env)
+        self.state_shape = list(self.observation_space.shape)
+        self.is_tensor_obses = False
+
+    def _preproc_obs(self, obs_batch):
+        if obs_batch.dtype == torch.uint8:
+            obs_batch = obs_batch.float() / 255.0
+        if len(obs_batch.size()) == 3:
+            obs_batch = obs_batch.permute((0, 2, 1))
+        if len(obs_batch.size()) == 4:
+            obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if self.normalize_input:
+            obs_batch = self.running_mean_std(obs_batch)
+        return obs_batch
+
+    def env_step(self, env, actions):
+        if not self.is_tensor_obses:
+            actions = actions.cpu().numpy()
+        obs, rewards, dones, infos = env.step(actions)
+
+        if self.is_tensor_obses:
+            return obs, rewards.cpu(), dones.cpu(), infos
+        else:
+            if np.isscalar(rewards):
+                rewards = np.expand_dims(np.asarray(rewards), 0)
+                dones = np.expand_dims(np.asarray(dones), 0)
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+
+    def env_reset(self, env):
+        obs = env.reset()
+        if isinstance(obs, torch.Tensor):
+            self.is_tensor_obses = True
+        else:
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).cuda()
+            else:
+                obs = torch.FloatTensor(obs).cuda()
+        return obs
 
     def restore(self, fn):
         raise NotImplementedError('restore')
@@ -33,56 +69,63 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == torch.uint8:
-            obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
-        return obs_batch
-
-    def run(self, n_games=100, n_game_life = 1, render= False, is_determenistic = True):
-        self.env = self.create_env()
-        import cv2
+    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = True):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
         n_games = n_games * n_game_life
+        games_played = 0
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+        
         if has_masks_func:
             has_masks = self.env.has_action_mask()
 
         for _ in range(n_games):
-            cr = 0
-            steps = 0
-            s = self.env.reset()
+            if games_played >= n_games:
+                break
 
+            s = self.env_reset(self.env)
+            batch_size = 1
+            if len(s.size()) > len(self.state_shape):
+                batch_size = s.size()[0]
+            
+            cr = torch.zeros(batch_size, dtype=torch.float32)
+            steps = torch.zeros(batch_size, dtype=torch.float32)
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
                     action = self.get_masked_action(s, masks, is_determenistic)
                 else:
                     action = self.get_action(s, is_determenistic)
-                s, r, done, info =  self.env.step(action)
+                s, r, done, info =  self.env_step(self.env, action)
                 cr += r
                 steps += 1
 
                 if render:
                     self.env.render(mode = 'human')
 
-                if not np.isscalar(done):
-                    done = done.any()
+                done_indices = done.nonzero()[::self.num_agents]
+                done_count = len(done_indices)
 
-                if done:
-                    game_res = info.get('battle_won', 0.5)
-                    print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
+                games_played += done_count
+                
+                if done_count > 0:
+                    cur_rewards = cr[done_indices].sum().item()
+                    cur_steps = steps[done_indices].sum().item()
+
+                    cr = cr * (1.0 - done.float())
+                    steps = steps * (1.0 - done.float())
+                    sum_rewards += cur_rewards
+                    sum_steps += cur_steps
+                    game_res = 0
+
+                    if info is not None:
+                        game_res = info.get('battle_won', 0.5)
+
+                    print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
                     sum_game_res += game_res
-                    sum_rewards += np.mean(cr)
-                    sum_steps += steps
-                    break
+                    if batch_size//self.num_agents == 1 or games_played >= n_games:
+                        break
 
-        print('av reward:', sum_rewards / n_games * n_game_life, 'av steps:', sum_steps / n_games * n_game_life, 'winrate:', sum_game_res / n_games * n_game_life)
+        print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
