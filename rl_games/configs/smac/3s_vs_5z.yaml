@@ -3,7 +3,7 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c
+    name: discrete_a2c_lstm
 
   load_checkpoint: False
   load_path: 'nn/3s_vs_5z'
@@ -22,9 +22,9 @@ params:
         scale: 2 
       regularizer:
         name: 'None'
-    #lstm:
-    #  units: 128
-    #  concated: False
+    lstm:
+      units: 128
+      concated: False
   config:
     name: 3s_vs_5z
     reward_shaper:
@@ -35,7 +35,7 @@ params:
     learning_rate: 1e-4
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.001
     truncate_grads: True
     env_name:  smac
     ppo: true
@@ -48,7 +48,7 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: True
+    normalize_input: False
     seq_len: 4
     use_action_masks: True
 

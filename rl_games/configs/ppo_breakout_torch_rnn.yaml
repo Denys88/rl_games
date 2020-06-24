@@ -60,7 +60,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: PongNoFrameskip-v4
+    env_name: BreakoutFrameskip-v4
     ppo: true
     e_clip: 0.2
     clip_value: True

@@ -1,5 +1,6 @@
 from rl_games.common import env_configurations
 import numpy as np
+import torch
 
 
 class BasePlayer(object):
@@ -31,6 +32,17 @@ class BasePlayer(object):
 
     def reset(self):
         raise NotImplementedError('raise')
+
+    def _preproc_obs(self, obs_batch):
+        if obs_batch.dtype == torch.uint8:
+            obs_batch = obs_batch.float() / 255.0
+        if len(obs_batch.size()) == 3:
+            obs_batch = obs_batch.permute((0, 2, 1))
+        if len(obs_batch.size()) == 4:
+            obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if self.normalize_input:
+            obs_batch = self.running_mean_std(obs_batch)
+        return obs_batch
 
     def run(self, n_games=100, n_game_life = 1, render= False, is_determenistic = True):
         self.env = self.create_env()

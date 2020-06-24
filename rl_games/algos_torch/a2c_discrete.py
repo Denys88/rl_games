@@ -23,13 +23,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.model = self.network.build(config)
         self.model.cuda()
 
-        self.is_rnn = self.model.is_rnn()
         self.states = None
-        if self.is_rnn:
-            self.states = self.model.get_default_rnn_state()
-            batch_size = self.num_agents * self.num_actors
-            num_seqs = self.steps_num * batch_size // self.seq_len
-            self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+        self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
@@ -41,6 +36,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+
+    
 
     def set_eval(self):
         self.model.eval()
@@ -187,8 +184,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)
-        else:
-            c_loss = c_loss
 
         if self.is_rnn:
             sum_mask = rnn_masks.sum()

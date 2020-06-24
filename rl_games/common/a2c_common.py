@@ -123,6 +123,45 @@ class A2CBase:
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
 
+    def init_rnn_from_model(self, model):
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = model.get_default_rnn_state()
+            batch_size = self.num_agents * self.num_actors
+            num_seqs = self.steps_num * batch_size // self.seq_len
+            self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+
+    def init_rnn_step(self, batch_size, mb_states, mb_rnn_masks):
+        mb_states = self.mb_states
+        mb_rnn_masks = torch.zeros((batch_size * self.steps_num), dtype = torch.float32).cuda()
+        steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
+        steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
+        indices = torch.zeros((batch_size), dtype = torch.long).cuda()
+        return mb_rnn_masks, indices, steps_mask, steps_state, mb_states
+
+    def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_states):
+        seq_indices = None
+        if self.is_rnn:
+            if indices.max().item() >= self.steps_num:
+                return seq_indices, True
+            mb_rnn_masks[indices + steps_mask] = 1
+            seq_indices = indices % self.seq_len
+            state_indices = (seq_indices == 0).nonzero()
+            state_pos = indices // self.seq_len
+            rnn_indices = state_pos[state_indices] + steps_state[state_indices]
+            for s, mb_s in zip(self.states, mb_states):
+                mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+        return seq_indices, False
+
+    def process_rnn_dones(self, all_done_indices, indices, seq_indices):
+        if self.is_rnn:
+            if len(all_done_indices) > 0:
+                all_done_indices = all_done_indices.squeeze(-1)
+                indices[all_done_indices] += self.seq_len - seq_indices[all_done_indices] - 1
+                for i in range(len(self.states)):
+                    self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
+
+            indices += 1  
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
@@ -248,27 +287,15 @@ class DiscreteA2CBase(A2CBase):
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
         batch_size = self.num_agents * self.num_actors
-        # For n in range number of steps
         mb_rnn_masks = None
         if self.is_rnn:
-            mb_states = self.mb_states
-            mb_rnn_masks = torch.zeros((batch_size * self.steps_num), dtype = torch.float32).cuda()
-            steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
-            steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
-            indices = torch.zeros((batch_size), dtype = torch.long).cuda()
+            mb_rnn_masks, indices, steps_mask, steps_state, mb_states = self.init_rnn_step(batch_size, mb_states, mb_rnn_masks)
 
         for n in range(self.steps_num):
-            if self.is_rnn:
-                if indices.max().item() >= self.steps_num:
-                    break
-                mb_rnn_masks[indices + steps_mask] = 1
-                seq_indices = indices % self.seq_len
-                state_indices = (seq_indices == 0).nonzero()
-                state_pos = indices // self.seq_len
-                for s, mb_s in zip(self.states, mb_states):
-                    #print(state_pos[state_indices] + steps_state[state_indices])
-                    #print(state_indices)
-                    mb_s[:, state_pos[state_indices] + steps_state[state_indices], :] = s[:, state_indices, :]
+            print('start')
+            seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+            if full_tensor:
+                break
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -293,16 +320,8 @@ class DiscreteA2CBase(A2CBase):
             all_done_indices = self.dones.nonzero()
             done_indices = all_done_indices[::self.num_agents]
 
-            if self.is_rnn:
-                if len(all_done_indices) > 0:
-                    all_done_indices = all_done_indices.squeeze(-1)
-                    indices[all_done_indices] += self.seq_len - seq_indices[all_done_indices] - 1
-                    for i in range(len(self.states)):
-                        self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
-                    
-                indices += 1  
+            self.process_rnn_dones(all_done_indices, indices, seq_indices)  
                      
-
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
 
@@ -363,7 +382,6 @@ class DiscreteA2CBase(A2CBase):
             'actions' : mb_actions,
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
-            #'rnn_masks' : mb_rnn_masks
         }
 
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
@@ -410,10 +428,13 @@ class DiscreteA2CBase(A2CBase):
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
                 #np.random.shuffle(game_indexes)
+                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
-                    mbatch = flat_indexes[mb_indexes].flatten()                        
+ 
+                    mbatch = flat_indexes[mb_indexes].flatten()                 
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]
@@ -582,10 +603,16 @@ class ContinuousA2CBase(A2CBase):
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
-        # For n in range number of steps
+        batch_size = self.num_agents * self.num_actors
+        mb_rnn_masks = None
+        if self.is_rnn:
+            mb_rnn_masks, indices, steps_mask, steps_state, mb_states = self.init_rnn_step(batch_size, mb_states, mb_rnn_masks)
+
         for n in range(self.steps_num):
-            if self.network.is_rnn():
-                mb_states.append(self.states)
+            seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+            if full_tensor:
+                break
+
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
@@ -602,7 +629,10 @@ class ContinuousA2CBase(A2CBase):
             self.current_rewards += rewards
             self.current_lengths += 1
 
-            done_indices = self.dones.nonzero()[::self.num_agents]
+            all_done_indices = self.dones.nonzero()
+            done_indices = all_done_indices[::self.num_agents]
+            self.process_rnn_dones(all_done_indices, indices, seq_indices)  
+
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
             
@@ -664,9 +694,9 @@ class ContinuousA2CBase(A2CBase):
             'sigmas' : mb_sigmas,
         }
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-        if self.network.is_rnn():
-            batch_dict['states'] = mb_states
-
+        if self.is_rnn:
+            batch_dict['rnn_states'] = mb_states
+            batch_dict['rnn_masks'] = mb_rnn_masks
         return batch_dict
 
     def train_epoch(self):
@@ -682,7 +712,8 @@ class ContinuousA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         mus = batch_dict['mus']
         sigmas = batch_dict['sigmas']
-        lstm_states = batch_dict.get('states', None)
+        rnn_states = batch_dict.get('rnn_states', None)
+        rnn_masks = batch_dict.get('rnn_masks', None)
 
         play_time_end = time.time()
         update_time_start = time.time()
@@ -702,20 +733,20 @@ class ContinuousA2CBase(A2CBase):
         entropies = []
         kls = []
 
-        if self.network.is_rnn():
+        if self.is_rnn:
+            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = np.arange(total_games)
-            flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
-            lstm_states = lstm_states[::self.seq_len]
-
+            game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
+            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                np.random.shuffle(game_indexes)
+                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
-                    batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
-                    mbatch = flat_indexes[mb_indexes].ravel()                        
-
+ 
+                    mbatch = flat_indexes[mb_indexes].flatten()                 
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]
@@ -723,11 +754,11 @@ class ContinuousA2CBase(A2CBase):
                     input_dict['returns'] = returns[mbatch]
                     input_dict['actions'] = actions[mbatch]
                     input_dict['obs'] = obses[mbatch]
-                    input_dict['masks'] = dones[mbatch]
+                    input_dict['rnn_states'] = [s[:,batch,:] for s in rnn_states]
+                    input_dict['rnn_masks'] = rnn_masks[mbatch]
+                    input_dict['learning_rate'] = self.last_lr
                     input_dict['mu'] = mus[mbatch]
                     input_dict['sigma'] = sigmas[mbatch]
-                    input_dict['states'] = lstm_states[batch]
-                    input_dict['learning_rate'] = self.last_lr
 
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
                     a_losses.append(a_loss)
@@ -736,7 +767,7 @@ class ContinuousA2CBase(A2CBase):
                     entropies.append(entropy)        
                     mus[mbatch] = cmu
                     sigmas[mbatch] = csigma
-                    if self.bounds_loss is not None:
+                    if self.bounds_loss_coef is not None:
                         b_losses.append(b_loss)                            
 
         else:

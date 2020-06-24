@@ -258,8 +258,8 @@ class A2CBuilder(NetworkBuilder):
                     a_out, a_states = self.a_lstm(a_out, states[:2])
                     c_out, v_states = self.v_lstm(c_out, states[2:])
                     a_out = self.a_layer_norm(a_out)
-                    a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = self.v_layer_norm(c_out)
+                    a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
                     states = a_states + v_states
 
@@ -276,7 +276,7 @@ class A2CBuilder(NetworkBuilder):
                         sigma = mu * 0.0 + self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
-                    return mu, sigma, value
+                    return mu, sigma, value, states
 
             else:
                 out = obs
@@ -307,7 +307,7 @@ class A2CBuilder(NetworkBuilder):
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
-                    return mu, mu*0 + sigma, value
+                    return mu, mu*0 + sigma, value, states
                     
         def is_separate_critic(self):
             return self.separate
@@ -316,6 +316,8 @@ class A2CBuilder(NetworkBuilder):
             return self.has_lstm
 
         def get_default_rnn_state(self):
+            if not self.has_lstm:
+                return None
             num_layers = 1
             if self.separate:
                 return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 

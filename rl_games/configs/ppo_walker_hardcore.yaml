@@ -13,24 +13,26 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: normc_initializer
-          std: 0.01
+          name: variance_scaling_initializer
+          scale: 0.02 
         sigma_init:
           name: const_initializer
-          value: 0
+          val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128]
       activation: relu
       initializer:
-        name: normc_initializer
-        std: 1        
+        name: variance_scaling_initializer
+        scale: 2         
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-
-  load_checkpoint: False
-  load_path: path
+    lstm:
+      units: 128
+      concated: False    
+  load_checkpoint: True
+  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
 
   config:
       reward_shaper:
@@ -45,7 +47,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.000
       truncate_grads: True
-      env_name:  BipedalWalkerHardcore-v2
+      env_name:  BipedalWalkerHardcore-v3
       ppo: true
       e_clip: 0.2
       clip_value: True
@@ -54,15 +56,15 @@ params:
       minibatch_size: 2048
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule:  adaptive
+      lr_schedule:  None
       lr_threshold: 0.008
       normalize_input: False
-      seq_len: 8
-      bounds_loss_coef: 0.5
-      max_epochs: 10000
+      seq_len: 4
+      bounds_loss_coef: 0.0
+      max_epochs: 100000
 
 
-experiment_config:
+experiment_config1:
   start_exp: 0
   start_sub_exp: 0
   experiments:

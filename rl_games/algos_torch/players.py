@@ -39,29 +39,16 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()
 
-    def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == np.uint8:
-            obs_batch = torch.cuda.ByteTensor(obs_batch)
-            obs_batch = obs_batch.float() / 255.0
-        else:
-            obs_batch = torch.cuda.FloatTensor(obs_batch)
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
-        return obs_batch
-
     def get_action(self, obs, is_determenistic = False):
         obs = self._preproc_obs(np.expand_dims(obs, axis=0))
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
+            'obs' : obs,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, mu, sigma = self.model(input_dict)
+            neglogp, value, action, mu, sigma, states = self.model(input_dict)
         if is_determenistic:
             current_action = mu
         else:
@@ -104,20 +91,6 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()      
 
-    def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == np.uint8:
-            obs_batch = torch.cuda.ByteTensor(obs_batch)
-            obs_batch = obs_batch.float() / 255.0
-        else:
-            obs_batch = torch.cuda.FloatTensor(obs_batch)
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
-        return obs_batch
-
     def get_masked_action(self, obs, action_masks, is_determenistic = False):
         if self.num_agents == 1:
             obs = np.expand_dims(obs, axis=0)
@@ -138,8 +111,6 @@ class PpoPlayerDiscrete(BasePlayer):
             return action.squeeze().detach().cpu().numpy()
 
     def get_action(self, obs, is_determenistic = False):
-        if self.num_agents == 1:
-            obs = np.expand_dims(obs, axis=0)
         obs = self._preproc_obs(obs)
         self.model.eval()
         input_dict = {
