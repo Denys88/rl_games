@@ -22,7 +22,7 @@ params:
         scale: 2 
       regularizer:
         name: 'None'
-   rnn:
+    rnn:
       name: lstm
       units: 128
       layers: 1  
