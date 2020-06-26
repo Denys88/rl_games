@@ -28,9 +28,10 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    lstm:
+    rnn:
+      name: lstm
       units: 128
-      concated: False    
+      layers: 1   
   load_checkpoint: False
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
 

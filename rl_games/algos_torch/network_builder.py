@@ -187,7 +187,7 @@ class A2CBuilder(NetworkBuilder):
                     self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
-                    self.rnn = torch.nn.LSTM(self.units[-1], self.rnn_units, 1)
+                    self.rnn = self._build_rnn(self.units[-1], self.rnn_units, self.rnn_layers)
                     self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
             self.value = torch.nn.Linear(out_size, self.value_shape)
@@ -239,6 +239,7 @@ class A2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
+
             if self.separate:
                 a_out = c_out = obs
                 
@@ -261,13 +262,22 @@ class A2CBuilder(NetworkBuilder):
                     num_seqs = batch_size // seq_length
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
-                    a_out, a_states = self.a_rnn(a_out, states[:2])
-                    c_out, v_states = self.c_rnn(c_out, states[2:])
+                    if len(states) == 2:
+                        a_states = states[0]
+                        c_states = states[1]
+                    else:
+                        a_states = states[:2]
+                        c_states = states[2:]                        
+                    a_out, a_states = self.a_rnn(a_out, a_states)
+                    c_out, c_states = self.c_rnn(c_out, c_states)
                     a_out = self.a_layer_norm(a_out)
                     c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
-                    states = a_states + v_states
+                    if a_states is not tuple:
+                        a_states = (a_states,)
+                        c_states = (c_states,)
+                    states = a_states + c_states
 
                      
 
@@ -297,10 +307,13 @@ class A2CBuilder(NetworkBuilder):
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
+                    if len(states) == 1:
+                        states = states[0]
                     out, states = self.rnn(out, states)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
                     out = self.layer_norm(out)
-
+                    if states is not tuple:
+                        states = (states,)
                 value = self.value_act(self.value(out))
 
                 if self.is_discrete:

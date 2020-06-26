@@ -27,7 +27,7 @@ params:
 
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
+      units: [256]
       activation: elu
 
       initializer:
@@ -41,6 +41,10 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
+    rnn:
+        name: gru
+        units: 128
+        layers: 2  
 
   load_checkpoint: False
   load_path: path
@@ -66,7 +70,7 @@ params:
     mini_epochs : 15
     critic_coef : 1
     clip_value : True
-    lr_schedule : adaptive
+    lr_schedule : none #adaptive
     lr_threshold : 0.01
     normalize_input : False
     seq_len : 16
