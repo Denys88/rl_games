@@ -182,12 +182,12 @@ class A2CBuilder(NetworkBuilder):
             if self.has_rnn:
                 out_size = self.rnn_units
                 if self.separate:
-                    self.a_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers, batch_first=True)
-                    self.c_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers, batch_first=True)
+                    self.a_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
+                    self.c_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
                     self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
-                    self.rnn = torch.nn.LSTM(self.units[-1], self.rnn_units, 1, batch_first=True)
+                    self.rnn = torch.nn.LSTM(self.units[-1], self.rnn_units, 1)
                     self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
             self.value = torch.nn.Linear(out_size, self.value_shape)
@@ -325,7 +325,7 @@ class A2CBuilder(NetworkBuilder):
             if not self.has_rnn:
                 return None
             num_layers = self.rnn_layers
-            if self.rnn_name = 'lstm':
+            if self.rnn_name == 'lstm':
                 if self.separate:
                     return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
                             torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(),
