@@ -274,7 +274,7 @@ class A2CBuilder(NetworkBuilder):
                     c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
-                    if a_states is not tuple:
+                    if type(a_states) is not tuple:
                         a_states = (a_states,)
                         c_states = (c_states,)
                     states = a_states + c_states
