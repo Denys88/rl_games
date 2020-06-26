@@ -68,6 +68,12 @@ class NetworkBuilder:
         def _noisy_dense(self, inputs, units):
             return layers.NoisyFactorizedLinear(inputs, units)
 
+        def _build_rnn(self, name, input, units, layers):
+            if name == 'lstm':
+                return torch.nn.LSTM(input, units, layers, batch_first=True)
+            if name == 'gru':
+                return torch.nn.GRU(input, units, layers, batch_first=True)
+
         def _build_mlp(self, 
         input_size, 
         units, 
@@ -173,16 +179,16 @@ class A2CBuilder(NetworkBuilder):
                 self.critic_mlp = self._build_mlp(**mlp_args)
 
             out_size = self.units[-1]
-            if self.has_lstm:
-                out_size = self.lstm_units
+            if self.has_rnn:
+                out_size = self.rnn_units
                 if self.separate:
-                    self.a_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
-                    self.v_lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
-                    self.a_layer_norm = torch.nn.LayerNorm(self.lstm_units)
-                    self.v_layer_norm = torch.nn.LayerNorm(self.lstm_units)
+                    self.a_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers, batch_first=True)
+                    self.c_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers, batch_first=True)
+                    self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
-                    self.lstm = torch.nn.LSTM(self.units[-1], self.lstm_units, 1, batch_first=True)
-                    self.layer_norm = torch.nn.LayerNorm(self.lstm_units)
+                    self.rnn = torch.nn.LSTM(self.units[-1], self.rnn_units, 1, batch_first=True)
+                    self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
             self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
@@ -250,15 +256,15 @@ class A2CBuilder(NetworkBuilder):
                 for l in self.critic_mlp:
                     c_out = l(c_out)
 
-                if self.has_lstm:
+                if self.has_rnn:
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
-                    a_out, a_states = self.a_lstm(a_out, states[:2])
-                    c_out, v_states = self.v_lstm(c_out, states[2:])
+                    a_out, a_states = self.a_rnn(a_out, states[:2])
+                    c_out, v_states = self.c_rnn(c_out, states[2:])
                     a_out = self.a_layer_norm(a_out)
-                    c_out = self.v_layer_norm(c_out)
+                    c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
                     states = a_states + v_states
@@ -287,11 +293,11 @@ class A2CBuilder(NetworkBuilder):
                 for l in self.actor_mlp:
                     out = l(out)
                 
-                if self.has_lstm:
+                if self.has_rnn:
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
-                    out, states = self.lstm(out, states)
+                    out, states = self.rnn(out, states)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
                     out = self.layer_norm(out)
 
@@ -313,20 +319,27 @@ class A2CBuilder(NetworkBuilder):
             return self.separate
 
         def is_rnn(self):
-            return self.has_lstm
+            return self.has_rnn
 
         def get_default_rnn_state(self):
-            if not self.has_lstm:
+            if not self.has_rnn:
                 return None
-            num_layers = 1
-            if self.separate:
-                return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
-                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(),
-                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
-                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
+            num_layers = self.rnn_layers
+            if self.rnn_name = 'lstm':
+                if self.separate:
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(),
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                else:
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
             else:
-                return (torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda(), 
-                        torch.zeros((num_layers, self.num_seqs, self.lstm_units)).cuda())
+                if self.separate:
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                else:
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())                
 
         def load(self, params):
             self.separate = params['separate']
@@ -338,16 +351,17 @@ class A2CBuilder(NetworkBuilder):
             self.is_continuous = 'continuous'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
-            self.has_lstm = 'lstm' in params
+            self.has_rnn = 'rnn' in params
             self.value_shape = params.get('value_shape', 1)
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
                 
-            if self.has_lstm:
-                self.lstm_units = params['lstm']['units']
-                self.concated = params['lstm']['concated']
+            if self.has_rnn:
+                self.rnn_units = params['rnn']['units']
+                self.rnn_layers = params['rnn']['layers']
+                self.rnn_name = params['rnn']['name']
 
             if 'cnn' in params:
                 self.has_cnn = True
@@ -467,10 +481,10 @@ class RNDCuriosityBuilder(NetworkBuilder):
             self.regularizer = params['mlp']['regularizer']
             self.normalization = params.get('normalization', None)
 
-            self.has_lstm = 'lstm' in params
+            self.has_lstm = 'rnn' in params
                 
             if self.has_lstm:
-                self.lstm_units = params['lstm']['units']
+                self.lstm_units = params['rnn']['units']
 
             if 'cnn' in params:
                 self.has_cnn = True

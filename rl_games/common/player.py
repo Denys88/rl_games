@@ -12,7 +12,7 @@ class BasePlayer(object):
         self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env)
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
-
+        self.states = None
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -69,7 +69,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=5000, n_game_life = 1, render = True, is_determenistic = True):
+    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0

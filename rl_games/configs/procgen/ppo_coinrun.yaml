@@ -19,8 +19,8 @@ params:
       type: conv2d
       activation: relu
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142 
+        name: variance_scaling_initializer
+        scale: 2
       regularizer:
         name: 'None'
       
@@ -39,14 +39,14 @@ params:
           padding: 0
       
     mlp:
-      units: [512]
+      units: [1024]
       activation: relu
       regularizer:
         name: 'None'
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142 
-    lstm:
+        name: variance_scaling_initializer
+        scale: 2 
+    lstm1:
       units: 256
       concated: False
   config:
@@ -73,7 +73,7 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
-    normalize_input: False
+    normalize_input: True
     seq_len: 4
     #lr_schedule:  adaptive
     # lr_threshold: 0.008

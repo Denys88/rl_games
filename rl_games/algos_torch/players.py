@@ -76,9 +76,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.network = config['network']
         self.actions_num = self.action_space.n
         self.mask = [False]
-        self.is_rnn = self.model.is_rnn()
-        if self.is_rnn:
-            self.states = self.model.get_default_rnn_state()
+
         self.normalize_input = self.config['normalize_input']
 
         obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
@@ -90,7 +88,9 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model = self.network.build(config)
         self.model.cuda()
         self.model.eval()
-
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()      
@@ -142,5 +142,5 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
-        if self.network.is_rnn():
-            self.last_state = self.initial_state
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()

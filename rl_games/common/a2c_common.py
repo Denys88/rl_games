@@ -292,10 +292,10 @@ class DiscreteA2CBase(A2CBase):
             mb_rnn_masks, indices, steps_mask, steps_state, mb_states = self.init_rnn_step(batch_size, mb_states, mb_rnn_masks)
 
         for n in range(self.steps_num):
-            print('start')
-            seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
-            if full_tensor:
-                break
+            if self.is_rnn:
+                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+                if full_tensor:
+                    break
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -319,8 +319,8 @@ class DiscreteA2CBase(A2CBase):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero()
             done_indices = all_done_indices[::self.num_agents]
-
-            self.process_rnn_dones(all_done_indices, indices, seq_indices)  
+            if self.is_rnn:
+                self.process_rnn_dones(all_done_indices, indices, seq_indices)  
                      
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
