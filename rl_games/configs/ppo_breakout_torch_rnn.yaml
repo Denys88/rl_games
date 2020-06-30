@@ -44,9 +44,10 @@ params:
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
-    lstm:
+    rnn:
+      name: lstm
       units: 256
-      concated: False
+      layers: 1
   config:
     reward_shaper:
         scale_value: 1
@@ -60,7 +61,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: BreakoutFrameskip-v4
+    env_name: PongNoFrameskip-v4
     ppo: true
     e_clip: 0.2
     clip_value: True
@@ -72,7 +73,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 8
+    seq_len: 4
     #lr_schedule:  adaptive
     # lr_threshold: 0.008
     # bounds_loss_coef: 0.5

@@ -201,7 +201,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
         with torch.no_grad():
-            kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2).mean()
+            kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
+            if self.is_rnn:
+                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
+            else:
+                kl_dist = kl_dist.mean()
             kl_dist = kl_dist.item()
             if self.is_adaptive_lr:
                 if kl_dist > (2.0 * self.lr_threshold):

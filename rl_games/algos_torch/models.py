@@ -82,12 +82,12 @@ class ModelA2CContinuous(BaseModel):
             distr = torch.distributions.Normal(mu, sigma)
             if not is_train:
                 selected_action = distr.sample().squeeze()
-                neglogp = distr.log_prob(selected_action).sum(dim=1)
+                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
                 return  neglogp, value, selected_action, mu, sigma, states
             else:
-                entropy = distr.entropy().mean()
-                prev_neglogp = distr.log_prob(prev_actions).sum(dim=1)
-                return prev_neglogp, value, entropy, states
+                entropy = distr.entropy().sum(dim=-1)
+                prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
+                return prev_neglogp, value, entropy, mu, sigma, states
 
 
 class ModelA2CContinuousLogStd(BaseModel):
@@ -123,7 +123,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
                 return  neglogp, value, selected_action, mu, sigma, states
             else:
-                entropy = distr.entropy().sum(dim=-1).mean()
+                entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
                 return prev_neglogp, value, entropy, mu, sigma, states
 

@@ -49,7 +49,7 @@ params:
       entropy_coef: 0.000
       truncate_grads: True
       env_name:  BipedalWalkerHardcore-v3
-      ppo: true
+      ppo: True
       e_clip: 0.2
       clip_value: True
       num_actors: 16
@@ -57,10 +57,10 @@ params:
       minibatch_size: 2048
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule:  None
+      lr_schedule:  adaptive
       lr_threshold: 0.008
-      normalize_input: True
-      seq_len: 16
+      normalize_input: False
+      seq_len: 4
       bounds_loss_coef: 0.0
       max_epochs: 100000
 

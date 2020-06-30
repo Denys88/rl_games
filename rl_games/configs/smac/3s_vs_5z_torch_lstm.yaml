@@ -23,9 +23,9 @@ params:
       regularizer:
         name: 'None'
     rnn:
-      name: lstm
+      name: sru
       units: 128
-      layers: 1  
+      layers: 2  
   config:
     name: 3s_vs_5z
     reward_shaper:

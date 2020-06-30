@@ -155,6 +155,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             batch_dict['seq_length'] = self.seq_len
 
         action_log_probs, values, entropy, mu, sigma,_ = self.model(batch_dict)
+
         if self.ppo:
             ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
             surr1 = ratio * advantage
@@ -202,14 +203,17 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             b_loss = torch.mean(b_loss)
 
 
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         self.optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
 
         with torch.no_grad():
-            kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch)
+            reduce_kl = not self.is_rnn
+            kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
+            if self.is_rnn:
+                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
             kl_dist = kl_dist.item()
             if self.is_adaptive_lr:
                 if kl_dist > (2.0 * self.lr_threshold):
