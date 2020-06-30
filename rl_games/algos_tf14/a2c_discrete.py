@@ -367,7 +367,7 @@ class A2CAgent:
                         dict[self.obs_ph] = obses[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
 
-                        dict[self.states_ph] = lstm_states[batch]
+                        dict[self.states_ph] = lstm_states[mb_indexes]
 
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier,  self.train_op]

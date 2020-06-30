@@ -100,13 +100,13 @@ class DMControlObsWrapper(gym.ObservationWrapper):
 def create_default_gym_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    env = gym.make(name)
     is_procgen = kwargs.pop('procgen', False)
-    if is_procgen:
-        if frames > 1:
+    env = gym.make(name, **kwargs)
+    
+    if frames > 1:
+        if is_procgen:
             env = wrappers.ProcgenStack(env, frames, True)
-    else:
-        if frames > 1:
+        else:
             env = wrappers.FrameStack(env, frames, False)
     return env 
 

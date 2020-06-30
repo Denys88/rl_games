@@ -538,13 +538,14 @@ class ResidualBlock(nn.Module):
         self.activation = activation
         self.conv1 = Conv2dAuto(in_channels=channels, out_channels=channels, kernel_size=3, stride=1)
         self.conv2 = Conv2dAuto(in_channels=channels, out_channels=channels, kernel_size=3, stride=1)
-        self.activate = nn.ReLU()
+        self.activate1 = nn.ReLU()
+        self.activate2 = nn.ReLU()
     
     def forward(self, x):
         residual = x
-        x = self.activate(x)
+        x = self.activate1(x)
         x = self.conv1(x)
-        x = self.activate(x)
+        x = self.activate2(x)
         x = self.conv2(x)
         x += residual
         return x
@@ -591,14 +592,17 @@ class A2CResnetBuilder(NetworkBuilder):
             self.mlp = self._build_mlp(**mlp_args)
 
             out_size = self.units[-1]
-            out_size = self.rnn_units
+            if self.has_rnn:
+                out_size = self.rnn_units
             
-            self.rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
-            self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+
+            if self.has_rnn:
+                self.rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
+                self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
             self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
-
+            self.flatten_act = self.activations_factory.create(self.activation) 
             if self.is_discrete:
                 self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:
@@ -614,7 +618,6 @@ class A2CResnetBuilder(NetworkBuilder):
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
-            '''
             for m in self.cnn:
                 if isinstance(m, nn.Conv2d):
                     cnn_init(m.weight)
@@ -625,7 +628,6 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_discrete:
                 mlp_init(self.logits.weight)
-            '''
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 if self.space_config['fixed_sigma']:
@@ -644,20 +646,21 @@ class A2CResnetBuilder(NetworkBuilder):
             for l in self.cnn:
                 out = l(out)
             out = out.flatten(1)         
-            out = self.activation(out)
+            out = self.flatten_act(out)
             for l in self.mlp:
                 out = l(out)
                 
-            batch_size = out.size()[0]
-            num_seqs = batch_size // seq_length
-            out = out.reshape(num_seqs, seq_length, -1)
-            if len(states) == 1:
-                states = states[0]
-            out, states = self.rnn(out, states)
-            out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
-            out = self.layer_norm(out)
-            if type(states) is not tuple:
-                states = (states,)
+            if self.has_rnn:
+                batch_size = out.size()[0]
+                num_seqs = batch_size // seq_length
+                out = out.reshape(num_seqs, seq_length, -1)
+                if len(states) == 1:
+                    states = states[0]
+                out, states = self.rnn(out, states)
+                out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
+                out = self.layer_norm(out)
+                if type(states) is not tuple:
+                    states = (states,)
             value = self.value_act(self.value(out))
 
             if self.is_discrete:
@@ -688,9 +691,11 @@ class A2CResnetBuilder(NetworkBuilder):
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
                 
-            self.rnn_units = params['rnn']['units']
-            self.rnn_layers = params['rnn']['layers']
-            self.rnn_name = params['rnn']['name']
+            self.has_rnn = 'rnn' in params
+            if self.has_rnn:
+                self.rnn_units = params['rnn']['units']
+                self.rnn_layers = params['rnn']['layers']
+                self.rnn_name = params['rnn']['name']
 
             self.has_cnn = True
             self.conv_depths = params['cnn']['conv_depths']
@@ -708,7 +713,7 @@ class A2CResnetBuilder(NetworkBuilder):
             return False
 
         def is_rnn(self):
-            return True
+            return self.has_rnn
 
         def get_default_rnn_state(self):
             num_layers = self.rnn_layers

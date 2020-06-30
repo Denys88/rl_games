@@ -196,7 +196,7 @@ class A2CBase:
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
     def env_reset(self):
         obs = self.vec_env.reset()
@@ -353,16 +353,11 @@ class DiscreteA2CBase(A2CBase):
 
             epinfos.append(infos)
 
-            mb_actions[n,:] = actions
-            mb_values[n,:] = values
-            mb_neglogpacs[n,:] = neglogpacs
-            mb_rewards[n,:] = shaped_rewards
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        #atata = keke
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
