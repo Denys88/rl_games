@@ -276,7 +276,7 @@ class A2CAgent:
 
             self.obs[:], rewards, self.dones, infos = self.vec_env.step(actions)
             if self.use_central_states:
-                self.central_states[:] = infos["central_states"]
+                self.central_states[:] = self.vec_env.get_states()
 
             # Increase step count by self.num_actors (WHIRL)
             self.num_env_steps_train += self.num_actors
@@ -328,9 +328,19 @@ class A2CAgent:
 
         mb_returns = mb_advs + mb_values
         if self.network.is_rnn():
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rnn_states  )), epinfos)
+            if self.use_central_states:
+                result = (*map(swap_and_flatten01,
+                               (mb_central_states, mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rnn_states)),
+                          epinfos)
+            else:
+                result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs, mb_rnn_states  )), epinfos)
         else:
-            result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
+            if self.use_central_states:
+                result = (
+                *map(swap_and_flatten01, (mb_central_states, mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None,
+                epinfos)
+            else:
+                result = (*map(swap_and_flatten01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)), None, epinfos)
         return result
 
     def save(self, fn):
@@ -341,6 +351,8 @@ class A2CAgent:
 
     def train(self):
         self.obs = self.vec_env.reset()
+        if self.use_central_states:
+            self.central_states = self.vec_env.get_states()
         batch_size = self.steps_num * self.num_actors * self.num_agents
         batch_size_envs = self.steps_num * self.num_actors
         minibatch_size = self.config['minibatch_size']
@@ -361,7 +373,10 @@ class A2CAgent:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
             frame += batch_size_envs
-            obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+            if self.use_central_states:
+                central_states, obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
+            else:
+                obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -417,11 +432,13 @@ class A2CAgent:
                     values = values[permutation]
                     neglogpacs = neglogpacs[permutation]
                     advantages = advantages[permutation]
+                    central_states = central_states[permutation]
                                                    
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
-                                self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch]}
+                                self.advantages_ph : advantages[batch], self.old_logp_actions_ph : neglogpacs[batch], self.old_values_ph : values[batch],
+                                self.central_states_ph: central_states[batch]}
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_approx, self.current_lr, self.lr_multiplier, self.train_op]
                             
@@ -474,6 +491,7 @@ class A2CAgent:
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('win_rate/mean', mean_scores, frame)
                     self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+
                     self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
                     self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
                     self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)

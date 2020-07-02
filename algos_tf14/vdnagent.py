@@ -25,8 +25,10 @@ class VDNAgent:
         self.games_to_track = tr_helpers.get_or_default(config, 'games_to_track', 100)
         self.max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
 
+        self.games_to_log = self.config.get('games_to_track', 100)
         self.game_rewards = deque([], maxlen=self.games_to_track)
         self.game_lengths = deque([], maxlen=self.games_to_track)
+        self.game_scores = deque([], maxlen=self.games_to_log)
 
         self.epoch_num = tf.Variable(tf.constant(0, shape=(), dtype=tf.float32), trainable=False)
         self.update_epoch_op = self.epoch_num.assign(self.epoch_num + 1)
@@ -118,6 +120,9 @@ class VDNAgent:
             sess.run(tf.global_variables_initializer())
         self._reset()
 
+        self.logger = logger
+        self.num_env_steps_train = 0
+
     def get_weights(self):
         return self.variables.get_flat()
 
@@ -196,6 +201,7 @@ class VDNAgent:
         done_reward = None
         done_shaped_reward = None
         done_steps = None
+        done_info = None
         steps_rewards = 0
         cur_gamma = 1
         cur_obs_act_rew_len = len(self.obs_act_rew)
@@ -210,8 +216,11 @@ class VDNAgent:
             state = self.env.get_state()
 
             action = self.get_action(obs, self.env.get_action_mask(), epsilon)
-            new_obs, reward, is_done, _ = self.env.step(action)
+            new_obs, reward, is_done, info = self.env.step(action)
             # reward = reward * (1 - is_done)
+
+            # Increase step count by 1 - we do not use vec env! (WHIRL)
+            self.num_env_steps_train += 1
 
             # Same reward, done for all agents
             reward = reward[0]
@@ -240,8 +249,10 @@ class VDNAgent:
             done_reward = self.total_reward
             done_steps = self.step_count
             done_shaped_reward = self.total_shaped_reward
+            done_info = info
             self._reset()
-        return done_reward, done_shaped_reward, done_steps
+
+        return done_reward, done_shaped_reward, done_steps, done_info
 
     def load_weights_into_target_network(self):
         self.sess.run(self.assigns_op)
@@ -308,10 +319,12 @@ class VDNAgent:
             self.beta = self.beta_processor(frame)
 
             for _ in range(0, steps_per_epoch):
-                reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
+                reward, shaped_reward, step, info = self.play_steps(self.steps_num, self.epsilon)
                 if reward != None:
                     self.game_lengths.append(step)
                     self.game_rewards.append(reward)
+                    game_res = info.get('battle_won', 0.5)
+                    self.game_scores.append(game_res)
                     # shaped_rewards.append(shaped_reward)
 
             t_play_end = time.time()
@@ -350,6 +363,16 @@ class VDNAgent:
                 self.writer.add_scalar('info/lr', self.learning_rate * lr_mul, frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
                 self.writer.add_scalar('info/epsilon', self.epsilon, frame)
+
+                self.logger.log_stat("whirl/performance/fps", 1000 / sum_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/upd_time", update_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/play_time", play_time, self.num_env_steps_train)
+                self.logger.log_stat("losses/td_loss", np.mean(losses), self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/last_lr", self.learning_rate*lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/lr_mul", lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/epochs", epoch_num, self.num_env_steps_train)
+                self.logger.log_stat("whirl/epsilon", self.epsilon, self.num_env_steps_train)
+
                 if self.is_prioritized:
                     self.writer.add_scalar('beta', self.beta, frame)
 
@@ -359,10 +382,18 @@ class VDNAgent:
                 if num_games > 10:
                     mean_rewards = np.sum(self.game_rewards) / num_games
                     mean_lengths = np.sum(self.game_lengths) / num_games
+                    mean_scores = np.mean(self.game_scores)
                     self.writer.add_scalar('rewards/mean', mean_rewards, frame)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
+                    self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
+                    self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
+                    self.logger.log_stat("whirl/win_rate/mean", np.asscalar(mean_scores), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/win_rate/time", mean_scores, total_time)
 
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
