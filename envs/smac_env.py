@@ -49,9 +49,6 @@ class SMACEnv(gym.Env):
     def get_state(self):
         return self.env.get_state()
 
-    def get_state(self):
-        return self.env.get_state()
-
     def step(self, actions):
         fixed_rewards = None
 

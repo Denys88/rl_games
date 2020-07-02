@@ -70,7 +70,10 @@ class VDNAgent:
         self.atoms_num = self.config['atoms_num']
         assert self.atoms_num == 1
 
-        self.state_shape = (self.env.env_info['state_shape'],)
+        if central_state_space is not None:
+            self.state_shape = central_state_space.shape
+        else:
+            raise NotImplementedError("central_state_space input to VDN is NONE!")
         self.n_agents = self.env.env_info['n_agents']
 
         if not self.is_prioritized:
@@ -225,6 +228,7 @@ class VDNAgent:
             # Same reward, done for all agents
             reward = reward[0]
             is_done = all(is_done)
+            state = state[0]
 
             self.step_count += 1
             self.total_reward += reward
