@@ -65,6 +65,7 @@ class Runner:
 
     def reset(self):
         gpu_options = tf.GPUOptions(allow_growth=False)
+
         config = tf.ConfigProto(gpu_options=gpu_options)
         tf.reset_default_graph()
         if self.sess:

@@ -60,7 +60,7 @@ params:
     name: MMM2
     is_double: True
     score_to_win: 20
-    num_steps_fill_buffer: 100000
+    num_steps_fill_buffer: 1000
     replay_buffer_type: 'normal'
     replay_buffer_size: 1000000
     priority_beta: 0.4
