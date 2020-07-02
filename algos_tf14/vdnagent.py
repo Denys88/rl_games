@@ -397,7 +397,7 @@ class VDNAgent:
                     self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)
                     self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
                     self.logger.log_stat("whirl/win_rate/mean", np.asscalar(mean_scores), self.num_env_steps_train)
-                    self.logger.log_stat("whirl/win_rate/time", mean_scores, total_time)
+                    self.logger.log_stat("whirl/win_rate/time", np.asscalar(mean_scores), total_time)
 
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
