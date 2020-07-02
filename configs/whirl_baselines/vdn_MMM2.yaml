@@ -82,3 +82,4 @@ params:
       frames: 4
       transpose: True
       random_invalid_step: False
+      use_central_state: True
