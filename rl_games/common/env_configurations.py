@@ -282,7 +282,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v3' : {
-        'env_creator' : lambda **kwargs  : HCRewardEnv(gym.make('BipedalWalker-v3')),
+        'env_creator' : lambda **kwargs  : gym.make('BipedalWalker-v3'),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerCnn-v3' : {
@@ -290,7 +290,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v3' : {
-        'env_creator' : lambda **kwargs  : gym.make('BipedalWalkerHardcore-v3'),
+        'env_creator' : lambda **kwargs  : HCRewardEnv(gym.make('BipedalWalkerHardcore-v3')),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcoreCnn-v3' : {

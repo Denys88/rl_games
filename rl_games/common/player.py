@@ -28,14 +28,15 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-
+        if obs.dtype == np.float64:
+            obs = np.float32(obs)
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
             if np.isscalar(rewards):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(np.float32(obs)).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def env_reset(self, env):
         obs = env.reset()
@@ -69,7 +70,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=100, n_game_life = 1, render = True, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -84,7 +85,6 @@ class BasePlayer(object):
         for _ in range(n_games):
             if games_played >= n_games:
                 break
-
             s = self.env_reset(self.env)
             batch_size = 1
             if len(s.size()) > len(self.state_shape):
@@ -112,8 +112,9 @@ class BasePlayer(object):
                 
                 if done_count > 0:
                     if self.is_rnn:
-                        for i in range(len(self.states)):
-                            self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
+                        for s in self.states:
+                            s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()
 

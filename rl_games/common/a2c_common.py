@@ -162,9 +162,8 @@ class A2CBase:
                 all_done_indices = all_done_indices.squeeze(-1)
                 shifts = self.seq_len - 1 - seq_indices[all_done_indices]
                 indices[all_done_indices] += shifts
-                for i in range(len(self.states)):
-                    self.states[i][:,all_done_indices,:] = self.states[i][:,all_done_indices,:] * 0.0
-
+                for s in self.states:
+                    s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
             indices += 1  
 
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
@@ -203,6 +202,7 @@ class A2CBase:
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         else:
+            assert(self.observation_space.dtype != np.int8)
             if self.observation_space.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).cuda()
             else:
@@ -283,7 +283,7 @@ class DiscreteA2CBase(A2CBase):
         mb_obs = self.mb_obs
         mb_rewards = self.mb_rewards.fill_(0)
         mb_values = self.mb_values.fill_(0)
-        mb_dones = self.mb_dones
+        mb_dones = self.mb_dones.fill_(1)
         mb_actions = self.mb_actions
         mb_neglogpacs = self.mb_neglogpacs
   
@@ -616,14 +616,14 @@ class ContinuousA2CBase(A2CBase):
         mb_states = []
         epinfos = []
         batch_size = self.num_agents * self.num_actors
-        mb_obs = self.mb_obs
+        mb_obs = self.mb_obs.fill_(0)
         mb_rewards = self.mb_rewards.fill_(0)
         mb_values = self.mb_values.fill_(0)
-        mb_dones = self.mb_dones
-        mb_actions = self.mb_actions
-        mb_neglogpacs = self.mb_neglogpacs
-        mb_mus = self.mb_mus 
-        mb_sigmas = self.mb_sigmas 
+        mb_dones = self.mb_dones.fill_(1)
+        mb_actions = self.mb_actions.fill_(0)
+        mb_neglogpacs = self.mb_neglogpacs.fill_(0)
+        mb_mus = self.mb_mus.fill_(0)
+        mb_sigmas = self.mb_sigmas.fill_(0) 
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
@@ -788,13 +788,13 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                game_indexes = game_indexes[permutation]
+                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
                     mbatch = flat_indexes[mb_indexes].flatten()        
-                          
+            
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]

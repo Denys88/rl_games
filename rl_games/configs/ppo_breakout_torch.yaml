@@ -46,7 +46,7 @@ params:
         gain: 1.4142 
   config:
     reward_shaper:
-        scale_value: 1
+        scale_value: 0.1
         
     normalize_advantage: True
     gamma: 0.99
@@ -57,7 +57,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: PongNoFrameskip-v4
+    env_name: BreakoutNoFrameskip-v4
     ppo: true
     e_clip: 0.2
     clip_value: True

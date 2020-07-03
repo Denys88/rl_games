@@ -75,7 +75,7 @@ class NetworkBuilder:
                 return torch.nn.GRU(input, units, layers, batch_first=True)
             if name == 'sru':
                 from sru import SRU
-                return SRU(input, units, layers, dropout=0, layer_norm=True)
+                return SRU(input, units, layers, dropout=0, layer_norm=False)
 
         def _build_mlp(self, 
         input_size, 
@@ -276,11 +276,12 @@ class A2CBuilder(NetworkBuilder):
                         c_states = states[2:]                        
                     a_out, a_states = self.a_rnn(a_out, a_states)
                     c_out, c_states = self.c_rnn(c_out, c_states)
-    
+         
                     if self.rnn_name == 'sru':
                         a_out =a_out.transpose(0,1)
                         c_out =c_out.transpose(0,1)
                     else:
+                        #pass
                         a_out = self.a_layer_norm(a_out)
                         c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
@@ -319,13 +320,15 @@ class A2CBuilder(NetworkBuilder):
                     if len(states) == 1:
                         states = states[0]
                     if self.rnn_name == 'sru':
-                        out =out.transpose(0,1)
+                        out = out.transpose(0,1)
+        
                     out, states = self.rnn(out, states)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
                     if self.rnn_name == 'sru':
                         out =out.transpose(0,1)
                     else:
-                        out = self.layer_norm(out)
+                        pass
+                        #out = self.layer_norm(out)
                     
                     if type(states) is not tuple:
                         states = (states,)

@@ -7,17 +7,17 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: normc_initializer
-          std: 0.01
+          name: variance_scaling_initializer
+          scale: 0.02
         sigma_init:
           name: const_initializer
-          value: 0
+          val: 0
         fixed_sigma: True
 
     cnn:
@@ -32,22 +32,22 @@ params:
         - filters: 64
           kernel_size: 3
           strides: 1
-          padding: 'same'
+          padding: 1
         - filters: 64
           kernel_size: 3
           strides: 1
-          padding: 'same'
+          padding: 1
         - filters: 64
           kernel_size: 3
           strides: 1
-          padding: 'same'
+          padding: 1
         - filters: 128
           kernel_size: 2
           strides: 1
-          padding: 'valid'
+          padding: 0
 
     mlp:
-      units: [256, 128]
+      units: [128]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -72,9 +72,9 @@ params:
       name: walker
       score_to_win: 300
       grad_norm: 0.5
-      entropy_coef: 0.000
+      entropy_coef: -0.000
       truncate_grads: True
-      env_name:  BipedalWalkerHardcoreCnn-v2
+      env_name:  BipedalWalkerHardcoreCnn-v3
       ppo: true
       e_clip: 0.2
       clip_value: True
@@ -87,10 +87,10 @@ params:
       lr_threshold: 0.008
       normalize_input: False
       seq_len: 8
-      bounds_loss_coef: 0.5
+      bounds_loss_coef: 0.0
       max_epochs: 20000
 
-experiment_config:
+experiment_config1:
   start_exp: 0
   start_sub_exp: 0
   experiments:

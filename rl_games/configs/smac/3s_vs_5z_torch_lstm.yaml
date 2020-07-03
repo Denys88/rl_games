@@ -15,7 +15,7 @@ params:
       discrete:
       
     mlp:
-      units: [256,128]
+      units: [256]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -24,7 +24,7 @@ params:
         name: 'None'
     rnn:
       name: lstm
-      units: 64
+      units: 128
       layers: 1  
   config:
     name: 3s_vs_5z
@@ -49,8 +49,8 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: False
-    seq_len: 4
+    normalize_input: True
+    seq_len: 16
     use_action_masks: True
 
     env_config:
