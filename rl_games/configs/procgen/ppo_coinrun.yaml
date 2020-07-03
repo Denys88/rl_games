@@ -49,7 +49,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name: 'openai_gym' #'PongNoFrameskip-v4' #
+    env_name: 'BreakoutNoFrameskip-v4' #'openai_gym' #'PongNoFrameskip-v4' #
     ppo: true
     e_clip: 0.2
     clip_value: True
@@ -63,7 +63,7 @@ params:
     normalize_input: False
     seq_len: 4
     max_epochs: 5000
-    env_config:
+    env_config1:
         name: "procgen:procgen-coinrun-v0"
         procgen: True
         frames: 1
