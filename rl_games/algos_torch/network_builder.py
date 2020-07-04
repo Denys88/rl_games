@@ -327,8 +327,7 @@ class A2CBuilder(NetworkBuilder):
                     if self.rnn_name == 'sru':
                         out =out.transpose(0,1)
                     else:
-                        pass
-                        #out = self.layer_norm(out)
+                        out = self.layer_norm(out)
                     
                     if type(states) is not tuple:
                         states = (states,)

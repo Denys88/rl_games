@@ -96,6 +96,28 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = self.env.unwrapped.ale.lives()
         return obs
 
+class EpisodeStackedEnv(gym.Wrapper):
+    def __init__(self, env):
+
+        gym.Wrapper.__init__(self, env)
+        self.max_stacked_steps = 1000
+        self.current_steps=0
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if reward == 0:
+            self.current_steps += 1
+        else:
+            self.current_steps = 0
+        if self.current_steps == self.max_stacked_steps:
+            self.current_steps = 0
+            print('max_stacked_steps!')
+            done = True
+            reward = -1
+            obs = self.env.reset()
+        return obs, reward, done, info
+
+
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env,skip=4, use_max = True):
         """Return only every `skip`-th frame"""
@@ -464,6 +486,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     if noop_max > 0:
         env = NoopResetEnv(env, noop_max=noop_max)
     env = MaxAndSkipEnv(env, skip=skip)
+    env = EpisodeStackedEnv(env)
     return env
 
 def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
