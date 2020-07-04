@@ -30,7 +30,7 @@ params:
         #scale: 0.001
     rnn:
       name: lstm
-      units: 64
+      units: 128
       layers: 1   
   load_checkpoint: False
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
@@ -48,13 +48,13 @@ params:
       grad_norm: 0.5
       entropy_coef: 0
       truncate_grads: True
-      env_name:  BipedalWalker-v3
+      env_name:  BipedalWalkerHardcore-v3
       ppo: True
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 256
-      minibatch_size: 1024
+      steps_num: 2048
+      minibatch_size: 4096
       mini_epochs: 8
       critic_coef: 1
       lr_schedule: adaptive

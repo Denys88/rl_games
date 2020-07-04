@@ -450,6 +450,27 @@ class MontezumaInfoWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
+class MaskVelocityWrapper(gym.ObservationWrapper):
+    """
+    Gym environment observation wrapper used to mask velocity terms in
+    observations. The intention is the make the MDP partially observatiable.
+    """
+    def __init__(self, env, name):
+        super(MaskVelocityWrapper, self).__init__(env)
+        if name == "CartPole-v1":
+            self.mask = np.array([1., 0., 1., 0.])
+        elif name == "Pendulum-v0":
+            self.mask = np.array([1., 1., 0.])
+        elif name == "LunarLander-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1,])
+        elif name == "LunarLanderContinuous-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1,])
+        else:
+            raise NotImplementedError
+
+    def observation(self, observation):
+        return  observation * self.mask
+
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     env = gym.make(env_id)
     if 'Montezuma' in env_id:
