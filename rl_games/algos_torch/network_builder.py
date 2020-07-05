@@ -544,16 +544,35 @@ class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.padding =  (self.kernel_size[0] // 2, self.kernel_size[1] // 2) # dynamic add padding based on the kernel_size
-        
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, use_bn=False):
+        super().__init__()
+        self.use_bn=use_bn
+        self.conv = Conv2dAuto(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1)
+        if use_bn:
+            self.bn = nn.BatchNorm2d(out_channels)
+
+
+    def forward(self, x):
+        x = self.conv(x)
+        if self.use_bn:
+            x = self.bn(x)
+        return x       
+              
 
 class ResidualBlock(nn.Module):
-    def __init__(self, channels, activation='relu'):
+    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=True):
         super().__init__()
+        self.use_zero_init=use_zero_init
+        if use_zero_init:
+            self.alpha = nn.Parameter(torch.zeros(1))
         self.activation = activation
-        self.conv1 = Conv2dAuto(in_channels=channels, out_channels=channels, kernel_size=3, stride=1)
-        self.conv2 = Conv2dAuto(in_channels=channels, out_channels=channels, kernel_size=3, stride=1)
+        self.conv1 = ConvBlock(channels, channels, use_bn)
+        self.conv2 = ConvBlock(channels, channels, use_bn)
         self.activate1 = nn.ReLU()
         self.activate2 = nn.ReLU()
+
     
     def forward(self, x):
         residual = x
@@ -561,18 +580,21 @@ class ResidualBlock(nn.Module):
         x = self.conv1(x)
         x = self.activate2(x)
         x = self.conv2(x)
-        x += residual
+        if self.use_zero_init:
+            x = x + residual * self.alpha
+        else:
+            x = x + residual
         return x
 
 class ImpalaSequential(nn.Module):
-    def __init__(self, in_channels, out_channels, activation='relu'):
+    def __init__(self, in_channels, out_channels, activation='relu', use_bn=True, use_zero_init=False):
         super().__init__()    
-        self.conv1 = Conv2dAuto(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1)
+        self.conv = ConvBlock(in_channels, out_channels, use_bn)
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.res_block1 = ResidualBlock(out_channels)
-        self.res_block2 = ResidualBlock(out_channels)
+        self.res_block1 = ResidualBlock(out_channels, activation='relu', use_bn=use_bn, use_zero_init=use_zero_init)
+        self.res_block2 = ResidualBlock(out_channels, activation='relu', use_bn=use_bn, use_zero_init=use_zero_init)
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv(x)
         x = self.max_pool(x)
         x = self.res_block1(x)
         x = self.res_block2(x)
@@ -644,8 +666,8 @@ class A2CResnetBuilder(NetworkBuilder):
             
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-
+                    #nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)

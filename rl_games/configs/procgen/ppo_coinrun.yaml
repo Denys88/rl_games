@@ -38,7 +38,7 @@ params:
       layers: 1
   config:
     reward_shaper:
-        scale_value: 0.1
+        scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -47,25 +47,25 @@ params:
     name: atari
     score_to_win: 900
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.01
     truncate_grads: True
-    env_name: 'BreakoutNoFrameskip-v4' #'openai_gym' #'PongNoFrameskip-v4' #
+    env_name: 'openai_gym' #'openai_gym' #'PongNoFrameskip-v4' #
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 16
     steps_num: 128
     minibatch_size: 1024
-    mini_epochs: 2
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
     seq_len: 4
     max_epochs: 5000
-    env_config1:
+    env_config:
         name: "procgen:procgen-coinrun-v0"
         procgen: True
-        frames: 1
-        num_levels: 10
+        frames: 4
+        num_levels: 100
         start_level: 322
