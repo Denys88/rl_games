@@ -168,22 +168,20 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.critic_cnn = self._build_conv( **cnn_args)
 
-            mlp_args = {
-                'input_size' : self._calc_input_size(input_shape, self.actor_cnn), 
-                'units' :self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
-            }
+            in_mlp_shape = self._calc_input_size(input_shape, self.actor_cnn)
+            
+            if len(self.units) == 0:
+                out_size = mlp_input_shape
+            else:
+                out_size = self.units[-1]
 
-            self.actor_mlp = self._build_mlp(**mlp_args)
-
-            if self.separate:
-                self.critic_mlp = self._build_mlp(**mlp_args)
-
-            out_size = self.units[-1]
             if self.has_rnn:
-                out_size = self.rnn_units
+                if not self.is_rnn_before_mlp:
+                    rnn_in_size =  out_size
+                    out_size = self.rnn_units
+                else:
+                    rnn_in_size =  in_mlp_shape
+                    in_mlp_shape = self.rnn_units
                 if self.separate:
                     self.a_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
                     self.c_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
@@ -193,6 +191,19 @@ class A2CBuilder(NetworkBuilder):
                     self.rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
                     self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
+
+            mlp_args = {
+                'input_size' : in_mlp_shape, 
+                'units' :self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear
+            }
+            self.actor_mlp = self._build_mlp(**mlp_args)
+
+            if self.separate:
+                self.critic_mlp = self._build_mlp(**mlp_args)
+
             self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
 
@@ -392,6 +403,7 @@ class A2CBuilder(NetworkBuilder):
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
+                self.is_rnn_before_mlp = params['rnn']['before_mlp']
 
             if 'cnn' in params:
                 self.has_cnn = True
@@ -583,8 +595,26 @@ class A2CResnetBuilder(NetworkBuilder):
   
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
+
+            in_mlp_shape = mlp_input_shape
+            
+            if len(self.units) == 0:
+                out_size = mlp_input_shape
+            else:
+                out_size = self.units[-1]
+
+            if self.has_rnn:
+                if not self.is_rnn_before_mlp:
+                    rnn_in_size =  out_size
+                    out_size = self.rnn_units
+                else:
+                    rnn_in_size =  in_mlp_shape
+                    in_mlp_shape = self.rnn_units
+                self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
+                self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    
             mlp_args = {
-                'input_size' : mlp_input_shape, 
+                'input_size' : in_mlp_shape, 
                 'units' :self.units, 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
@@ -593,15 +623,6 @@ class A2CResnetBuilder(NetworkBuilder):
 
             self.mlp = self._build_mlp(**mlp_args)
 
-            out_size = self.units[-1]
-            if self.has_rnn:
-                out_size = self.rnn_units
-            
-
-            if self.has_rnn:
-                self.rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
-                self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
-                    
             self.value = torch.nn.Linear(out_size, self.value_shape)
             self.value_act = self.activations_factory.create(self.value_activation)
             self.flatten_act = self.activations_factory.create(self.activation) 
@@ -620,13 +641,15 @@ class A2CResnetBuilder(NetworkBuilder):
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
-            for m in self.cnn:
+            
+            for m in self.modules():
                 if isinstance(m, nn.Conv2d):
-                    cnn_init(m.weight)
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
 
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight) 
+                    mlp_init(m.weight)
+            
 
             if self.is_discrete:
                 mlp_init(self.logits.weight)
@@ -649,10 +672,12 @@ class A2CResnetBuilder(NetworkBuilder):
                 out = l(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
-            for l in self.mlp:
-                out = l(out)
                 
             if self.has_rnn:
+                if not self.is_rnn_before_mlp:
+                    for l in self.mlp:
+                        out = l(out)
+
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length
                 out = out.reshape(num_seqs, seq_length, -1)
@@ -663,6 +688,15 @@ class A2CResnetBuilder(NetworkBuilder):
                 out = self.layer_norm(out)
                 if type(states) is not tuple:
                     states = (states,)
+
+                if self.is_rnn_before_mlp:
+                        for l in self.mlp:
+                            out = l(out)
+            else:
+                for l in self.mlp:
+                    out = l(out)
+
+                    
             value = self.value_act(self.value(out))
 
             if self.is_discrete:
@@ -698,6 +732,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
+                self.is_rnn_before_mlp = params['rnn']['before_mlp']
 
             self.has_cnn = True
             self.conv_depths = params['cnn']['conv_depths']

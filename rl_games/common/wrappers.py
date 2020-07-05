@@ -486,7 +486,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     if noop_max > 0:
         env = NoopResetEnv(env, noop_max=noop_max)
     env = MaxAndSkipEnv(env, skip=skip)
-    env = EpisodeStackedEnv(env)
+    #env = EpisodeStackedEnv(env)
     return env
 
 def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
