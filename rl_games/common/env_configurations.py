@@ -215,7 +215,7 @@ def create_smac_cnn(name, **kwargs):
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
-        'env_creator' : lambda **kwargs : gym.make('CartPole-v1'),
+        'env_creator' : lambda **kwargs : wrappers.MaskVelocityWrapper(gym.make('CartPole-v1'), 'CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
         'vecenv_type' : 'RAY',
