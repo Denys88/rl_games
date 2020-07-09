@@ -540,6 +540,41 @@ class RNDCuriosityBuilder(NetworkBuilder):
         net = RNDCuriosityBuilder.Network(self.params, **kwargs)
         return net
 
+class ChannelAttention(nn.Module):
+    def __init__(self, in_planes, ratio=16):
+        super(ChannelAttention, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.fc1   = nn.Conv2d(in_planes, in_planes // 2, 1, bias=False)
+        self.relu1 = nn.ReLU()
+        self.fc2   = nn.Conv2d(in_planes // 2, in_planes, 1, bias=False)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = self.fc2(self.relu1(self.fc1(self.avg_pool(x))))
+        max_out = self.fc2(self.relu1(self.fc1(self.max_pool(x))))
+        out = avg_out + max_out
+        return self.sigmoid(out)
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+
+        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
+        padding = 3 if kernel_size == 7 else 1
+
+        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        x = torch.cat([avg_out, max_out], dim=1)
+        x = self.conv1(x)
+        return self.sigmoid(x)
+
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -548,8 +583,8 @@ class Conv2dAuto(nn.Conv2d):
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, use_bn=False):
         super().__init__()
-        self.use_bn=use_bn
-        self.conv = Conv2dAuto(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1)
+        self.use_bn = use_bn
+        self.conv = Conv2dAuto(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1, bias=not use_bn)
         if use_bn:
             self.bn = nn.BatchNorm2d(out_channels)
 
@@ -562,17 +597,20 @@ class ConvBlock(nn.Module):
               
 
 class ResidualBlock(nn.Module):
-    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=True):
+    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=True, use_attention=False):
         super().__init__()
         self.use_zero_init=use_zero_init
+        self.use_attention = use_attention
         if use_zero_init:
             self.alpha = nn.Parameter(torch.zeros(1))
         self.activation = activation
         self.conv1 = ConvBlock(channels, channels, use_bn)
         self.conv2 = ConvBlock(channels, channels, use_bn)
-        self.activate1 = nn.ReLU()
-        self.activate2 = nn.ReLU()
-
+        self.activate1 = nn.ELU()
+        self.activate2 = nn.ELU()
+        if use_attention:
+            self.ca = ChannelAttention(channels)
+            self.sa = SpatialAttention()
     
     def forward(self, x):
         residual = x
@@ -580,19 +618,22 @@ class ResidualBlock(nn.Module):
         x = self.conv1(x)
         x = self.activate2(x)
         x = self.conv2(x)
+        if self.use_attention:
+            x = self.ca(x) * x
+            x = self.sa(x) * x
         if self.use_zero_init:
-            x = x + residual * self.alpha
+            x = x * self.alpha + residual
         else:
             x = x + residual
         return x
 
 class ImpalaSequential(nn.Module):
-    def __init__(self, in_channels, out_channels, activation='relu', use_bn=True, use_zero_init=False):
+    def __init__(self, in_channels, out_channels, activation='elu', use_bn=True, use_zero_init=False):
         super().__init__()    
         self.conv = ConvBlock(in_channels, out_channels, use_bn)
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.res_block1 = ResidualBlock(out_channels, activation='relu', use_bn=use_bn, use_zero_init=use_zero_init)
-        self.res_block2 = ResidualBlock(out_channels, activation='relu', use_bn=use_bn, use_zero_init=use_zero_init)
+        self.res_block1 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
+        self.res_block2 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
     def forward(self, x):
         x = self.conv(x)
         x = self.max_pool(x)
@@ -666,8 +707,8 @@ class A2CResnetBuilder(NetworkBuilder):
             
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
-                    #nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                    nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                    #nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('elu'))
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)

@@ -17,7 +17,7 @@ params:
     
     cnn:
       conv_depths: [16, 32, 32]
-      activation: relu
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2
@@ -26,7 +26,7 @@ params:
       
     mlp:
       units: [512]
-      activation: relu
+      activation: elu
       regularizer:
         name: 'None'
       initializer:
@@ -38,34 +38,36 @@ params:
       layers: 1
   config:
     reward_shaper:
-        scale_value: 1
+        max_val: 10
         
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.999
     tau: 0.95
     learning_rate: 1e-4
     name: atari
     score_to_win: 900
     grad_norm: 0.5
-    entropy_coef: 0.01
+    entropy_coef: 0.001
     truncate_grads: True
     env_name: 'openai_gym' #'openai_gym' #'PongNoFrameskip-v4' #
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    steps_num: 128
+    steps_num: 256
     minibatch_size: 1024
-    mini_epochs: 4
+    mini_epochs: 3
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
     seq_len: 4
-    max_epochs: 5000
+    max_epochs: 2000
     env_config:
         name: "procgen:procgen-coinrun-v0"
         procgen: True
         frames: 4
-        num_levels: 100
-        start_level: 322
+        num_levels: 1000
+        start_level: 323
+        limit_steps: False
+        distribution_mode: 'easy'

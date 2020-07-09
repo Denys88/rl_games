@@ -95,7 +95,7 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()      
 
-    def get_masked_action(self, obs, action_masks, is_determenistic = False):
+    def get_masked_action(self, obs, action_masks, is_determenistic = True):
         if len(obs.size()) == len(self.state_shape):
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)

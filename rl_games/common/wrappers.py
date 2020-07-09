@@ -10,6 +10,22 @@ from copy import copy
 
 cv2.ocl.setUseOpenCL(False)
 
+class LimitStepsWrapper(gym.Wrapper):
+    def __init__(self, env, limit=200):
+        gym.RewardWrapper.__init__(self, env)
+        
+        self.limit = limit
+        self.steps = 0
+    def reset(self, **kwargs):
+        self.steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if done and reward == 0:
+            reward = -0.1
+        return observation, reward, done, info
+
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
