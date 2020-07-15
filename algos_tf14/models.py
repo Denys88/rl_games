@@ -20,12 +20,14 @@ class ModelA2C(BaseModel):
     def __call__(self, dict, reuse=False):
         name = dict['name']
         inputs = dict['inputs']
+        central_states = dict.get('central_states')
         actions_num = dict['actions_num']
         prev_actions_ph = dict['prev_actions_ph']
         action_mask_ph = dict.get('action_mask_ph', None)
         is_train = prev_actions_ph is not None
 
-        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,reuse=reuse)
+        logits, value = self.network(name, inputs=inputs, actions_num=actions_num, continuous=False, is_train=is_train,
+                                     reuse=reuse, central_states=central_states)
         #if action_mask_ph is not None:
             #masks = tf.layers.dense(tf.to_float(action_mask_ph), actions_num, activation=tf.nn.elu)
             #logits = masks + logits

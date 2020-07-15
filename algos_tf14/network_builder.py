@@ -187,15 +187,15 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         actions_num = kwargs.pop('actions_num')
         input = kwargs.pop('inputs')
-        critic_input = kwargs.pop('critic_inputs', None)
-        has_critic_input = critic_input is not None
+        central_states = kwargs.pop('central_states', None)
+        has_central_states = central_states is not None
         reuse = kwargs.pop('reuse')
         batch_num = kwargs.pop('batch_num', 1)
         games_num = kwargs.pop('games_num', 1)
         is_train = kwargs.pop('is_train', True)
         with tf.variable_scope(name, reuse=reuse):
             actor_input = input
-            critic_input = critic_input if has_critic_input is None else actor_input
+            central_states = central_states if has_central_states else actor_input
             if self.has_cnn:
                 cnn_args = {
                     'name' :'actor_cnn', 
@@ -208,15 +208,15 @@ class A2CBuilder(NetworkBuilder):
                     'norm_func_name' : self.normalization,
                     'is_train' : is_train
                 }
-                actor_input = self._build_conv(**cnn_args)
-                actor_input = tf.contrib.layers.flatten(actor_input)
+                actor_inputt = self._build_conv(**cnn_args)
+                actor_input = tf.contrib.layers.flatten(actor_inputt)
 
                 if self.separate:
                     cnn_args['name'] = 'critic_cnn'
-                    if has_critic_input:
-                        cnn_args['input'] = critic_input
-                    critic_input = self._build_conv( **cnn_args)
-                    critic_input = tf.contrib.layers.flatten(critic_input)
+                    if has_central_states:
+                        cnn_args['input'] = central_states
+                    critic_inputt = self._build_conv( **cnn_args)
+                    critic_input = tf.contrib.layers.flatten(critic_inputt)
                 else:
                     critic_input = actor_input
 

@@ -231,32 +231,48 @@ class BatchedFrameStack(gym.Wrapper):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
+        self.state_frames = deque([], maxlen=k)
         self.shp = shp = env.observation_space.shape
+        self.shps = shps = env.central_state_space.shape
         self.transpose = transpose
         self.flatten = flatten
         if transpose:
             assert(not flatten)
             self.observation_space = spaces.Box(low=0, high=1, shape=(shp[0], k), dtype=env.observation_space.dtype)
+            self.central_state_space = spaces.Box(low=0, high=1, shape=(shps[0], k), dtype=env.central_state_space.dtype)
         else:
             if flatten:
-                self.observation_space = spaces.Box(low=0, high=1, shape=(k *shp[0],), dtype=env.observation_space.dtype)
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k *shp[0],),
+                                                    dtype=env.observation_space.dtype)
+                self.central_state_space = spaces.Box(low=0, high=1, shape=(k * shps[0],),
+                                                    dtype=env.central_state_space.dtype)
             else:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
+                self.central_state_space= spaces.Box(low=0, high=1, shape=(k, shps[0]), dtype=env.central_state_space.dtype)
 
     def reset(self):
         ob = self.env.reset()
         for _ in range(self.k):
             self.frames.append(ob)
+        state = self.env.get_state()
+        for _ in range(self.k):
+            self.state_frames.append(state)
         return self._get_ob()
+
+    def get_state(self):
+        return self._get_state()
 
     def step(self, action):
         ob, reward, done, info = self.env.step(action)
         self.frames.append(ob)
+        state = self.env.get_state()
+        self.state_frames.append(state)
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k
         if self.transpose:
+            # print("oframe dims:", np.array(self.frames).shape)
             frames = np.transpose(self.frames, (1, 2, 0))
         else:
             if self.flatten:
@@ -268,6 +284,21 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
+    def _get_state(self):
+        assert len(self.state_frames) == self.k
+        s_frames = np.repeat(np.array(self.state_frames)[:, np.newaxis], self.env.n_agents, axis=1)
+        if self.transpose:
+            # print("oframe dims:", np.array(self.frames).shape)
+            frames = np.transpose(s_frames, (1, 2, 0))
+        else:
+            if self.flatten:
+                frames = np.array(s_frames)
+                shape = np.shape(frames)
+                frames = np.transpose(s_frames, (1, 0, 2))
+                frames = np.reshape(s_frames, (shape[1], shape[0] * shape[2]))
+            else:
+                frames = np.transpose(s_frames, (1, 0, 2))
+        return frames
 
 class ScaledFloatFrame(gym.ObservationWrapper):
     def __init__(self, env):
