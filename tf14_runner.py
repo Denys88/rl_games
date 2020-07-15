@@ -9,6 +9,7 @@ import algos_tf14.model_builder as model_builder
 import algos_tf14.a2c_continuous as a2c_continuous
 import algos_tf14.a2c_discrete as a2c_discrete
 import algos_tf14.dqnagent as dqnagent
+import algos_tf14.vdnagent as vdnagent
 
 import common.tr_helpers as tr_helpers
 import yaml
@@ -49,6 +50,7 @@ class Runner:
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
         self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
+        self.algo_factory.register_builder('vdn', lambda **kwargs : vdnagent.VDNAgent(**kwargs))
 
         self.player_factory = common.object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
@@ -62,7 +64,7 @@ class Runner:
         self.logger = logger
 
     def reset(self):
-        gpu_options = tf.GPUOptions(allow_growth=True, per_process_gpu_memory_fraction=0.8)
+        gpu_options = tf.GPUOptions(allow_growth=False)
 
         config = tf.ConfigProto(gpu_options=gpu_options)
         tf.reset_default_graph()
@@ -107,7 +109,12 @@ class Runner:
         # print('Started to train')
         self.logger.console_logger.info('Started to train')
         ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
-        obs_space, action_space = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        ret = env_configurations.get_obs_and_action_spaces_from_config(self.config)
+        if len(ret) == 2:
+            obs_space, action_space = ret
+            central_state_space = None
+        else:
+            obs_space, action_space, central_state_space = ret
         # print('obs_space:', obs_space)
         # print('action_space:', action_space)
         self.logger.console_logger.info('obs_space: {}'.format(obs_space))
@@ -128,7 +135,7 @@ class Runner:
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger)
+            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger, central_state_space=central_state_space)
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()

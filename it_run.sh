@@ -14,7 +14,6 @@ fi
 
 #$(id -u) \
 NV_GPU="$GPU" ${cmd} run -i \
-    --gpus all \
     --name $name \
     --cap-add=SYS_PTRACE \
     --net host \

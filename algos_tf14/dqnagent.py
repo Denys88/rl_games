@@ -11,7 +11,7 @@ from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
 
 class DQNAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
         observation_shape = observation_space.shape
         actions_num = action_space.n
         self.config = config
@@ -47,7 +47,7 @@ class DQNAgent:
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])
         self.beta_processor = tr_helpers.LinearValueProcessor(self.config['priority_beta'], self.config['max_beta'], self.config['beta_decay_frames'])
         if self.env_name:
-            self.env = env_configurations.configurations[self.env_name]['env_creator']()
+            self.env = env_configurations.configurations[self.env_name]['env_creator'](name=config['name'])
         self.sess = sess
         self.steps_num = self.config['steps_num']
         self.states = deque([], maxlen=self.steps_num)
@@ -402,7 +402,16 @@ class DQNAgent:
                 self.writer.add_scalar('info/epsilon', self.epsilon, frame)
                 if self.is_prioritized:
                     self.writer.add_scalar('beta', self.beta, frame)
-                    
+
+                self.logger.log_stat("whirl/performance/fps", 1000 / sum_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/upd_time", update_time, self.num_env_steps_train)
+                self.logger.log_stat("whirl/performance/play_time", play_time, self.num_env_steps_train)
+                self.logger.log_stat("losses/td_loss", np.mean(losses), self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/last_lr", self.learning_rate*lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/info/lr_mul", lr_mul, self.num_env_steps_train)
+                self.logger.log_stat("whirl/epochs", epoch_num, self.num_env_steps_train)
+                self.logger.log_stat("whirl/epsilon", self.epsilon, self.num_env_steps_train)
+
                 update_time = 0
                 play_time = 0
                 num_games = len(self.game_rewards)
@@ -414,6 +423,11 @@ class DQNAgent:
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
+
+                    self.logger.log_stat("whirl/rewards/mean", np.asscalar(mean_rewards), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/rewards/time", mean_rewards, total_time)
+                    self.logger.log_stat("whirl/episode_lengths/mean", np.asscalar(mean_lengths), self.num_env_steps_train)
+                    self.logger.log_stat("whirl/episode_lengths/time", mean_lengths, total_time)
 
                     if mean_rewards > last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)

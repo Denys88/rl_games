@@ -15,6 +15,7 @@ class SMACEnv(gym.Env):
         self.n_agents = self.env_info["n_agents"]
         self.action_space = gym.spaces.Discrete(self.n_actions)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
+        self.central_state_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['state_shape'], ), dtype=np.float32)
 
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
 
@@ -44,6 +45,9 @@ class SMACEnv(gym.Env):
                 actions[ind] = np.random.choice(avail_actions)
                 #rewards[ind] = -0.05
         return actions, rewards
+    
+    def get_state(self):
+        return self.env.get_state()
 
     def step(self, actions):
         fixed_rewards = None

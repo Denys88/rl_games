@@ -351,7 +351,13 @@ def get_obs_and_action_spaces_from_config(config):
 
     if isinstance(observation_space, gym.spaces.dict.Dict):
         observation_space = observation_space['observations']
-    return observation_space, action_space
+
+    use_central_state = env_config.get('use_central_state', False)
+    if use_central_state:
+        central_state_space = env.central_state_space
+        return observation_space, action_space, central_state_space
+    else:
+        return observation_space, action_space
 
 def get_env_info(config):
     env_config = config.get('env_config', {})

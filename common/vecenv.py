@@ -53,6 +53,10 @@ class RayWorker:
         self.obs = self.env.reset()
         return self.obs
 
+    def get_states(self):
+        self.central_state = self.env.get_state()
+        return self.central_state
+
     def get_action_mask(self):
         return self.env.get_action_mask()
 
@@ -104,6 +108,9 @@ class RayVecEnv(IVecEnv):
         obs = [worker.reset.remote() for worker in self.workers]
         return np.asarray(ray.get(obs))
 
+    def get_states(self):
+        states = [worker.get_state.remote() for worker in self.workers]
+        return np.asarray(ray.get(states))
 
 class RayVecSMACEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
@@ -143,6 +150,11 @@ class RayVecSMACEnv(IVecEnv):
         obs = [worker.reset.remote() for worker in self.workers]
         newobs = ray.get(obs)
         return np.concatenate(newobs, axis=0)
+
+    def get_states(self):
+        states = [worker.get_states.remote() for worker in self.workers]
+        newstates = ray.get(states)
+        return np.concatenate(newstates, axis=0)
 
 
 def create_vec_env(config_name, num_actors, **kwargs):

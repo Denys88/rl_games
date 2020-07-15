@@ -8,7 +8,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/3s5z_vs_3s6z_cnn'
+  load_path: 'nn/3m_cnn'
 
   network:
     name: actor_critic
@@ -47,7 +47,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: 3s5z_vs_3s6zaa
+    name: 3m_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -56,7 +56,7 @@ params:
     learning_rate: 1e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.001
     truncate_grads: True
     env_name:  smac_cnn
     ppo: true
@@ -64,7 +64,7 @@ params:
     clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 4096
+    minibatch_size: 1536
     mini_epochs: 1
     critic_coef: 2
     lr_schedule:  None
@@ -75,7 +75,8 @@ params:
     ignore_dead_batches : False
 
     env_config:
-      name: 3s5z_vs_3s6z
+      name: 3m
       frames: 4
       transpose: True
       random_invalid_step: False
+      use_central_state: True
