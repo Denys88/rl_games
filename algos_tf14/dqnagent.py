@@ -11,7 +11,7 @@ from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
 
 class DQNAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger, central_state_space=None):
         observation_shape = observation_space.shape
         actions_num = action_space.n
         self.config = config
@@ -63,9 +63,9 @@ class DQNAgent:
             self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)     
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
+            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'], observation_space)
         else: 
-            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
+            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'], observation_space)
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')

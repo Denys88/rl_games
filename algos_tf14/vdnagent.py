@@ -77,7 +77,7 @@ class VDNAgent:
         self.n_agents = self.env.env_info['n_agents']
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBufferCentralState(config['replay_buffer_size'])
+            self.exp_buffer = experience.ReplayBufferCentralState(config['replay_buffer_size'], observation_space, central_state_space, self.n_agents)
         else:
             raise NotImplementedError("Not implemented! PrioritizedReplayBuffer with CentralState")
             #self.exp_buffer = experience.PrioritizedReplayBufferCentralState(config['replay_buffer_size'], config['priority_alpha'])
@@ -231,7 +231,7 @@ class VDNAgent:
             state = state[0]
 
             self.step_count += 1
-            self.total_reward += reward
+            self.steps_num += reward
             shaped_reward = self.rewards_shaper(reward)
             self.total_shaped_reward += shaped_reward
             self.obs_act_rew.append([new_obs, action, shaped_reward, state])
@@ -239,7 +239,7 @@ class VDNAgent:
             if len(self.obs_act_rew) < steps:
                 break
 
-            for i in range(steps):
+            for i in range(int(steps)):
                 sreward = self.obs_act_rew[i][2]
                 steps_rewards += sreward * cur_gamma
                 cur_gamma = cur_gamma * self.gamma
