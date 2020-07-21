@@ -87,7 +87,7 @@ class ReplayBufferCentralState(object):
 
 
 class ReplayBuffer(object):
-    def __init__(self, size, ob_space):
+    def __init__(self, size, ob_space, n_agents):
         """Create Replay buffer.
         Parameters
         ----------
@@ -95,10 +95,10 @@ class ReplayBuffer(object):
             Max number of transitions to store in the buffer. When the buffer
             overflows the old memories are dropped.
         """
-        self._obses = np.zeros((size,) + ob_space.shape, dtype=ob_space.dtype)
-        self._next_obses = np.zeros((size,) + ob_space.shape, dtype=ob_space.dtype)
+        self._obses = np.zeros((size,) + (n_agents,) + ob_space.shape, dtype=ob_space.dtype)
+        self._next_obses = np.zeros((size,) + (n_agents,) + ob_space.shape, dtype=ob_space.dtype)
         self._rewards = np.zeros(size)
-        self._actions = np.zeros(size, dtype=np.int32)
+        self._actions = np.zeros((size,) + (n_agents,), dtype=np.int32)
         self._dones = np.zeros(size, dtype=np.bool)
 
         self._maxsize = size
@@ -163,7 +163,7 @@ class ReplayBuffer(object):
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, alpha, ob_space):
+    def __init__(self, size, alpha, ob_space, n_agents):
         """Create Prioritized Replay buffer.
         Parameters
         ----------
@@ -177,7 +177,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         --------
         ReplayBuffer.__init__
         """
-        super(PrioritizedReplayBuffer, self).__init__(size, ob_space)
+        super(PrioritizedReplayBuffer, self).__init__(size, ob_space, n_agents)
         assert alpha >= 0
         self._alpha = alpha
 
