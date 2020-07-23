@@ -26,6 +26,7 @@ params:
       name: 'lstm'
       units: 64
       layers: 1
+      before_mlp: True
   config:
     reward_shaper:
         scale_value: 0.1
@@ -50,4 +51,4 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 8
+    seq_len: 4

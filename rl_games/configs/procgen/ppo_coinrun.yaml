@@ -58,8 +58,8 @@ params:
     minibatch_size: 1024
     mini_epochs: 3
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.008
+    lr_schedule:  polynom_decay
+    lr_threshold: 0.01
     normalize_input: False
     seq_len: 4
     max_epochs: 2000
@@ -69,5 +69,5 @@ params:
         frames: 4
         num_levels: 1000
         start_level: 323
-        limit_steps: False
+        limit_steps: True
         distribution_mode: 'easy'

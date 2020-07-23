@@ -177,18 +177,18 @@ class A2CBuilder(NetworkBuilder):
 
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
-                    rnn_in_size =  out_size
+                    rnn_in_size = out_size
                     out_size = self.rnn_units
                 else:
                     rnn_in_size =  in_mlp_shape
                     in_mlp_shape = self.rnn_units
                 if self.separate:
-                    self.a_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
-                    self.c_rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
+                    self.a_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
+                    self.c_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                     self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
-                    self.rnn = self._build_rnn(self.rnn_name, self.units[-1], self.rnn_units, self.rnn_layers)
+                    self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                     self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
 
@@ -265,13 +265,14 @@ class A2CBuilder(NetworkBuilder):
                     c_out = l(c_out)
                 c_out = c_out.view(c_out.size(0), -1)                    
 
-                for l in self.actor_mlp:
-                    a_out = l(a_out)
-                
-                for l in self.critic_mlp:
-                    c_out = l(c_out)
 
                 if self.has_rnn:
+                    if not self.is_rnn_before_mlp:
+                        for l in self.actor_mlp:
+                            a_out = l(a_out)
+                        for l in self.critic_mlp:
+                            c_out = l(c_out)
+
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
@@ -302,6 +303,17 @@ class A2CBuilder(NetworkBuilder):
                         c_states = (c_states,)
                     states = a_states + c_states
 
+                    if self.is_rnn_before_mlp:
+                        for l in self.actor_mlp:
+                            a_out = l(a_out)
+                        for l in self.critic_mlp:
+                            c_out = l(c_out)
+                else:
+                    for l in self.actor_mlp:
+                        a_out = l(a_out)
+                    for l in self.critic_mlp:
+                        c_out = l(c_out)
+                            
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
                     logits = self.logits(a_out)
