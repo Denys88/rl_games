@@ -133,7 +133,6 @@ class A2CAgent:
             self.logp_actions ,self.state_values, self.action, self.entropy, self.states_ph, self.masks_ph, self.lstm_state, self.initial_state = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _,  self.target_states_ph, self.target_masks_ph, self.target_lstm_state, self.target_initial_state, self.logits = self.network(self.run_dict, reuse=True)
             self.states = self.target_initial_state
-
         else:
             self.logp_actions ,self.state_values, self.action, self.entropy = self.network(self.train_dict, reuse=False)
             self.target_neglogp, self.target_state_values, self.target_action, _, self.logits = self.network(self.run_dict, reuse=True)
@@ -157,9 +156,7 @@ class A2CAgent:
         else:
             self.actor_loss = self.logp_actions * self.advantages_ph
 
-
         self.actor_loss = tf.reduce_mean(self.actor_loss)
-            
         self.c_loss = (tf.squeeze(self.state_values) - self.rewards_ph)**2
 
         if self.clip_value:
@@ -168,7 +165,6 @@ class A2CAgent:
             self.critic_loss = tf.maximum(self.c_loss, self.c_loss_clipped)
         else:
             self.critic_loss = self.c_loss
-        
  
         self.critic_loss = tf.reduce_mean(self.critic_loss)
         
@@ -260,7 +256,10 @@ class A2CAgent:
                 if done:
                     self.game_rewards.append(reward)
                     self.game_lengths.append(length)
-                    game_res = info.get('battle_won', 0.5)
+
+                    game_res = 1.0
+                    if isinstance(info, dict):
+                        game_res = info.get('battle_won', 0.5)
                     self.game_scores.append(game_res)
 
             self.current_rewards = self.current_rewards * (1.0 - self.dones)

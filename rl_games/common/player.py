@@ -118,9 +118,9 @@ class BasePlayer(object):
                     steps = steps * (1.0 - done.float())
                     sum_rewards += cur_rewards
                     sum_steps += cur_steps
-                    game_res = 0
 
-                    if info is not None:
+                    game_res = 0.0
+                    if isinstance(info, dict):
                         game_res = info.get('battle_won', 0.5)
 
                     print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
