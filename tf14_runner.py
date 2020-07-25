@@ -68,7 +68,7 @@ class Runner:
     def reset(self):
         gpu_options = tf.GPUOptions(allow_growth=True)
 
-        config = tf.ConfigProto(log_device_placement=True,
+        config = tf.ConfigProto(log_device_placement=False,
                                 allow_soft_placement=True,
                                 gpu_options=gpu_options)
         tf.reset_default_graph()
