@@ -231,7 +231,7 @@ class IQLAgent:
             state = state[0]
 
             self.step_count += 1
-            self.steps_num += reward
+            self.total_reward += reward
             shaped_reward = self.rewards_shaper(reward)
             self.total_shaped_reward += shaped_reward
             self.obs_act_rew.append([new_obs, action, shaped_reward, state])
