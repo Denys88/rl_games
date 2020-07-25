@@ -50,7 +50,7 @@ params:
       scale_value: 0.1
     gamma: 0.99
     learning_rate: 0.0005
-    steps_per_epoch: 10
+    steps_per_epoch: 1
     batch_size: 64
     epsilon: 1.0
     min_epsilon: 0.05
@@ -72,7 +72,7 @@ params:
     atoms_num: 1
     games_to_track: 20
     lr_schedule: None
-    max_epochs: 1000000
+    max_epochs: 10000000
     grad_norm: 10
     mix_with_state: False
     truncate_grads: True
