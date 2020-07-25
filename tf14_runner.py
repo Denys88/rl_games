@@ -66,9 +66,11 @@ class Runner:
         self.logger = logger
 
     def reset(self):
-        gpu_options = tf.GPUOptions(allow_growth=False)
+        gpu_options = tf.GPUOptions(allow_growth=True)
 
-        config = tf.ConfigProto(gpu_options=gpu_options)
+        config = tf.ConfigProto(log_device_placement=True,
+                                allow_soft_placement=True,
+                                gpu_options=gpu_options)
         tf.reset_default_graph()
         if self.sess:
             self.sess.close()
