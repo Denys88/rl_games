@@ -231,7 +231,7 @@ class VDNAgent:
             state = state[0]
 
             self.step_count += 1
-            self.steps_num += reward
+            self.total_reward += reward
             shaped_reward = self.rewards_shaper(reward)
             self.total_shaped_reward += shaped_reward
             self.obs_act_rew.append([new_obs, action, shaped_reward, state])
@@ -239,7 +239,7 @@ class VDNAgent:
             if len(self.obs_act_rew) < steps:
                 break
 
-            for i in range(int(steps)):
+            for i in range(steps):
                 sreward = self.obs_act_rew[i][2]
                 steps_rewards += sreward * cur_gamma
                 cur_gamma = cur_gamma * self.gamma

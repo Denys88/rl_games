@@ -29,7 +29,7 @@ class ReplayBufferCentralState(object):
         return self._curr_size
 
     def add(self, obs_t, action, state_t, reward, obs_tp1, done):
-        print("CAlled")
+        # print("CAlled")
         self._curr_size = min(self._curr_size + 1, self._maxsize)
 
         self._obses[self._next_idx] = obs_t
@@ -81,7 +81,7 @@ class ReplayBufferCentralState(object):
             done_mask[i] = 1 if executing act_batch[i] resulted in
             the end of an episode and 0 otherwise.
         """
-        print(self._curr_size)
+        # print(self._curr_size)
         idxes = [random.randint(0, self._curr_size - 1) for _ in range(batch_size)]
         return self._encode_sample(idxes)
 
