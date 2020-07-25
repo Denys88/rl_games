@@ -40,7 +40,7 @@ class ReplayBufferCentralState(object):
         self._states[self._next_idx] = state_t
 
         self._next_idx = (self._next_idx + 1) % self._maxsize
-        print(self._curr_size)
+        # print(self._curr_size)
 
     def _get(self, idx):
         return self._obses[idx], self._actions[idx], self._states[idx], self._rewards[idx], self._next_obses[idx], self._dones[idx]

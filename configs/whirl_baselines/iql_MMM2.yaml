@@ -51,7 +51,7 @@ params:
     gamma: 0.99
     learning_rate: 0.0005
     steps_per_epoch: 10
-    batch_size: 2
+    batch_size: 64
     epsilon: 1.0
     min_epsilon: 0.05
     epsilon_decay_frames: 100000
@@ -60,14 +60,14 @@ params:
     name: MMM2
     is_double: True
     score_to_win: 20
-    num_steps_fill_buffer: 10
+    num_steps_fill_buffer: 10000
     replay_buffer_type: 'normal'
     replay_buffer_size: 1000000
     priority_beta: 0.4
     priority_alpha: 0.6
     beta_decay_frames: 100000
     max_beta: 1
-    steps_num: 1
+    steps_num: 10
 #    episodes_to_log: 10
     atoms_num: 1
     games_to_track: 20
