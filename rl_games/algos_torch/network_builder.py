@@ -415,7 +415,7 @@ class A2CBuilder(NetworkBuilder):
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
-                self.is_rnn_before_mlp = params['rnn']['before_mlp']
+                self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
 
             if 'cnn' in params:
                 self.has_cnn = True
@@ -807,7 +807,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
-                self.is_rnn_before_mlp = params['rnn']['before_mlp']
+                self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
 
             self.has_cnn = True
             self.conv_depths = params['cnn']['conv_depths']
