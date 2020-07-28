@@ -33,7 +33,7 @@ params:
       initializer:
         # pytorch
           name: variance_scaling_initializer
-          scale: 0.02
+          scale: 2
 
       # tf
       #  name: normc_initializer

@@ -28,13 +28,14 @@ class PpoPlayerContinuous(BasePlayer):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'games_num' : 1,
-            'batch_num' : 1,
+            'num_seqs' : self.num_agents
         } 
         self.model = self.network.build(config)
         self.model.cuda()
         self.model.eval()
-
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()
@@ -46,10 +47,11 @@ class PpoPlayerContinuous(BasePlayer):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
+            'obs' : obs,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, mu, sigma = self.model(input_dict)
+            neglogp, value, action, mu, sigma, self.states = self.model(input_dict)
         if is_determenistic:
             current_action = mu
         else:
@@ -81,18 +83,19 @@ class PpoPlayerDiscrete(BasePlayer):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'games_num' : 1,
-            'batch_num' : 1,
+            'num_seqs' : self.num_agents
         } 
         self.model = self.network.build(config)
         self.model.cuda()
         self.model.eval()
-
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
             self.running_mean_std.eval()      
 
-    def get_masked_action(self, obs, action_masks, is_determenistic = False):
+    def get_masked_action(self, obs, action_masks, is_determenistic = True):
         if len(obs.size()) == len(self.state_shape):
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
@@ -100,11 +103,13 @@ class PpoPlayerDiscrete(BasePlayer):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
-            'action_masks' : action_masks
+            'obs' : obs,
+            'action_masks' : action_masks,
+            'rnn_states' : self.states
         }
+
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
+            neglogp, value, action, logits, self.states = self.model(input_dict)
         
         if is_determenistic:
             return torch.argmax(logits.squeeze().detach(), axis=1)
@@ -119,10 +124,11 @@ class PpoPlayerDiscrete(BasePlayer):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'inputs' : obs,
+            'obs' : obs,
+            'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, logits = self.model(input_dict)
+            neglogp, value, action, logits, self.states = self.model(input_dict)
         
         if is_determenistic:
             return torch.argmax(logits.detach(), axis=1).squeeze()
@@ -136,5 +142,5 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
-        if self.network.is_rnn():
-            self.last_state = self.initial_state
+        if self.is_rnn:
+            self.states = self.model.get_default_rnn_state()

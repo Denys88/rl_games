@@ -72,15 +72,12 @@ class LSTMWithDones(nn.Module):
             else:
                 nn.init.zeros_(p.data)
          
-    def forward(self, x, dones, init_states=None):
+    def forward(self, x, dones, init_states):
         """Assumes x is of shape (batch, sequence, feature)"""
         bs, seq_sz, _ = x.size()
         hidden_seq = []
-        if init_states is None:
-            h_t, c_t = (torch.zeros(self.hidden_size).to(x.device), 
-                        torch.zeros(self.hidden_size).to(x.device))
-        else:
-            h_t, c_t = init_states
+        assert(init_states)
+        h_t, c_t = init_states
          
         HS = self.hidden_size
         for t in range(seq_sz):
@@ -98,8 +95,8 @@ class LSTMWithDones(nn.Module):
             )
             c_t = f_t * c_t + i_t * g_t
             h_t = o_t * torch.tanh(c_t)
-            hidden_seq.append(h_t.unsqueeze(Dim.batch))
-        hidden_seq = torch.cat(hidden_seq, dim=Dim.batch)
+            hidden_seq.append(h_t.unsqueeze(0))
+        hidden_seq = torch.cat(hidden_seq, dim=1)
         # reshape from shape (sequence, batch, feature) to (batch, sequence, feature)
-        hidden_seq = hidden_seq.transpose(Dim.batch, Dim.seq).contiguous()
+        hidden_seq = hidden_seq.transpose(1, 0).contiguous()
         return hidden_seq, (h_t, c_t)

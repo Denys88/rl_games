@@ -10,6 +10,22 @@ from copy import copy
 
 cv2.ocl.setUseOpenCL(False)
 
+class LimitStepsWrapper(gym.Wrapper):
+    def __init__(self, env, limit=200):
+        gym.RewardWrapper.__init__(self, env)
+        
+        self.limit = limit
+        self.steps = 0
+    def reset(self, **kwargs):
+        self.steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if done and reward == 0:
+            reward = -0.1
+        return observation, reward, done, info
+
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
@@ -95,6 +111,28 @@ class EpisodicLifeEnv(gym.Wrapper):
             obs, _, _, _ = self.env.step(0)
         self.lives = self.env.unwrapped.ale.lives()
         return obs
+
+class EpisodeStackedEnv(gym.Wrapper):
+    def __init__(self, env):
+
+        gym.Wrapper.__init__(self, env)
+        self.max_stacked_steps = 1000
+        self.current_steps=0
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if reward == 0:
+            self.current_steps += 1
+        else:
+            self.current_steps = 0
+        if self.current_steps == self.max_stacked_steps:
+            self.current_steps = 0
+            print('max_stacked_steps!')
+            done = True
+            reward = -1
+            obs = self.env.reset()
+        return obs, reward, done, info
+
 
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env,skip=4, use_max = True):
@@ -450,6 +488,27 @@ class MontezumaInfoWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
+class MaskVelocityWrapper(gym.ObservationWrapper):
+    """
+    Gym environment observation wrapper used to mask velocity terms in
+    observations. The intention is the make the MDP partially observatiable.
+    """
+    def __init__(self, env, name):
+        super(MaskVelocityWrapper, self).__init__(env)
+        if name == "CartPole-v1":
+            self.mask = np.array([1., 0., 1., 0.])
+        elif name == "Pendulum-v0":
+            self.mask = np.array([1., 1., 0.])
+        elif name == "LunarLander-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1,])
+        elif name == "LunarLanderContinuous-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1,])
+        else:
+            raise NotImplementedError
+
+    def observation(self, observation):
+        return  observation * self.mask
+
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     env = gym.make(env_id)
     if 'Montezuma' in env_id:
@@ -464,9 +523,10 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     if noop_max > 0:
         env = NoopResetEnv(env, noop_max=noop_max)
     env = MaxAndSkipEnv(env, skip=skip)
+    #env = EpisodeStackedEnv(env)
     return env
 
-def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False):
+def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:

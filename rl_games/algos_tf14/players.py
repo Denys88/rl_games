@@ -80,10 +80,10 @@ class BasePlayer(object):
                     done = done.any()
 
                 if done:
-                    game_res = 1.0
+                    game_res = 0.0
                     if isinstance(info, dict):
                         game_res = info.get('battle_won', 0.5)
-                        
+
                     print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
                     sum_game_res += game_res
                     sum_rewards += np.mean(cr)
