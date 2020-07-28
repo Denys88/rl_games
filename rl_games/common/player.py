@@ -12,7 +12,7 @@ class BasePlayer(object):
         self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env)
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
-
+        self.states = None
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -28,7 +28,8 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-
+        if obs.dtype == np.float64:
+            obs = np.float32(obs)
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
@@ -69,7 +70,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=5000, n_game_life = 1, render = False, is_determenistic = True):
+    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -84,7 +85,6 @@ class BasePlayer(object):
         for _ in range(n_games):
             if games_played >= n_games:
                 break
-
             s = self.env_reset(self.env)
             batch_size = 1
             if len(s.size()) > len(self.state_shape):
@@ -104,13 +104,19 @@ class BasePlayer(object):
 
                 if render:
                     self.env.render(mode = 'human')
-
-                done_indices = done.nonzero()[::self.num_agents]
+                    #import time
+                    #time.sleep(0.05)
+                all_done_indices = done.nonzero()
+                done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
 
                 games_played += done_count
                 
                 if done_count > 0:
+                    if self.is_rnn:
+                        for s in self.states:
+                            s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()
 
