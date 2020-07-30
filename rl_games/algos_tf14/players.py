@@ -19,7 +19,8 @@ class BasePlayer(object):
         self.config = config
         self.sess = sess
         self.env_name = self.config['env_name']
-        self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
+        self.env_spaces = env_configurations.get_env_info(self.config)
+        self.obs_space, self.action_space, self.num_agents = self.env_spaces['observation_space'], self.env_spaces['action_space'], self.env_spaces['agents']
         self.env = None
         self.env_config = self.config.get('env_config', None)
 

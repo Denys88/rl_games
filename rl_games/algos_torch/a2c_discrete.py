@@ -13,7 +13,7 @@ import numpy as np
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
         a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
-        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
+        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape) 
 
         config = {
             'actions_num' : self.actions_num,
@@ -34,11 +34,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.use_assymetric_critic:
-            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
     
@@ -76,7 +76,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
         if self.use_assymetric_critic:
             self.central_value.load_state_dict(checkpoint['assymetric_vf_nets'])
-            pass
         if self.has_curiosity:
             self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
             for state in self.rnd_curiosity.optimizer.state.values():

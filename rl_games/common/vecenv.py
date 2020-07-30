@@ -87,10 +87,10 @@ class RayWorker:
         info['state_space'] = None
         info['use_global_observations'] = False
 
-        if hasattr(self.env, use_cenral_value):
-            info['use_global_observations'] = self.env.use_cenral_value
+        #if hasattr(self.env, 'use_central_value'):
+        #    info['use_global_observations'] = self.env.use_cenral_value
 
-        if hasattr(self.env, state_space):
+        if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
 
         return info
@@ -170,8 +170,9 @@ class RayVecSMACEnv(IVecEnv):
             if self.use_global_obs:
                 newobs.append(cobs["obs"])
                 newstates.append(cobs["state"])
-            else
+            else:
                 newobs.append(cobs)
+                
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)

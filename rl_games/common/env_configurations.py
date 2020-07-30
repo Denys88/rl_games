@@ -350,26 +350,34 @@ def get_obs_and_action_spaces(name):
     return observation_space, action_space
 
 def get_obs_and_action_spaces_from_config(config):
+    result_shapes = {}
     env_config = config.get('env_config', {})
     env = configurations[config['env_name']]['env_creator'](**env_config)
-    observation_space = env.observation_space
-    action_space = env.action_space
+    result_shapes['observation_space'] = env.observation_space
+    result_shapes['action_space'] = env.action_space
     env.close()
     # workaround for deepmind control
 
     if isinstance(observation_space, gym.spaces.dict.Dict):
-        observation_space = observation_space['observations']
-    return observation_space, action_space
+        result_shapes['observation_space'] = observation_space['observations']
+    if isinstance(observation_space, dict):
+        result_shapes['observation_space'] = observation_space['observations']
+        result_shapes['state_space'] = observation_space['states']
+    return result_shapes
 
 def get_env_info(env):
-    observation_space = env.observation_space
-    action_space = env.action_space
-    agents = 1
+    result_shapes = {}
+    result_shapes['observation_space'] = env.observation_space
+    result_shapes['action_space'] = env.action_space
+    result_shapes['agents'] = 1
     if hasattr(env, "get_number_of_agents"):
-        agents = env.get_number_of_agents()
+        result_shapes['agents'] = env.get_number_of_agents()
     if isinstance(observation_space, gym.spaces.dict.Dict):
-        observation_space = observation_space['observations']
-    return observation_space, action_space, agents
+        result_shapes['observation_space'] = observation_space['observations']
+    if isinstance(observation_space, dict):
+        result_shapes['observation_space'] = observation_space['observations']
+        result_shapes['state_space'] = observation_space['states']
+    return result_shapes
 
 def register(name, config):
     configurations[name] = config

@@ -44,11 +44,18 @@ class A2CBase:
         sleep(10)
 
         self.observation_space = self.env_info['observation_space']
-        self.state_space = self.env_info.get('state_space', None)
-
+        
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
+
         self.use_assymetric_critic = config.get('use_assymetric_critic', False)
+        if self.use_assymetric_critic:
+            self.state_space = self.env_info.get('state_space', None)
+            self.central_network = config['central_network']
+            self.state_shape = None
+            if self.state_space.shape != None:
+                self.state_shape = self.state_space.shape
+
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
@@ -65,7 +72,6 @@ class A2CBase:
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
-        self.central_network = config['central_network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
@@ -74,9 +80,7 @@ class A2CBase:
         self.normalize_input = self.config['normalize_input']
        
         self.obs_shape = self.observation_space.shape
-        self.state_shape = None
-        if self.state_space.shape != None:
-            self.state_shape = self.state_space.shape
+ 
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -224,6 +228,24 @@ class A2CBase:
             else:
                 obs = torch.FloatTensor(obs).cuda()
         return obs
+
+
+    def critic_loss(self, value_preds_batch, values, curr_e_clip, return_batch):
+        if self.clip_value:
+            value_pred_clipped = value_preds_batch + \
+                (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
+            value_losses = (values - return_batch)**2
+            value_losses_clipped = (value_pred_clipped - return_batch)**2
+            c_loss = torch.max(value_losses,
+                                         value_losses_clipped)
+        else:
+            c_loss = (return_batch - values)**2
+
+        if self.has_curiosity:
+            c_loss = c_loss.sum(dim=1)
+        else:
+            c_loss = c_loss
+        return c_loss
 
     def update_epoch(self):
         pass

@@ -13,7 +13,7 @@ import numpy as np
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, config):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
-        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape)
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -32,7 +32,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
     def update_epoch(self):
         self.epoch_num += 1
@@ -164,32 +164,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                                 1.0 + curr_e_clip) * advantage
             a_loss = torch.max(-surr1, -surr2)
         else:
-            a_loss = (action_log_probs * advantage)
+            a_loss = action_log_probs * advantage
 
         values = torch.squeeze(values)
-        if self.clip_value:
-            value_pred_clipped = value_preds_batch + \
-                (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
-            value_losses = (values - return_batch)**2
-            value_losses_clipped = (value_pred_clipped - return_batch)**2
-            c_loss = torch.max(value_losses,
-                                         value_losses_clipped)
-        else:
-            c_loss = (return_batch - values)**2
-        
-        if self.has_curiosity:
-            c_loss = c_loss.sum(dim=1)
-        else:
-            c_loss = c_loss
+        c_loss = self.critic_loss(value_preds_batch, values, curr_e_clip, return_batch)
 
 
-        if self.bounds_loss_coef is not None:
-            soft_bound = 1.1
-            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
-            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
-            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
-        else:
-            b_loss = 0
+        b_loss = self.bound_loss(mu)
 
         if self.is_rnn:
             sum_mask = rnn_masks.sum()
@@ -227,3 +208,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         return a_loss.item(), c_loss.item(), entropy.item(), \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss.item()
+
+    def bound_loss(self, mu):
+        if self.bounds_loss_coef is not None:
+            soft_bound = 1.1
+            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+        else:
+            b_loss = 0
+        return b_loss
+
+
