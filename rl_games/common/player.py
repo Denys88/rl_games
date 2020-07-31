@@ -35,7 +35,7 @@ class BasePlayer(object):
             if np.isscalar(rewards):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(obs).float().cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def env_reset(self, env):
         obs = env.reset()
