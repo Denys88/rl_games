@@ -28,30 +28,31 @@ class ModelA2C(BaseModel):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
 
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+        
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             action_masks = input_dict.pop('action_masks', None)
             prev_actions = input_dict.pop('prev_actions', None)
-            inputs = input_dict.pop('inputs')
-            logits, value = self.a2c_network(inputs)
-
+            logits, value, states = self.a2c_network(input_dict)
             if not is_train:
                 u = torch.cuda.FloatTensor(logits.size()).uniform_()
                 rand_logits = logits - torch.log(-torch.log(u))
                 if action_masks is not None:
                     logits = logits - (1.0 - action_masks) * 1e10
-
-                    #rand_logits = rand_logits + inf_mask
-                    #logits = logits + inf_mask
                 
                 selected_action = torch.distributions.Categorical(logits=logits).sample().long()
 
                 neglogp = F.cross_entropy(logits, selected_action, reduction='none')
-                return  neglogp, value, selected_action, logits
+                return  neglogp, value, selected_action, logits, states
             else:
-                entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1).mean()
+                entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1)
                 prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
-                return prev_neglogp, value, entropy
+                return prev_neglogp, value, entropy, states
 
 
 class ModelA2CContinuous(BaseModel):
@@ -62,25 +63,31 @@ class ModelA2CContinuous(BaseModel):
     def build(self, config):
         return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config))
 
+
     class Network(nn.Module):
         def __init__(self, a2c_network):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
 
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+            
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             prev_actions = input_dict.pop('prev_actions', None)
-            inputs = input_dict.pop('inputs')
-            mu, sigma, value = self.a2c_network(inputs)
+            mu, sigma, value, states = self.a2c_network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
             if not is_train:
                 selected_action = distr.sample().squeeze()
-                neglogp = distr.log_prob(selected_action).sum(dim=1)
-                return  neglogp, value, selected_action, mu, sigma
+                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
+                return  neglogp, value, selected_action, mu, sigma, states
             else:
-                entropy = distr.entropy().mean()
-                prev_neglogp = distr.log_prob(prev_actions).sum(dim=1)
-                return prev_neglogp, value, entropy
+                entropy = distr.entropy().sum(dim=-1)
+                prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
+                return prev_neglogp, value, entropy, mu, sigma, states
 
 
 class ModelA2CContinuousLogStd(BaseModel):
@@ -99,22 +106,26 @@ class ModelA2CContinuousLogStd(BaseModel):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
 
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+            
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             prev_actions = input_dict.pop('prev_actions', None)
-            inputs = input_dict.pop('inputs')
-
-            mu, logstd, value = self.a2c_network(inputs)
+            mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
             if not is_train:
                 selected_action = distr.sample()
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
-                return  neglogp, value, selected_action, mu, sigma
+                return  neglogp, value, selected_action, mu, sigma, states
             else:
-                entropy = distr.entropy().sum(dim=-1).mean()
+                entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
-                return prev_neglogp, value, entropy, mu, sigma
+                return prev_neglogp, value, entropy, mu, sigma, states
 
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \

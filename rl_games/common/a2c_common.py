@@ -78,13 +78,12 @@ class A2CBase:
         self.game_scores = deque([], maxlen=self.games_to_log)   
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
-        self.is_rnn = False
-        self.states = None
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
         self.batch_size_envs = self.steps_num * self.num_actors
         self.minibatch_size = self.config['minibatch_size']
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
+        assert(self.batch_size % self.minibatch_size == 0)
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
@@ -125,6 +124,48 @@ class A2CBase:
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
 
+    def init_rnn_from_model(self, model):
+        self.is_rnn = self.model.is_rnn()
+        if self.is_rnn:
+            self.states = model.get_default_rnn_state()
+            batch_size = self.num_agents * self.num_actors
+            num_seqs = self.steps_num * batch_size // self.seq_len
+            assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
+            self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+
+    def init_rnn_step(self, batch_size, mb_states):
+        mb_states = self.mb_states
+        mb_rnn_masks = torch.zeros(self.steps_num*batch_size, dtype = torch.float32).cuda()
+        steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
+        play_mask = torch.arange(0, batch_size, 1, dtype=torch.long, device='cuda:0')
+        steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
+        indices = torch.zeros((batch_size), dtype = torch.long).cuda()
+        return mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states
+
+    def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_states):
+        seq_indices = None
+        if self.is_rnn:
+            if indices.max().item() >= self.steps_num:
+                return seq_indices, True
+            mb_rnn_masks[indices + steps_mask] = 1
+            seq_indices = indices % self.seq_len
+            state_indices = (seq_indices == 0).nonzero()
+            state_pos = indices // self.seq_len
+            rnn_indices = state_pos[state_indices] + steps_state[state_indices]
+            for s, mb_s in zip(self.states, mb_states):
+                mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+        return seq_indices, False
+
+    def process_rnn_dones(self, all_done_indices, indices, seq_indices):
+        if self.is_rnn:
+            if len(all_done_indices) > 0:
+                all_done_indices = all_done_indices.squeeze(-1)
+                shifts = self.seq_len - 1 - seq_indices[all_done_indices]
+                indices[all_done_indices] += shifts
+                for s in self.states:
+                    s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+            indices += 1  
+
     def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
         mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
         lastgaelam = 0
@@ -154,13 +195,14 @@ class A2CBase:
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
     def env_reset(self):
         obs = self.vec_env.reset()
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         else:
+            assert(self.observation_space.dtype != np.int8)
             if self.observation_space.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).cuda()
             else:
@@ -239,19 +281,26 @@ class DiscreteA2CBase(A2CBase):
         epinfos = []
 
         mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards
+        mb_rewards = self.mb_rewards.fill_(0)
+        mb_values = self.mb_values.fill_(0)
+        mb_dones = self.mb_dones.fill_(1)
         mb_actions = self.mb_actions
-        mb_values = self.mb_values
         mb_neglogpacs = self.mb_neglogpacs
-        mb_dones = self.mb_dones
+  
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
-        # For n in range number of steps
+        batch_size = self.num_agents * self.num_actors
+        mb_rnn_masks = None
+        if self.is_rnn:
+            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states = self.init_rnn_step(batch_size, mb_states)
+
         for n in range(self.steps_num):
-            if self.network.is_rnn():
-                mb_states.append(self.states)
+            if self.is_rnn:
+                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+                if full_tensor:
+                    break
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -261,20 +310,40 @@ class DiscreteA2CBase(A2CBase):
                 
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
-     
-            mb_obs[n,:] = self.obs
-            mb_dones[n,:] = self.dones
+
+            if self.is_rnn:
+                mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
+                mb_obs[indices,play_mask] = self.obs    
+            else:
+                mb_obs[n,:] = self.obs
+                mb_dones[n,:] = self.dones
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
-            
+
+
+            shaped_rewards = self.rewards_shaper(rewards)
+            if self.is_rnn:
+                mb_actions[indices,play_mask] = actions
+                mb_neglogpacs[indices,play_mask] = neglogpacs
+                mb_values[indices.cpu(), play_mask.cpu()] = values
+                mb_rewards[indices.cpu(), play_mask.cpu()] = shaped_rewards
+            else: 
+                mb_actions[n,:] = actions
+                mb_neglogpacs[n,:] = neglogpacs
+                mb_values[n,:] = values
+                mb_rewards[n,:] = shaped_rewards
+                
             self.current_rewards += rewards
             self.current_lengths += 1
-
-            done_indices = self.dones.nonzero()[::self.num_agents]
+            all_done_indices = self.dones.nonzero()
+            done_indices = all_done_indices[::self.num_agents]
+            if self.is_rnn:
+                self.process_rnn_dones(all_done_indices, indices, seq_indices)  
+                     
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
 
@@ -282,18 +351,13 @@ class DiscreteA2CBase(A2CBase):
                 game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
                 self.game_scores.append(game_res)
 
-            shaped_rewards = self.rewards_shaper(rewards)
             epinfos.append(infos)
 
-            mb_actions[n,:] = actions
-            mb_values[n,:] = values
-            mb_neglogpacs[n,:] = neglogpacs
-            mb_rewards[n,:] = shaped_rewards
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-
+        
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
@@ -335,23 +399,25 @@ class DiscreteA2CBase(A2CBase):
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
         }
+
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-        if self.network.is_rnn():
-            batch_dict['states'] = mb_states
+        if self.is_rnn:
+            batch_dict['rnn_states'] = mb_states
+            batch_dict['rnn_masks'] = mb_rnn_masks
 
         return batch_dict
 
     def train_epoch(self):
         play_time_start = time.time()
         batch_dict = self.play_steps() 
-
         obses = batch_dict['obs']
         returns = batch_dict['returns'].cuda()
         dones = batch_dict['dones'].cuda()
         values = batch_dict['values'].cuda()
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
-        lstm_states = batch_dict.get('states', None)
+        rnn_states = batch_dict.get('rnn_states', None)
+        rnn_masks = batch_dict.get('rnn_masks', None)
 
         play_time_end = time.time()
         update_time_start = time.time()
@@ -362,28 +428,36 @@ class DiscreteA2CBase(A2CBase):
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
             advantages = torch.sum(advantages, axis=1)
                       
+
         if self.normalize_advantage:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            if self.is_rnn:
+                sum_mask = rnn_masks.sum()
+                advantages_mask = advantages * rnn_masks
+                advantages_mean = advantages_mask.sum() / sum_mask
+                advantages_std = torch.sqrt(((advantages_mask - advantages_mean)**2/(sum_mask-1)).sum())
+                advantages = (advantages - advantages_mean) / (advantages_std + 1e-8)
+            else:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             
         a_losses = []
         c_losses = []
         entropies = []
         kls = []
 
-        if self.network.is_rnn():
+        if self.is_rnn:
+            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = np.arange(total_games)
-            flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
-            lstm_states = lstm_states[::self.seq_len]
+            game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
+            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                np.random.shuffle(game_indexes)
-
+                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
+                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
-                    mbatch = flat_indexes[mb_indexes].ravel()                        
-
+ 
+                    mbatch = flat_indexes[mb_indexes].flatten()           
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]
@@ -391,8 +465,8 @@ class DiscreteA2CBase(A2CBase):
                     input_dict['returns'] = returns[mbatch]
                     input_dict['actions'] = actions[mbatch]
                     input_dict['obs'] = obses[mbatch]
-                    input_dict['masks'] = dones[mbatch]
-                    input_dict['states'] = lstm_states[batch]
+                    input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
+                    input_dict['rnn_masks'] = rnn_masks[mbatch]
                     input_dict['learning_rate'] = self.last_lr
 
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
@@ -458,7 +532,6 @@ class DiscreteA2CBase(A2CBase):
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-                    
                 self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
                 self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
@@ -542,29 +615,40 @@ class ContinuousA2CBase(A2CBase):
     def play_steps(self):
         mb_states = []
         epinfos = []
-
-        mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards
-        mb_actions = self.mb_actions
-        mb_values = self.mb_values
-        mb_neglogpacs = self.mb_neglogpacs
-        mb_mus = self.mb_mus
-        mb_sigmas = self.mb_sigmas
-        mb_dones = self.mb_dones
+        batch_size = self.num_agents * self.num_actors
+        mb_obs = self.mb_obs.fill_(0)
+        mb_rewards = self.mb_rewards.fill_(0)
+        mb_values = self.mb_values.fill_(0)
+        mb_dones = self.mb_dones.fill_(1)
+        mb_actions = self.mb_actions.fill_(0)
+        mb_neglogpacs = self.mb_neglogpacs.fill_(0)
+        mb_mus = self.mb_mus.fill_(0)
+        mb_sigmas = self.mb_sigmas.fill_(0) 
 
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
-        # For n in range number of steps
+        mb_rnn_masks = None
+        if self.is_rnn:
+            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states = self.init_rnn_step(batch_size, mb_states)
+
         for n in range(self.steps_num):
-            if self.network.is_rnn():
-                mb_states.append(self.states)
+            if self.is_rnn:
+                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+                if full_tensor:
+                    break
+
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
-     
-            mb_obs[n,:] = self.obs
-            mb_dones[n,:] = self.dones
+            
+            if self.is_rnn:
+                mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
+                mb_obs[indices,play_mask] = self.obs    
+            else:
+                mb_obs[n,:] = self.obs
+                mb_dones[n,:] = self.dones
+
             clamped_actions = torch.clamp(actions, -1.0, 1.0)
             rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
             self.obs, rewards, self.dones, infos = self.env_step(rescaled_actions)
@@ -573,23 +657,33 @@ class ContinuousA2CBase(A2CBase):
                 intrinsic_reward = self.get_intrinsic_reward(self.obs)
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
             
+            shaped_rewards = self.rewards_shaper(rewards)
+            if self.is_rnn:
+                mb_actions[indices,play_mask] = actions
+                mb_neglogpacs[indices,play_mask] = neglogpacs
+                mb_mus[indices,play_mask] = mu
+                mb_sigmas[indices,play_mask] = sigma
+                mb_values[indices.cpu(), play_mask.cpu()] = values
+                mb_rewards[indices.cpu(), play_mask.cpu()] = shaped_rewards
+            else: 
+                mb_actions[n,:] = actions
+                mb_neglogpacs[n,:] = neglogpacs
+                mb_mus[n,:] = mu
+                mb_sigmas[n,:] = sigma
+                mb_values[n,:] = values
+                mb_rewards[n,:] = shaped_rewards
+
             self.current_rewards += rewards
             self.current_lengths += 1
+            all_done_indices = self.dones.nonzero()
+            done_indices = all_done_indices[::self.num_agents]
 
-            done_indices = self.dones.nonzero()[::self.num_agents]
+            if self.is_rnn:
+                self.process_rnn_dones(all_done_indices, indices, seq_indices)  
+
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
             
-            shaped_rewards = self.rewards_shaper(rewards)
-            #epinfos.append(infos)
-
-            mb_actions[n,:] = actions
-            mb_values[n,:] = values
-            mb_neglogpacs[n,:] = neglogpacs
-            
-            mb_mus[n,:] = mu
-            mb_sigmas[n,:] = sigma
-            mb_rewards[n,:] = shaped_rewards
             not_dones = 1.0 - self.dones.float()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
@@ -637,10 +731,12 @@ class ContinuousA2CBase(A2CBase):
             'mus' : mb_mus,
             'sigmas' : mb_sigmas,
         }
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-        if self.network.is_rnn():
-            batch_dict['states'] = mb_states
 
+        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
+
+        if self.is_rnn:
+            batch_dict['rnn_masks'] = mb_rnn_masks
+            batch_dict['rnn_states'] = mb_states
         return batch_dict
 
     def train_epoch(self):
@@ -656,14 +752,23 @@ class ContinuousA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         mus = batch_dict['mus']
         sigmas = batch_dict['sigmas']
-        lstm_states = batch_dict.get('states', None)
+        rnn_states = batch_dict.get('rnn_states', None)
+        rnn_masks = batch_dict.get('rnn_masks', None)
 
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
 
         if self.normalize_advantage:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            if self.is_rnn:
+                sum_mask = rnn_masks.sum()
+                advantages_mask = advantages * rnn_masks
+                advantages_mean = advantages_mask.sum() / sum_mask
+                advantages_std = torch.sqrt(((advantages_mask - advantages_mean)**2/(sum_mask-1)).sum())
+                advantages = (advantages - advantages_mean) / (advantages_std + 1e-8)
+
+            else:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
@@ -676,20 +781,20 @@ class ContinuousA2CBase(A2CBase):
         entropies = []
         kls = []
 
-        if self.network.is_rnn():
+        if self.is_rnn:
+            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = np.arange(total_games)
-            flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
-            lstm_states = lstm_states[::self.seq_len]
-
+            game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
+            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                np.random.shuffle(game_indexes)
+                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
-                    batch = range(i * num_games_batch, (i + 1) * num_games_batch)
+                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
-                    mbatch = flat_indexes[mb_indexes].ravel()                        
-
+                    mbatch = flat_indexes[mb_indexes].flatten()        
+            
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]
@@ -697,12 +802,11 @@ class ContinuousA2CBase(A2CBase):
                     input_dict['returns'] = returns[mbatch]
                     input_dict['actions'] = actions[mbatch]
                     input_dict['obs'] = obses[mbatch]
-                    input_dict['masks'] = dones[mbatch]
+                    input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
+                    input_dict['rnn_masks'] = rnn_masks[mbatch]
+                    input_dict['learning_rate'] = self.last_lr
                     input_dict['mu'] = mus[mbatch]
                     input_dict['sigma'] = sigmas[mbatch]
-                    input_dict['states'] = lstm_states[batch]
-                    input_dict['learning_rate'] = self.last_lr
-
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
@@ -710,14 +814,13 @@ class ContinuousA2CBase(A2CBase):
                     entropies.append(entropy)        
                     mus[mbatch] = cmu
                     sigmas[mbatch] = csigma
-                    if self.bounds_loss is not None:
+                    if self.bounds_loss_coef is not None:
                         b_losses.append(b_loss)                            
 
         else:
             permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
             obses = obses[permutation]
-            returns = returns[permutation]
-                
+            returns = returns[permutation]      
             actions = actions[permutation]
             values = values[permutation]
             neglogpacs = neglogpacs[permutation]
@@ -780,7 +883,6 @@ class ContinuousA2CBase(A2CBase):
                     fps_step = self.batch_size / scaled_play_time
                     fps_total = self.batch_size / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-
                 self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
                 self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)

@@ -100,14 +100,17 @@ class DMControlObsWrapper(gym.ObservationWrapper):
 def create_default_gym_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    env = gym.make(name)
     is_procgen = kwargs.pop('procgen', False)
-    if is_procgen:
-        if frames > 1:
+    limit_steps = kwargs.pop('limit_steps', False)
+    env = gym.make(name, **kwargs)
+
+    if frames > 1:
+        if is_procgen:
             env = wrappers.ProcgenStack(env, frames, True)
-    else:
-        if frames > 1:
+        else:
             env = wrappers.FrameStack(env, frames, False)
+    if limit_steps:
+        env = wrappers.LimitStepsWrapper(env)
     return env 
 
 def create_atari_gym_env(**kwargs):
@@ -215,7 +218,7 @@ def create_smac_cnn(name, **kwargs):
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
-        'env_creator' : lambda **kwargs : gym.make('CartPole-v1'),
+        'env_creator' : lambda **kwargs : wrappers.MaskVelocityWrapper(gym.make('CartPole-v1'), 'CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
         'vecenv_type' : 'RAY',
@@ -281,20 +284,20 @@ configurations = {
         'env_creator' : lambda **kwargs  : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
         'vecenv_type' : 'RAY'
     },
-    'BipedalWalker-v2' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 1, True),
+    'BipedalWalker-v3' : {
+        'env_creator' : lambda **kwargs  : gym.make('BipedalWalker-v3'),
         'vecenv_type' : 'RAY'
     },
-    'BipedalWalkerCnn-v2' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v2')), 4, False),
+    'BipedalWalkerCnn-v3' : {
+        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v3')), 4, False),
         'vecenv_type' : 'RAY'
     },
-    'BipedalWalkerHardcore-v2' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalkerHardcore-v2')), 1, True),
+    'BipedalWalkerHardcore-v3' : {
+        'env_creator' : lambda **kwargs  : HCRewardEnv(gym.make('BipedalWalkerHardcore-v3')),
         'vecenv_type' : 'RAY'
     },
-    'BipedalWalkerHardcoreCnn-v2' : {
-        'env_creator' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v2'), 4, False),
+    'BipedalWalkerHardcoreCnn-v3' : {
+        'env_creator' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v3'), 4, False),
         'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {

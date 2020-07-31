@@ -358,7 +358,7 @@ class A2CAgent:
                         dict[self.old_mu_ph] = mus[mbatch]
                         dict[self.old_sigma_ph] = sigmas[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
-                        dict[self.states_ph] = lstm_states[batch]
+                        dict[self.states_ph] = lstm_states[mb_indexes]
                         
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier]
