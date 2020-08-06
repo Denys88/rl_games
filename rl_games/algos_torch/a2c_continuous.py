@@ -8,7 +8,7 @@ from torch import optim
 import torch 
 from torch import nn
 import numpy as np
-
+from rl_games.common_losses import common_losses
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, config):
@@ -167,22 +167,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss = action_log_probs * advantage
 
         values = torch.squeeze(values)
-        c_loss = self.critic_loss(value_preds_batch, values, curr_e_clip, return_batch)
-
+        c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+        if self.has_curiosity:
+            c_loss = c_loss.sum(dim=1)
 
         b_loss = self.bound_loss(mu)
 
-        if self.is_rnn:
-            sum_mask = rnn_masks.sum()
-            a_loss = (a_loss * rnn_masks).sum() / sum_mask
-            c_loss = (c_loss * rnn_masks).sum() / sum_mask
-            entropy = (entropy * rnn_masks).sum() / sum_mask
-            b_loss = (b_loss * rnn_masks).sum() / sum_mask
-        else:
-            a_loss = a_loss.mean()
-            c_loss = c_loss.mean()
-            entropy = entropy.mean()
-            b_loss = torch.mean(b_loss)
+        losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy, b_loss], rnn_masks)
+        a_loss, c_loss, entropy, b_loss = *losses
 
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         self.optimizer.zero_grad()

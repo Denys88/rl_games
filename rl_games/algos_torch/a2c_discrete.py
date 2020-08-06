@@ -8,7 +8,7 @@ from torch import optim
 import torch 
 from torch import nn
 import numpy as np
-
+from rl_games.common.common_losses import common_losses
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
@@ -34,8 +34,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.use_assymetric_critic:
-            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
-                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.central_network_config['network'], 
+                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs, None))
+
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
@@ -179,28 +180,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             a_loss = (action_log_probs * advantage)
 
         values = torch.squeeze(values)
-        if self.clip_value:
-            value_pred_clipped = value_preds_batch + \
-                (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
-            value_losses = (values - return_batch)**2
-            value_losses_clipped = (value_pred_clipped - return_batch)**2
-            c_loss = torch.max(value_losses,
-                                         value_losses_clipped)
-        else:
-            c_loss = (return_batch - values)**2
+        c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)
 
-        if self.is_rnn:
-            sum_mask = rnn_masks.sum()
-            a_loss = (a_loss * rnn_masks).sum() / sum_mask
-            c_loss = (c_loss * rnn_masks).sum() / sum_mask
-            entropy = (entropy * rnn_masks).sum() / sum_mask
-        else:
-            a_loss = a_loss.mean()
-            c_loss = c_loss.mean()
-            entropy = entropy.mean()
+        losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, b_loss], rnn_masks)
+        a_loss, c_loss, entropy = *losses
 
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 

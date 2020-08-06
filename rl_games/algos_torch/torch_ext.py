@@ -77,6 +77,16 @@ def random_sample(obs_batch, prob):
     return torch.index_select(obs_batch, 0, indices)
 
 
+def apply_masks(losses, mask=None):
+    sum_mask = None
+    if mask:
+        sum_mask = rnn_masks.sum()
+        res_losses = [(l * mask).sum() / sum_mask for l in losses]
+    else:
+        res_losses = [(torch.mean(l) for l in losses]
+    
+    return res_losses, sum_mask
+
 
 class RangerQH(Optimizer):
     r"""Implements the QHAdam optimization algorithm `(Ma and Yarats, 2019)`_.
@@ -174,8 +184,6 @@ class RangerQH(Optimizer):
                 d_p = p.grad.data
                 if d_p.is_sparse:
                     raise RuntimeError("QHAdam does not support sparse gradients")
-
-                
 
                 if weight_decay != 0:
                     if decouple_weight_decay:

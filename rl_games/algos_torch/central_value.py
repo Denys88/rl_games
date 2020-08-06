@@ -3,7 +3,7 @@ from torch import nn
 import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-
+from rl_games.common  import common_losses
 
 
 
@@ -19,17 +19,20 @@ class CentralValueTrain(nn.Module):
         self.lr = config['lr']
         self.mini_epoch = self.config['mini_epochs']
         self.mini_batch = self.config['minibatch_size']
-
+        self.clip_value = self.config['clip_value']
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
         self._preproc_obs = _preproc_obs
         self.frame = 0
 
-    def train(self, obs):
+    def train(self, input_dict):
         self.model.train()
 
-        states = batch_dict['a_states']
-
+        value_preds_batch = input_dict['old_values']
+        return_batch = input_dict['returns']
+        obs_batch = input_dict['obs']
+        e_clip = input_dict.get('e_clip', 0.2)
+        
         num_minibatches = np.shape(obs)[0] // mini_batch
         self.frame = self.frame + 1
         for _ in range(self.mini_epoch):
@@ -37,8 +40,7 @@ class CentralValueTrain(nn.Module):
             avg_loss = 0
             for i in range(self.num_minibatches):
                 obs_batch = obs[i * mini_batch: (i + 1) * mini_batch]
-                obs_batch = self._preproc_obs(obs_batch)
-                loss = self.model(obs_batch).mean()
+                loss = common_losses.critic_loss(value_preds_batch, values, e_clip, clip_value)
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()

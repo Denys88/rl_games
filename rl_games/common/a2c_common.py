@@ -51,7 +51,7 @@ class A2CBase:
         self.use_assymetric_critic = config.get('use_assymetric_critic', False)
         if self.use_assymetric_critic:
             self.state_space = self.env_info.get('state_space', None)
-            self.central_network = config['central_network']
+            self.central_network_config = config['central_network']
             self.state_shape = None
             if self.state_space.shape != None:
                 self.state_shape = self.state_space.shape
@@ -229,24 +229,6 @@ class A2CBase:
                 obs = torch.FloatTensor(obs).cuda()
         return obs
 
-
-    def critic_loss(self, value_preds_batch, values, curr_e_clip, return_batch):
-        if self.clip_value:
-            value_pred_clipped = value_preds_batch + \
-                (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
-            value_losses = (values - return_batch)**2
-            value_losses_clipped = (value_pred_clipped - return_batch)**2
-            c_loss = torch.max(value_losses,
-                                         value_losses_clipped)
-        else:
-            c_loss = (return_batch - values)**2
-
-        if self.has_curiosity:
-            c_loss = c_loss.sum(dim=1)
-        else:
-            c_loss = c_loss
-        return c_loss
-
     def update_epoch(self):
         pass
 
@@ -289,7 +271,7 @@ class A2CBase:
     def train_intrinsic_reward(self, dict):
         pass
 
-    def _preproc_obs(self, obs_batch):
+    def _preproc_obs(self, obs_batch, running_mean_std=self.running_mean_std):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
         if len(obs_batch.size()) == 3:
@@ -297,7 +279,7 @@ class A2CBase:
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
+            obs_batch = running_mean_std(obs_batch)
         return obs_batch
 
 class DiscreteA2CBase(A2CBase):
