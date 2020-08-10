@@ -151,18 +151,18 @@ class A2CBase:
             batch_size = self.num_agents * self.num_actors
             num_seqs = self.steps_num * batch_size // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
-            self.mb_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
+            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.states]
 
-    def init_rnn_step(self, batch_size, mb_states):
-        mb_states = self.mb_states
+    def init_rnn_step(self, batch_size, mb_rnn_states):
+        mb_rnn_states = self.mb_rnn_states
         mb_rnn_masks = torch.zeros(self.steps_num*batch_size, dtype = torch.float32).cuda()
         steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
         play_mask = torch.arange(0, batch_size, 1, dtype=torch.long, device='cuda:0')
         steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
         indices = torch.zeros((batch_size), dtype = torch.long).cuda()
-        return mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states
+        return mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states
 
-    def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_states):
+    def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states):
         seq_indices = None
         if self.is_rnn:
             if indices.max().item() >= self.steps_num:
@@ -172,7 +172,7 @@ class A2CBase:
             state_indices = (seq_indices == 0).nonzero()
             state_pos = indices // self.seq_len
             rnn_indices = state_pos[state_indices] + steps_state[state_indices]
-            for s, mb_s in zip(self.states, mb_states):
+            for s, mb_s in zip(self.states, mb_rnn_states):
                 mb_s[:, rnn_indices, :] = s[:, state_indices, :]
         return seq_indices, False
 
@@ -206,6 +206,27 @@ class A2CBase:
         mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
         mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
         return mb_returns
+        
+    @staticmethod
+    def cast_obs(obs):
+        if isinstance(obs, torch.Tensor):
+            self.is_tensor_obses = True
+        elif isinstance(obs, np.ndarray):
+            assert(self.observation_space.dtype != np.int8)
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).cuda()
+            else:
+                obs = torch.FloatTensor(obs).cuda()
+        return obs
+        
+    @staticmethod
+    def obs_to_tensors(obs):
+        if isinstance(obs, dict):
+            upd_obs = {}
+            for key, value in obs.items():
+                upd_obs[key] = A2CBase.cast_obs(obs)
+        else:
+            upd_obs = A2CBase.cast_obs(obs)
 
     def env_step(self, actions):
         if not self.is_tensor_obses:
@@ -213,20 +234,13 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return obs, rewards.cpu(), dones.cpu(), infos
+            return A2CBase.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
         else:
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
+            return A2CBase.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
     def env_reset(self):
-        obs = self.vec_env.reset()
-        if isinstance(obs, torch.Tensor):
-            self.is_tensor_obses = True
-        else:
-            assert(self.observation_space.dtype != np.int8)
-            if self.observation_space.dtype == np.uint8:
-                obs = torch.ByteTensor(obs).cuda()
-            else:
-                obs = torch.FloatTensor(obs).cuda()
+        obs = self.vec_env.reset() 
+        obs = A2CBase.obs_to_tensors(obs)
         return obs
 
     def update_epoch(self):
@@ -262,14 +276,21 @@ class A2CBase:
     def train_epoch(self):
         pass
 
-    def train_actor_critic(self, dict):
+    def train_actor_critic(self, obs_dict):
         pass 
 
     def get_intrinsic_reward(self, obs):
-        pass
+        return self.rnd_curiosity.get_loss(obs)
 
-    def train_intrinsic_reward(self, dict):
-        pass
+    def train_intrinsic_reward(self, obs_dict):
+        obs = obs_dict['obs']
+        self.rnd_curiosity.train(obs)
+
+    def get_central_value(self, obs_dict):
+        return self.central_value_net.get_loss(obs_dict)
+
+    def train_central_value(self, obs_dict):
+        self.central_value_net.train(obs_dict)
 
     def _preproc_obs(self, obs_batch, running_mean_std=self.running_mean_std):
         if obs_batch.dtype == torch.uint8:
@@ -297,7 +318,7 @@ class DiscreteA2CBase(A2CBase):
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
 
     def play_steps(self):
-        mb_states = []
+        mb_rnn_states = []
         epinfos = []
 
         mb_obs = self.mb_obs
@@ -307,18 +328,17 @@ class DiscreteA2CBase(A2CBase):
         mb_actions = self.mb_actions
         mb_neglogpacs = self.mb_neglogpacs
   
-
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
         batch_size = self.num_agents * self.num_actors
         mb_rnn_masks = None
         if self.is_rnn:
-            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states = self.init_rnn_step(batch_size, mb_states)
+            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states = self.init_rnn_step(batch_size, mb_rnn_states)
 
         for n in range(self.steps_num):
             if self.is_rnn:
-                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
                 if full_tensor:
                     break
 
@@ -422,7 +442,7 @@ class DiscreteA2CBase(A2CBase):
 
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.is_rnn:
-            batch_dict['rnn_states'] = mb_states
+            batch_dict['rnn_states'] = mb_rnn_states
             batch_dict['rnn_masks'] = mb_rnn_masks
 
         return batch_dict
@@ -633,7 +653,7 @@ class ContinuousA2CBase(A2CBase):
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
 
     def play_steps(self):
-        mb_states = []
+        mb_rnn_states = []
         epinfos = []
         batch_size = self.num_agents * self.num_actors
         mb_obs = self.mb_obs.fill_(0)
@@ -650,11 +670,11 @@ class ContinuousA2CBase(A2CBase):
 
         mb_rnn_masks = None
         if self.is_rnn:
-            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_states = self.init_rnn_step(batch_size, mb_states)
+            mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states = self.init_rnn_step(batch_size, mb_rnn_states)
 
         for n in range(self.steps_num):
             if self.is_rnn:
-                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_states)
+                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
                 if full_tensor:
                     break
 
@@ -756,7 +776,7 @@ class ContinuousA2CBase(A2CBase):
 
         if self.is_rnn:
             batch_dict['rnn_masks'] = mb_rnn_masks
-            batch_dict['rnn_states'] = mb_states
+            batch_dict['rnn_states'] = mb_rnn_states
         return batch_dict
 
     def train_epoch(self):

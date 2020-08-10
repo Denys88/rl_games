@@ -23,7 +23,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.model = self.network.build(config)
         self.model.cuda()
 
-        self.states = None
+        self.rnn_states = None
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
@@ -34,7 +34,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.use_assymetric_critic:
-            self.central_val = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.central_network_config['network'], 
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.central_network_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs, None))
 
 
@@ -64,7 +64,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
         if self.use_assymetric_critic:
-            state['assymetric_vf_nets'] = self.central_value.state_dict()
+            state['assymetric_vf_nets'] = self.central_value_net.state_dict()
         if self.has_curiosity:
             state['rnd_nets'] = self.rnd_curiosity.state_dict()
         torch_ext.save_scheckpoint(fn, state)
@@ -76,7 +76,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
         if self.use_assymetric_critic:
-            self.central_value.load_state_dict(checkpoint['assymetric_vf_nets'])
+            self.central_value_net.load_state_dict(checkpoint['assymetric_vf_nets'])
         if self.has_curiosity:
             self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
             for state in self.rnd_curiosity.optimizer.state.values():
@@ -95,14 +95,19 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'obs' : obs,
+            'obs' : obs['obs'] if self.use_assymetric_critic else obs,
             'action_masks' : action_masks,
-            'rnn_states' : self.states
+            'rnn_states' : self.rnn_states
         }
 
         with torch.no_grad():
-            neglogp, value, action, logits, states = self.model(input_dict)
-        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), states
+            neglogp, value, action, logits, rnn_states = self.model(input_dict)
+            if self.use_assymetric_critic:
+                input_central_dict = input_dict.copy()
+                input_central_dict['obs'] = obs['states']
+                value = self.central_value_net(input_central_dict)
+                
+        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), rnn_states
 
     def get_action_values(self, obs):
         obs = self._preproc_obs(obs)
@@ -110,11 +115,17 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'obs' : obs,
-            'rnn_states' : self.states
+            'obs' : obs['obs'] if self.use_assymetric_critic else obs,
+            'rnn_states' : self.rnn_states
         }
+
         with torch.no_grad():
             neglogp, value, action, logits, states = self.model(input_dict)
+            if self.use_assymetric_critic:
+                input_central_dict = input_dict.copy()
+                input_central_dict['obs'] = obs['states']
+                value = self.central_value_net(input_central_dict)
+
         return action.detach(), value.detach().cpu(), neglogp.detach(), states
 
     def get_values(self, obs):
@@ -124,18 +135,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'is_train': False,
             'prev_actions': None, 
             'obs' : obs,
-            'rnn_states' : self.states
+            'rnn_states' : self.rnn_states
         }
         with torch.no_grad():
             neglogp, value, action, logits, states = self.model(input_dict)
         return value.detach().cpu()
-
-    def get_intrinsic_reward(self, obs):
-        return self.rnd_curiosity.get_loss(obs)
-
-    def train_intrinsic_reward(self, dict):
-        obs = dict['obs']
-        self.rnd_curiosity.train(obs)
 
     def get_weights(self):
         return torch.nn.utils.parameters_to_vector(self.model.parameters())
@@ -170,14 +174,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         action_log_probs, values, entropy, _ = self.model(batch_dict)
 
-        if self.ppo:
-            ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
-            surr1 = ratio * advantage
-            surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
-                                1.0 + curr_e_clip) * advantage
-            a_loss = torch.max(-surr1, -surr2)
-        else:
-            a_loss = (action_log_probs * advantage)
+        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, self.ppo, curr_e_clip):
 
         values = torch.squeeze(values)
         c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)

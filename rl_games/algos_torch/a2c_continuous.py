@@ -118,13 +118,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def set_weights(self, weights):
         torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
 
-    def get_intrinsic_reward(self, obs):
-        return self.rnd_curiosity.get_loss(obs)
-
-    def train_intrinsic_reward(self, dict):
-        obs = dict['obs']
-        self.rnd_curiosity.train(obs)
-
     def train_actor_critic(self, input_dict):
         self.set_train()
 
@@ -157,14 +150,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         action_log_probs, values, entropy, mu, sigma,_ = self.model(batch_dict)
 
-        if self.ppo:
-            ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
-            surr1 = ratio * advantage
-            surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
-                                1.0 + curr_e_clip) * advantage
-            a_loss = torch.max(-surr1, -surr2)
-        else:
-            a_loss = action_log_probs * advantage
+        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, self.ppo, curr_e_clip):
 
         values = torch.squeeze(values)
         c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)

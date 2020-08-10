@@ -85,7 +85,7 @@ class NetworkBuilder:
         norm_func_name = None):
             print('build mlp:', input_size)
             in_size = input_size
-            layers = nn.ModuleList()
+            layers = []
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
@@ -94,7 +94,8 @@ class NetworkBuilder:
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm1d(unit))
                 in_size = unit
-            return layers
+
+            return nn.Sequential(*layers)
 
         def _build_conv(self, ctype, **kwargs):
             print('conv_name:', ctype)
@@ -106,7 +107,7 @@ class NetworkBuilder:
 
         def _build_cnn(self, input_shape, convs, activation, norm_func_name=None):
             in_channels = input_shape[0]
-            layers = nn.ModuleList()
+            layers = []
             for conv in convs:
                 layers.append(torch.nn.Conv2d(in_channels=in_channels, 
                 out_channels=conv['filters'], 
@@ -119,12 +120,12 @@ class NetworkBuilder:
                     layers.append(torch.nn.LayerNorm(in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
-            return layers
+            return nn.Sequential(*layers)
 
         def _build_cnn1d(self, input_shape, convs, activation, norm_func_name=None):
             print('conv1d input shape:', input_shape)
             in_channels = input_shape[0]
-            layers = nn.ModuleList()
+            layers = []
             for conv in convs:
                 layers.append(torch.nn.Conv1d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
                 act = self.activations_factory.create(activation)
@@ -134,7 +135,7 @@ class NetworkBuilder:
                     layers.append(torch.nn.LayerNorm(in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
-            return layers
+            return nn.Sequential(*layers)
 
 class A2CBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -257,21 +258,17 @@ class A2CBuilder(NetworkBuilder):
             if self.separate:
                 a_out = c_out = obs
                 
-                for l in self.actor_cnn:
-                    a_out = l(a_out)
+                a_out = self.actor_cnn(a_out)
                 a_out = a_out.view(a_out.size(0), -1)
 
-                for l in self.critic_cnn:
-                    c_out = l(c_out)
+                c_out = self.actor_cnn(c_out)
                 c_out = c_out.view(c_out.size(0), -1)                    
 
 
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
-                        for l in self.actor_mlp:
-                            a_out = l(a_out)
-                        for l in self.critic_mlp:
-                            c_out = l(c_out)
+                        a_out = self.actor_mlp(a_out)
+                        c_out = self.actor_mlp(c_out)
 
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
@@ -304,15 +301,11 @@ class A2CBuilder(NetworkBuilder):
                     states = a_states + c_states
 
                     if self.is_rnn_before_mlp:
-                        for l in self.actor_mlp:
-                            a_out = l(a_out)
-                        for l in self.critic_mlp:
-                            c_out = l(c_out)
+                        a_out = self.actor_mlp(a_out)
+                        c_out = self.actor_mlp(c_out)
                 else:
-                    for l in self.actor_mlp:
-                        a_out = l(a_out)
-                    for l in self.critic_mlp:
-                        c_out = l(c_out)
+                    a_out = self.actor_mlp(a_out)
+                    c_out = self.actor_mlp(c_out)
                             
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
@@ -511,19 +504,15 @@ class RNDCuriosityBuilder(NetworkBuilder):
             rnd_out = net_out = obs
 
             with torch.no_grad():
-                for l in self.rnd_cnn:
-                    rnd_out = l(rnd_out)
+                rnd_out = self.rnd_cnn(rnd_out)
                 rnd_out = rnd_out.view(rnd_out.size(0), -1)
-                for l in self.rnd_mlp:
-                    rnd_out = l(rnd_out)
+                rnd_out = self.rnd_mlp(rnd_out)
 
-            for l in self.net_cnn:
-                net_out = l(net_out)
+            net_out = self.net_cnn(rnd_out)
             net_out = net_out.view(net_out.size(0), -1)                    
 
                 
-            for l in self.net_mlp:
-                net_out = l(net_out)
+            net_out = self.net_mlp(rnd_out)
                     
             return rnd_out, net_out
 
@@ -743,15 +732,13 @@ class A2CResnetBuilder(NetworkBuilder):
             seq_length = obs_dict.get('seq_length', 1)
 
             out = obs
-            for l in self.cnn:
-                out = l(out)
+            out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
                 
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
-                    for l in self.mlp:
-                        out = l(out)
+                    out = self.mlp(out)
 
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length
