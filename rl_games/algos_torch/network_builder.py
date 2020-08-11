@@ -349,6 +349,9 @@ class A2CBuilder(NetworkBuilder):
                         states = (states,)
                 value = self.value_act(self.value(out))
 
+                if self.central_value:
+                    return value
+
                 if self.is_discrete:
                     logits = self.logits(out)
                     return logits, value, states
@@ -388,21 +391,25 @@ class A2CBuilder(NetworkBuilder):
                     return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())                
 
         def load(self, params):
-            self.separate = params['separate']
+            self.separate = params.get('separate', False)
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
             self.regularizer = params['mlp']['regularizer']
-            self.is_discrete = 'discrete' in params['space']
-            self.is_continuous = 'continuous'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
+            self.has_space = 'space' in params
             self.value_shape = params.get('value_shape', 1)
-            if self.is_continuous:
-                self.space_config = params['space']['continuous']
-            elif self.is_discrete:
-                self.space_config = params['space']['discrete']
+            self.central_value = params.get('central_value', False)
+
+            if self.has_space:
+                self.is_discrete = 'discrete' in params['space']
+                self.is_continuous = 'continuous'in params['space']
+                if self.is_continuous:
+                    self.space_config = params['space']['continuous']
+                elif self.is_discrete:
+                    self.space_config = params['space']['discrete']
                 
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']

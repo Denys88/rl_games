@@ -17,9 +17,9 @@ class CentralValueTrain(nn.Module):
         self.model = model.build('cvalue', **cv_config).cuda()
         self.config = config
         self.lr = config['lr']
-        self.mini_epoch = self.config['mini_epochs']
-        self.mini_batch = self.config['minibatch_size']
-        self.clip_value = self.config['clip_value']
+        self.mini_epoch = config['mini_epochs']
+        self.mini_batch = config['minibatch_size']
+        self.clip_value = config['clip_value']
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
         self._preproc_obs = _preproc_obs
@@ -30,7 +30,7 @@ class CentralValueTrain(nn.Module):
 
         value_preds_batch = input_dict['old_values']
         return_batch = input_dict['returns']
-        obs_batch = input_dict['obs']
+        obs_batch = input_dict['states']
         e_clip = input_dict.get('e_clip', 0.2)
         
         num_minibatches = np.shape(obs)[0] // mini_batch

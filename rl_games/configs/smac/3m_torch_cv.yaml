@@ -23,18 +23,6 @@ params:
         scale: 2 
       regularizer:
         name:  'None'
-  
-  central_network:
-    # or assymetric critic (value?)
-    name: central_critic
-    mlp:
-        units: [512, 256]
-        activation: elu
-        initializer:
-          name: variance_scaling_initializer
-          scale: 2
-        regularizer:
-          name: 'None'
 
   config:
     name: 3m
@@ -52,7 +40,7 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 2 # 8
+    num_actors: 8
     steps_num: 128
     minibatch_size: 1536
     mini_epochs: 4
@@ -70,3 +58,20 @@ params:
       transpose: False
       random_invalid_step: False
       central_value: True
+
+  central_value_config:
+    gamma: 0.99
+    minibatch_size: 1536
+    mini_epochs: 4
+    lr: 1e-4
+
+    network:
+      name: actor_critic
+      mlp:
+        units: [512, 256]
+        activation: relu
+        initializer:
+          name: variance_scaling_initializer
+          scale: 2 
+        regularizer:
+          name:  'None'

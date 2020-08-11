@@ -41,15 +41,15 @@ class A2CBase:
 
         print('Env info:')
         print(self.env_info)
-        sleep(10)
+        sleep(2)
 
         self.observation_space = self.env_info['observation_space']
         
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        self.use_assymetric_critic = config.get('use_assymetric_critic', False)
-        if self.use_assymetric_critic:
+        self.has_central_value = config.get('has_central_value', False)
+        if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             self.central_network_config = config['central_network']
             self.state_shape = None
@@ -136,8 +136,8 @@ class A2CBase:
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype).cuda()
 
-        if self.use_assymetric_critic:
-            self.mb_vobs = torch.zeros((self.steps_num, batch_size) + self.state_shape, dtype=torch_dtype).cuda()
+        if self.has_central_value:
+            self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype).cuda()
 
         self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
@@ -226,7 +226,7 @@ class A2CBase:
             for key, value in obs.items():
                 upd_obs[key] = A2CBase.cast_obs(obs)
         else:
-            upd_obs = A2CBase.cast_obs(obs)
+            upd_obs = {'obs' : A2CBase.cast_obs(obs)}
 
     def env_step(self, actions):
         if not self.is_tensor_obses:
@@ -287,7 +287,7 @@ class A2CBase:
         self.rnd_curiosity.train(obs)
 
     def get_central_value(self, obs_dict):
-        return self.central_value_net.get_loss(obs_dict)
+        return self.central_value_net(obs_dict)
 
     def train_central_value(self, obs_dict):
         self.central_value_net.train(obs_dict)
@@ -330,6 +330,8 @@ class DiscreteA2CBase(A2CBase):
   
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
+         if self.has_central_value:
+                mb_vobs = self.mb_vobs
 
         batch_size = self.num_agents * self.num_actors
         mb_rnn_masks = None
@@ -346,24 +348,26 @@ class DiscreteA2CBase(A2CBase):
                 masks = self.vec_env.get_action_masks()
                 actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
-                actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
+                actions, values, neglogpacs, self.states = self.get_action_values(self.obs['obs'])
                 
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
 
             if self.is_rnn:
                 mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
-                mb_obs[indices,play_mask] = self.obs    
+                mb_obs[indices,play_mask] = self.obs['obs']    
             else:
-                mb_obs[n,:] = self.obs
+                mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward(self.obs)
+                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
 
+            if self.has_central_value:
+                mb_vobs[n,:] = self.obs['states']
 
             shaped_rewards = self.rewards_shaper(rewards)
             if self.is_rnn:
@@ -439,7 +443,8 @@ class DiscreteA2CBase(A2CBase):
             'values' : mb_values,
             'neglogpacs' : mb_neglogpacs,
         }
-
+        if self.has_central_value:
+            batch_dict['states'] = mb_vobs
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
         if self.is_rnn:
             batch_dict['rnn_states'] = mb_rnn_states
@@ -810,7 +815,7 @@ class ContinuousA2CBase(A2CBase):
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        if self.use_assymetric_critic:
+        if self.has_central_value:
             # todo
             pass
 
