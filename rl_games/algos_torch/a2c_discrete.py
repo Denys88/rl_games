@@ -149,7 +149,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             input_dict = {
                 'is_train': False,
                 'prev_actions': None, 
-                'obs' : obs,
+                'obs' : obs['obs'],
                 'rnn_states' : self.rnn_states
             }
             with torch.no_grad():

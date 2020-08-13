@@ -10,7 +10,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     #normalization: layer_norm
     space: 
       discrete:

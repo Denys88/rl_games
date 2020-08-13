@@ -215,7 +215,7 @@ class RayVecSMACEnv(IVecEnv):
             newobsdict["states"] = np.asarray(newstates)
             ret_obs = newobsdict
         else:
-            ret_obs = ray.get(obs)
+            ret_obs = ray.get(res_obs)
             ret_obs = np.concatenate(ret_obs, axis=0)
         return ret_obs
 
