@@ -58,8 +58,13 @@ class RayWorker:
             episode_done = is_done.all()
         if episode_done:
             next_state = self.reset()
-        if next_state.dtype == np.float64:
-            next_state = next_state.astype(np.float32)
+        if isinstance(next_state, dict):
+            for k,v in next_state.items():
+                if v.dtype == np.float64:
+                    next_state[k] = v.astype(np.float32)
+        else: 
+            if next_state.dtype == np.float64:
+                next_state = next_state.astype(np.float32)
         return next_state, reward, is_done, info
 
     def render(self):
@@ -87,8 +92,8 @@ class RayWorker:
         info['state_space'] = None
         info['use_global_observations'] = False
 
-        #if hasattr(self.env, 'use_central_value'):
-        #    info['use_global_observations'] = self.env.use_cenral_value
+        if hasattr(self.env, 'use_central_value'):
+            info['use_global_observations'] = self.env.use_central_value
 
         if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
@@ -148,8 +153,7 @@ class RayVecSMACEnv(IVecEnv):
         res = self.workers[0].get_env_info.remote()
         env_info = ray.get(res)
 
-        self.use_global_obs = info['use_global_observations']
-
+        self.use_global_obs = env_info['use_global_observations']
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
         return ray.get(res)
@@ -179,7 +183,7 @@ class RayVecSMACEnv(IVecEnv):
 
         if self.use_global_obs:
             newobsdict["obs"] = np.concatenate(newobs, axis=0)
-            newobsdict["states"] = np.concatenate(newstates, axis=0)
+            newobsdict["states"] = np.asarray(newstates)
             ret_obs = newobsdict
         else:
             ret_obs = np.concatenate(newobs, axis=0)
@@ -195,9 +199,25 @@ class RayVecSMACEnv(IVecEnv):
         return np.concatenate(masks, axis=0)
 
     def reset(self):
-        obs = [worker.reset.remote() for worker in self.workers]
-        newobs = ray.get(obs)
-        return np.concatenate(newobs, axis=0)
+        res_obs = [worker.reset.remote() for worker in self.workers]
+        
+        if self.use_global_obs:
+            newobs, newstates = [],[]
+            for res in res_obs:
+                cobs = ray.get(res)
+                if self.use_global_obs:
+                    newobs.append(cobs["obs"])
+                    newstates.append(cobs["state"])
+                else:
+                    newobs.append(cobs)
+            newobsdict = {}
+            newobsdict["obs"] = np.concatenate(newobs, axis=0)
+            newobsdict["states"] = np.asarray(newstates)
+            ret_obs = newobsdict
+        else:
+            ret_obs = ray.get(obs)
+            ret_obs = np.concatenate(ret_obs, axis=0)
+        return ret_obs
 
 
 vecenv_config = {}

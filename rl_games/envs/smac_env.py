@@ -8,7 +8,7 @@ class SMACEnv(gym.Env):
         gym.Env.__init__(self)
         self.seed = kwargs.pop('seed', None)
         self.reward_sparse = kwargs.pop('reward_sparse', False)
-        self.use_cenral_value = kwargs.pop('central_value', False)
+        self.use_central_value = kwargs.pop('central_value', False)
         self.env = StarCraft2Env(map_name=name, seed=self.seed, reward_sparse=self.reward_sparse)
         self.env_info = self.env.get_env_info()
         self.replay_save_freq = replay_save_freq
@@ -28,9 +28,9 @@ class SMACEnv(gym.Env):
         self.obs_dict["obs"] = np.array(obs)
         self.obs_dict["state"] = np.array(state)
 
-        if self.use_cenral_value:
+        if self.use_central_value:
             return self.obs_dict
-        else
+        else:
             return self.obs_dict["obs"]
 
     def get_number_of_agents(self):

@@ -43,7 +43,7 @@ class RNDCuriosityTrain(nn.Module):
             
             return loss.cpu()
 
-    def train(self, obs):
+    def train_net(self, obs):
         self.model.train()
         mini_epoch = self.config['mini_epochs']
         mini_batch = self.config['minibatch_size']

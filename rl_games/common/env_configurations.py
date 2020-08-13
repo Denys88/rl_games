@@ -203,8 +203,9 @@ def create_flex(path):
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
-    print(kwargs)
-    return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
+    env = SMACEnv(name, **kwargs)
+    #env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=True)
+    return env
 
 def create_smac_cnn(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv

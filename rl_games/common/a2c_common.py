@@ -48,10 +48,10 @@ class A2CBase:
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        self.has_central_value = config.get('has_central_value', False)
+        self.central_value_config = self.config.get('central_value_config', None)
+        self.has_central_value = self.central_value_config is not None
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
-            self.central_network_config = config['central_network']
             self.state_shape = None
             if self.state_space.shape != None:
                 self.state_shape = self.state_space.shape
@@ -138,7 +138,7 @@ class A2CBase:
 
         if self.has_central_value:
             self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype).cuda()
-
+        
         self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
@@ -207,8 +207,7 @@ class A2CBase:
         mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
         return mb_returns
         
-    @staticmethod
-    def cast_obs(obs):
+    def cast_obs(self, obs):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
@@ -219,14 +218,15 @@ class A2CBase:
                 obs = torch.FloatTensor(obs).cuda()
         return obs
         
-    @staticmethod
-    def obs_to_tensors(obs):
+    def obs_to_tensors(self, obs):
         if isinstance(obs, dict):
             upd_obs = {}
             for key, value in obs.items():
-                upd_obs[key] = A2CBase.cast_obs(obs)
+                upd_obs[key] = self.cast_obs(value)
         else:
-            upd_obs = {'obs' : A2CBase.cast_obs(obs)}
+            upd_obs = {'obs' : self.cast_obs(obs)}
+        
+        return upd_obs
 
     def env_step(self, actions):
         if not self.is_tensor_obses:
@@ -234,13 +234,13 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return A2CBase.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
+            return self.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
         else:
-            return A2CBase.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
+            return self.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
     def env_reset(self):
         obs = self.vec_env.reset() 
-        obs = A2CBase.obs_to_tensors(obs)
+        obs = self.obs_to_tensors(obs)
         return obs
 
     def update_epoch(self):
@@ -284,15 +284,15 @@ class A2CBase:
 
     def train_intrinsic_reward(self, obs_dict):
         obs = obs_dict['obs']
-        self.rnd_curiosity.train(obs)
+        self.rnd_curiosity.train_net(obs)
 
     def get_central_value(self, obs_dict):
-        return self.central_value_net(obs_dict)
+        return self.central_value_net.get_value(obs_dict)
 
     def train_central_value(self, obs_dict):
-        self.central_value_net.train(obs_dict)
+        return self.central_value_net.train_net(obs_dict)
 
-    def _preproc_obs(self, obs_batch, running_mean_std=self.running_mean_std):
+    def _preproc_obs(self, obs_batch, running_mean_std=None):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
         if len(obs_batch.size()) == 3:
@@ -300,6 +300,8 @@ class A2CBase:
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
+            if running_mean_std == None:
+                running_mean_std = self.running_mean_std
             obs_batch = running_mean_std(obs_batch)
         return obs_batch
 
@@ -330,8 +332,9 @@ class DiscreteA2CBase(A2CBase):
   
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
-         if self.has_central_value:
-                mb_vobs = self.mb_vobs
+
+        if self.has_central_value:
+            mb_vobs = self.mb_vobs
 
         batch_size = self.num_agents * self.num_actors
         mb_rnn_masks = None
@@ -348,7 +351,7 @@ class DiscreteA2CBase(A2CBase):
                 masks = self.vec_env.get_action_masks()
                 actions, values, neglogpacs, _, self.states = self.get_masked_action_values(self.obs, masks)
             else:
-                actions, values, neglogpacs, self.states = self.get_action_values(self.obs['obs'])
+                actions, values, neglogpacs, self.states = self.get_action_values(self.obs)
                 
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
@@ -445,7 +448,9 @@ class DiscreteA2CBase(A2CBase):
         }
         if self.has_central_value:
             batch_dict['states'] = mb_vobs
+
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
+
         if self.is_rnn:
             batch_dict['rnn_states'] = mb_rnn_states
             batch_dict['rnn_masks'] = mb_rnn_masks
@@ -472,7 +477,9 @@ class DiscreteA2CBase(A2CBase):
             self.train_intrinsic_reward(batch_dict)
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
             advantages = torch.sum(advantages, axis=1)
-                      
+
+        if self.has_central_value:
+            self.train_central_value(batch_dict)
 
         if self.normalize_advantage:
             if self.is_rnn:

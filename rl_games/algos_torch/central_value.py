@@ -8,39 +8,60 @@ from rl_games.common  import common_losses
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, model, config, writter, _preproc_obs):
+    def __init__(self, state_shape, num_agents, model, config, writter, _preproc_obs):
         nn.Module.__init__(self)
+        self.num_agents = num_agents
+        self.state_shape = state_shape
+        state_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
         state_config = {
             'input_shape' : state_shape,
         }
-        
-        self.model = model.build('cvalue', **cv_config).cuda()
         self.config = config
+        self.model = model.build('cvalue', **state_config).cuda()
         self.lr = config['lr']
         self.mini_epoch = config['mini_epochs']
         self.mini_batch = config['minibatch_size']
         self.clip_value = config['clip_value']
+        self.normalize_input = config['normalize_input']
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
         self._preproc_obs = _preproc_obs
         self.frame = 0
+        if self.normalize_input:
+            self.running_mean_std = RunningMeanStd(state_shape).cuda()
 
-    def train(self, input_dict):
-        self.model.train()
-
-        value_preds_batch = input_dict['old_values']
-        return_batch = input_dict['returns']
+    def get_value(self, input_dict):
         obs_batch = input_dict['states']
+        self.running_mean_std.eval()
+        obs_batch = self._preproc_obs(obs_batch, self.running_mean_std)
+        value = self.model({'obs' : obs_batch})
+        value = value.repeat(1, self.num_agents)
+        value = value.view(value.size()[0]*self.num_agents, -1)
+        return value
+
+    def train_net(self, input_dict):
+        self.model.train()
+        self.running_mean_std.train()
+        value_preds = input_dict['values'][::self.num_agents].cuda()
+        returns = input_dict['returns'][::self.num_agents].cuda()
+        obs = input_dict['states']
         e_clip = input_dict.get('e_clip', 0.2)
-        
-        num_minibatches = np.shape(obs)[0] // mini_batch
+        lr = input_dict.get('lr', self.lr)
+        obs = self._preproc_obs(obs, self.running_mean_std)
+
+        mini_batch = self.mini_batch
+        num_minibatches = obs.size()[0] // mini_batch
         self.frame = self.frame + 1
         for _ in range(self.mini_epoch):
             # returning loss from last epoch
             avg_loss = 0
-            for i in range(self.num_minibatches):
+            for i in range(num_minibatches):
                 obs_batch = obs[i * mini_batch: (i + 1) * mini_batch]
-                loss = common_losses.critic_loss(value_preds_batch, values, e_clip, clip_value)
+                value_preds_batch = value_preds[i * mini_batch: (i + 1) * mini_batch]
+                returns_batch = returns[i * mini_batch: (i + 1) * mini_batch]
+                values = self.model({'obs' : obs_batch})
+                loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
+                loss = loss.mean()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()

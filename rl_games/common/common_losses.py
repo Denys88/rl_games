@@ -1,5 +1,5 @@
 from torch import nn
-
+import torch
 
 def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
     if clip_value:
@@ -15,7 +15,7 @@ def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value
     return c_loss
 
 
-def actor_loss(old_action_log_probs_batch, action_log_probs, is_ppo, curr_e_clip):
+def actor_loss(old_action_log_probs_batch, action_log_probs, advantage, is_ppo, curr_e_clip):
     if is_ppo:
         ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
         surr1 = ratio * advantage
@@ -24,3 +24,5 @@ def actor_loss(old_action_log_probs_batch, action_log_probs, is_ppo, curr_e_clip
         a_loss = torch.max(-surr1, -surr2)
     else:
         a_loss = (action_log_probs * advantage)
+    
+    return a_loss

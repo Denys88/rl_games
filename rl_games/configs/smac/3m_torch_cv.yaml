@@ -59,19 +59,21 @@ params:
       random_invalid_step: False
       central_value: True
 
-  central_value_config:
-    gamma: 0.99
-    minibatch_size: 1536
-    mini_epochs: 4
-    lr: 1e-4
-
-    network:
-      name: actor_critic
-      mlp:
-        units: [512, 256]
-        activation: relu
-        initializer:
-          name: variance_scaling_initializer
-          scale: 2 
-        regularizer:
-          name:  'None'
+    central_value_config:
+      gamma: 0.99
+      minibatch_size: 512
+      mini_epochs: 4
+      lr: 5e-4
+      clip_value: True
+      normalize_input: True
+      network:
+        name: actor_critic
+        central_value: True
+        mlp:
+          units: [256, 128]
+          activation: relu
+          initializer:
+            name: variance_scaling_initializer
+            scale: 2 
+          regularizer:
+            name:  'None'

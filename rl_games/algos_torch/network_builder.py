@@ -101,11 +101,11 @@ class NetworkBuilder:
             print('conv_name:', ctype)
 
             if ctype == 'conv2d':
-                return self._build_cnn(**kwargs)
+                return self._build_cnn2d(**kwargs)
             if ctype == 'conv1d':
                 return self._build_cnn1d(**kwargs)
 
-        def _build_cnn(self, input_shape, convs, activation, norm_func_name=None):
+        def _build_cnn2d(self, input_shape, convs, activation, norm_func_name=None):
             in_channels = input_shape[0]
             layers = []
             for conv in convs:
@@ -146,15 +146,15 @@ class A2CBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num')
+            actions_num = kwargs.pop('actions_num', 0)
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
-            self.actor_cnn = []
-            self.critic_cnn = []
-            self.actor_mlp = []
-            self.critic_mlp = []
+            self.actor_cnn = nn.Sequential()
+            self.critic_cnn = nn.Sequential()
+            self.actor_mlp = nn.Sequential()
+            self.critic_mlp = nn.Sequential()
 
             if self.has_cnn:
                 cnn_args = {
@@ -257,18 +257,17 @@ class A2CBuilder(NetworkBuilder):
 
             if self.separate:
                 a_out = c_out = obs
-                
                 a_out = self.actor_cnn(a_out)
                 a_out = a_out.view(a_out.size(0), -1)
 
-                c_out = self.actor_cnn(c_out)
+                c_out = self.critic_cnn(c_out)
                 c_out = c_out.view(c_out.size(0), -1)                    
 
 
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
                         a_out = self.actor_mlp(a_out)
-                        c_out = self.actor_mlp(c_out)
+                        c_out = self.critc_mlp(c_out)
 
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
@@ -302,10 +301,10 @@ class A2CBuilder(NetworkBuilder):
 
                     if self.is_rnn_before_mlp:
                         a_out = self.actor_mlp(a_out)
-                        c_out = self.actor_mlp(c_out)
+                        c_out = self.critic_mlp(c_out)
                 else:
                     a_out = self.actor_mlp(a_out)
-                    c_out = self.actor_mlp(c_out)
+                    c_out = self.critic_mlp(c_out)
                             
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
@@ -410,7 +409,9 @@ class A2CBuilder(NetworkBuilder):
                     self.space_config = params['space']['continuous']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
-                
+            else:
+                self.is_discrete = False
+                self.is_continuous = False                
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
