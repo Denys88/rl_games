@@ -151,8 +151,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         action_log_probs, values, entropy, mu, sigma,_ = self.model(batch_dict)
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-        values = torch.squeeze(values)
+        
         c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)

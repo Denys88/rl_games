@@ -34,7 +34,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.central_value_config['network'], 
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.central_value_config['network'], 
                                     self.central_value_config, self.writer, lambda obs, rms: self._preproc_obs(obs, rms))
 
         if self.has_curiosity:
@@ -192,7 +192,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-        values = torch.squeeze(values)
         if self.has_central_value:
             c_loss = torch.zeros(1).cuda()
         else:

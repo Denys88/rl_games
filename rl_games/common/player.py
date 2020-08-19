@@ -9,7 +9,10 @@ class BasePlayer(object):
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env = self.create_env()
-        self.observation_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.env)
+        self.env_info = env_configurations.get_env_info(self.env)
+        self.action_space = self.env_info['action_space']
+        self.num_agents= self.env_info['agents']
+        self.observation_space = self.env_info['observation_space']
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
         self.states = None
@@ -28,6 +31,8 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
+        if isinstance(obs, dict):
+            obs = obs['obs']
         if obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.is_tensor_obses:
@@ -40,6 +45,8 @@ class BasePlayer(object):
 
     def env_reset(self, env):
         obs = env.reset()
+        if isinstance(obs, dict):
+            obs = obs['obs']
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         else:
