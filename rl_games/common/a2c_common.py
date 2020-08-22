@@ -60,7 +60,7 @@ class A2CBase:
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
         self.print_stats = config.get('print_stats', True)
-
+        self.rnn_states = None
         self.name = base_name
         
         self.ppo = config['ppo']
@@ -722,11 +722,8 @@ class ContinuousA2CBase(A2CBase):
                 if full_tensor:
                     break
 
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                actions, values, neglogpacs, _, self.rnn_states = self.get_masked_action_values(self.obs, masks)
-            else:
-                actions, values, neglogpacs, self.rnn_states = self.get_action_values(self.obs)
+
+            actions, values, neglogpacs, mu, sigma, self.rnn_states = self.get_action_values(self.obs)
                 
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
@@ -810,6 +807,7 @@ class ContinuousA2CBase(A2CBase):
             mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
             fdones[non_finished] = fdones[non_finished] * 0.0
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
+            
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
 
         mb_returns = mb_advs + mb_extrinsic_values

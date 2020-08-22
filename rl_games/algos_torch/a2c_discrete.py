@@ -23,7 +23,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.model = self.network.build(config)
         self.model.cuda()
 
-        self.rnn_states = None
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)

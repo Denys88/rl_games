@@ -267,7 +267,7 @@ class A2CBuilder(NetworkBuilder):
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
                         a_out = self.actor_mlp(a_out)
-                        c_out = self.critc_mlp(c_out)
+                        c_out = self.critic_mlp(c_out)
 
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length

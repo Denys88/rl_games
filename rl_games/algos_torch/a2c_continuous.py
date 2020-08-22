@@ -86,7 +86,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         }
 
         with torch.no_grad():
-            neglogp, value, action, logits, mu, sigma, rnn_states = self.model(input_dict)
+            neglogp, value, action, mu, sigma, rnn_states = self.model(input_dict)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -117,7 +117,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'rnn_states' : self.rnn_states
             }
             with torch.no_grad():
-                _, value, _, _, _,_,_ = self.model(input_dict)
+                _, value, _, _, _,_ = self.model(input_dict)
             return value.detach().cpu()
 
     def get_weights(self):
@@ -150,7 +150,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs' : obs_batch,
         }
 
-
+        rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
