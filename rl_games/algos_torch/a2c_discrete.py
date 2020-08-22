@@ -78,15 +78,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.central_value_net.load_state_dict(checkpoint['assymetric_vf_nets'])
         if self.has_curiosity:
             self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
-            for state in self.rnd_curiosity.optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.cuda()
         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.cuda()
+
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])

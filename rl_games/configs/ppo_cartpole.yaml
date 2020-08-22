@@ -43,9 +43,9 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 32
-    steps_num: 128
-    minibatch_size: 512
+    num_actors: 2
+    steps_num: 32
+    minibatch_size: 16
     mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
