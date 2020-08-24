@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/3m'
+  load_checkpoint: True
+  load_path: 'nn/last_3s_vs_5z_cvep=10001rew=9.585825.pth'
 
   network:
     name: actor_critic
@@ -25,7 +25,7 @@ params:
         name:  'None'
 
   config:
-    name: 8m_cv
+    name: 3s_vs_5z_cv
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -34,7 +34,7 @@ params:
     learning_rate: 5e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.01
     truncate_grads: True
     env_name:  smac
     ppo: true
@@ -42,7 +42,7 @@ params:
     clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 4096 # 3 * 512
+    minibatch_size: 1536 # 3 * 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
@@ -51,7 +51,7 @@ params:
     seq_len: 2
     use_action_masks: True
     ignore_dead_batches : False
-    max_epochs: 10000
+    max_epochs: 30000
 
 
     central_value_config:
@@ -73,7 +73,7 @@ params:
             name:  'None'
 
     env_config:
-      name: 8m
+      name: 3s_vs_5z
       frames: 1
       transpose: False
       random_invalid_step: False

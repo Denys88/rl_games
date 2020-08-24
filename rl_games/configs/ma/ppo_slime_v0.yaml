@@ -6,49 +6,50 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn'
 
   network:
     name: actor_critic
     separate: True
+    #normalization: layer_norm
     space: 
       discrete:
 
     mlp:
-      units: [64]
+      units: [256, 128]
       activation: relu
       initializer:
         name: variance_scaling_initializer
-        scale: 2
+        scale: 2 
       regularizer:
-        name: 'None'
-    rnn:
-      name: 'lstm'
-      units: 64
-      layers: 1
-      before_mlp: False
+        name:  'None'
   config:
+    name: slime
     reward_shaper:
-        scale_value: 0.1
+        scale_value: 1
     normalize_advantage: True
     gamma: 0.99
-    tau: 0.9
-    learning_rate: 1e-4
-    name: cartpole_vel_info
-    score_to_win: 500
+    tau: 0.95
+    learning_rate: 5e-4
+    score_to_win: 20
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  CartPole-v1
+    env_name:  slime_gym
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 32
-    minibatch_size: 64
+    steps_num: 128
+    minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.008
-    normalize_input: False
-    seq_len: 4
+    lr_threshold: 0.05
+    normalize_input: True
+    seq_len: 2
+    use_action_masks: False
+    ignore_dead_batches : False
+
+    env_config:
+      name: SlimeVolley-v0

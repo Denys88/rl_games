@@ -889,8 +889,8 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                #game_indexes = game_indexes[permutation]
+                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]

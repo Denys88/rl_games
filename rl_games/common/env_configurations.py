@@ -7,6 +7,8 @@ import numpy as np
 #FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
+
+
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -30,33 +32,7 @@ class HCRewardEnv(gym.RewardWrapper):
         return observation, self.reward(reward), done, info
 
     def reward(self, reward):
-       # print('reward:', reward)
-        '''
-        if reward < 0.005:
-            self.stops_decay = 0
-            self.num_stops += 1
-            #print('stops:', self.num_stops)
-            return -0.1
-        self.stops_decay += 1
-        if self.stops_decay == self.max_stops:
-            self.num_stops = 0
-            self.stops_decay = 0
-        '''
         return np.max([-10, reward])
-class HCObsEnv(gym.ObservationWrapper):
-    def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
-
-    def observation(self, observation):
-        obs = observation - [ 0.1193, -0.001 ,  0.0958, -0.0052, -0.629 , -0.01  ,  0.1604, -0.0205,
-  0.7094,  0.6344,  0.0091,  0.1617, -0.0001,  0.7018,  0.4293,  0.3909,
-  0.3776,  0.3662,  0.3722,  0.4043,  0.4497,  0.6033,  0.7825,  0.9575]
-
-        obs = obs / [0.3528, 0.0501, 0.1561, 0.0531, 0.2936, 0.4599, 0.6598, 0.4978, 0.454 ,
- 0.7168, 0.3419, 0.6492, 0.4548, 0.4575, 0.1024, 0.0716, 0.0918, 0.11  ,
- 0.1289, 0.1501, 0.1649, 0.191 , 0.2036, 0.1095]
-        obs = np.clip(obs, -5.0, 5.0)
-        return obs
 
 
 class DMControlReward(gym.RewardWrapper):
@@ -112,6 +88,15 @@ def create_default_gym_env(**kwargs):
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
     return env 
+
+def create_slime_gym_env(**kwargs):
+    import slimevolleygym
+    name = kwargs.pop('name')
+    is_procgen = kwargs.pop('procgen', False)
+    limit_steps = kwargs.pop('limit_steps', False)
+    env = gym.make(name, **kwargs)
+    env.atari_mode = True
+    return env
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -203,6 +188,7 @@ def create_flex(path):
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
+    transpose = kwargs.pop('transpose', False)
     env = SMACEnv(name, **kwargs)
     #env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=True)
     return env
@@ -335,6 +321,10 @@ configurations = {
     },
     'atari_gym' : {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'slime_gym' : {
+        'env_creator' : lambda **kwargs : create_slime_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
 }

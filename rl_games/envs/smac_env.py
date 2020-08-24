@@ -4,12 +4,13 @@ from smac.env import StarCraft2Env
 
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m", replay_save_freq=4000, **kwargs):
+    def __init__(self, name="3m", replay_save_freq=10000, **kwargs):
         gym.Env.__init__(self)
         self.seed = kwargs.pop('seed', None)
-        self.reward_sparse = kwargs.pop('reward_sparse', False)
+        self.reward_sparse = kwargs.get('reward_sparse', False)
         self.use_central_value = kwargs.pop('central_value', False)
-        self.env = StarCraft2Env(map_name=name, seed=self.seed, reward_sparse=self.reward_sparse)
+        self.random_invalid_step = kwargs.pop('random_invalid_step', False)
+        self.env = StarCraft2Env(map_name=name, seed=self.seed, **kwargs)
         self.env_info = self.env.get_env_info()
         self.replay_save_freq = replay_save_freq
         self._game_num = 0
@@ -19,7 +20,7 @@ class SMACEnv(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
         self.state_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['state_shape'], ), dtype=np.float32)
 
-        self.random_invalid_step = kwargs.pop('random_invalid_step', False)
+        
 
         self.obs_dict = {}
 

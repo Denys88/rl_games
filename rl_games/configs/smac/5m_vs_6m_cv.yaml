@@ -25,7 +25,7 @@ params:
         name:  'None'
 
   config:
-    name: 8m_cv
+    name: 5m_vs_6m_cv
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -52,12 +52,6 @@ params:
     use_action_masks: True
     ignore_dead_batches : False
     #max_epochs: 10000
-    env_config:
-      name: 5m_vs_6m
-      frames: 1
-      transpose: False
-      random_invalid_step: False
-      central_value: True
 
     central_value_config:
       minibatch_size: 512
@@ -76,3 +70,12 @@ params:
             scale: 2 
           regularizer:
             name:  'None'
+
+    env_config:
+      name: 5m_vs_6m
+      #frames: 1
+      transpose: False
+      random_invalid_step: False
+      central_value: True
+      reward_only_positive: False
+      obs_last_action: True
