@@ -34,7 +34,12 @@ class IsaacEnv(IVecEnv):
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
-        self.obs = self.env.reset()
+
+        res = self.env.reset()
+        if isinstance(res, tuple):
+            self.obs, self.central_state = res
+        else:
+            self.obs = res
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)

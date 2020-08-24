@@ -164,6 +164,7 @@ class StagHuntEnv(MultiAgentEnv, gym.Env):
 
     # ---------- INTERACTION METHODS -----------------------------------------------------------------------------------
     def reset(self):
+
         # Reset old episode
         self.prey_alive.fill(1)
         self.agents_not_frozen.fill(1)
@@ -188,7 +189,9 @@ class StagHuntEnv(MultiAgentEnv, gym.Env):
                 random.randint(0, len(self.ghost_indicator_potential_positions)-1)].tolist()
 
         # self.step(th.zeros(self.n_agents).fill_(self.action_labels['stay']))
-        return self.get_obs(), self.get_state()
+        ret = self.get_obs(), self.get_state()
+
+        return ret
 
     def get_number_of_agents(self):
         return self.n_agents

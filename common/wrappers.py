@@ -278,8 +278,10 @@ class BatchedFrameStack(gym.Wrapper):
             if self.flatten:
                 frames = np.array(self.frames)
                 shape = np.shape(frames)
+                print("DBG? FRAME SHAPE WRAPPER:", shape)
                 frames = np.transpose(self.frames, (1, 0, 2))
                 frames = np.reshape(self.frames, (shape[1], shape[0] * shape[2]))
+                print("DBG? FRAMES:", frames.shape)
             else:
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
