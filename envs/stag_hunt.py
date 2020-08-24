@@ -200,7 +200,7 @@ class StagHuntEnv(MultiAgentEnv, gym.Env):
 
         """ Execute a*bs actions in the environment. """
         actions = np.expand_dims(actions, axis=1)# MOD
-        print("AcTIONS: ", actions)
+        # print("AcTIONS: ", actions)
         if not self.batch_mode:
             actions = np.expand_dims(np.asarray(actions.cpu(), dtype=int_type), axis=1)
         assert len(actions.shape) == 2 and actions.shape[0] == self.n_agents and actions.shape[1] == self.batch_size, \
