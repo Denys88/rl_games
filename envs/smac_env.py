@@ -32,7 +32,6 @@ class SMACEnv(gym.Env):
         self._game_num += 1
         obs, state = self.env.reset()
         obses = self._preproc_state_obs(state, obs)
-
         return obses
 
     def _preproc_actions(self, actions):

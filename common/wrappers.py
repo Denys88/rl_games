@@ -1,7 +1,9 @@
 import numpy as np
 import os
+
 os.environ.setdefault('PATH', '')
 from collections import deque
+
 import gym
 from gym import spaces
 import cv2
@@ -10,6 +12,22 @@ from copy import copy
 cv2.ocl.setUseOpenCL(False)
 
 
+class LimitStepsWrapper(gym.Wrapper):
+    def __init__(self, env, limit=200):
+        gym.RewardWrapper.__init__(self, env)
+
+        self.limit = limit
+        self.steps = 0
+
+    def reset(self, **kwargs):
+        self.steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        if done and reward == 0:
+            reward = -0.1
+        return observation, reward, done, info
 
 
 class NoopResetEnv(gym.Wrapper):
@@ -29,7 +47,7 @@ class NoopResetEnv(gym.Wrapper):
         if self.override_num_noops is not None:
             noops = self.override_num_noops
         else:
-            noops = self.unwrapped.np_random.randint(1, self.noop_max + 1) #pylint: disable=E1101
+            noops = self.unwrapped.np_random.randint(1, self.noop_max + 1)  # pylint: disable=E1101
         assert noops > 0
         obs = None
         for _ in range(noops):
@@ -40,6 +58,7 @@ class NoopResetEnv(gym.Wrapper):
 
     def step(self, ac):
         return self.env.step(ac)
+
 
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
@@ -61,6 +80,7 @@ class FireResetEnv(gym.Wrapper):
     def step(self, ac):
         return self.env.step(ac)
 
+
 class EpisodicLifeEnv(gym.Wrapper):
     def __init__(self, env):
         """Make end-of-life == end-of-episode, but only reset on True game over.
@@ -68,7 +88,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         """
         gym.Wrapper.__init__(self, env)
         self.lives = 0
-        self.was_real_done  = True
+        self.was_real_done = True
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -97,18 +117,40 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = self.env.unwrapped.ale.lives()
         return obs
 
+
+class EpisodeStackedEnv(gym.Wrapper):
+    def __init__(self, env):
+
+        gym.Wrapper.__init__(self, env)
+        self.max_stacked_steps = 1000
+        self.current_steps = 0
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if reward == 0:
+            self.current_steps += 1
+        else:
+            self.current_steps = 0
+        if self.current_steps == self.max_stacked_steps:
+            self.current_steps = 0
+            print('max_stacked_steps!')
+            done = True
+            reward = -1
+            obs = self.env.reset()
+        return obs, reward, done, info
+
+
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env,skip=4, use_max = True):
+    def __init__(self, env, skip=4, use_max=True):
         """Return only every `skip`-th frame"""
         gym.Wrapper.__init__(self, env)
-        self.use_max = use_max 
+        self.use_max = use_max
         # most recent raw observations (for max pooling across time steps)
         if self.use_max:
-            self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.uint8)
+            self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
         else:
-            self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.float32)
-        self._skip       = skip
-        
+            self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.float32)
+        self._skip = skip
 
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
@@ -137,6 +179,7 @@ class MaxAndSkipEnv(gym.Wrapper):
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)
 
+
 class ClipRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -144,6 +187,7 @@ class ClipRewardEnv(gym.RewardWrapper):
     def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
         return np.sign(reward)
+
 
 class WarpFrame(gym.ObservationWrapper):
     def __init__(self, env, width=84, height=84, grayscale=True):
@@ -154,10 +198,10 @@ class WarpFrame(gym.ObservationWrapper):
         self.grayscale = grayscale
         if self.grayscale:
             self.observation_space = spaces.Box(low=0, high=255,
-                shape=(self.height, self.width, 1), dtype=np.uint8)
+                                                shape=(self.height, self.width, 1), dtype=np.uint8)
         else:
             self.observation_space = spaces.Box(low=0, high=255,
-                shape=(self.height, self.width, 3), dtype=np.uint8)
+                                                shape=(self.height, self.width, 3), dtype=np.uint8)
 
     def observation(self, frame):
         if self.grayscale:
@@ -167,8 +211,9 @@ class WarpFrame(gym.ObservationWrapper):
             frame = np.expand_dims(frame, -1)
         return frame
 
+
 class FrameStack(gym.Wrapper):
-    def __init__(self, env, k, flat = False):
+    def __init__(self, env, k, flat=False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -184,15 +229,16 @@ class FrameStack(gym.Wrapper):
         if isinstance(observation_space, gym.spaces.dict.Dict):
             observation_space = observation_space['observations']
         self.shp = shp = observation_space.shape
-        #TODO: remove consts -1 and 1
+        # TODO: remove consts -1 and 1
         if flat:
-            self.observation_space = spaces.Box(low=-1, high=1, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
+            self.observation_space = spaces.Box(low=-1, high=1, shape=(shp[:-1] + (shp[-1] * k,)),
+                                                dtype=observation_space.dtype)
         else:
             if len(shp) == 1:
                 self.observation_space = spaces.Box(low=-1, high=1, shape=(k, shp[0]), dtype=observation_space.dtype)
             else:
-                self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
-
+                self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)),
+                                                    dtype=observation_space.dtype)
 
     def reset(self):
         ob = self.env.reset()
@@ -212,15 +258,16 @@ class FrameStack(gym.Wrapper):
         else:
             if len(self.shp) == 1:
                 res = np.concatenate([f[..., np.newaxis] for f in self.frames], axis=-1)
-                #print('shape:', np.shape(res))
-                #print('shape:', np.shape(np.transpose(res)))
+                # print('shape:', np.shape(res))
+                # print('shape:', np.shape(np.transpose(res)))
                 return np.transpose(res)
             else:
                 return np.concatenate(self.frames, axis=-1)
-        #return LazyFrames(list(self.frames))
+        # return LazyFrames(list(self.frames))
+
 
 class BatchedFrameStack(gym.Wrapper):
-    def __init__(self, env, k, transpose = False, flatten = False):
+    def __init__(self, env, k, transpose=False, flatten=False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -231,76 +278,97 @@ class BatchedFrameStack(gym.Wrapper):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
-        self.state_frames = deque([], maxlen=k)
         self.shp = shp = env.observation_space.shape
-        self.shps = shps = env.central_state_space.shape
         self.transpose = transpose
         self.flatten = flatten
         if transpose:
-            assert(not flatten)
+            assert (not flatten)
             self.observation_space = spaces.Box(low=0, high=1, shape=(shp[0], k), dtype=env.observation_space.dtype)
-            self.central_state_space = spaces.Box(low=0, high=1, shape=(shps[0], k), dtype=env.central_state_space.dtype)
         else:
             if flatten:
-                self.observation_space = spaces.Box(low=0, high=1, shape=(k *shp[0],),
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k * shp[0],),
                                                     dtype=env.observation_space.dtype)
-                self.central_state_space = spaces.Box(low=0, high=1, shape=(k * shps[0],),
-                                                    dtype=env.central_state_space.dtype)
             else:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
-                self.central_state_space= spaces.Box(low=0, high=1, shape=(k, shps[0]), dtype=env.central_state_space.dtype)
 
     def reset(self):
         ob = self.env.reset()
+        # print("OBLN:", len(ob))
+        if len(ob) == 2:
+            ob = ob[0] # in case env reset returns obs, state
+        # print("OBSHP:", ob.shape)
         for _ in range(self.k):
             self.frames.append(ob)
-        state = self.env.get_state()
-        for _ in range(self.k):
-            self.state_frames.append(state)
         return self._get_ob()
-
-    def get_state(self):
-        return self._get_state()
 
     def step(self, action):
         ob, reward, done, info = self.env.step(action)
         self.frames.append(ob)
-        state = self.env.get_state()
-        self.state_frames.append(state)
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
+
         assert len(self.frames) == self.k
         if self.transpose:
-            # print("oframe dims:", np.array(self.frames).shape)
             frames = np.transpose(self.frames, (1, 2, 0))
         else:
             if self.flatten:
                 frames = np.array(self.frames)
+                # print("SELFFRAMES 1: ", frames.shape)
+                # print("SELFFRAMES 2: ", self.frames[0])
                 shape = np.shape(frames)
-                print("DBG? FRAME SHAPE WRAPPER:", shape)
-                frames = np.transpose(self.frames, (1, 0, 2))
-                frames = np.reshape(self.frames, (shape[1], shape[0] * shape[2]))
-                print("DBG? FRAMES:", frames.shape)
+                frames = np.transpose(frames, (1, 0, 2))
+                frames = np.reshape(frames, (shape[1], shape[0] * shape[2]))
             else:
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
-    def _get_state(self):
-        assert len(self.state_frames) == self.k
-        s_frames = np.repeat(np.array(self.state_frames)[:, np.newaxis], self.env.n_agents, axis=1)
-        if self.transpose:
-            # print("oframe dims:", np.array(self.frames).shape)
-            frames = np.transpose(s_frames, (1, 2, 0))
+
+class ProcgenStack(gym.Wrapper):
+    def __init__(self, env, k=2, greyscale=True):
+        gym.Wrapper.__init__(self, env)
+        self.k = k
+        self.curr_frame = 0
+        self.frames = deque([], maxlen=k)
+
+        self.greyscale = greyscale
+        self.prev_frame = None
+        shp = env.observation_space.shape
+        if greyscale:
+            shape = (shp[:-1] + (shp[-1] + k - 1,))
         else:
-            if self.flatten:
-                frames = np.array(s_frames)
-                shape = np.shape(frames)
-                frames = np.transpose(s_frames, (1, 0, 2))
-                frames = np.reshape(s_frames, (shape[1], shape[0] * shape[2]))
-            else:
-                frames = np.transpose(s_frames, (1, 0, 2))
-        return frames
+            shape = (shp[:-1] + (shp[-1] * k,))
+        self.observation_space = spaces.Box(low=0, high=255, shape=shape, dtype=np.uint8)
+
+    def reset(self):
+        frames = self.env.reset()
+        self.frames.append(frames)
+
+        if self.greyscale:
+            self.prev_frame = np.expand_dims(cv2.cvtColor(frames, cv2.COLOR_RGB2GRAY), axis=-1)
+            for _ in range(self.k - 1):
+                self.frames.append(self.prev_frame)
+        else:
+            for _ in range(self.k - 1):
+                self.frames.append(frames)
+
+        return self._get_ob()
+
+    def step(self, action):
+        frames, reward, done, info = self.env.step(action)
+
+        if self.greyscale:
+            self.frames[self.k - 1] = self.prev_frame
+            self.prev_frame = np.expand_dims(cv2.cvtColor(frames, cv2.COLOR_RGB2GRAY), axis=-1)
+
+        self.frames.append(frames)
+        return self._get_ob(), reward, done, info
+
+    def _get_ob(self):
+        assert len(self.frames) == self.k
+        stacked_frames = np.concatenate(self.frames, axis=-1)
+        return stacked_frames
+
 
 class ScaledFloatFrame(gym.ObservationWrapper):
     def __init__(self, env):
@@ -311,6 +379,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
+
 
 class LazyFrames(object):
     def __init__(self, frames):
@@ -340,6 +409,7 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
+
 class ReallyDoneWrapper(gym.Wrapper):
     def __init__(self, env):
         """
@@ -348,7 +418,7 @@ class ReallyDoneWrapper(gym.Wrapper):
         self.old_env = env
         gym.Wrapper.__init__(self, env)
         self.lives = 0
-        self.was_real_done  = True
+        self.was_real_done = True
 
     def step(self, action):
         old_lives = self.env.unwrapped.ale.lives()
@@ -362,6 +432,7 @@ class ReallyDoneWrapper(gym.Wrapper):
         done = lives == 0
         return obs, reward, done, info
 
+
 class AllowBacktracking(gym.Wrapper):
     """
     Use deltas in max(X) as the reward, rather than deltas
@@ -369,17 +440,18 @@ class AllowBacktracking(gym.Wrapper):
     from exploring backwards if there is no way to advance
     head-on in the level.
     """
+
     def __init__(self, env):
         super(AllowBacktracking, self).__init__(env)
         self._cur_x = 0
         self._max_x = 0
 
-    def reset(self, **kwargs): # pylint: disable=E0202
+    def reset(self, **kwargs):  # pylint: disable=E0202
         self._cur_x = 0
         self._max_x = 0
         return self.env.reset(**kwargs)
 
-    def step(self, action): # pylint: disable=E0202
+    def step(self, action):  # pylint: disable=E0202
         obs, rew, done, info = self.env.step(action)
         self._cur_x += rew
         rew = max(0, self._cur_x - self._max_x)
@@ -397,6 +469,7 @@ def unwrap(env):
     else:
         return env
 
+
 class StickyActionEnv(gym.Wrapper):
     def __init__(self, env, p=0.25):
         super(StickyActionEnv, self).__init__(env)
@@ -413,6 +486,7 @@ class StickyActionEnv(gym.Wrapper):
         self.last_action = action
         obs, reward, done, info = self.env.step(action)
         return obs, reward, done, info
+
 
 class MontezumaInfoWrapper(gym.Wrapper):
     def __init__(self, env, room_address):
@@ -438,6 +512,30 @@ class MontezumaInfoWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
+
+class MaskVelocityWrapper(gym.ObservationWrapper):
+    """
+    Gym environment observation wrapper used to mask velocity terms in
+    observations. The intention is the make the MDP partially observatiable.
+    """
+
+    def __init__(self, env, name):
+        super(MaskVelocityWrapper, self).__init__(env)
+        if name == "CartPole-v1":
+            self.mask = np.array([1., 0., 1., 0.])
+        elif name == "Pendulum-v0":
+            self.mask = np.array([1., 1., 0.])
+        elif name == "LunarLander-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1, ])
+        elif name == "LunarLanderContinuous-v2":
+            self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1, ])
+        else:
+            raise NotImplementedError
+
+    def observation(self, observation):
+        return observation * self.mask
+
+
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     env = gym.make(env_id)
     if 'Montezuma' in env_id:
@@ -445,16 +543,18 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
     if directory != None:
-        env = gym.wrappers.Monitor(env,directory=directory,force=True)
+        env = gym.wrappers.Monitor(env, directory=directory, force=True)
     if not timelimit:
         env = env.env
-    #assert 'NoFrameskip' in env.spec.id
+    # assert 'NoFrameskip' in env.spec.id
     if noop_max > 0:
         env = NoopResetEnv(env, noop_max=noop_max)
     env = MaxAndSkipEnv(env, skip=skip)
+    # env = EpisodeStackedEnv(env)
     return env
 
-def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False):
+
+def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
@@ -471,7 +571,6 @@ def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, 
     return env
 
 
-
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
     """
@@ -484,13 +583,16 @@ def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
         env = FrameStack(env, 4)
     return env
 
+
 def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
+
 def make_atari_deepmind(env_id, noop_max=0, skip=4):
     env = make_atari(env_id, noop_max=noop_max, skip=skip)
     return wrap_deepmind(env, clip_rewards=True)
+
 
 # turned off episode life to make a video, need to use ReallyDoneWrapper
 def make_atari_deepmind_test(env_id, noop_max=30, skip=4, directory='video_dddqn05'):

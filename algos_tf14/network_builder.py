@@ -154,7 +154,9 @@ class NetworkBuilder:
         out = input
         ind = 0
         print('_build_cnn1d')
+        print("NETWORK BUILDER START")
         for conv in convs:
+            print("CONV: ", conv)
             ind += 1
             config = conv.copy()
             config['activation'] = self.activations_factory.create(activation)
@@ -163,12 +165,14 @@ class NetworkBuilder:
             config['name'] = name + str(ind)
             # config['bias_initializer'] = tf.random_uniform_initializer,
             # bias_initializer=tf.random_uniform_initializer(-0.1, 0.1)
+            print("OUT:", out)
             out = tf.layers.conv1d(inputs=out, **config)
             print('shapes of layer_' + str(ind), str(out.get_shape().as_list()))
             if norm_func_name == 'layer_norm':
                 out = tf.contrib.layers.layer_norm(out)
             elif norm_func_name == 'batch_norm':
                 out = tf.layers.batch_normalization(out, training=is_train)
+        print("LAST OUT:", out)
         return out
 
 

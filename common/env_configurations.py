@@ -212,6 +212,13 @@ def create_smac_cnn(name, **kwargs):
     env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
     return env
 
+def create_staghunt_cnn(name, **kwargs):
+    from envs.stag_hunt import StagHuntEnv
+    env = StagHuntEnv(1, **kwargs)
+    frames = kwargs.pop('frames', 4)
+    transpose = kwargs.pop('transpose', False)
+    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
+    return env
 
 configurations = {
     'CartPole-v1' : {
@@ -315,7 +322,7 @@ configurations = {
         'vecenv_type' : 'ISAAC'
     },
     'staghunt': {
-        'env_creator': lambda **kwargs: create_staghunt(**kwargs),
+        'env_creator': lambda **kwargs: create_staghunt_cnn(**kwargs),
         'vecenv_type': 'RAY_SMAC'
     },
     'smac' : {
