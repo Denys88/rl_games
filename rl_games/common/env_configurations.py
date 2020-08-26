@@ -95,7 +95,6 @@ def create_slime_gym_env(**kwargs):
     is_procgen = kwargs.pop('procgen', False)
     limit_steps = kwargs.pop('limit_steps', False)
     env = gym.make(name, **kwargs)
-    env.atari_mode = True
     return env
 
 def create_atari_gym_env(**kwargs):
@@ -190,7 +189,12 @@ def create_smac(name, **kwargs):
     frames = kwargs.pop('frames', 1)
     transpose = kwargs.pop('transpose', False)
     env = SMACEnv(name, **kwargs)
-    #env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=True)
+    has_cv = kwargs.get('central_value', False)
+    if frames > 1:
+        if has_cv:
+            env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=True)
+        else:
+            env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=True)
     return env
 
 def create_smac_cnn(name, **kwargs):
@@ -198,7 +202,11 @@ def create_smac_cnn(name, **kwargs):
     env = SMACEnv(name, **kwargs)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
-    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
+    if has_cv:
+        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False)
+    else:
+        env = wrappers.BatchedFrameStack(env, frames, transpose=False)
+        
     return env
 
 

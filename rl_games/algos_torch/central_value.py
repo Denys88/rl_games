@@ -54,9 +54,9 @@ class CentralValueTrain(nn.Module):
         if self.num_agents > 1:
             value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        
-        value_preds = value_preds.flatten(0)[:batch_size]
-        returns = returns.flatten(0)[:batch_size]
+            value_preds = value_preds.flatten(0)[:batch_size]
+            returns = returns.flatten(0)[:batch_size]        
+
         e_clip = input_dict.get('e_clip', 0.2)
         lr = input_dict.get('lr', self.lr)
         obs = self._preproc_obs(obs, self.running_mean_std)

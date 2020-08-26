@@ -318,6 +318,7 @@ class A2CBase:
         return self.central_value_net.get_value(obs_dict)
 
     def train_central_value(self, obs_dict):
+        obs_dict['e_clip'] = self.e_clip
         return self.central_value_net.train_net(obs_dict)
 
     def _preproc_obs(self, obs_batch, running_mean_std=None):
