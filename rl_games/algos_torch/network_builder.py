@@ -115,6 +115,7 @@ class NetworkBuilder:
                 out_channels=conv['filters'], 
                 kernel_size=conv['kernel_size'], 
                 stride=conv['strides'], padding=conv['padding']))
+                conv_func=torch.nn.Conv2d
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']

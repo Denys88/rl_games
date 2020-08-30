@@ -138,10 +138,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             return self.get_central_value(input_dict).detach().cpu()
         else:
             self.model.eval()
+            processed_obs = self._preproc_obs(obs['obs'])
             input_dict = {
                 'is_train': False,
                 'prev_actions': None, 
-                'obs' : obs['obs'],
+                'obs' : processed_obs,
                 'rnn_states' : self.rnn_states
             }
             with torch.no_grad():
