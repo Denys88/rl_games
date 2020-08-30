@@ -88,6 +88,26 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 
+
+class CoordConv2d(nn.Conv2d):
+    pool = {}
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1, bias=True):
+        super().__init__(in_channels + 2, out_channels, kernel_size, stride,
+                         padding, dilation, groups, bias)
+    @staticmethod
+    def get_coord(x):
+        key = int(x.size(0)), int(x.size(2)), int(x.size(3)), x.type()
+        if key not in CoordConv2d.pool:
+            theta = torch.Tensor([[[1, 0, 0], [0, 1, 0]]])
+            coord = torch.nn.functional.affine_grid(theta, torch.Size([1, 1, x.size(2), x.size(3)])).permute([0, 3, 1, 2]).repeat(
+                x.size(0), 1, 1, 1).type_as(x)
+            CoordConv2d.pool[key] = coord
+        return CoordConv2d.pool[key]
+    def forward(self, x):
+        return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
+                        self.padding, self.dilation, self.groups)
+
 class RangerQH(Optimizer):
     r"""Implements the QHAdam optimization algorithm `(Ma and Yarats, 2019)`_.
     Along with Hinton/Zhang Lookahead.

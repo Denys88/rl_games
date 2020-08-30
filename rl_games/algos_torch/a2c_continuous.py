@@ -105,7 +105,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             input_dict = {
                 'is_train': False,
                 'states' : states,
-                #'rnn_states' : self.rnn_states
+                'is_done': self.dones,
             }
             return self.get_central_value(input_dict).detach().cpu()
         else:

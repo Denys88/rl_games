@@ -102,14 +102,16 @@ class NetworkBuilder:
 
             if ctype == 'conv2d':
                 return self._build_cnn2d(**kwargs)
+            if ctype == 'coord_conv2d':
+                return self._build_cnn2d(conv_func=torch_ext.CoordConv2d, **kwargs)
             if ctype == 'conv1d':
                 return self._build_cnn1d(**kwargs)
 
-        def _build_cnn2d(self, input_shape, convs, activation, norm_func_name=None):
+        def _build_cnn2d(self, input_shape, convs, activation, conv_func=torch.nn.Conv2d, norm_func_name=None):
             in_channels = input_shape[0]
             layers = []
             for conv in convs:
-                layers.append(torch.nn.Conv2d(in_channels=in_channels, 
+                layers.append(conv_func(in_channels=in_channels, 
                 out_channels=conv['filters'], 
                 kernel_size=conv['kernel_size'], 
                 stride=conv['strides'], padding=conv['padding']))
@@ -349,7 +351,7 @@ class A2CBuilder(NetworkBuilder):
                 value = self.value_act(self.value(out))
 
                 if self.central_value:
-                    return value
+                    return value, states
 
                 if self.is_discrete:
                     logits = self.logits(out)

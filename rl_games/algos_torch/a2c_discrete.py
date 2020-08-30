@@ -97,7 +97,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : obs['states'],
-                    #'rnn_states' : self.rnn_states
+                    'is_done': self.dones,
                 }
                 value = self.get_central_value(input_dict)
                 
@@ -133,7 +133,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             input_dict = {
                 'is_train': False,
                 'states' : states,
-                #'rnn_states' : self.rnn_states
+                'is_done': self.dones,
             }
             return self.get_central_value(input_dict).detach().cpu()
         else:

@@ -75,7 +75,7 @@ class A2CBase:
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
-        self.seq_len = self.config['seq_len']
+        self.seq_len = self.config.get('seq_len', 4)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
        
@@ -890,8 +890,8 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                game_indexes = game_indexes[permutation]
+                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
