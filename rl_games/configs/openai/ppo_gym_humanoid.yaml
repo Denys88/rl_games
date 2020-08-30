@@ -20,7 +20,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
+      units: [400, 200, 100]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -40,7 +40,7 @@ params:
       gamma: 0.99
       tau: 0.9
       learning_rate: 3e-4
-      name: Hand_block
+      name: Humanoid
       score_to_win: 100080
       grad_norm: 1.0
       entropy_coef: 0.0
@@ -62,4 +62,4 @@ params:
       max_epochs: 10000
 
       env_config:
-        name: Ant-v3
+        name: Humanoid-v3
