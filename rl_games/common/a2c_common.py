@@ -105,7 +105,7 @@ class A2CBase:
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.last_mean_rewards = -100500
+        self.self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
@@ -600,7 +600,7 @@ class DiscreteA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
     def train(self):
-        last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
         rep_count = 0
@@ -662,22 +662,22 @@ class DiscreteA2CBase(A2CBase):
                         self.self_play_manager.update(self)
 
                     if self.save_freq > 0:
-                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= last_mean_rewards):
+                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
                             self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
 
-                    if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
+                    if mean_rewards > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
-                        last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'])
-                        if last_mean_rewards > self.config['score_to_win']:
+                        if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num
+                            return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                     print('MAX EPOCHS NUM!')
-                    return last_mean_rewards, epoch_num                               
+                    return self.last_mean_rewards, epoch_num                               
                 update_time = 0
 
 
@@ -975,7 +975,7 @@ class ContinuousA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
     
     def train(self):
-        last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
         rep_count = 0
@@ -1035,20 +1035,20 @@ class ContinuousA2CBase(A2CBase):
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
 
                     if self.save_freq > 0:
-                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= last_mean_rewards):
+                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
                             self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
 
-                    if mean_rewards > last_mean_rewards and epoch_num >= self.save_best_after:
+                    if mean_rewards > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
-                        last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'])
-                        if last_mean_rewards > self.config['score_to_win']:
+                        if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num
+                            return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                     print('MAX EPOCHS NUM!')
-                    return last_mean_rewards, epoch_num                               
+                    return self.last_mean_rewards, epoch_num                               
                 update_time = 0

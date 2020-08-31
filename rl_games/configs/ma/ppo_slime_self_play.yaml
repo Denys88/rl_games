@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn'
+  load_path: 'nn/slime_pvp.pth'
 
   network:
     name: actor_critic
@@ -30,8 +30,8 @@ params:
     normalize_advantage: True
     gamma: 0.995
     tau: 0.95
-    learning_rate: 5e-4
-    score_to_win: 5
+    learning_rate: 2e-4
+    score_to_win: 100
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
