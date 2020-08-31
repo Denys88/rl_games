@@ -105,7 +105,7 @@ class A2CBase:
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.self.last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
