@@ -14,7 +14,7 @@ class SelfPlayManager:
                 print('updating weights')
                 algo.game_rewards.clear()
                 algo.game_lengths.clear()
-                algo.self.last_mean_rewards = -100500
+                algo.last_mean_rewards = -100500
                 #algo.vec_env.set_weights(range(self.num_actors), self.get_weights())
                 algo.vec_env.set_weights([self.env_index], algo.get_weights())
                 self.env_index = (self.env_index + 1) % (algo.num_actors)
