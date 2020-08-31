@@ -1,6 +1,6 @@
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
-
+from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 import numpy as np
 import collections
 import time
@@ -11,7 +11,7 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 import torch 
 from torch import nn
-
+ 
 from time import sleep
 
 def swap_and_flatten01(arr):
@@ -56,6 +56,10 @@ class A2CBase:
             if self.state_space.shape != None:
                 self.state_shape = self.state_space.shape
 
+        self.self_play_config = self.config.get('self_play_config', None)
+        self.has_self_play_config = self.self_play_config is not None
+
+
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
@@ -86,10 +90,10 @@ class A2CBase:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
 
-        self.games_to_log = self.config.get('games_to_track', 100)
-        self.game_rewards = deque([], maxlen=self.games_to_log)
-        self.game_lengths = deque([], maxlen=self.games_to_log)
-        self.game_scores = deque([], maxlen=self.games_to_log)   
+        self.games_to_track = self.config.get('games_to_track', 100)
+        self.game_rewards = deque([], maxlen=self.games_to_track)
+        self.game_lengths = deque([], maxlen=self.games_to_track)
+        self.game_scores = deque([], maxlen=self.games_to_track)   
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
@@ -114,15 +118,19 @@ class A2CBase:
         if self.has_curiosity:
             self.curiosity_gamma = self.curiosity_config['gamma']
             self.curiosity_lr = self.curiosity_config['lr']
-            self.curiosity_rewards = deque([], maxlen=self.games_to_log)
-            self.curiosity_mins = deque([], maxlen=self.games_to_log)
-            self.curiosity_maxs = deque([], maxlen=self.games_to_log)
+            self.curiosity_rewards = deque([], maxlen=self.games_to_track)
+            self.curiosity_mins = deque([], maxlen=self.games_to_track)
+            self.curiosity_maxs = deque([], maxlen=self.games_to_track)
             self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
 
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
 
         self.is_tensor_obses = False
+
+        #self_play
+        if self.has_self_play_config:
+            self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
     def init_tensors(self):
         if self.observation_space.dtype == np.uint8:
@@ -649,6 +657,9 @@ class DiscreteA2CBase(A2CBase):
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
+
+                    if self.has_self_play_config:
+                        self.self_play_manager.update(self)
 
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= last_mean_rewards):

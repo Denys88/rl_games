@@ -16,6 +16,7 @@ class BasePlayer(object):
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
         self.states = None
+        
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -43,8 +44,7 @@ class BasePlayer(object):
                 dones = np.expand_dims(np.asarray(dones), 0)
             return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
-    def env_reset(self, env):
-        obs = env.reset()
+    def obs_to_torch(self, obs):
         if isinstance(obs, dict):
             obs = obs['obs']
         if isinstance(obs, torch.Tensor):
@@ -56,6 +56,10 @@ class BasePlayer(object):
                 obs = torch.FloatTensor(obs).cuda()
         return obs
 
+    def env_reset(self, env):
+        obs = env.reset()
+        return self.obs_to_torch(obs)
+
     def restore(self, fn):
         raise NotImplementedError('restore')
 
@@ -63,7 +67,7 @@ class BasePlayer(object):
         pass
     
     def set_weights(self, weights):
-        pass
+        torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
@@ -77,7 +81,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = True):
+    def run(self, n_games=200, n_game_life = 1, render = True, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0

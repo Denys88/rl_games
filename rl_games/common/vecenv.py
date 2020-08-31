@@ -80,6 +80,9 @@ class RayWorker:
     def get_number_of_agents(self):
         return self.env.get_number_of_agents()
 
+    def set_weights(self, weights):
+        self.env.update_weights(weights)
+
     def get_env_info(self):
         info = {}
         observation_space = self.env.observation_space
@@ -128,6 +131,12 @@ class RayVecEnv(IVecEnv):
         res = self.workers[0].get_env_info.remote()
         return ray.get(res)
 
+    def set_weights(self, indices, weights):
+        res = []
+        for ind in indices:
+            res.append(self.workers[ind].set_weights.remote(weights))
+        ray.get(res)
+
     def has_action_masks(self):
         return True
 
@@ -154,6 +163,7 @@ class RayVecSMACEnv(IVecEnv):
         env_info = ray.get(res)
 
         self.use_global_obs = env_info['use_global_observations']
+
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
         return ray.get(res)

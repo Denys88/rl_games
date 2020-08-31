@@ -91,10 +91,15 @@ def create_default_gym_env(**kwargs):
 
 def create_slime_gym_env(**kwargs):
     import slimevolleygym
+    from rl_games.envs.slimevolley_selfplay import SlimeVolleySelfplay
     name = kwargs.pop('name')
     is_procgen = kwargs.pop('procgen', False)
     limit_steps = kwargs.pop('limit_steps', False)
-    env = gym.make(name, **kwargs)
+    self_play = kwargs.pop('self_play', False)
+    if self_play:
+        env = SlimeVolleySelfplay(name, **kwargs) 
+    else:
+        env = gym.make(name, **kwargs)
     return env
 
 def create_atari_gym_env(**kwargs):
