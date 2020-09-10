@@ -26,7 +26,7 @@ class RNDCuriosityTrain(nn.Module):
         self.config = config
         self.lr = config['lr']
         self.writter = writter
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
+        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
         self._preproc_obs = _preproc_obs
         self.output_normalization = RunningMeanStd((1,), norm_only=True).cuda()
         self.frame = 0

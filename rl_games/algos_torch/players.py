@@ -19,8 +19,8 @@ class PpoPlayerContinuous(BasePlayer):
         BasePlayer.__init__(self, config)
         self.network = config['network']
         self.actions_num = self.action_space.shape[0] 
-        self.actions_low = torch.from_numpy(self.action_space.low).float().cuda()
-        self.actions_high = torch.from_numpy(self.action_space.high).float().cuda()
+        self.actions_low = torch.from_numpy(self.action_space.low).float().to(self.device)
+        self.actions_high = torch.from_numpy(self.action_space.high).float().to(self.device)
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
@@ -31,13 +31,13 @@ class PpoPlayerContinuous(BasePlayer):
             'num_seqs' : self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
         if self.is_rnn:
             self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
             self.running_mean_std.eval()
 
     def get_action(self, obs, is_determenistic = False):
@@ -86,20 +86,20 @@ class PpoPlayerDiscrete(BasePlayer):
             'num_seqs' : self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
         if self.is_rnn:
             self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
             self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = True):
         if len(obs.size()) == len(self.state_shape):
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
-        action_masks = torch.Tensor(action_masks).cuda()
+        action_masks = torch.Tensor(action_masks).to(self.device)
         input_dict = {
             'is_train': False,
             'prev_actions': None, 

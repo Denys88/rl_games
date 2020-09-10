@@ -338,12 +338,14 @@ class BatchedFrameStackWithStates(gym.Wrapper):
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
-        assert len(self.frames) == self.k
+        assert len(self.obses) == self.k
         obses = self.process_data(self.obses)
         states = self.process_data(self.states)
         return {"obs": obses, "state" : states}
 
     def process_data(self, data):
+        if len(np.shape(data)) < 3:
+            return np.array(data)
         if self.transpose:
             obses = np.transpose(data, (1, 2, 0))
         else:

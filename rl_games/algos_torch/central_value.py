@@ -25,7 +25,7 @@ class CentralValueTrain(nn.Module):
         self.normalize_input = config['normalize_input']
         self.seq_len = config.get('seq_len', 4)
         self.writter = writter
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
+        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
         self._preproc_obs = _preproc_obs
         self.frame = 0
         self.running_mean_std = None

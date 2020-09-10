@@ -19,10 +19,12 @@ class DefaultRewardsShaper:
         self.min_val = min_val
         self.max_val = max_val
         self.is_torch = is_torch
+
     def __call__(self, reward):
         
         reward = reward + self.shift_value
         reward = reward * self.scale_value
+ 
         if self.is_torch:
             import torch
             reward = torch.clamp(reward, self.min_val, self.max_val)

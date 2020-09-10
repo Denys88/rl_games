@@ -16,7 +16,14 @@ class BasePlayer(object):
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
         self.states = None
-        
+        self.player_config = self.config.get('player', None)
+        self.use_cuda = True
+        if self.player_config:
+            self.use_cuda = self.player_config.get('use_cuda', True)
+            #self.render = self.player_config.get('render', False)
+            #self.games_num = self.player_config.get('games_num', 200)
+
+        self.device = torch.device("cuda" if self.use_cuda else "cpu")
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -42,7 +49,7 @@ class BasePlayer(object):
             if np.isscalar(rewards):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(obs).cuda(), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return torch.from_numpy(obs).to(self.device), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def obs_to_torch(self, obs):
         if isinstance(obs, dict):
@@ -51,9 +58,9 @@ class BasePlayer(object):
             self.is_tensor_obses = True
         else:
             if self.observation_space.dtype == np.uint8:
-                obs = torch.ByteTensor(obs).cuda()
+                obs = torch.ByteTensor(obs).to(self.device)
             else:
-                obs = torch.FloatTensor(obs).cuda()
+                obs = torch.FloatTensor(obs).to(self.device)
         return obs
 
     def env_reset(self, env):
@@ -81,7 +88,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=200, n_game_life = 1, render = True, is_determenistic = False):
+    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0

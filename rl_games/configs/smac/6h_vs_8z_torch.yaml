@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/slime_pvp.pth'
+  load_path: 'nn/3m'
 
   network:
     name: actor_critic
@@ -14,46 +14,46 @@ params:
     #normalization: layer_norm
     space: 
       discrete:
-
     mlp:
-      units: [128,64]
-      activation: elu
+      units: [256, 256]
+      activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
         name:  'None'
+
   config:
-    name: slime_pvp2
+    name: 6h_vs_8z_separate
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
-    gamma: 0.995
+    gamma: 0.99
     tau: 0.95
-    learning_rate: 2e-4
-    score_to_win: 100
+    learning_rate: 5e-4
+    score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.01
+    entropy_coef: 0.002
     truncate_grads: True
-    env_name:  slime_gym
+    env_name:  smac
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 512
-    minibatch_size: 2048
-    mini_epochs: 4
+    steps_num: 128
+    minibatch_size: 3072 # 6 * 512
+    mini_epochs: 2
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: False
-    games_to_track: 1000
-
-    self_play_config:
-      update_score: 1.3
-      games_to_check: 100
+    normalize_input: True
+    use_action_masks: True
+    ignore_dead_batches : False
 
     env_config:
-      name: SlimeVolleyDiscrete-v0
-      #neg_scale: 1 #0.5
-      self_play: False
+      name: 6h_vs_8z
+      central_value: False
+      reward_only_positive: False
+      obs_last_action: True
+      frames: 1
+      #flatten: False

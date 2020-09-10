@@ -10,8 +10,12 @@ class SlimeVolleySelfplay(gym.Env):
         gym.Env.__init__(self)
         self.name = name
         self.is_determenistic = kwargs.pop('is_determenistic', False)
-        self.env = gym.make(name, **kwargs)
+        
         self.agent = None
+        self.pos_scale = 1
+        self.neg_scale =  kwargs.pop('neg_scale', 1)
+
+        self.env = gym.make(name, **kwargs)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
 
@@ -42,6 +46,8 @@ class SlimeVolleySelfplay(gym.Env):
         #opponent_action = np.random.randint(0, 6)
         #opponent_action = None
         obs, reward, done, info = self.env.step(action, opponent_action)
+        if reward < 0:
+            reward = reward * self.neg_scale
         self.opponent_obs = info['otherObs']
         return obs, reward, done, info
 
