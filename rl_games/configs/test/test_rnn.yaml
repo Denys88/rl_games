@@ -1,0 +1,58 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  load_checkpoint: False
+  load_path: path
+
+  network:
+    name: actor_critic
+    separate: True
+    space: 
+      discrete:
+
+    mlp:
+      units: [32]
+      activation: tanh
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+    rnn:
+      name: 'lstm'
+      units: 32
+      layers: 1
+      before_mlp: True
+  config:
+    reward_shaper:
+        scale_value: 1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 5e-4
+    name: test_rnn
+    score_to_win: 500
+    grad_norm: 0.5
+    entropy_coef: 0.005
+    truncate_grads: True
+    env_name:  test_env
+    ppo: true
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 8
+    steps_num: 128
+    minibatch_size: 512
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule:  None
+    lr_threshold: 0.008
+    normalize_input: False
+    seq_len: 16
+
+    env_config:
+      name: TestRnnEnv-v0
+      hide_object: True

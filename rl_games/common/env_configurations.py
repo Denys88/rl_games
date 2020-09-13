@@ -218,6 +218,11 @@ def create_smac_cnn(name, **kwargs):
     return env
 
 
+def create_test_env(name, **kwargs):
+    import rl_games.envs.test
+    env = gym.make(name, **kwargs)
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -341,6 +346,10 @@ configurations = {
     },
     'slime_gym' : {
         'env_creator' : lambda **kwargs : create_slime_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'test_env' : {
+        'env_creator' : lambda **kwargs : create_test_env(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'
     },
 }

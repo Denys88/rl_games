@@ -278,6 +278,12 @@ class A2CBase:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
 
+    def clear_stats(self):
+        self.game_rewards.clear()
+        self.game_lengths.clear()
+        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
+        self.last_mean_rewards = -100500
 
     def update_epoch(self):
         pass
