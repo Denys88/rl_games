@@ -788,10 +788,10 @@ class ContinuousA2CBase(A2CBase):
                      
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
-
-            for ind in done_indices:
-                game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
-                self.game_scores.append(game_res)
+            if infos is not None:
+                for ind in done_indices:
+                    game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
+                    self.game_scores.append(game_res)
 
             epinfos.append(infos)
 

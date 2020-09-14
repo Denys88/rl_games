@@ -51,7 +51,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 16
+    seq_len: 4
 
     env_config:
       name: TestRnnEnv-v0
