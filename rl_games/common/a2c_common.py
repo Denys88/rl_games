@@ -729,7 +729,6 @@ class ContinuousA2CBase(A2CBase):
                 if full_tensor:
                     break
 
-
             actions, values, neglogpacs, mu, sigma, self.rnn_states = self.get_action_values(self.obs)
                 
             values = torch.squeeze(values)
@@ -742,7 +741,10 @@ class ContinuousA2CBase(A2CBase):
                 mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
 
-            self.obs, rewards, self.dones, infos = self.env_step(actions)
+
+            clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
+            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+            self.obs, rewards, self.dones, infos = self.env_step(rescaled_actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
