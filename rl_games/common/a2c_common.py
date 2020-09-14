@@ -266,17 +266,6 @@ class A2CBase:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
 
-    def discount_values_rnn(self, indices,fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, lastgaelam, mb_advs):
-        for t in reversed(range(self.steps_num)):
-            if t == self.steps_num - 1:
-                nextnonterminal = 1.0 - fdones
-                nextvalues = last_extrinsic_values
-            else:
-                nextnonterminal = 1.0 - mb_fdones[t+1]
-                nextvalues = mb_extrinsic_values[t+1]
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
-        return mb_advs
 
     def clear_stats(self):
         self.game_rewards.clear()
