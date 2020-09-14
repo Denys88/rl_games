@@ -8,7 +8,7 @@ from rl_games.common  import common_losses
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, num_agents, num_steps, num_actors, model, config, writter, _preproc_obs):
+    def __init__(self, state_shape, num_agents, num_steps, num_actors, model, config, writter):
         nn.Module.__init__(self)
         self.num_agents, self.num_steps, self.num_actors = num_agents, num_steps, num_actors
         self.state_shape = state_shape
@@ -26,7 +26,6 @@ class CentralValueTrain(nn.Module):
         self.seq_len = config.get('seq_len', 4)
         self.writter = writter
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
-        self._preproc_obs = _preproc_obs
         self.frame = 0
         self.running_mean_std = None
         if self.normalize_input:
@@ -41,6 +40,17 @@ class CentralValueTrain(nn.Module):
             num_seqs = self.steps_num * self.num_actors // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.rnn_states]
+
+    def _preproc_obs(self, obs_batch):
+        if obs_batch.dtype == torch.uint8:
+            obs_batch = obs_batch.float() / 255.0
+        if len(obs_batch.size()) == 3:
+            obs_batch = obs_batch.permute((0, 2, 1))
+        if len(obs_batch.size()) == 4:
+            obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if self.normalize_input:
+            obs_batch = self.running_mean_std(obs_batch)
+        return obs_batch
 
     def get_value(self, input_dict):
         obs_batch = input_dict['states']

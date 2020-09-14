@@ -324,7 +324,7 @@ class A2CBase:
         obs_dict['e_clip'] = self.e_clip
         return self.central_value_net.train_net(obs_dict)
 
-    def _preproc_obs(self, obs_batch, running_mean_std=None):
+    def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
         if len(obs_batch.size()) == 3:
@@ -332,9 +332,7 @@ class A2CBase:
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
-            if running_mean_std == None:
-                running_mean_std = self.running_mean_std
-            obs_batch = running_mean_std(obs_batch)
+            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
 class DiscreteA2CBase(A2CBase):

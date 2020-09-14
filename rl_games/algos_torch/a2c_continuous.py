@@ -34,6 +34,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+
+        if self.has_central_value:
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.central_value_config['network'], 
+                                    self.central_value_config, self.writer)
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -110,10 +114,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             return self.get_central_value(input_dict).detach().cpu()
         else:
             self.model.eval()
+            processed_obs = self._preproc_obs(obs['obs'])
             input_dict = {
                 'is_train': False,
                 'prev_actions': None, 
-                'obs' : obs['obs'],
+                'obs' : processed_obs,
                 'rnn_states' : self.rnn_states
             }
             with torch.no_grad():

@@ -57,7 +57,7 @@ params:
     gamma : 0.99
     tau : 0.95
     learning_rate : 3e-4
-    name : 'ant_torch'
+    name : 'ant_torch_rnn'
     score_to_win : 20000
     grad_norm : 2.5
     entropy_coef : 0.0
@@ -73,6 +73,6 @@ params:
     clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
-    normalize_input : True
-    seq_len : 16
+    normalize_input : False
+    seq_len : 4
     bounds_loss_coef: 0.0

@@ -34,7 +34,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.central_value_config['network'], 
-                                    self.central_value_config, self.writer, lambda obs, rms: self._preproc_obs(obs, rms))
+                                    self.central_value_config, self.writer)
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
