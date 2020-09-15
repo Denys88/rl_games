@@ -16,7 +16,7 @@ params:
 
     mlp:
       units: [32]
-      activation: tanh
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2

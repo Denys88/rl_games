@@ -458,9 +458,9 @@ class DiscreteA2CBase(A2CBase):
             non_finished = (indices != self.steps_num).nonzero()
             ind_to_fill = indices[non_finished]
             mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
-            fdones[non_finished] = fdones[non_finished] * 0.0
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
-
+            fdones[non_finished] = 1.0
+            last_extrinsic_values[non_finished] = 0.0
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
 
         mb_returns = mb_advs + mb_extrinsic_values
@@ -516,8 +516,8 @@ class DiscreteA2CBase(A2CBase):
                 sum_mask = rnn_masks.sum()
                 advantages_mask = advantages * rnn_masks
                 advantages_mean = advantages_mask.sum() / sum_mask
-                advantages_std = torch.sqrt(((advantages_mask - advantages_mean)**2/(sum_mask-1)).sum())
-                advantages = (advantages - advantages_mean) / (advantages_std + 1e-8)
+                advantages_std = torch.sqrt(rnn_masks*(((advantages_mask - advantages_mean)**2)/(sum_mask-1)).sum())
+                advantages = (advantages_mask - advantages_mean) / (advantages_std + 1e-8)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             
@@ -812,8 +812,9 @@ class ContinuousA2CBase(A2CBase):
             non_finished = (indices != self.steps_num).nonzero()
             ind_to_fill = indices[non_finished]
             mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
-            fdones[non_finished] = fdones[non_finished] * 0.0
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
+            fdones[non_finished] = 1.0
+            last_extrinsic_values[non_finished] = 0.0
             
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
 
@@ -869,9 +870,8 @@ class ContinuousA2CBase(A2CBase):
                 sum_mask = rnn_masks.sum()
                 advantages_mask = advantages * rnn_masks
                 advantages_mean = advantages_mask.sum() / sum_mask
-                advantages_std = torch.sqrt(((advantages_mask - advantages_mean)**2/(sum_mask-1)).sum())
-                advantages = (advantages - advantages_mean) / (advantages_std + 1e-8)
-
+                advantages_std = torch.sqrt(rnn_masks*(((advantages_mask - advantages_mean)**2)/(sum_mask-1)).sum())
+                advantages = (advantages_mask - advantages_mean) / (advantages_std + 1e-8)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 

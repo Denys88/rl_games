@@ -28,7 +28,7 @@ params:
         fixed_sigma: True
     mlp:
       units: [64]
-      activation: tanh
+      activation: elu
 
       initializer:
         # pytorch
