@@ -16,25 +16,25 @@ params:
         mu_init:
           # pytorch
           name: variance_scaling_initializer
-          scale: 0.02
+          scale: 0.01
 
           # tf
         #  name: normc_initializer
         #  std: 0.01
         sigma_init:
-          name: const_initializer     
-          #  value: 0 # tf
+          name: const_initializer
+          # value: 0 # tf 
           val: 0 # pytorch
 
         fixed_sigma: True
     mlp:
-      units: [128]
+      units: [256,128]
       activation: elu
 
       initializer:
         # pytorch
-          name: variance_scaling_initializer
-          scale: 2
+        name: variance_scaling_initializer
+        scale: 2
 
       # tf
       #  name: normc_initializer
@@ -43,37 +43,37 @@ params:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
     rnn:
-      name: 'lstm'
+      name: lstm
       units: 64
       layers: 1
-      before_mlp: False
+      before_mlp: False  
 
   load_checkpoint: False
-  load_path: 'nn/ant_torch.pth'
+  load_path: path
 
   config:
     reward_shaper:
-      scale_value: 0.01
+      scale_value: 0.1
     normalize_advantage : True
     gamma : 0.99
     tau : 0.95
-    learning_rate : 3e-4
-    name : 'ant_torch_rnn'
+    learning_rate : 8e-4
+    name : 'humanoid_torch_rnn'
     score_to_win : 20000
-    grad_norm : 2.5
+    grad_norm : 5
     entropy_coef : -0.005
     truncate_grads : True
-    env_name : FlexAnt
+    env_name : FlexHumanoid
     ppo : True
     e_clip : 0.2
     num_actors : 256
     steps_num : 256
     minibatch_size : 8192
-    mini_epochs : 8
-    critic_coef : 2
+    mini_epochs : 4
+    critic_coef : 1
     clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
-    normalize_input : False
+    normalize_input : True
     seq_len : 64
     bounds_loss_coef: 0.000

@@ -403,6 +403,7 @@ class DiscreteA2CBase(A2CBase):
                 mb_vobs[n,:] = self.obs['states']
 
             shaped_rewards = self.rewards_shaper(rewards)
+   
             if self.is_rnn:
                 mb_actions[indices,play_mask] = actions
                 mb_neglogpacs[indices,play_mask] = neglogpacs
@@ -533,8 +534,8 @@ class DiscreteA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                game_indexes = game_indexes[permutation]
+                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
@@ -890,14 +891,16 @@ class ContinuousA2CBase(A2CBase):
         kls = []
 
         if self.is_rnn:
-            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
+            frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
+            print(frames_mask_ratio)
+            self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                #game_indexes = game_indexes[permutation]
+                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
                     batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
                     mb_indexes = game_indexes[batch]
@@ -976,23 +979,22 @@ class ContinuousA2CBase(A2CBase):
         rep_count = 0
         frame = 0
         self.obs = self.env_reset()
-
+        self.curr_frames = self.batch_size_envs
         while True:
             epoch_num = self.update_epoch()
-            frame += self.batch_size_envs
-
+            
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-
+            frame += self.curr_frames
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
                 if self.print_stats:
-                    fps_step = self.batch_size / scaled_play_time
-                    fps_total = self.batch_size / scaled_time
+                    fps_step = self.curr_frames / scaled_play_time
+                    fps_total = self.curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-                self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
+                self.writer.add_scalar('performance/total_fps', self.curr_frames / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', self.curr_frames / scaled_play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)

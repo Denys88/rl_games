@@ -25,6 +25,7 @@ class CentralValueTrain(nn.Module):
         self.normalize_input = config['normalize_input']
         self.seq_len = config.get('seq_len', 4)
         self.writter = writter
+        self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
         self.frame = 0
         self.running_mean_std = None
@@ -35,7 +36,6 @@ class CentralValueTrain(nn.Module):
         self.rnn_states = None
         assert(not self.is_rnn, 'RNN is not supported yet!')
         if self.is_rnn:
-            
             self.rnn_states = self.model.get_default_rnn_state()
             num_seqs = self.steps_num * self.num_actors // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
@@ -76,7 +76,7 @@ class CentralValueTrain(nn.Module):
         batch_size = obs.size()[0]
         value_preds = input_dict['values'].cuda()
         returns = input_dict['returns'].cuda()
-
+        actions = input_dict['actions']
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']        
 
@@ -85,7 +85,11 @@ class CentralValueTrain(nn.Module):
             returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             value_preds = value_preds.flatten(0)[:batch_size]
             returns = returns.flatten(0)[:batch_size]
+            if self.use_joint_obs_actions:
+                assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
+                actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             if self.is_rnn:
+                assert(False, 'RNN not yet supported for central value')
                 rnn_masks = input_dict['rnn_masks']
                 rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
                 rnn_masks = rnn_masks.flatten(0)[:batch_size]           
