@@ -41,15 +41,15 @@ class A2CBase:
 
         print('Env info:')
         print(self.env_info)
-        sleep(2)
 
         self.observation_space = self.env_info['observation_space']
-        
+        self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
+
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             self.state_shape = None

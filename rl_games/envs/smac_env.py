@@ -10,7 +10,7 @@ class SMACEnv(gym.Env):
         self.reward_sparse = kwargs.get('reward_sparse', False)
         self.use_central_value = kwargs.pop('central_value', False)
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
-        self.replay_save_freq = kwargs.pop('replay_save_freq', 100000)
+        self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
         self.apply_agent_ids = kwargs.pop('apply_agent_ids', False)
         self.env = StarCraft2Env(map_name=name, seed=self.seed, **kwargs)
         self.env_info = self.env.get_env_info()

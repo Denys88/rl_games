@@ -8,11 +8,12 @@ params:
   network:
     name: actor_critic
     separate: True
+    normalization: 'layer_norm'
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
-        normalization: 'layer_norm'
+        
         mu_init:
           # pytorch
           name: variance_scaling_initializer
