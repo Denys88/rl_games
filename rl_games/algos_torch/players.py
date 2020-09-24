@@ -34,6 +34,9 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
+        if self.normalize_input:
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
+            self.running_mean_std.eval()   
 
     def get_action(self, obs, is_determenistic = False):
         if len(obs.size()) == len(self.state_shape):

@@ -109,10 +109,10 @@ class BasePlayer(object):
         for _ in range(n_games):
             if games_played >= n_games:
                 break
-            s = self.env_reset(self.env)
+            obses = self.env_reset(self.env)
             batch_size = 1
-            if len(s.size()) > len(self.state_shape):
-                batch_size = s.size()[0]
+            if len(obses.size()) > len(self.state_shape):
+                batch_size = obses.size()[0]
             self.batch_size = batch_size
             self.init_rnn()
             cr = torch.zeros(batch_size, dtype=torch.float32)
@@ -120,10 +120,10 @@ class BasePlayer(object):
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
-                    action = self.get_masked_action(s, masks, is_determenistic)
+                    action = self.get_masked_action(obses, masks, is_determenistic)
                 else:
-                    action = self.get_action(s, is_determenistic)
-                s, r, done, info =  self.env_step(self.env, action)
+                    action = self.get_action(obses, is_determenistic)
+                obses, r, done, info =  self.env_step(self.env, action)
                 cr += r
                 steps += 1
 
