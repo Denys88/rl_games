@@ -94,7 +94,7 @@ class BasePlayer(object):
             rnn_states = self.model.get_default_rnn_state()
             self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
 
-    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=200000, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -105,7 +105,7 @@ class BasePlayer(object):
         
         if has_masks_func:
             has_masks = self.env.has_action_mask()
-
+        need_init_rnn = self.is_rnn
         for _ in range(n_games):
             if games_played >= n_games:
                 break
@@ -114,7 +114,9 @@ class BasePlayer(object):
             if len(obses.size()) > len(self.state_shape):
                 batch_size = obses.size()[0]
             self.batch_size = batch_size
-            self.init_rnn()
+            if need_init_rnn:
+                self.init_rnn()
+                need_init_rnn = False
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
             for _ in range(5000):
@@ -136,7 +138,6 @@ class BasePlayer(object):
                 done_count = len(done_indices)
 
                 games_played += done_count
-                
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
