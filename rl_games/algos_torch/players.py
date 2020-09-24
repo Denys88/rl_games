@@ -34,9 +34,6 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        if self.is_rnn:
-            rnn_states = model.get_default_rnn_state()
-            self.states = [torch.zeros((s.size()[0], self.num_agents * s.size()[1], s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
 
     def get_action(self, obs, is_determenistic = False):
         if len(obs.size()) == len(self.state_shape):
@@ -64,10 +61,7 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
 def reset(self):
-        if self.is_rnn:
-            rnn_states = model.get_default_rnn_state()
-            self.states = [torch.zeros((s.size()[0], self.num_agents * s.size()[1], s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
-
+    self.init_rnn()
 
 class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, config):
@@ -88,8 +82,6 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        if self.is_rnn:
-            self.states = self.model.get_default_rnn_state()
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
             self.running_mean_std.eval()      
@@ -141,6 +133,4 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
-        if self.is_rnn:
-            rnn_states = model.get_default_rnn_state()
-            self.states = [torch.zeros((s.size()[0], self.num_agents * s.size()[1], s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
+        self.init_rnn()

@@ -11,13 +11,14 @@ class BasePlayer(object):
         self.env = self.create_env()
         self.env_info = env_configurations.get_env_info(self.env)
         self.action_space = self.env_info['action_space']
-        self.num_agents= self.env_info['agents']
+        self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
         self.states = None
         self.player_config = self.config.get('player', None)
         self.use_cuda = True
+        self.batch_size = 1
         if self.player_config:
             self.use_cuda = self.player_config.get('use_cuda', True)
             #self.render = self.player_config.get('render', False)
@@ -88,7 +89,12 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=200, n_game_life = 1, render = True, is_determenistic = False):
+    def init_rnn(self):
+        if self.is_rnn:
+            rnn_states = self.model.get_default_rnn_state()
+            self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
+
+    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -107,7 +113,8 @@ class BasePlayer(object):
             batch_size = 1
             if len(s.size()) > len(self.state_shape):
                 batch_size = s.size()[0]
-            
+            self.batch_size = batch_size
+            self.init_rnn()
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
             for _ in range(5000):
