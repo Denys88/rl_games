@@ -35,6 +35,25 @@ class HCRewardEnv(gym.RewardWrapper):
         return np.max([-10, reward])
 
 
+class MinigridReward(gym.RewardWrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+        self.steps = 0
+    def reset(self, **kwargs):
+        self.steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        self.steps += 1
+        if done and (self.steps < 100) and reward == 0:
+            reward = -0.2
+            
+        return observation, self.reward(reward), done, info
+
+    def reward(self, reward):
+        return reward
+
 class DMControlReward(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -223,6 +242,29 @@ def create_test_env(name, **kwargs):
     env = gym.make(name, **kwargs)
     return env
 
+
+def create_minigrid_env(name, **kwargs):
+    import gym_minigrid
+    import gym_minigrid.wrappers
+    state_bonus = kwargs.pop('state_bonus', False)
+    action_bonus = kwargs.pop('action_bonus', False)
+    fully_obs = kwargs.pop('fully_obs', False)
+
+    env = gym.make(name, **kwargs)
+    #env = MinigridReward(env)
+    if state_bonus:
+        env = gym_minigrid.wrappers.StateBonus(env)
+    if action_bonus:
+        env = gym_minigrid.wrappers.ActionBonus(env)
+    if fully_obs:
+        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
+    else:
+        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env) # Get pixel observations
+    env = gym_minigrid.wrappers.ImgObsWrapper(env) # Get rid of the 'mission' field
+
+    print('minigird_env observation space shape:', env.observation_space)
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -350,6 +392,10 @@ configurations = {
     },
     'test_env' : {
         'env_creator' : lambda **kwargs : create_test_env(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'minigrid_env' : {
+        'env_creator' : lambda **kwargs : create_minigrid_env(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'
     },
 }

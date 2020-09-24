@@ -27,7 +27,7 @@ params:
           #  value: 0 # tf
           val: 0 # pytorch
 
-        fixed_sigma: True
+        fixed_sigma: False
     mlp:
       units: [128]
       activation: elu

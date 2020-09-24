@@ -49,8 +49,8 @@ params:
       layers: 1
       before_mlp: False  
 
-  load_checkpoint: False
-  load_path: path
+  load_checkpoint: True
+  load_path: 'nn/humanoid_torch_rnn.pth'
 
   config:
     reward_shaper:
@@ -62,7 +62,7 @@ params:
     name : 'humanoid_torch_rnn'
     score_to_win : 20000
     grad_norm : 5
-    entropy_coef : -0.005
+    entropy_coef : 0
     truncate_grads : True
     env_name : FlexHumanoid
     ppo : True
@@ -78,3 +78,5 @@ params:
     normalize_input : True
     seq_len : 64
     bounds_loss_coef: 0.000
+    weight_decay: 0.001
+    max_epochs: 6000

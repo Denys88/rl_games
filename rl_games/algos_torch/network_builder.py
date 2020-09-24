@@ -120,7 +120,7 @@ class NetworkBuilder:
                 layers.append(act)
                 in_channels = conv['filters']
                 if norm_func_name == 'layer_norm':
-                    layers.append(torch.nn.LayerNorm(in_channels))
+                    layers.append(torch_ext.LayerNorm2d(in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
             return nn.Sequential(*layers)
@@ -172,8 +172,8 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.critic_cnn = self._build_conv( **cnn_args)
 
-            in_mlp_shape = self._calc_input_size(input_shape, self.actor_cnn)
-            
+            mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
+            in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -255,6 +255,7 @@ class A2CBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
+            
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
 

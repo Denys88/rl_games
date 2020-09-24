@@ -88,7 +88,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=200, n_game_life = 1, render = True, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0

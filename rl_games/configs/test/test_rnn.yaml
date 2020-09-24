@@ -53,6 +53,7 @@ params:
     lr_threshold: 0.008
     normalize_input: True
     seq_len: 8
+    weight_decay: 0.0001
 
     env_config:
       name: TestRnnEnv-v0
