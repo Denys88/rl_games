@@ -112,11 +112,21 @@ def create_slime_gym_env(**kwargs):
     import slimevolleygym
     from rl_games.envs.slimevolley_selfplay import SlimeVolleySelfplay
     name = kwargs.pop('name')
-    is_procgen = kwargs.pop('procgen', False)
     limit_steps = kwargs.pop('limit_steps', False)
     self_play = kwargs.pop('self_play', False)
     if self_play:
         env = SlimeVolleySelfplay(name, **kwargs) 
+    else:
+        env = gym.make(name, **kwargs)
+    return env
+
+def create_connect_four_env(**kwargs):
+    from rl_games.envs.connect4_selfplay import ConnectFourSelfPlay
+    name = kwargs.pop('name')
+    limit_steps = kwargs.pop('limit_steps', False)
+    self_play = kwargs.pop('self_play', False)
+    if self_play:
+        env = ConnectFourSelfPlay(name, **kwargs) 
     else:
         env = gym.make(name, **kwargs)
     return env
@@ -396,6 +406,10 @@ configurations = {
     },
     'minigrid_env' : {
         'env_creator' : lambda **kwargs : create_minigrid_env(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'connect4_env' : {
+        'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
 }

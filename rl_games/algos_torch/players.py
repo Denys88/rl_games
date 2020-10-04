@@ -101,12 +101,13 @@ class PpoPlayerDiscrete(BasePlayer):
             'action_masks' : action_masks,
             'rnn_states' : self.states
         }
+        self.model.eval()
 
         with torch.no_grad():
             neglogp, value, action, logits, self.states = self.model(input_dict)
-        
+
         if is_determenistic:
-            return torch.argmax(logits.squeeze().detach(), axis=1)
+            return torch.argmax(logits.squeeze().detach(), axis=-1)
         else:    
             return action.squeeze()
 

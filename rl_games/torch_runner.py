@@ -118,7 +118,7 @@ class Runner:
         elif args['play']:
             print('Started to play')
 
-            player = self.player_factory.create(self.algo_name, config=self.config)
+            player = self.create_player()
             player.restore(self.load_path)
             player.run()
         else:

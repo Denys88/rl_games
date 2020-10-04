@@ -262,10 +262,10 @@ class A2CBuilder(NetworkBuilder):
             if self.separate:
                 a_out = c_out = obs
                 a_out = self.actor_cnn(a_out)
-                a_out = a_out.view(a_out.size(0), -1)
+                a_out = a_out.contiguous().view(a_out.size(0), -1)
 
                 c_out = self.critic_cnn(c_out)
-                c_out = c_out.view(c_out.size(0), -1)                    
+                c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
 
                 if self.has_rnn:
@@ -325,13 +325,10 @@ class A2CBuilder(NetworkBuilder):
 
             else:
                 out = obs
-                for l in self.actor_cnn:
-                    out = l(out)
+                out = self.actor_cnn(out)
                 out = out.flatten(1)         
+                out = self.actor_mlp(out)
 
-                for l in self.actor_mlp:
-                    out = l(out)
-                
                 if self.has_rnn:
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length

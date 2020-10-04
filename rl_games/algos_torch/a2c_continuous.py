@@ -126,10 +126,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             return value.detach().cpu()
 
     def get_weights(self):
-        return torch.nn.utils.parameters_to_vector(self.model.parameters())
-    
+        return self.model.state_dict()
+
     def set_weights(self, weights):
-        torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
+        self.model.load_state_dict(weights)
 
     def train_actor_critic(self, input_dict):
         self.set_train()

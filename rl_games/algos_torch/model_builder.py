@@ -20,7 +20,9 @@ class ModelBuilder:
         self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
         self.network_factory.register_builder('resnet_actor_critic', lambda **kwargs : network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs : network_builder.RNDCuriosityBuilder())
-        #self.network_factory.register_builder('dqn', lambda **kwargs : network_builder.DQNBuilder())
+
+        from rl_games.envs.connect4_network import ConnectBuilder
+        self.network_factory.register_builder('connect4net', lambda **kwargs : ConnectBuilder())
 
     def load(self, params):
         self.model_name = params['model']['name']

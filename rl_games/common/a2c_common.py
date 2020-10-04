@@ -268,11 +268,13 @@ class A2CBase:
 
 
     def clear_stats(self):
+        batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.last_mean_rewards = -100500
+        self.obs = self.env_reset()
 
     def update_epoch(self):
         pass
@@ -426,7 +428,10 @@ class DiscreteA2CBase(A2CBase):
             self.game_lengths.extend(self.current_lengths[done_indices])
 
             for ind in done_indices:
-                game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
+                info = infos[ind//self.num_agents]
+                game_res = 0
+                if info is not None:
+                    game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
                 self.game_scores.append(game_res)
 
             epinfos.append(infos)
@@ -977,7 +982,7 @@ class ContinuousA2CBase(A2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        frame = 0
+        self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
         while True:
@@ -985,7 +990,8 @@ class ContinuousA2CBase(A2CBase):
             
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            frame += self.curr_frames
+            self.frame += self.curr_frames
+            frame = self.frame
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time

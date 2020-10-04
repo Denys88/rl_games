@@ -72,10 +72,10 @@ class BasePlayer(object):
         raise NotImplementedError('restore')
 
     def get_weights(self):
-        pass
-    
+        return self.model.state_dict()
+
     def set_weights(self, weights):
-        torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
+        self.model.load_state_dict(weights)
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
@@ -92,9 +92,9 @@ class BasePlayer(object):
     def init_rnn(self):
         if self.is_rnn:
             rnn_states = self.model.get_default_rnn_state()
-            self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).cuda() for s in rnn_states]
+            self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).to(self.device) for s in rnn_states]
 
-    def run(self, n_games=200000, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=100, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -102,7 +102,14 @@ class BasePlayer(object):
         games_played = 0
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
-        
+
+        op_agent = getattr(self.env, "create_agent", None)
+        if op_agent:
+            agent_inited = True
+            print('setting agent weights for selfplay')
+            self.env.create_agent(self.env.config_path)
+            self.env.agent.set_weights(self.get_weights())
+
         if has_masks_func:
             has_masks = self.env.has_action_mask()
         need_init_rnn = self.is_rnn
@@ -117,8 +124,10 @@ class BasePlayer(object):
             if need_init_rnn:
                 self.init_rnn()
                 need_init_rnn = False
+
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
+
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
@@ -128,15 +137,15 @@ class BasePlayer(object):
                 obses, r, done, info =  self.env_step(self.env, action)
                 cr += r
                 steps += 1
-
+  
                 if render:
                     self.env.render(mode = 'human')
                     import time
                     time.sleep(0.005)
                 all_done_indices = done.nonzero()
+                
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
-
                 games_played += done_count
                 if done_count > 0:
                     if self.is_rnn:
