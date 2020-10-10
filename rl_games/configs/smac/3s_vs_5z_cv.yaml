@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/last_3s_vs_5z_cvep=10001rew=9.585825.pth'
 
   network:
@@ -48,9 +48,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    seq_len: 2
     use_action_masks: True
-    ignore_dead_batches : False
     max_epochs: 30000
 
 

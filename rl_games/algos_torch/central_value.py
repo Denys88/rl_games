@@ -58,7 +58,7 @@ class CentralValueTrain(nn.Module):
         #step_indices = input_dict['step_indices']
         if self.normalize_input:
             self.running_mean_std.eval()
-        obs_batch = self._preproc_obs(obs_batch, self.running_mean_std)
+        obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.model({'obs' : obs_batch, 'rnn_states': self.rnn_states})
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
@@ -77,6 +77,11 @@ class CentralValueTrain(nn.Module):
         value_preds = input_dict['values'].cuda()
         returns = input_dict['returns'].cuda()
         actions = input_dict['actions']
+
+        print('------------')
+        print(obs.size())
+        print(actions.size())
+        print('------------')
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']        
 
@@ -88,6 +93,7 @@ class CentralValueTrain(nn.Module):
             if self.use_joint_obs_actions:
                 assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
                 actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
+                actions = actions.view(self.num_agents * self.num_steps, self.num_actors)
             if self.is_rnn:
                 assert(False, 'RNN not yet supported for central value')
                 rnn_masks = input_dict['rnn_masks']
@@ -96,7 +102,7 @@ class CentralValueTrain(nn.Module):
 
         e_clip = input_dict.get('e_clip', 0.2)
         lr = input_dict.get('lr', self.lr)
-        obs = self._preproc_obs(obs, self.running_mean_std)
+        obs = self._preproc_obs(obs)
 
 
         self.frame = self.frame + 1

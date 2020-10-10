@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/connect4.pth'
+  load_checkpoint: True
+  load_path: 'nn/connect4_rn.pth'
 
   network:
     name: connect4net
@@ -47,6 +47,6 @@ params:
     env_config:
       name: connect_four_v0
       self_play: True
-      is_human: False
+      is_human: True
       random_agent: False
       config_path: 'rl_games/configs/ma/ppo_connect4_self_play_resnet.yaml'

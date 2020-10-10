@@ -42,30 +42,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.epoch_num += 1
         return self.epoch_num
 
-    def save(self, fn):
-        state = {'epoch': self.epoch_num, 'model': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict()}
-        if self.normalize_input:
-            state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.has_central_value:
-            state['assymetric_vf_nets'] = self.central_value_net.state_dict()
-        if self.has_curiosity:
-            state['rnd_nets'] = self.rnd_curiosity.state_dict()
-        torch_ext.save_scheckpoint(fn, state)
-
-    def restore(self, fn):
-        checkpoint = torch_ext.load_checkpoint(fn)
-        self.epoch_num = checkpoint['epoch']
-        self.model.load_state_dict(checkpoint['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
-        if self.has_central_value:
-            self.central_value_net.load_state_dict(checkpoint['assymetric_vf_nets'])
-        if self.has_curiosity:
-            self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-
-
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
@@ -124,12 +100,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             with torch.no_grad():
                 _, value, _, _, _,_ = self.model(input_dict)
             return value.detach().cpu()
-
-    def get_weights(self):
-        return self.model.state_dict()
-
-    def set_weights(self, weights):
-        self.model.load_state_dict(weights)
 
     def train_actor_critic(self, input_dict):
         self.set_train()

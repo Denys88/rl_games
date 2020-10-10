@@ -279,12 +279,6 @@ class A2CBase:
     def update_epoch(self):
         pass
 
-    def save(self, fn):
-        pass
-
-    def restore(self, fn):
-        pass
-
     def get_action_values(self, obs):
         pass
 
@@ -294,11 +288,6 @@ class A2CBase:
     def get_values(self, obs):
         pass
 
-    def get_weights(self):
-        pass
-    
-    def set_weights(self, weights):
-        pass
 
     def play_steps(self):
         pass
@@ -325,6 +314,49 @@ class A2CBase:
     def train_central_value(self, obs_dict):
         obs_dict['e_clip'] = self.e_clip
         return self.central_value_net.train_net(obs_dict)
+
+    def get_full_state_weights(self):
+        state = self.get_weights()
+
+        state['epoch'] = self.epoch_num
+        state['optimizer'] = self.optimizer.state_dict()      
+
+        if self.has_central_value:
+            state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+        if self.has_curiosity:
+            state['rnd_nets'] = self.rnd_curiosity.state_dict()
+        return state
+
+    def set_full_state_weights(self, weights):
+        self.set_weights(weights)
+
+        self.epoch_num = weights['epoch']
+        if self.has_central_value:
+            self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+        if self.has_curiosity:
+            self.rnd_curiosity.load_state_dict(weights['rnd_nets'])
+        self.optimizer.load_state_dict(weights['optimizer'])
+
+    def get_weights(self, only_policy=False):
+        state = {'model': self.model.state_dict()}
+
+        if self.normalize_input:
+            state['running_mean_std'] = self.running_mean_std.state_dict()
+            
+        state['epoch'] = self.epoch_num
+        state['optimizer'] = self.optimizer.state_dict()      
+
+        if self.has_central_value:
+            state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+        if self.has_curiosity:
+            state['rnd_nets'] = self.rnd_curiosity.state_dict()
+        return state
+
+    def set_weights(self, weights):
+        self.model.load_state_dict(weights['model'])
+        if self.normalize_input:
+            self.running_mean_std.load_state_dict(weights['running_mean_std'])
+
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
@@ -603,12 +635,13 @@ class DiscreteA2CBase(A2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        frame = 0
+        self.frame = 0
         self.obs = self.env_reset()
 
         while True:
             epoch_num = self.update_epoch()
-            frame += self.batch_size_envs
+            self.frame += self.batch_size_envs
+            frame = self.frame
 
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
