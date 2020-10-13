@@ -285,7 +285,7 @@ class A2CBase:
     def get_masked_action_values(self, obs, action_masks):
         pass
 
-    def get_values(self, obs):
+    def get_values(self, obs, actions=None):
         pass
 
 
@@ -473,7 +473,7 @@ class DiscreteA2CBase(A2CBase):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs)
+        last_values = self.get_values(self.obs, actions)
         last_values = torch.squeeze(last_values)
 
         if self.has_curiosity:

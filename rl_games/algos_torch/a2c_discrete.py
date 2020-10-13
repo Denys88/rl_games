@@ -33,8 +33,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.central_value_config['network'], 
-                                    self.central_value_config, self.writer)
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.central_value_config['network'], 
+                                    self.central_value_config, self.writer).cuda()
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
@@ -83,6 +83,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     'is_train': False,
                     'states' : obs['states'],
                     'is_done': self.dones,
+                    'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
                 
@@ -105,19 +106,21 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : states,
+                    'actions' : action,
                     #'rnn_states' : self.rnn_states
                 }
                 value = self.central_value_net(input_dict)
 
         return action.detach(), value.detach().cpu(), neglogp.detach(), rnn_states
 
-    def get_values(self, obs):
+    def get_values(self, obs, actions=None):
         if self.has_central_value:
             states = obs['states']
             self.central_value_net.eval()
             input_dict = {
                 'is_train': False,
                 'states' : states,
+                'actions' : actions,
                 'is_done': self.dones,
             }
             return self.get_central_value(input_dict).detach().cpu()

@@ -149,10 +149,10 @@ class A2CBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num', 0)
+            actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
-            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
+            NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
             self.critic_cnn = nn.Sequential()
@@ -173,6 +173,18 @@ class A2CBuilder(NetworkBuilder):
                     self.critic_cnn = self._build_conv( **cnn_args)
 
             mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
+
+            if self.use_joint_obs_actions:
+                emb_size = actions_num
+                num_agents = kwargs.pop('num_agents')
+                mlp_out = emb_size * num_agents // 2
+                print('mlp_out', mlp_out)
+                self.joint_actions = nn.Sequential(
+                    torch_ext.DiscreteActionsEncoder(actions_num, emb_size, num_agents),
+                    torch.nn.Linear(emb_size * num_agents, mlp_out)
+                )
+                mlp_input_shape = mlp_input_shape# + mlp_out
+
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
                 out_size = mlp_input_shape
@@ -326,7 +338,11 @@ class A2CBuilder(NetworkBuilder):
             else:
                 out = obs
                 out = self.actor_cnn(out)
-                out = out.flatten(1)         
+                out = out.flatten(1)
+                if self.use_joint_obs_actions:
+                    actions = obs_dict['actions']
+                    actions_out = self.joint_actions(actions)
+                    #out = torch.cat([out, actions_out], dim=-1)
                 out = self.actor_mlp(out)
 
                 if self.has_rnn:
@@ -402,7 +418,7 @@ class A2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.value_shape = params.get('value_shape', 1)
             self.central_value = params.get('central_value', False)
-
+            self.use_joint_obs_actions = params.get('use_joint_obs_actions', False)
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']
                 self.is_continuous = 'continuous'in params['space']

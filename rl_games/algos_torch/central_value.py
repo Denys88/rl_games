@@ -8,21 +8,25 @@ from rl_games.common  import common_losses
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, num_agents, num_steps, num_actors, model, config, writter):
+    def __init__(self, state_shape, num_agents, num_steps, num_actors, num_actions, model, config, writter):
         nn.Module.__init__(self)
         self.num_agents, self.num_steps, self.num_actors = num_agents, num_steps, num_actors
+        self.num_actions = num_actions
         self.state_shape = state_shape
         state_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
         state_config = {
             'input_shape' : state_shape,
+            'actions_num' : num_actions,
+            'num_agents' : num_agents,
         }
         self.config = config
-        self.model = model.build('cvalue', **state_config).cuda()
+        self.model = model.build('cvalue', **state_config)
         self.lr = config['lr']
         self.mini_epoch = config['mini_epochs']
         self.mini_batch = config['minibatch_size']
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
+        self.normalize_output = config.get('normalize_output', False)
         self.seq_len = config.get('seq_len', 4)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
@@ -30,7 +34,7 @@ class CentralValueTrain(nn.Module):
         self.frame = 0
         self.running_mean_std = None
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(state_shape).cuda()
+            self.running_mean_std = RunningMeanStd(state_shape)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
@@ -52,14 +56,21 @@ class CentralValueTrain(nn.Module):
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
+    def forward(self, input_dict):
+        value, rnn_states = self.model(input_dict)
+
+        return value, rnn_states
+
     def get_value(self, input_dict):
+        self.eval()
         obs_batch = input_dict['states']
         is_done = input_dict['is_done']
+        actions = input_dict['actions']
         #step_indices = input_dict['step_indices']
-        if self.normalize_input:
-            self.running_mean_std.eval()
+
         obs_batch = self._preproc_obs(obs_batch)
-        value, self.rnn_states = self.model({'obs' : obs_batch, 'rnn_states': self.rnn_states})
+        value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
+                                             'rnn_states': self.rnn_states})
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
@@ -67,21 +78,13 @@ class CentralValueTrain(nn.Module):
         return value
 
     def train_net(self, input_dict):
-        self.model.train()
-        if self.normalize_input:
-            self.running_mean_std.train()
-
-
+        self.train()
         obs = input_dict['states']
         batch_size = obs.size()[0]
         value_preds = input_dict['values'].cuda()
         returns = input_dict['returns'].cuda()
         actions = input_dict['actions']
 
-        print('------------')
-        print(obs.size())
-        print(actions.size())
-        print('------------')
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']        
 
@@ -92,8 +95,8 @@ class CentralValueTrain(nn.Module):
             returns = returns.flatten(0)[:batch_size]
             if self.use_joint_obs_actions:
                 assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
-                actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-                actions = actions.view(self.num_agents * self.num_steps, self.num_actors)
+                actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
+                actions = actions.contiguous().view(batch_size, self.num_agents)
             if self.is_rnn:
                 assert(False, 'RNN not yet supported for central value')
                 rnn_masks = input_dict['rnn_masks']
@@ -118,7 +121,7 @@ class CentralValueTrain(nn.Module):
                 obs_batch = obs[mbatch]
                 value_preds_batch = value_preds[mbatch]
                 returns_batch = returns[mbatch]
-                
+                actions_batch = actions[mbatch]
                 batch_dict = {'obs' : obs_batch}
                 batch_dict['rnn_states'] = [s[:,mb_indexes,:] for s in self.rnn_states]
                 values, _ = self.model()
@@ -140,7 +143,10 @@ class CentralValueTrain(nn.Module):
                     obs_batch = obs[batch]
                     value_preds_batch = value_preds[batch]
                     returns_batch = returns[batch]
-                    values, _ = self.model({'obs' : obs_batch})
+                    actions_batch = None
+                    if self.use_joint_obs_actions:
+                        actions_batch = actions[batch].view(mini_batch * self.num_agents)
+                    values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
                     loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                     loss = loss.mean()
                     self.optimizer.zero_grad()

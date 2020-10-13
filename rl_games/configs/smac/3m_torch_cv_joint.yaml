@@ -58,7 +58,9 @@ params:
       random_invalid_step: False
       central_value: True
       reward_only_positive: True
+
     central_value_config:
+      use_joint_obs_actions: True
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
@@ -67,6 +69,7 @@ params:
       network:
         name: actor_critic
         central_value: True
+        use_joint_obs_actions: True
         mlp:
           units: [256, 128]
           activation: relu
