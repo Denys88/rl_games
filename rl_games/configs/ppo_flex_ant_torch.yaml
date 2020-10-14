@@ -65,8 +65,9 @@ params:
     minibatch_size : 4096
     mini_epochs : 8
     critic_coef : 2
-    clip_value : True
+    clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
+    #normalize_output : True
     bounds_loss_coef: 0.0

@@ -41,6 +41,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
+        
+    def save(self, fn):
+        state = self.get_full_state_weights()
+        torch_ext.save_scheckpoint(fn, state)
+
+    def restore(self, fn):
+        checkpoint = torch_ext.load_checkpoint(fn)
+        self.set_full_state_weights(checkpoint)
 
     def get_masked_action_values(self, obs, action_masks):
         assert False
