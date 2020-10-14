@@ -48,8 +48,8 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
+    normalize_output: True
     use_action_masks: True
-    ignore_dead_batches : False
 
     env_config:
       name: 3m
@@ -69,7 +69,10 @@ params:
       network:
         name: actor_critic
         central_value: True
-        use_joint_obs_actions: True
+        joint_obs_actions:
+            embedding: False
+            embedding_scale: 1 #(actions // embedding_scale)
+            mlp_out_scale: 4 # (mlp from obs size) // mlp_out_scale
         mlp:
           units: [256, 128]
           activation: relu

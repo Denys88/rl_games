@@ -175,15 +175,15 @@ class A2CBuilder(NetworkBuilder):
             mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
 
             if self.use_joint_obs_actions:
-                emb_size = actions_num
+                use_embedding = self.joint_obs_actions_config['use_embedding'] 
+                emb_size = self.joint_obs_actions_config['embedding_out_scale'] 
                 num_agents = kwargs.pop('num_agents')
-                mlp_out = emb_size * num_agents // 2
-                print('mlp_out', mlp_out)
+                mlp_out = mlp_input_shape // self.joint_obs_actions_config['mlp_out_scale']
                 self.joint_actions = nn.Sequential(
                     torch_ext.DiscreteActionsEncoder(actions_num, emb_size, num_agents),
                     torch.nn.Linear(emb_size * num_agents, mlp_out)
                 )
-                mlp_input_shape = mlp_input_shape# + mlp_out
+                mlp_input_shape = mlp_input_shape + mlp_out
 
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
@@ -342,7 +342,7 @@ class A2CBuilder(NetworkBuilder):
                 if self.use_joint_obs_actions:
                     actions = obs_dict['actions']
                     actions_out = self.joint_actions(actions)
-                    #out = torch.cat([out, actions_out], dim=-1)
+                    out = torch.cat([out, actions_out], dim=-1)
                 out = self.actor_mlp(out)
 
                 if self.has_rnn:
@@ -418,7 +418,8 @@ class A2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.value_shape = params.get('value_shape', 1)
             self.central_value = params.get('central_value', False)
-            self.use_joint_obs_actions = params.get('use_joint_obs_actions', False)
+            self.joint_obs_actions_config = params.get('use_joint_obs_actions', None)
+            self.use_joint_obs_actions = self.joint_obs_actions_config is not None
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']
                 self.is_continuous = 'continuous'in params['space']

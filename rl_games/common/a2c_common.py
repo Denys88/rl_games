@@ -1,5 +1,7 @@
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
+
+from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 import numpy as np
 import collections
@@ -82,7 +84,8 @@ class A2CBase:
         self.seq_len = self.config.get('seq_len', 4)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
-       
+        self.normalize_output = self.config.get('normalize_output', False)
+
         self.obs_shape = self.observation_space.shape
  
         self.critic_coef = config['critic_coef']
@@ -112,6 +115,9 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
         
+        if self.normalize_output:
+            self.reward_mean_std = RunningMeanStd((1,))
+
         # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
         self.has_curiosity = self.curiosity_config is not None
@@ -242,7 +248,7 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return self.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
+            return self.obs_to_tensors(obs), rewards, dones.cpu(), infos
         else:
             return self.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
@@ -337,25 +343,21 @@ class A2CBase:
             self.rnd_curiosity.load_state_dict(weights['rnd_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
 
-    def get_weights(self, only_policy=False):
+    def get_weights(self):
         state = {'model': self.model.state_dict()}
 
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
-            
-        state['epoch'] = self.epoch_num
-        state['optimizer'] = self.optimizer.state_dict()      
-
-        if self.has_central_value:
-            state['assymetric_vf_nets'] = self.central_value_net.state_dict()
-        if self.has_curiosity:
-            state['rnd_nets'] = self.rnd_curiosity.state_dict()
+        if self.normalize_output:
+            state['reward_mean_std'] = self.reward_mean_std.state_dict()   
         return state
 
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_output:
+            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
 
 
     def _preproc_obs(self, obs_batch):
@@ -435,9 +437,11 @@ class DiscreteA2CBase(A2CBase):
 
             if self.has_central_value:
                 mb_vobs[n,:] = self.obs['states']
-
+            
             shaped_rewards = self.rewards_shaper(rewards)
-   
+            
+            if self.normalize_output:
+                shaped_rewards = self.reward_mean_std(shaped_rewards)
             if self.is_rnn:
                 mb_actions[indices,play_mask] = actions
                 mb_neglogpacs[indices,play_mask] = neglogpacs
@@ -791,6 +795,8 @@ class ContinuousA2CBase(A2CBase):
                 mb_vobs[n,:] = self.obs['states']
 
             shaped_rewards = self.rewards_shaper(rewards)
+            if self.normalize_output:
+                shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             if self.is_rnn:
                 mb_actions[indices,play_mask] = actions
