@@ -84,7 +84,7 @@ class A2CBase:
         self.seq_len = self.config.get('seq_len', 4)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
-        self.normalize_output = self.config.get('normalize_output', False)
+        self.normalize_reward = self.config.get('normalize_reward', False)
 
         self.obs_shape = self.observation_space.shape
  
@@ -115,7 +115,7 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
         
-        if self.normalize_output:
+        if self.normalize_reward:
             self.reward_mean_std = RunningMeanStd((1,))
 
         # curiosity
@@ -348,7 +348,7 @@ class A2CBase:
 
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_output:
+        if self.normalize_reward:
             state['reward_mean_std'] = self.reward_mean_std.state_dict()   
         return state
 
@@ -356,7 +356,7 @@ class A2CBase:
         self.model.load_state_dict(weights['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_output:
+        if self.normalize_reward:
             self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
 
 
@@ -440,7 +440,7 @@ class DiscreteA2CBase(A2CBase):
             
             shaped_rewards = self.rewards_shaper(rewards)
             
-            if self.normalize_output:
+            if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
             if self.is_rnn:
                 mb_actions[indices,play_mask] = actions
@@ -795,7 +795,7 @@ class ContinuousA2CBase(A2CBase):
                 mb_vobs[n,:] = self.obs['states']
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_output:
+            if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             if self.is_rnn:

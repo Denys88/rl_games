@@ -69,5 +69,5 @@ params:
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    #normalize_output : True
-    bounds_loss_coef: 0.0
+    normalize_reward : True
+    bounds_loss_coef: 0.0001

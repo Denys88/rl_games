@@ -26,7 +26,7 @@ class CentralValueTrain(nn.Module):
         self.mini_batch = config['minibatch_size']
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
-        self.normalize_output = config.get('normalize_output', False)
+        self.normalize_reward = config.get('normalize_reward', False)
         self.seq_len = config.get('seq_len', 4)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)

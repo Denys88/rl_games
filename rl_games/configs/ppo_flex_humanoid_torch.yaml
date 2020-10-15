@@ -41,12 +41,8 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn1:
-        name: gru
-        units: 64
-        layers: 1  
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/humanoid_torch.pth'
 
   config:
@@ -69,10 +65,10 @@ params:
     minibatch_size : 4096
     mini_epochs : 4
     critic_coef : 1
-    clip_value : True
+    clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : False
-    seq_len : 4
+    normalize_reward : True
     bounds_loss_coef: 0.000
     max_epochs: 12000
