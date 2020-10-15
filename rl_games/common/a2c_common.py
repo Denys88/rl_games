@@ -248,7 +248,7 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return self.obs_to_tensors(obs), rewards, dones.cpu(), infos
+            return self.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
         else:
             return self.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
 
