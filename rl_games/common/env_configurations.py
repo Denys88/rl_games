@@ -9,10 +9,7 @@ import numpy as np
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
-<<<<<<< HEAD
 
-=======
->>>>>>> master
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
