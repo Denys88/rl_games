@@ -70,7 +70,7 @@ class BasePlayer(object):
     def reset(self):
         raise NotImplementedError('raise')
 
-    def run(self, n_games=200, n_game_life = 1, render = False, is_determenistic = False):
+    def run(self, n_games=10000, n_game_life = 1, render = False, is_determenistic = False):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -106,7 +106,7 @@ class BasePlayer(object):
                     self.env.render(mode = 'human')
                     #import time
                     #time.sleep(0.05)
-                all_done_indices = done.nonzero()
+                all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
 

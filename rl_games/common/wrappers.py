@@ -56,6 +56,7 @@ class NoopResetEnv(gym.Wrapper):
     def step(self, ac):
         return self.env.step(ac)
 
+
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
         """Take action on reset for environments that are fixed until firing."""
@@ -75,6 +76,7 @@ class FireResetEnv(gym.Wrapper):
 
     def step(self, ac):
         return self.env.step(ac)
+
 
 class EpisodicLifeEnv(gym.Wrapper):
     def __init__(self, env):
@@ -112,6 +114,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.lives = self.env.unwrapped.ale.lives()
         return obs
 
+
 class EpisodeStackedEnv(gym.Wrapper):
     def __init__(self, env):
 
@@ -146,7 +149,6 @@ class MaxAndSkipEnv(gym.Wrapper):
             self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.float32)
         self._skip       = skip
         
-
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
@@ -174,6 +176,7 @@ class MaxAndSkipEnv(gym.Wrapper):
     def reset(self, **kwargs):
         return self.env.reset(**kwargs)
 
+
 class ClipRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -181,6 +184,7 @@ class ClipRewardEnv(gym.RewardWrapper):
     def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
         return np.sign(reward)
+
 
 class WarpFrame(gym.ObservationWrapper):
     def __init__(self, env, width=84, height=84, grayscale=True):
@@ -230,7 +234,6 @@ class FrameStack(gym.Wrapper):
             else:
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
 
-
     def reset(self):
         ob = self.env.reset()
         for _ in range(self.k):
@@ -255,6 +258,7 @@ class FrameStack(gym.Wrapper):
             else:
                 return np.concatenate(self.frames, axis=-1)
         #return LazyFrames(list(self.frames))
+
 
 class BatchedFrameStack(gym.Wrapper):
     def __init__(self, env, k, transpose = False, flatten = False):
@@ -464,6 +468,7 @@ class StickyActionEnv(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         return obs, reward, done, info
 
+
 class MontezumaInfoWrapper(gym.Wrapper):
     def __init__(self, env, room_address):
         super(MontezumaInfoWrapper, self).__init__(env)
@@ -488,6 +493,7 @@ class MontezumaInfoWrapper(gym.Wrapper):
     def reset(self):
         return self.env.reset()
 
+
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
     Gym environment observation wrapper used to mask velocity terms in
@@ -508,6 +514,7 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
     def observation(self, observation):
         return  observation * self.mask
+
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
     env = gym.make(env_id)
@@ -541,8 +548,6 @@ def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, s
     if frame_stack:
         env = FrameStack(env, 4)
     return env
-
-
 
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.

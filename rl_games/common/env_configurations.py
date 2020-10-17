@@ -2,10 +2,12 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 
 import gym
+from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 
 #FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
@@ -43,6 +45,8 @@ class HCRewardEnv(gym.RewardWrapper):
             self.stops_decay = 0
         '''
         return np.max([-10, reward])
+
+
 class HCObsEnv(gym.ObservationWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -111,6 +115,20 @@ def create_default_gym_env(**kwargs):
             env = wrappers.FrameStack(env, frames, False)
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
+    return env
+
+def create_goal_gym_env(**kwargs):
+    frames = kwargs.pop('frames', 1)
+    name = kwargs.pop('name')
+    limit_steps = kwargs.pop('limit_steps', False)
+
+    env = gym.make(name, **kwargs)
+    env = FlattenObservation(FilterObservation(env, ['observation', 'desired_goal']))
+
+    if frames > 1:
+        env = wrappers.FrameStack(env, frames, False)
+    if limit_steps:
+        env = wrappers.LimitStepsWrapper(env)
     return env 
 
 def create_atari_gym_env(**kwargs):
@@ -168,7 +186,7 @@ def create_quadrupped_env():
     import gym
     import roboschool
     import quadruppedEnv
-    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),4, False), 2, True)
+    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'), 4, False), 2, True)
 
 def create_roboschool_env(name):
     import gym
@@ -330,6 +348,10 @@ configurations = {
     },
     'openai_gym' : {
         'env_creator' : lambda **kwargs : create_default_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'openai_robot_gym' : {
+        'env_creator' : lambda **kwargs : create_goal_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
     'atari_gym' : {

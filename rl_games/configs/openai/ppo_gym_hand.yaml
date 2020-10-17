@@ -34,32 +34,32 @@ params:
 
   config:
       reward_shaper:
-        scale_value: 0.1
+        scale_value: 1.0
 
       normalize_advantage: True
       gamma: 0.99
       tau: 0.9
       learning_rate: 3e-4
-      name: Hand_block
-      score_to_win: 100080
+      name: HandBlockDenseXYZ
+      score_to_win: 10000
       grad_norm: 1.0
-      entropy_coef: 0.000
+      entropy_coef: 0.0
       truncate_grads: True
-      env_name:  openai_gym
+      env_name:  openai_robot_gym
       ppo: true
       e_clip: 0.2
       clip_value: True
       num_actors: 16
       steps_num: 256
       minibatch_size: 2048
-      mini_epochs: 8
+      mini_epochs: 12
       critic_coef: 2
       lr_schedule:  adaptive
       lr_threshold: 0.008
-      normalize_input: False
-      seq_len: 8
+      normalize_input: True
+      seq_len: 4
       bounds_loss_coef: 0.0001
       max_epochs: 10000
 
       env_config:
-        name: HandManipulateBlock-v0
+        name: HandVMManipulateBlockRotateXYZDense-v0
