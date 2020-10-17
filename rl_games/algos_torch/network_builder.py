@@ -47,7 +47,7 @@ class NetworkBuilder:
             self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(torch_ext.variance_scaling_initializer,**kwargs))
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
             self.init_factory.register_builder('kaiming_normal', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
-            self.init_factory.register_builder('None', lambda **kwargs : None)
+            self.init_factory.register_builder('default', lambda **kwargs : nn.Identity() )
 
         def is_separate_critic(self):
             return False
@@ -238,29 +238,20 @@ class A2CBuilder(NetworkBuilder):
             if self.has_cnn:
                 cnn_init = self.init_factory.create(**self.cnn['initializer'])
 
-            for m in self.critic_cnn:
+            for m in self.modules():
+                #if getattr(m, "bias", None) is not None:
+                #    torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
-            for m in self.actor_cnn:
-                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
-                    cnn_init(m.weight)   
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)    
 
-            for m in self.critic_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)   
-            for m in self.actor_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)
-            if self.is_discrete:
-                mlp_init(self.logits.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 if self.space_config['fixed_sigma']:
                     sigma_init(self.sigma)
                 else:
-                    sigma_init(self.sigma.weight)
-
-            mlp_init(self.value.weight)     
+                    sigma_init(self.sigma.weight)  
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
