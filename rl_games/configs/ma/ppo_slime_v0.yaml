@@ -6,56 +6,51 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/3s_vs_5z'
+  load_path: 'nn'
 
   network:
     name: actor_critic
     separate: True
-    normalization: layer_norm
+    #normalization: layer_norm
     space: 
       discrete:
-      
+
     mlp:
-      units: [256, 128]
-      activation: relu
+      units: [64,64]
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
-        name: 'None'
-    rnn:
-      name: lstm
-      units: 64
-      layers: 1
-      before_mlp: False  
+        name:  'None'
   config:
-    name: 3s_vs_5z
+    name: slime
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
     learning_rate: 1e-4
-    score_to_win: 1000
+    score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.01
+    entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac
+    env_name:  slime_gym
     ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 256
-    minibatch_size: 1536 #1024
+    steps_num: 128
+    minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.05
-    normalize_input: True
-    seq_len: 32
-    use_action_masks: True
-    max_epochs: 20000
+    normalize_input: False
+    seq_len: 4
+    use_action_masks: False
+    ignore_dead_batches : False
+
+
     env_config:
-      name: 3s_vs_5z
-      frames: 1
-      random_invalid_step: False
+      name: SlimeVolleyDiscrete-v0

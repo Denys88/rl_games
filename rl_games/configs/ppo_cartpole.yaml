@@ -15,7 +15,7 @@ params:
       discrete:
 
     mlp:
-      units: [32]
+      units: [64]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -26,7 +26,7 @@ params:
       name: 'lstm'
       units: 64
       layers: 1
-      before_mlp: True
+      before_mlp: False
   config:
     reward_shaper:
         scale_value: 0.1
@@ -34,19 +34,19 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 1e-4
-    name: cartpole
+    name: cartpole_vel_info
     score_to_win: 500
     grad_norm: 0.5
-    entropy_coef: 0.0001
+    entropy_coef: 0.01
     truncate_grads: True
     env_name:  CartPole-v1
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 32
-    steps_num: 128
-    minibatch_size: 512
-    mini_epochs: 8
+    num_actors: 8
+    steps_num: 32
+    minibatch_size: 64
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008

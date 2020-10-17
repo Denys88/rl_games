@@ -77,167 +77,90 @@ def random_sample(obs_batch, prob):
     return torch.index_select(obs_batch, 0, indices)
 
 
+def apply_masks(losses, mask=None):
+    sum_mask = None
+    if mask is not None:
+        sum_mask = mask.sum()
+        res_losses = [(l * mask).sum() / sum_mask for l in losses]
+    else:
+        res_losses = [torch.mean(l) for l in losses]
+    
+    return res_losses, sum_mask
 
-class RangerQH(Optimizer):
-    r"""Implements the QHAdam optimization algorithm `(Ma and Yarats, 2019)`_.
-    Along with Hinton/Zhang Lookahead.
-    Args:
-        params (iterable):
-            iterable of parameters to optimize or dicts defining parameter
-            groups
-        lr (float, optional): learning rate (:math:`\alpha` from the paper)
-            (default: 1e-3)
-        betas (Tuple[float, float], optional): coefficients used for computing
-            running averages of the gradient and its square
-            (default: (0.9, 0.999))
-        nus (Tuple[float, float], optional): immediate discount factors used to
-            estimate the gradient and its square
-            (default: (1.0, 1.0))
-        eps (float, optional): term added to the denominator to improve
-            numerical stability
-            (default: 1e-8)
-        weight_decay (float, optional): weight decay (default: 0.0)
-        decouple_weight_decay (bool, optional): whether to decouple the weight
-            decay from the gradient-based optimization step
-            (default: False)
-    Example:
-        >>> optimizer = qhoptim.pyt.QHAdam(
-        ...     model.parameters(),
-        ...     lr=3e-4, nus=(0.8, 1.0), betas=(0.99, 0.999))
-        >>> optimizer.zero_grad()
-        >>> loss_fn(model(input), target).backward()
-        >>> optimizer.step()
-    .. _`(Ma and Yarats, 2019)`: https://arxiv.org/abs/1810.06801
+
+
+class CoordConv2d(nn.Conv2d):
+    pool = {}
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1, bias=True):
+        super().__init__(in_channels + 2, out_channels, kernel_size, stride,
+                         padding, dilation, groups, bias)
+    @staticmethod
+    def get_coord(x):
+        key = int(x.size(0)), int(x.size(2)), int(x.size(3)), x.type()
+        if key not in CoordConv2d.pool:
+            theta = torch.Tensor([[[1, 0, 0], [0, 1, 0]]])
+            coord = torch.nn.functional.affine_grid(theta, torch.Size([1, 1, x.size(2), x.size(3)])).permute([0, 3, 1, 2]).repeat(
+                x.size(0), 1, 1, 1).type_as(x)
+            CoordConv2d.pool[key] = coord
+        return CoordConv2d.pool[key]
+    def forward(self, x):
+        return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
+                        self.padding, self.dilation, self.groups)
+
+class LayerNorm2d(nn.Module):
+    """
+    Layer norm the just works on the channel axis for a Conv2d
+    Ref:
+    - code modified from https://github.com/Scitator/Run-Skeleton-Run/blob/master/common/modules/LayerNorm.py
+    - paper: https://arxiv.org/abs/1607.06450
+    Usage:
+        ln = LayerNormConv(3)
+        x = Variable(torch.rand((1,3,4,2)))
+        ln(x).size()
     """
 
+    def __init__(self, features, eps=1e-6):
+        super().__init__()
+        self.register_buffer("gamma", torch.ones(features).unsqueeze(-1).unsqueeze(-1))
+        self.register_buffer("beta", torch.ones(features).unsqueeze(-1).unsqueeze(-1))
 
-    def __init__(
-        self,
-        params,
-        lr=1e-3,
-        betas=(0.9, 0.999),
-        nus=(.7, 1.0),
-        weight_decay=0.0,
-        k=6,
-        alpha=.5,
-        decouple_weight_decay=False,
-        eps=1e-8,
-    ):
-        if not 0.0 <= lr:
-            raise ValueError("Invalid learning rate: {}".format(lr))
-        if not 0.0 <= eps:
-            raise ValueError("Invalid epsilon value: {}".format(eps))
-        if not 0.0 <= betas[0] < 1.0:
-            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
-        if not 0.0 <= betas[1] < 1.0:
-            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        if weight_decay < 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+        self.eps = eps
+        self.features = features
 
-        defaults = {
-            "lr": lr,
-            "betas": betas,
-            "nus": nus,
-            "weight_decay": weight_decay,
-            "decouple_weight_decay": decouple_weight_decay,
-            "eps": eps,
-        }
-        super().__init__(params, defaults)
+    def _check_input_dim(self, input):
+        if input.size(1) != self.gamma.nelement():
+            raise ValueError('got {}-feature tensor, expected {}'
+                             .format(input.size(1), self.features))
+
+    def forward(self, x):
+        self._check_input_dim(x)
+        x_flat = x.transpose(1,-1).contiguous().view((-1, x.size(1)))
+        mean = x_flat.mean(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
+        std = x_flat.std(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
+        return self.gamma.expand_as(x) * (x - mean) / (std + self.eps) + self.beta.expand_as(x)
+
+
+
+class DiscreteActionsEncoder(nn.Module):
+    def __init__(self, actions_max, mlp_out, emb_size, num_agents, use_embedding):
+        super().__init__()
+        self.actions_max = actions_max
+        self.emb_size = emb_size
+        self.num_agents = num_agents
+        self.use_embedding = use_embedding
+        if use_embedding:
+            self.embedding = torch.nn.Embedding(actions_max, emb_size)
+        else:
+            self.emb_size = actions_max
         
-        #look ahead params
-        self.alpha = alpha
-        self.k = k         
-        
+        self.linear = torch.nn.Linear(self.emb_size * num_agents, mlp_out)
 
-    def step(self, closure=None):
-        """Performs a single optimization step.
-        Args:
-            closure (callable, optional):
-                A closure that reevaluates the model and returns the loss.
-        """
-        loss = None
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            lr = group["lr"]
-            beta1, beta2 = group["betas"]
-            nu1, nu2 = group["nus"]
-            weight_decay = group["weight_decay"]
-            decouple_weight_decay = group["decouple_weight_decay"]
-            eps = group["eps"]
-
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-
-                d_p = p.grad.data
-                if d_p.is_sparse:
-                    raise RuntimeError("QHAdam does not support sparse gradients")
-
-                
-
-                if weight_decay != 0:
-                    if decouple_weight_decay:
-                        p.data.mul_(1 - lr * weight_decay)
-                    else:
-                        d_p.add_(weight_decay, p.data)
-
-                d_p_sq = d_p.mul(d_p)
-                
-                #prep for saved param loading
-                param_state = self.state[p]
-
-                if len(param_state) == 0:
-                    param_state["beta1_weight"] = 0.0
-                    param_state["beta2_weight"] = 0.0
-                    param_state['step'] = 0
-                    param_state["exp_avg"] = torch.zeros_like(p.data)
-                    param_state["exp_avg_sq"] = torch.zeros_like(p.data)
-                    #look ahead weight storage now in state dict 
-                    param_state['slow_buffer'] = torch.empty_like(p.data)
-                    param_state['slow_buffer'].copy_(p.data)
-                
-                
-                param_state['step'] += 1                
-
-                param_state["beta1_weight"] = 1.0 + beta1 * param_state["beta1_weight"]
-                param_state["beta2_weight"] = 1.0 + beta2 * param_state["beta2_weight"]
-
-                beta1_weight = param_state["beta1_weight"]
-                beta2_weight = param_state["beta2_weight"]
-                exp_avg = param_state["exp_avg"]
-                exp_avg_sq = param_state["exp_avg_sq"]
-
-                beta1_adj = 1.0 - (1.0 / beta1_weight)
-                beta2_adj = 1.0 - (1.0 / beta2_weight)
-                exp_avg.mul_(beta1_adj).add_(1.0 - beta1_adj, d_p)
-                exp_avg_sq.mul_(beta2_adj).add_(1.0 - beta2_adj, d_p_sq)
-
-                avg_grad = exp_avg.mul(nu1)
-                if nu1 != 1.0:
-                    avg_grad.add_(1.0 - nu1, d_p)
-
-                avg_grad_rms = exp_avg_sq.mul(nu2)
-                if nu2 != 1.0:
-                    avg_grad_rms.add_(1.0 - nu2, d_p_sq)
-                avg_grad_rms.sqrt_()
-                if eps != 0.0:
-                    avg_grad_rms.add_(eps)
-
-                p.data.addcdiv_(-lr, avg_grad, avg_grad_rms)
-                
-                #integrated look ahead...
-                #we do it at the param level instead of group level
-                if param_state['step'] % self.k ==0: #group['k'] == 0:
-                    slow_p = param_state['slow_buffer'] #get access to slow param tensor
-                    slow_p.add_(self.alpha, p.data - slow_p)  #(fast weights - slow weights) * alpha
-                    p.data.copy_(slow_p)  #copy interpolated weights to RAdam param tensor
-                
-
-        return loss
-
-    @classmethod
-    def _params_to_dict(cls, params):
-        return {"lr": params.alpha, "nus": (params.nu1, params.nu2), "betas": (params.beta1, params.beta2)}
-
+    def forward(self, discrete_actions):
+        if self.use_embedding:
+            emb = self.embedding(discrete_actions)
+        else:
+            emb = torch.nn.functional.one_hot(discrete_actions, num_classes=self.actions_max)
+        emb = emb.view( -1, self.emb_size * self.num_agents).float()
+        emb = self.linear(emb)
+        return emb

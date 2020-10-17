@@ -47,7 +47,7 @@ class NetworkBuilder:
             self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(torch_ext.variance_scaling_initializer,**kwargs))
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
             self.init_factory.register_builder('kaiming_normal', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
-            self.init_factory.register_builder('None', lambda **kwargs : None)
+            self.init_factory.register_builder('default', lambda **kwargs : nn.Identity() )
 
         def is_separate_critic(self):
             return False
@@ -85,7 +85,7 @@ class NetworkBuilder:
         norm_func_name = None):
             print('build mlp:', input_size)
             in_size = input_size
-            layers = nn.ModuleList()
+            layers = []
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
@@ -94,37 +94,41 @@ class NetworkBuilder:
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm1d(unit))
                 in_size = unit
-            return layers
+
+            return nn.Sequential(*layers)
 
         def _build_conv(self, ctype, **kwargs):
             print('conv_name:', ctype)
 
             if ctype == 'conv2d':
-                return self._build_cnn(**kwargs)
+                return self._build_cnn2d(**kwargs)
+            if ctype == 'coord_conv2d':
+                return self._build_cnn2d(conv_func=torch_ext.CoordConv2d, **kwargs)
             if ctype == 'conv1d':
                 return self._build_cnn1d(**kwargs)
 
-        def _build_cnn(self, input_shape, convs, activation, norm_func_name=None):
+        def _build_cnn2d(self, input_shape, convs, activation, conv_func=torch.nn.Conv2d, norm_func_name=None):
             in_channels = input_shape[0]
-            layers = nn.ModuleList()
+            layers = []
             for conv in convs:
-                layers.append(torch.nn.Conv2d(in_channels=in_channels, 
+                layers.append(conv_func(in_channels=in_channels, 
                 out_channels=conv['filters'], 
                 kernel_size=conv['kernel_size'], 
                 stride=conv['strides'], padding=conv['padding']))
+                conv_func=torch.nn.Conv2d
                 act = self.activations_factory.create(activation)
                 layers.append(act)
                 in_channels = conv['filters']
                 if norm_func_name == 'layer_norm':
-                    layers.append(torch.nn.LayerNorm(in_channels))
+                    layers.append(torch_ext.LayerNorm2d(in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
-            return layers
+            return nn.Sequential(*layers)
 
         def _build_cnn1d(self, input_shape, convs, activation, norm_func_name=None):
             print('conv1d input shape:', input_shape)
             in_channels = input_shape[0]
-            layers = nn.ModuleList()
+            layers = []
             for conv in convs:
                 layers.append(torch.nn.Conv1d(in_channels, conv['filters'], conv['kernel_size'], conv['strides'], conv['padding']))
                 act = self.activations_factory.create(activation)
@@ -134,7 +138,7 @@ class NetworkBuilder:
                     layers.append(torch.nn.LayerNorm(in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
-            return layers
+            return nn.Sequential(*layers)
 
 class A2CBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -148,12 +152,12 @@ class A2CBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
-            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
+            NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
-            self.actor_cnn = []
-            self.critic_cnn = []
-            self.actor_mlp = []
-            self.critic_mlp = []
+            self.actor_cnn = nn.Sequential()
+            self.critic_cnn = nn.Sequential()
+            self.actor_mlp = nn.Sequential()
+            self.critic_mlp = nn.Sequential()
 
             if self.has_cnn:
                 cnn_args = {
@@ -168,8 +172,17 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.critic_cnn = self._build_conv( **cnn_args)
 
-            in_mlp_shape = self._calc_input_size(input_shape, self.actor_cnn)
-            
+            mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
+
+            if self.use_joint_obs_actions:
+                use_embedding = self.joint_obs_actions_config['embedding'] 
+                emb_size = self.joint_obs_actions_config['embedding_scale'] 
+                num_agents = kwargs.pop('num_agents')
+                mlp_out = mlp_input_shape // self.joint_obs_actions_config['mlp_scale']
+                self.joint_actions = torch_ext.DiscreteActionsEncoder(actions_num, mlp_out, emb_size, num_agents, use_embedding)
+                mlp_input_shape = mlp_input_shape + mlp_out
+
+            in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -225,52 +238,39 @@ class A2CBuilder(NetworkBuilder):
             if self.has_cnn:
                 cnn_init = self.init_factory.create(**self.cnn['initializer'])
 
-            for m in self.critic_cnn:
+            for m in self.modules():
+                if getattr(m, "bias", None) is not None:
+                    torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
-            for m in self.actor_cnn:
-                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
-                    cnn_init(m.weight)   
+                if isinstance(m, nn.Linear):    
+                    mlp_init(m.weight)    
 
-            for m in self.critic_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)   
-            for m in self.actor_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)
-            if self.is_discrete:
-                mlp_init(self.logits.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 if self.space_config['fixed_sigma']:
                     sigma_init(self.sigma)
                 else:
-                    sigma_init(self.sigma.weight)
-
-            mlp_init(self.value.weight)     
+                    sigma_init(self.sigma.weight)  
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
+            
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
 
             if self.separate:
                 a_out = c_out = obs
-                
-                for l in self.actor_cnn:
-                    a_out = l(a_out)
-                a_out = a_out.view(a_out.size(0), -1)
+                a_out = self.actor_cnn(a_out)
+                a_out = a_out.contiguous().view(a_out.size(0), -1)
 
-                for l in self.critic_cnn:
-                    c_out = l(c_out)
-                c_out = c_out.view(c_out.size(0), -1)                    
+                c_out = self.critic_cnn(c_out)
+                c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
-                        for l in self.actor_mlp:
-                            a_out = l(a_out)
-                        for l in self.critic_mlp:
-                            c_out = l(c_out)
+                        a_out = self.actor_mlp(a_out)
+                        c_out = self.critic_mlp(c_out)
 
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
@@ -303,15 +303,11 @@ class A2CBuilder(NetworkBuilder):
                     states = a_states + c_states
 
                     if self.is_rnn_before_mlp:
-                        for l in self.actor_mlp:
-                            a_out = l(a_out)
-                        for l in self.critic_mlp:
-                            c_out = l(c_out)
+                        a_out = self.actor_mlp(a_out)
+                        c_out = self.critic_mlp(c_out)
                 else:
-                    for l in self.actor_mlp:
-                        a_out = l(a_out)
-                    for l in self.critic_mlp:
-                        c_out = l(c_out)
+                    a_out = self.actor_mlp(a_out)
+                    c_out = self.critic_mlp(c_out)
                             
                 value = self.value_act(self.value(c_out))
                 if self.is_discrete:
@@ -327,13 +323,14 @@ class A2CBuilder(NetworkBuilder):
                     return mu, sigma, value, states
             else:
                 out = obs
-                for l in self.actor_cnn:
-                    out = l(out)
-                out = out.flatten(1)         
+                out = self.actor_cnn(out)
+                out = out.flatten(1)
+                if self.use_joint_obs_actions:
+                    actions = obs_dict['actions']
+                    actions_out = self.joint_actions(actions)
+                    out = torch.cat([out, actions_out], dim=-1)
+                out = self.actor_mlp(out)
 
-                for l in self.actor_mlp:
-                    out = l(out)
-                
                 if self.has_rnn:
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
@@ -353,6 +350,9 @@ class A2CBuilder(NetworkBuilder):
                     if type(states) is not tuple:
                         states = (states,)
                 value = self.value_act(self.value(out))
+
+                if self.central_value:
+                    return value, states
 
                 if self.is_discrete:
                     logits = self.logits(out)
@@ -393,22 +393,29 @@ class A2CBuilder(NetworkBuilder):
                     return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())                
 
         def load(self, params):
-            self.separate = params['separate']
+            self.separate = params.get('separate', False)
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
             self.regularizer = params['mlp']['regularizer']
-            self.is_discrete = 'discrete' in params['space']
-            self.is_continuous = 'continuous'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
+            self.has_space = 'space' in params
             self.value_shape = params.get('value_shape', 1)
-            if self.is_continuous:
-                self.space_config = params['space']['continuous']
-            elif self.is_discrete:
-                self.space_config = params['space']['discrete']
-                
+            self.central_value = params.get('central_value', False)
+            self.joint_obs_actions_config = params.get('joint_obs_actions', None)
+            self.use_joint_obs_actions = self.joint_obs_actions_config is not None
+            if self.has_space:
+                self.is_discrete = 'discrete' in params['space']
+                self.is_continuous = 'continuous'in params['space']
+                if self.is_continuous:
+                    self.space_config = params['space']['continuous']
+                elif self.is_discrete:
+                    self.space_config = params['space']['discrete']
+            else:
+                self.is_discrete = False
+                self.is_continuous = False                
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
@@ -509,19 +516,15 @@ class RNDCuriosityBuilder(NetworkBuilder):
             rnd_out = net_out = obs
 
             with torch.no_grad():
-                for l in self.rnd_cnn:
-                    rnd_out = l(rnd_out)
+                rnd_out = self.rnd_cnn(rnd_out)
                 rnd_out = rnd_out.view(rnd_out.size(0), -1)
-                for l in self.rnd_mlp:
-                    rnd_out = l(rnd_out)
+                rnd_out = self.rnd_mlp(rnd_out)
 
-            for l in self.net_cnn:
-                net_out = l(net_out)
+            net_out = self.net_cnn(rnd_out)
             net_out = net_out.view(net_out.size(0), -1)                    
 
                 
-            for l in self.net_mlp:
-                net_out = l(net_out)
+            net_out = self.net_mlp(rnd_out)
                     
             return rnd_out, net_out
 
@@ -741,15 +744,13 @@ class A2CResnetBuilder(NetworkBuilder):
             seq_length = obs_dict.get('seq_length', 1)
 
             out = obs
-            for l in self.cnn:
-                out = l(out)
+            out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
                 
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
-                    for l in self.mlp:
-                        out = l(out)
+                    out = self.mlp(out)
 
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length

@@ -66,10 +66,10 @@ class A2CAgent:
         self.dones = np.asarray([False]*self.num_actors *self.num_agents, dtype=np.bool)
         self.current_rewards = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
         self.current_lengths = np.asarray([0]*self.num_actors *self.num_agents, dtype=np.float32)
-        self.games_to_log = self.config.get('games_to_track', 100)
-        self.game_rewards = deque([], maxlen=self.games_to_log)
-        self.game_lengths = deque([], maxlen=self.games_to_log)
-        self.game_scores = deque([], maxlen=self.games_to_log)
+        self.games_to_track = self.config.get('games_to_track', 100)
+        self.game_rewards = deque([], maxlen=self.games_to_track)
+        self.game_lengths = deque([], maxlen=self.games_to_track)
+        self.game_scores = deque([], maxlen=self.games_to_track)
         self.obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'obs')
         self.target_obs_ph = tf.placeholder(observation_space.dtype, (None, ) + observation_shape, name = 'target_obs') 
         self.actions_num = action_space.n   
@@ -318,7 +318,7 @@ class A2CAgent:
         last_lr = self.config['learning_rate']
         frame = 0
         update_time = 0
-        last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
         play_time = 0
         epoch_num = 0
         max_epochs = self.config.get('max_epochs', 1e6)
@@ -436,19 +436,19 @@ class A2CAgent:
                         self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                         rep_count += 1
 
-                    if mean_rewards > last_mean_rewards:
+                    if mean_rewards > self.last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
-                        last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'])
-                        if last_mean_rewards > self.config['score_to_win']:
+                        if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num
+                            return self.last_mean_rewards, epoch_num
 
                 if epoch_num > max_epochs:
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                     print('MAX EPOCHS NUM!')
-                    return last_mean_rewards, epoch_num                               
+                    return self.last_mean_rewards, epoch_num                               
                 update_time = 0
             
         

@@ -262,13 +262,6 @@ class FrameStack(gym.Wrapper):
 
 class BatchedFrameStack(gym.Wrapper):
     def __init__(self, env, k, transpose = False, flatten = False):
-        """
-        Stack k last frames.
-        Returns lazy array, which is much more memory efficient.
-        See Also
-        --------
-        baselines.common.atari_wrappers.LazyFrames
-        """
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
@@ -309,6 +302,65 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
+class BatchedFrameStackWithStates(gym.Wrapper):
+    def __init__(self, env, k, transpose = False, flatten = False):
+        gym.Wrapper.__init__(self, env)
+        self.k = k
+        self.obses = deque([], maxlen=k)
+        self.states = deque([], maxlen=k)
+        self.shp = shp = env.observation_space.shape
+        self.state_shp = state_shp = env.state_space.shape
+        self.transpose = transpose
+        self.flatten = flatten
+        if transpose:
+            assert(not flatten)
+            self.observation_space = spaces.Box(low=0, high=1, shape=(shp[0], k), dtype=env.observation_space.dtype)
+            self.state_space = spaces.Box(low=0, high=1, shape=(state_shp[0], k), dtype=env.observation_space.dtype)
+        else:
+            if flatten:
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k*shp[0],), dtype=env.observation_space.dtype)
+                self.state_space = spaces.Box(low=0, high=1, shape=(k*state_shp[0],), dtype=env.observation_space.dtype)
+            else:
+                self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
+                self.state_space = spaces.Box(low=0, high=1, shape=(k, state_shp[0]), dtype=env.observation_space.dtype)
+
+    def reset(self):
+        obs_dict = self.env.reset()
+        ob = obs_dict["obs"]
+        state = obs_dict["state"]
+        for _ in range(self.k):
+            self.obses.append(ob)
+            self.states.append(state)
+        return self._get_ob()
+
+    def step(self, action):
+        obs_dict, reward, done, info = self.env.step(action)
+        ob = obs_dict["obs"]
+        state = obs_dict["state"]
+        self.obses.append(ob)
+        self.states.append(state)
+        return self._get_ob(), reward, done, info
+
+    def _get_ob(self):
+        assert len(self.obses) == self.k
+        obses = self.process_data(self.obses)
+        states = self.process_data(self.states)
+        return {"obs": obses, "state" : states}
+
+    def process_data(self, data):
+        if len(np.shape(data)) < 3:
+            return np.array(data)
+        if self.transpose:
+            obses = np.transpose(data, (1, 2, 0))
+        else:
+            if self.flatten:
+                obses = np.array(data)
+                shape = np.shape(obses)
+                obses = np.transpose(data, (1, 0, 2))
+                obses = np.reshape(data, (shape[1], shape[0] * shape[2]))
+            else:
+                obses = np.transpose(data, (1, 0, 2))
+        return obses
 
 class ProcgenStack(gym.Wrapper):
     def __init__(self, env, k = 2, greyscale=True):

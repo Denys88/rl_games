@@ -2,18 +2,18 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.algos_torch import rnd_curiosity
+from rl_games.algos_torch import central_value, rnd_curiosity
+from rl_games.common import common_losses
 
 from torch import optim
 import torch 
 from torch import nn
 import numpy as np
 
-
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, config):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
-        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape)
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -26,46 +26,29 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr))
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
         #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
         if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCurisityTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.curiosity_config['network'], 
+            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
+
+        if self.has_central_value:
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.num_actions, self.central_value_config['network'], 
+                                    self.central_value_config, self.writer).cuda()
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-
+        
     def save(self, fn):
-        state = {'epoch': self.epoch_num, 'model': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict()}
-        if self.normalize_input:
-            state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.has_curiosity:
-            state['rnd_nets'] = self.rnd_curiosity.state_dict()
+        state = self.get_full_state_weights()
         torch_ext.save_scheckpoint(fn, state)
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
-        self.epoch_num = checkpoint['epoch']
-        self.model.load_state_dict(checkpoint['model'])
-
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
-        if self.has_curiosity:
-            self.rnd_curiosity.load_state_dict(checkpoint['rnd_nets'])
-            for state in self.rnd_curiosity.optimizer.state.values():
-                for k, v in state.items():
-                    if isinstance(v, torch.Tensor):
-                        state[k] = v.cuda()
-
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        for state in self.optimizer.state.values():
-            for k, v in state.items():
-                if isinstance(v, torch.Tensor):
-                    state[k] = v.cuda()
+        self.set_full_state_weights(checkpoint)
 
     def get_masked_action_values(self, obs, action_masks):
         assert False
@@ -81,49 +64,50 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.running_mean_std.train()
 
     def get_action_values(self, obs):
-        self.set_eval()
-        obs = self._preproc_obs(obs)
-
-        input_dict = {
-            'is_train': False,
-            'prev_actions': None, 
-            'obs' : obs,
-            'rnn_states' : self.states
-        }
-        with torch.no_grad():
-            neglogp, value, action, mu, sigma, states = self.model(input_dict)
-        return action.detach(), \
-                value.detach().cpu(), \
-                neglogp.detach(), \
-                mu.detach(), \
-                sigma.detach(), \
-                states
-
-    def get_values(self, obs):
-        obs = self._preproc_obs(obs)
+        processed_obs = self._preproc_obs(obs['obs'])
         self.model.eval()
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
-            'obs' : obs,
-            'rnn_states' : self.states
+            'obs' : processed_obs,
+            'rnn_states' : self.rnn_states
         }
+
         with torch.no_grad():
-            neglogp, value, action, mu, sigma, states = self.model(input_dict)
-        return value.cpu().detach()
+            neglogp, value, action, mu, sigma, rnn_states = self.model(input_dict)
+            if self.has_central_value:
+                states = obs['states']
+                input_dict = {
+                    'is_train': False,
+                    'states' : states,
+                    #'rnn_states' : self.rnn_states
+                }
+                value = self.central_value_net(input_dict)
 
-    def get_weights(self):
-        return torch.nn.utils.parameters_to_vector(self.model.parameters())
-    
-    def set_weights(self, weights):
-        torch.nn.utils.vector_to_parameters(weights, self.model.parameters())
+        return action.detach(), value.detach().cpu(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
 
-    def get_intrinsic_reward(self, obs):
-        return self.rnd_curiosity.get_loss(obs)
-
-    def train_intrinsic_reward(self, dict):
-        obs = dict['obs']
-        self.rnd_curiosity.train(obs)
+    def get_values(self, obs, actions=None):
+        if self.has_central_value:
+            states = obs['states']
+            self.central_value_net.eval()
+            input_dict = {
+                'is_train': False,
+                'states' : states,
+                'is_done': self.dones,
+            }
+            return self.get_central_value(input_dict).detach().cpu()
+        else:
+            self.model.eval()
+            processed_obs = self._preproc_obs(obs['obs'])
+            input_dict = {
+                'is_train': False,
+                'prev_actions': None, 
+                'obs' : processed_obs,
+                'rnn_states' : self.rnn_states
+            }
+            with torch.no_grad():
+                _, value, _, _, _,_ = self.model(input_dict)
+            return value.detach().cpu()
 
     def train_actor_critic(self, input_dict):
         self.set_train()
@@ -137,6 +121,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
+
         lr = self.last_lr
         kl = 1.0
         lr_mul = 1.0
@@ -148,7 +133,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs' : obs_batch,
         }
 
-
+        rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
@@ -156,51 +141,16 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         action_log_probs, values, entropy, mu, sigma,_ = self.model(batch_dict)
 
-        if self.ppo:
-            ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
-            surr1 = ratio * advantage
-            surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
-                                1.0 + curr_e_clip) * advantage
-            a_loss = torch.max(-surr1, -surr2)
-        else:
-            a_loss = (action_log_probs * advantage)
-
-        values = torch.squeeze(values)
-        if self.clip_value:
-            value_pred_clipped = value_preds_batch + \
-                (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
-            value_losses = (values - return_batch)**2
-            value_losses_clipped = (value_pred_clipped - return_batch)**2
-            c_loss = torch.max(value_losses,
-                                         value_losses_clipped)
-        else:
-            c_loss = (return_batch - values)**2
+        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
         
+        c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)
-        else:
-            c_loss = c_loss
 
+        b_loss = self.bound_loss(mu)
 
-        if self.bounds_loss_coef is not None:
-            soft_bound = 1.1
-            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
-            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
-            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
-        else:
-            b_loss = 0
-
-        if self.is_rnn:
-            sum_mask = rnn_masks.sum()
-            a_loss = (a_loss * rnn_masks).sum() / sum_mask
-            c_loss = (c_loss * rnn_masks).sum() / sum_mask
-            entropy = (entropy * rnn_masks).sum() / sum_mask
-            b_loss = (b_loss * rnn_masks).sum() / sum_mask
-        else:
-            a_loss = a_loss.mean()
-            c_loss = c_loss.mean()
-            entropy = entropy.mean()
-            b_loss = torch.mean(b_loss)
+        losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy, b_loss], rnn_masks)
+        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
 
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
@@ -227,3 +177,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         return a_loss.item(), c_loss.item(), entropy.item(), \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss.item()
+
+    def bound_loss(self, mu):
+        if self.bounds_loss_coef is not None:
+            soft_bound = 1.1
+            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
+        else:
+            b_loss = 0
+        return b_loss
+
+

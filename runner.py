@@ -3,12 +3,6 @@ import argparse
 import copy
 import yaml
 
-'''from rl_games import algos_torch
-from rl_games.common import object_factory
-from rl_games.common import env_configurations
-from rl_games.common import experiment
-from rl_games.common import tr_helpers'''
-
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()

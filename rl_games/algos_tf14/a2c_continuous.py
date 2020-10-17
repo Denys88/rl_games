@@ -308,7 +308,7 @@ class A2CAgent:
         num_minibatches = batch_size // minibatch_size
         last_lr = self.config['learning_rate']
 
-        last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
 
         epoch_num = 0
         frame = 0
@@ -471,18 +471,18 @@ class A2CAgent:
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
-                    if mean_rewards > last_mean_rewards:
+                    if mean_rewards > self.last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
-                        last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.name)
-                        if last_mean_rewards > self.config['score_to_win']:
+                        if self.last_mean_rewards > self.config['score_to_win']:
                             self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                            return last_mean_rewards, epoch_num
+                            return self.last_mean_rewards, epoch_num
 
                 if epoch_num > max_epochs:
                     print('MAX EPOCHS NUM!')
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                    return last_mean_rewards, epoch_num                      
+                    return self.last_mean_rewards, epoch_num                      
                 update_time = 0
 
             

@@ -3,7 +3,7 @@ import copy
 import torch
 import yaml
 import ray
-
+from rl_games import envs
 from rl_games.common import object_factory
 from rl_games.common import env_configurations
 from rl_games.common import experiment
@@ -60,9 +60,15 @@ class Runner:
         if has_rnd_net:
             print('Adding RND Network')
             network = self.model_builder.network_factory.create(params['config']['rnd_config']['network']['name'])
-            print(network)
             network.load(params['config']['rnd_config']['network'])
             self.config['rnd_config']['network'] = network
+        
+        has_central_value_net = self.config.get('central_value_config', None) != None
+        if has_central_value_net:
+            print('Adding Central Value Network')
+            network = self.model_builder.network_factory.create(params['config']['central_value_config']['network']['name'])
+            network.load(params['config']['central_value_config']['network'])
+            self.config['central_value_config']['network'] = network
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
@@ -112,7 +118,7 @@ class Runner:
         elif args['play']:
             print('Started to play')
 
-            player = self.player_factory.create(self.algo_name, config=self.config)
+            player = self.create_player()
             player.restore(self.load_path)
             player.run()
         else:

@@ -312,7 +312,7 @@ class DQNAgent:
 
     def train(self):
         mem_free_steps = 0
-        last_mean_rewards = -100500
+        self.last_mean_rewards = -100500
         epoch_num = 0
         frame = 0
         update_time = 0
@@ -413,13 +413,13 @@ class DQNAgent:
                     self.writer.add_scalar('episode_lengths/mean', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
-                    if mean_rewards > last_mean_rewards:
+                    if mean_rewards > self.last_mean_rewards:
                         print('saving next best rewards: ', mean_rewards)
-                        last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards
                         self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                        if last_mean_rewards > self.config['score_to_win']:
+                        if self.last_mean_rewards > self.config['score_to_win']:
                             print('network won!')
-                            return last_mean_rewards, epoch_num
+                            return self.last_mean_rewards, epoch_num
                 
                 #clear_output(True)
             # adjust agent parameters
@@ -429,5 +429,5 @@ class DQNAgent:
             if epoch_num >= self.max_epochs:
                 print('Max epochs reached')
                 self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(np.sum(self.game_rewards) *  lives_reward / len(self.game_rewards)))
-                return last_mean_rewards, epoch_num            
+                return self.last_mean_rewards, epoch_num            
 

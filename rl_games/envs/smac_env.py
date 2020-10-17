@@ -2,24 +2,48 @@ import gym
 import numpy as np
 from smac.env import StarCraft2Env
 
+
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m", replay_save_freq=4000, **kwargs):
+    def __init__(self, name="3m",  **kwargs):
         gym.Env.__init__(self)
         self.seed = kwargs.pop('seed', None)
-        self.reward_sparse = kwargs.pop('reward_sparse', False)
-        self.env = StarCraft2Env(map_name=name, seed=self.seed, reward_sparse=self.reward_sparse)
+        self.reward_sparse = kwargs.get('reward_sparse', False)
+        self.use_central_value = kwargs.pop('central_value', False)
+        self.random_invalid_step = kwargs.pop('random_invalid_step', False)
+        self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
+        self.apply_agent_ids = kwargs.pop('apply_agent_ids', False)
+        self.env = StarCraft2Env(map_name=name, seed=self.seed, **kwargs)
         self.env_info = self.env.get_env_info()
-        self.replay_save_freq = replay_save_freq
+
         self._game_num = 0
         self.n_actions = self.env_info["n_actions"]
         self.n_agents = self.env_info["n_agents"]
         self.action_space = gym.spaces.Discrete(self.n_actions)
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape'], ), dtype=np.float32)
+        one_hot_agents = 0
+        if self.apply_agent_ids:
+            one_hot_agents = self.n_agents
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape']+one_hot_agents, ), dtype=np.float32)
+        self.state_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['state_shape'], ), dtype=np.float32)
 
-        self.random_invalid_step = kwargs.pop('random_invalid_step', False)
+        
+
+        self.obs_dict = {}
 
     def _preproc_state_obs(self, state, obs):
-        return np.array(obs)
+        # todo: remove from self
+        if self.apply_agent_ids:
+            num_agents = self.n_agents
+            obs = np.array(obs)
+            all_ids = np.eye(num_agents, dtype=np.float32)
+            obs = np.concatenate([obs, all_ids], axis=-1)
+
+        self.obs_dict["obs"] = np.array(obs)
+        self.obs_dict["state"] = np.array(state)
+
+        if self.use_central_value:
+            return self.obs_dict
+        else:
+            return self.obs_dict["obs"]
 
     def get_number_of_agents(self):
         return self.n_agents
@@ -29,10 +53,10 @@ class SMACEnv(gym.Env):
             print('saving replay')
             self.env.save_replay()
         self._game_num += 1
-        obs, state = self.env.reset()
-        obses = self._preproc_state_obs(state, obs)
+        obs, state = self.env.reset() # rename, to think remove
+        obs_dict = self._preproc_state_obs(state, obs)
 
-        return obses
+        return obs_dict
 
     def _preproc_actions(self, actions):
         actions = actions.copy()

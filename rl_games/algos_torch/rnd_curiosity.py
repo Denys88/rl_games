@@ -16,7 +16,7 @@ class RNDCuriosityNetwork(nn.Module):
         return loss
 
 
-class RNDCurisityTrain(nn.Module):
+class RNDCuriosityTrain(nn.Module):
     def __init__(self, state_shape, model, config, writter, _preproc_obs):
         nn.Module.__init__(self)
         rnd_config = {
@@ -26,7 +26,7 @@ class RNDCurisityTrain(nn.Module):
         self.config = config
         self.lr = config['lr']
         self.writter = writter
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr))
+        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
         self._preproc_obs = _preproc_obs
         self.output_normalization = RunningMeanStd((1,), norm_only=True).cuda()
         self.frame = 0
@@ -43,7 +43,7 @@ class RNDCurisityTrain(nn.Module):
             
             return loss.cpu()
 
-    def train(self, obs):
+    def train_net(self, obs):
         self.model.train()
         mini_epoch = self.config['mini_epochs']
         mini_batch = self.config['minibatch_size']

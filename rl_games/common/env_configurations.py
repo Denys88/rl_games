@@ -9,6 +9,7 @@ import numpy as np
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
+
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -32,35 +33,7 @@ class HCRewardEnv(gym.RewardWrapper):
         return observation, self.reward(reward), done, info
 
     def reward(self, reward):
-       # print('reward:', reward)
-        '''
-        if reward < 0.005:
-            self.stops_decay = 0
-            self.num_stops += 1
-            #print('stops:', self.num_stops)
-            return -0.1
-        self.stops_decay += 1
-        if self.stops_decay == self.max_stops:
-            self.num_stops = 0
-            self.stops_decay = 0
-        '''
         return np.max([-10, reward])
-
-
-class HCObsEnv(gym.ObservationWrapper):
-    def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
-
-    def observation(self, observation):
-        obs = observation - [ 0.1193, -0.001 ,  0.0958, -0.0052, -0.629 , -0.01  ,  0.1604, -0.0205,
-  0.7094,  0.6344,  0.0091,  0.1617, -0.0001,  0.7018,  0.4293,  0.3909,
-  0.3776,  0.3662,  0.3722,  0.4043,  0.4497,  0.6033,  0.7825,  0.9575]
-
-        obs = obs / [0.3528, 0.0501, 0.1561, 0.0531, 0.2936, 0.4599, 0.6598, 0.4978, 0.454 ,
- 0.7168, 0.3419, 0.6492, 0.4548, 0.4575, 0.1024, 0.0716, 0.0918, 0.11  ,
- 0.1289, 0.1501, 0.1649, 0.191 , 0.2036, 0.1095]
-        obs = np.clip(obs, -5.0, 5.0)
-        return obs
 
 
 class DMControlReward(gym.RewardWrapper):
@@ -130,6 +103,29 @@ def create_goal_gym_env(**kwargs):
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
     return env 
+
+def create_slime_gym_env(**kwargs):
+    import slimevolleygym
+    from rl_games.envs.slimevolley_selfplay import SlimeVolleySelfplay
+    name = kwargs.pop('name')
+    limit_steps = kwargs.pop('limit_steps', False)
+    self_play = kwargs.pop('self_play', False)
+    if self_play:
+        env = SlimeVolleySelfplay(name, **kwargs) 
+    else:
+        env = gym.make(name, **kwargs)
+    return env
+
+def create_connect_four_env(**kwargs):
+    from rl_games.envs.connect4_selfplay import ConnectFourSelfPlay
+    name = kwargs.pop('name')
+    limit_steps = kwargs.pop('limit_steps', False)
+    self_play = kwargs.pop('self_play', False)
+    if self_play:
+        env = ConnectFourSelfPlay(name, **kwargs) 
+    else:
+        env = gym.make(name, **kwargs)
+    return env
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -221,17 +217,58 @@ def create_flex(path):
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
-    print(kwargs)
-    return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
+    transpose = kwargs.pop('transpose', False)
+    flatten = kwargs.pop('flatten', True)
+    has_cv = kwargs.get('central_value', False)
+    env = SMACEnv(name, **kwargs)
+    
+    
+    if frames > 1:
+        if has_cv:
+            env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
+        else:
+            env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=flatten)
+    return env
 
 def create_smac_cnn(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
-    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
+    if has_cv:
+        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False)
+    else:
+        env = wrappers.BatchedFrameStack(env, frames, transpose=False)
+        
     return env
 
+
+def create_test_env(name, **kwargs):
+    import rl_games.envs.test
+    env = gym.make(name, **kwargs)
+    return env
+
+
+def create_minigrid_env(name, **kwargs):
+    import gym_minigrid
+    import gym_minigrid.wrappers
+    state_bonus = kwargs.pop('state_bonus', False)
+    action_bonus = kwargs.pop('action_bonus', False)
+    fully_obs = kwargs.pop('fully_obs', False)
+
+    env = gym.make(name, **kwargs)
+    if state_bonus:
+        env = gym_minigrid.wrappers.StateBonus(env)
+    if action_bonus:
+        env = gym_minigrid.wrappers.ActionBonus(env)
+    if fully_obs:
+        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
+    else:
+        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env) # Get pixel observations
+    env = gym_minigrid.wrappers.ImgObsWrapper(env) # Get rid of the 'mission' field
+
+    print('minigird_env observation space shape:', env.observation_space)
+    return env
 
 configurations = {
     'CartPole-v1' : {
@@ -358,6 +395,22 @@ configurations = {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'slime_gym' : {
+        'env_creator' : lambda **kwargs : create_slime_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'test_env' : {
+        'env_creator' : lambda **kwargs : create_test_env(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'minigrid_env' : {
+        'env_creator' : lambda **kwargs : create_minigrid_env(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'connect4_env' : {
+        'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
 }
 
 
@@ -372,26 +425,34 @@ def get_obs_and_action_spaces(name):
     return observation_space, action_space
 
 def get_obs_and_action_spaces_from_config(config):
+    result_shapes = {}
     env_config = config.get('env_config', {})
     env = configurations[config['env_name']]['env_creator'](**env_config)
-    observation_space = env.observation_space
-    action_space = env.action_space
+    result_shapes['observation_space'] = env.observation_space
+    result_shapes['action_space'] = env.action_space
     env.close()
     # workaround for deepmind control
 
     if isinstance(observation_space, gym.spaces.dict.Dict):
-        observation_space = observation_space['observations']
-    return observation_space, action_space
+        result_shapes['observation_space'] = observation_space['observations']
+    if isinstance(observation_space, dict):
+        result_shapes['observation_space'] = observation_space['observations']
+        result_shapes['state_space'] = observation_space['states']
+    return result_shapes
 
 def get_env_info(env):
-    observation_space = env.observation_space
-    action_space = env.action_space
-    agents = 1
+    result_shapes = {}
+    result_shapes['observation_space'] = env.observation_space
+    result_shapes['action_space'] = env.action_space
+    result_shapes['agents'] = 1
     if hasattr(env, "get_number_of_agents"):
-        agents = env.get_number_of_agents()
-    if isinstance(observation_space, gym.spaces.dict.Dict):
-        observation_space = observation_space['observations']
-    return observation_space, action_space, agents
+        result_shapes['agents'] = env.get_number_of_agents()
+    if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
+        result_shapes['observation_space'] = observation_space['observations']
+    if isinstance(result_shapes['observation_space'], dict):
+        result_shapes['observation_space'] = observation_space['observations']
+        result_shapes['state_space'] = observation_space['states']
+    return result_shapes
 
 def register(name, config):
     configurations[name] = config

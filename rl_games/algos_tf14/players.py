@@ -19,7 +19,8 @@ class BasePlayer(object):
         self.config = config
         self.sess = sess
         self.env_name = self.config['env_name']
-        self.obs_space, self.action_space, self.num_agents = env_configurations.get_env_info(self.config)
+        self.env_spaces = env_configurations.get_env_info(self.config)
+        self.obs_space, self.action_space, self.num_agents = self.env_spaces['observation_space'], self.env_spaces['action_space'], self.env_spaces['agents']
         self.env = None
         self.env_config = self.config.get('env_config', None)
 
@@ -80,9 +81,10 @@ class BasePlayer(object):
                     done = done.any()
 
                 if done:
-                    game_res = 1.0
+                    game_res = 0.0
                     if isinstance(info, dict):
                         game_res = info.get('battle_won', 0.5)
+
                     print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
                     sum_game_res += game_res
                     sum_rewards += np.mean(cr)

@@ -8,32 +8,34 @@ params:
   network:
     name: actor_critic
     separate: True
+    normalization: 'layer_norm'
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
+        
         mu_init:
           # pytorch
           name: variance_scaling_initializer
-          scale: 0.02
+          scale: 0.01
 
           # tf
         #  name: normc_initializer
         #  std: 0.01
         sigma_init:
-          name: const_initializer     
-          #  value: 0 # tf
+          name: const_initializer
+          # value: 0 # tf 
           val: 0 # pytorch
 
         fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [256,128]
       activation: elu
 
       initializer:
         # pytorch
-          name: variance_scaling_initializer
-          scale: 2
+        name: variance_scaling_initializer
+        scale: 2
 
       # tf
       #  name: normc_initializer
@@ -41,33 +43,40 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
+    rnn:
+      name: lstm
+      units: 64
+      layers: 1
+      before_mlp: False  
 
-  load_checkpoint: False
-  load_path: path
+  load_checkpoint: True
+  load_path: 'nn/humanoid_torch_rnn.pth'
 
   config:
     reward_shaper:
-      scale_value: 0.01
+      scale_value: 0.1
     normalize_advantage : True
     gamma : 0.99
     tau : 0.95
-    learning_rate : 3e-4
-    name : 'ant_torch'
+    learning_rate : 8e-4
+    name : 'humanoid_torch_rnn'
     score_to_win : 20000
-    grad_norm : 2.5
-    entropy_coef : 0.0
+    grad_norm : 5
+    entropy_coef : 0
     truncate_grads : True
-    env_name : FlexAnt
+    env_name : FlexHumanoid
     ppo : True
     e_clip : 0.2
     num_actors : 256
-    steps_num : 16
-    minibatch_size : 4096
-    mini_epochs : 8
-    critic_coef : 2
+    steps_num : 256
+    minibatch_size : 8192
+    mini_epochs : 4
+    critic_coef : 1
     clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    normalize_reward : True
-    bounds_loss_coef: 0.0001
+    seq_len : 64
+    bounds_loss_coef: 0.000
+    weight_decay: 0.001
+    max_epochs: 6000

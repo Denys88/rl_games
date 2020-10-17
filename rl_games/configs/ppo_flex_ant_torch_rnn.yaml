@@ -8,10 +8,12 @@ params:
   network:
     name: actor_critic
     separate: True
+    normalization: 'layer_norm'
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
+        
         mu_init:
           # pytorch
           name: variance_scaling_initializer
@@ -25,9 +27,9 @@ params:
           #  value: 0 # tf
           val: 0 # pytorch
 
-        fixed_sigma: True
+        fixed_sigma: False
     mlp:
-      units: [128, 64]
+      units: [128]
       activation: elu
 
       initializer:
@@ -41,9 +43,14 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
+    rnn:
+      name: 'lstm'
+      units: 64
+      layers: 1
+      before_mlp: False
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn/ant_torch.pth'
 
   config:
     reward_shaper:
@@ -52,22 +59,23 @@ params:
     gamma : 0.99
     tau : 0.95
     learning_rate : 3e-4
-    name : 'ant_torch'
+    name : 'ant_torch_rnn'
     score_to_win : 20000
     grad_norm : 2.5
-    entropy_coef : 0.0
+    entropy_coef : 0
+    weight_decay: 0.001
     truncate_grads : True
     env_name : FlexAnt
     ppo : True
     e_clip : 0.2
     num_actors : 256
-    steps_num : 16
-    minibatch_size : 4096
+    steps_num : 256
+    minibatch_size : 8192
     mini_epochs : 8
     critic_coef : 2
     clip_value : False
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    normalize_reward : True
-    bounds_loss_coef: 0.0001
+    seq_len : 32
+    bounds_loss_coef: 0.000

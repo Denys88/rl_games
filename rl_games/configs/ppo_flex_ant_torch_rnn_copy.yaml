@@ -27,7 +27,7 @@ params:
 
         fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [64]
       activation: elu
 
       initializer:
@@ -41,9 +41,14 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
+    rnn:
+      name: 'lstm'
+      units: 128
+      layers: 1
+      before_mlp: True
 
   load_checkpoint: False
-  load_path: path
+  load_path: 'nn/ant_torch.pth'
 
   config:
     reward_shaper:
@@ -61,7 +66,7 @@ params:
     ppo : True
     e_clip : 0.2
     num_actors : 256
-    steps_num : 16
+    steps_num : 128
     minibatch_size : 4096
     mini_epochs : 8
     critic_coef : 2
@@ -69,5 +74,5 @@ params:
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    normalize_reward : True
-    bounds_loss_coef: 0.0001
+    seq_len : 16
+    bounds_loss_coef: 0.0
