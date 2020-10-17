@@ -3,7 +3,7 @@ import copy
 import torch
 import yaml
 import ray
-
+from rl_games import envs
 from rl_games.common import object_factory
 from rl_games.common import env_configurations
 from rl_games.common import experiment

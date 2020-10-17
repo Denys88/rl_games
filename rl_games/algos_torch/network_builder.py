@@ -239,8 +239,8 @@ class A2CBuilder(NetworkBuilder):
                 cnn_init = self.init_factory.create(**self.cnn['initializer'])
 
             for m in self.modules():
-                #if getattr(m, "bias", None) is not None:
-                #    torch.nn.init.zeros_(m.bias)
+                if getattr(m, "bias", None) is not None:
+                    torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
                 if isinstance(m, nn.Linear):    

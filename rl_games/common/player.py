@@ -140,16 +140,8 @@ class BasePlayer(object):
   
                 if render:
                     self.env.render(mode = 'human')
-<<<<<<< HEAD
-                    import time
-                    time.sleep(0.005)
-                all_done_indices = done.nonzero()
-                
-=======
-                    #import time
-                    #time.sleep(0.05)
+
                 all_done_indices = done.nonzero(as_tuple=False)
->>>>>>> master
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
                 games_played += done_count
