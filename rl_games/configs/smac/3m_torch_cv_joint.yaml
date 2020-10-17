@@ -48,7 +48,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    normalize_reward: True
+    normalize_reward: False
     use_action_masks: True
 
     env_config:
@@ -68,11 +68,12 @@ params:
       normalize_input: True
       network:
         name: actor_critic
+        normalization: batch_norm
         central_value: True
         joint_obs_actions:
             embedding: False
             embedding_scale: 1 #(actions // embedding_scale)
-            mlp_out_scale: 4 # (mlp from obs size) // mlp_out_scale
+            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         mlp:
           units: [256, 128]
           activation: relu

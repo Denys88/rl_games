@@ -49,7 +49,7 @@ params:
     lr_threshold: 0.05
     normalize_input: True
     use_action_masks: True
-    max_epochs: 30000
+    max_epochs: 50000
 
 
     central_value_config:

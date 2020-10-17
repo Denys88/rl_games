@@ -143,17 +143,24 @@ class LayerNorm2d(nn.Module):
 
 
 class DiscreteActionsEncoder(nn.Module):
-    def __init__(self, actions_max, emb_size, num_agents, use_embedding):
+    def __init__(self, actions_max, mlp_out, emb_size, num_agents, use_embedding):
         super().__init__()
+        self.actions_max = actions_max
         self.emb_size = emb_size
         self.num_agents = num_agents
+        self.use_embedding = use_embedding
         if use_embedding:
             self.embedding = torch.nn.Embedding(actions_max, emb_size)
+        else:
+            self.emb_size = actions_max
+        
+        self.linear = torch.nn.Linear(self.emb_size * num_agents, mlp_out)
 
     def forward(self, discrete_actions):
-        if use_embedding:
+        if self.use_embedding:
             emb = self.embedding(discrete_actions)
         else:
-            emb = torch.nn.functional.one_hot(discrete_actions, num_classes=self.emb_size)
+            emb = torch.nn.functional.one_hot(discrete_actions, num_classes=self.actions_max)
         emb = emb.view( -1, self.emb_size * self.num_agents).float()
+        emb = self.linear(emb)
         return emb

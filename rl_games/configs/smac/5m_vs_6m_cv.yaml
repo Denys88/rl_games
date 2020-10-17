@@ -48,23 +48,24 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    normalize_reward: True
+    normalize_reward: False
     use_action_masks: True
     ignore_dead_batches : False
     #max_epochs: 10000
 
     central_value_config:
-      use_joint_obs_actions: False
+      use_joint_obs_actions: True
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
-      clip_value: True
+      clip_value: False
       normalize_input: True
       network:
-        joint_obs_actions1:
+        normalization: batch_norm
+        joint_obs_actions:
             embedding: False
             embedding_scale: 1 #(actions // embedding_scale)
-            mlp_out_scale: 4 # (mlp from obs size) // mlp_out_scale
+            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:

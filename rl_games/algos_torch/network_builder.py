@@ -175,14 +175,11 @@ class A2CBuilder(NetworkBuilder):
             mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
 
             if self.use_joint_obs_actions:
-                use_embedding = self.joint_obs_actions_config['use_embedding'] 
-                emb_size = self.joint_obs_actions_config['embedding_out_scale'] 
+                use_embedding = self.joint_obs_actions_config['embedding'] 
+                emb_size = self.joint_obs_actions_config['embedding_scale'] 
                 num_agents = kwargs.pop('num_agents')
-                mlp_out = mlp_input_shape // self.joint_obs_actions_config['mlp_out_scale']
-                self.joint_actions = nn.Sequential(
-                    torch_ext.DiscreteActionsEncoder(actions_num, emb_size, num_agents),
-                    torch.nn.Linear(emb_size * num_agents, mlp_out)
-                )
+                mlp_out = mlp_input_shape // self.joint_obs_actions_config['mlp_scale']
+                self.joint_actions = torch_ext.DiscreteActionsEncoder(actions_num, mlp_out, emb_size, num_agents, use_embedding)
                 mlp_input_shape = mlp_input_shape + mlp_out
 
             in_mlp_shape = mlp_input_shape
@@ -418,7 +415,7 @@ class A2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.value_shape = params.get('value_shape', 1)
             self.central_value = params.get('central_value', False)
-            self.joint_obs_actions_config = params.get('use_joint_obs_actions', None)
+            self.joint_obs_actions_config = params.get('joint_obs_actions', None)
             self.use_joint_obs_actions = self.joint_obs_actions_config is not None
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']

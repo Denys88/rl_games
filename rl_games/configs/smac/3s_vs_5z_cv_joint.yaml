@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/last_3s_vs_5z_cvep=10001rew=9.585825.pth'
+  load_checkpoint: True
+  load_path: 'nn/3s_vs_5z_cv.pth'
 
   network:
     name: actor_critic
@@ -48,9 +48,9 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    normalize_reward: True
+    normalize_reward: False
     use_action_masks: True
-    max_epochs: 30000
+    max_epochs: 50000
 
 
     central_value_config:
@@ -64,7 +64,7 @@ params:
         joint_obs_actions:
             embedding: False
             embedding_scale: 1 #(actions // embedding_scale)
-            mlp_out_scale: 4 # (mlp from obs size) // mlp_out_scale
+            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:
