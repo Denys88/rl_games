@@ -76,7 +76,7 @@ class Runner:
 
     def run_train(self):
         print('Started to train')
-        ray.init(redis_max_memory=1024*1024*1000, object_store_memory=1024*1024*1000)
+        ray.init(object_store_memory=1024*1024*1000)
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0

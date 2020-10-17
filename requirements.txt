@@ -4,16 +4,12 @@ ray==1.0.0
 pyyaml
 setproctitle
 psutil
-torch>=1.5
+torch>=1.6
 tensorboard==1.14.0
 tensorboardX==1.6
-tensorflow-gpu==1.15.4
-tensorflow-probability==0.7.0
 opencv-python>=4.1.0.25
 gym-super-mario-bros==7.1.6
 pybullet>=2.5.0
 smac
 dm_control
 dm2gym
-
-
