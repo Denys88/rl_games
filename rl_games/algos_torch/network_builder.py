@@ -267,7 +267,6 @@ class A2CBuilder(NetworkBuilder):
                 c_out = self.critic_cnn(c_out)
                 c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
-
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
                         a_out = self.actor_mlp(a_out)
@@ -322,7 +321,6 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
                     return mu, sigma, value, states
-
             else:
                 out = obs
                 out = self.actor_cnn(out)

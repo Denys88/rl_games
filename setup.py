@@ -17,21 +17,21 @@ setup(name='rl_games',
             # this setup is only for pytorch
             # 
             'gym>=0.17.2',
-            'torch>=1.5',
+            'torch>=1.6',
             'numpy>=1.16.0',
-            'ray>=0.8.5',
+            'ray==1.0.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
             'opencv-python>=4.1.0.25',
             'setproctitle',
             'psutil',
             'pyyaml'
-           # 'tensorflow-gpu==1.14.0',
-           # 'gym-super-mario-bros==7.1.6',
-           # 'pybullet>=2.5.0',
-           # 'smac',
-           # 'dm_control',
-           # 'dm2gym',
-           # TOD add yaml
+            # Optional dependencies
+            # 'tensorflow-gpu==1.14.0',
+            # 'gym-super-mario-bros==7.1.6',
+            # 'pybullet>=2.5.0',
+            # 'smac',
+            # 'dm_control',
+            # 'dm2gym',
       ],
       )

@@ -2,13 +2,17 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 
 import gym
+from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 
 #FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
 FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> master
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -34,25 +38,6 @@ class HCRewardEnv(gym.RewardWrapper):
     def reward(self, reward):
         return np.max([-10, reward])
 
-
-class MinigridReward(gym.RewardWrapper):
-    def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
-        self.steps = 0
-    def reset(self, **kwargs):
-        self.steps = 0
-        return self.env.reset(**kwargs)
-
-    def step(self, action):
-        observation, reward, done, info = self.env.step(action)
-        self.steps += 1
-        if done and (self.steps < 100) and reward == 0:
-            reward = -0.2
-            
-        return observation, self.reward(reward), done, info
-
-    def reward(self, reward):
-        return reward
 
 class DMControlReward(gym.RewardWrapper):
     def __init__(self, env):
@@ -104,6 +89,20 @@ def create_default_gym_env(**kwargs):
             env = wrappers.ProcgenStack(env, frames, True)
         else:
             env = wrappers.FrameStack(env, frames, False)
+    if limit_steps:
+        env = wrappers.LimitStepsWrapper(env)
+    return env
+
+def create_goal_gym_env(**kwargs):
+    frames = kwargs.pop('frames', 1)
+    name = kwargs.pop('name')
+    limit_steps = kwargs.pop('limit_steps', False)
+
+    env = gym.make(name, **kwargs)
+    env = FlattenObservation(FilterObservation(env, ['observation', 'desired_goal']))
+
+    if frames > 1:
+        env = wrappers.FrameStack(env, frames, False)
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
     return env 
@@ -186,7 +185,7 @@ def create_quadrupped_env():
     import gym
     import roboschool
     import quadruppedEnv
-    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'),4, False), 2, True)
+    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'), 4, False), 2, True)
 
 def create_roboschool_env(name):
     import gym
@@ -261,7 +260,6 @@ def create_minigrid_env(name, **kwargs):
     fully_obs = kwargs.pop('fully_obs', False)
 
     env = gym.make(name, **kwargs)
-    #env = MinigridReward(env)
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
     if action_bonus:
@@ -390,6 +388,10 @@ configurations = {
     },
     'openai_gym' : {
         'env_creator' : lambda **kwargs : create_default_gym_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'openai_robot_gym' : {
+        'env_creator' : lambda **kwargs : create_goal_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
     'atari_gym' : {

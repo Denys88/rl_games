@@ -183,7 +183,7 @@ class A2CBase:
                 return seq_indices, True
             mb_rnn_masks[indices + steps_mask] = 1
             seq_indices = indices % self.seq_len
-            state_indices = (seq_indices == 0).nonzero()
+            state_indices = (seq_indices == 0).nonzero(as_tuple=False)
             state_pos = indices // self.seq_len
             rnn_indices = state_pos[state_indices] + steps_state[state_indices]
             for s, mb_s in zip(self.rnn_states, mb_rnn_states):
@@ -455,7 +455,7 @@ class DiscreteA2CBase(A2CBase):
                 
             self.current_rewards += rewards
             self.current_lengths += 1
-            all_done_indices = self.dones.nonzero()
+            all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
             if self.is_rnn:
                 self.process_rnn_dones(all_done_indices, indices, seq_indices)  
@@ -815,7 +815,7 @@ class ContinuousA2CBase(A2CBase):
                 
             self.current_rewards += rewards
             self.current_lengths += 1
-            all_done_indices = self.dones.nonzero()
+            all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
             if self.is_rnn:
                 self.process_rnn_dones(all_done_indices, indices, seq_indices)  
