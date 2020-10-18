@@ -11,7 +11,7 @@ from algos_tf14.tensorflow_utils import TensorFlowVariables
 from common.categorical import CategoricalQ
 
 class DQNAgent:
-    def __init__(self, sess, base_name, observation_space, action_space, config, logger):
+    def __init__(self, sess, base_name, observation_space, action_space, config, logger, central_state_space=None):
         observation_shape = observation_space.shape
         actions_num = action_space.n
         self.config = config
@@ -60,12 +60,14 @@ class DQNAgent:
             self.v_max = self.config['v_max']
             self.delta_z = (self.v_max - self.v_min) / (self.atoms_num - 1)
             self.all_z = tf.range(self.v_min, self.v_max + self.delta_z, self.delta_z)
-            self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)     
+            self.categorical = CategoricalQ(self.atoms_num, self.v_min, self.v_max)
+
+        self.n_agents = self.env.env_info['n_agents']
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'])
+            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'], observation_space, self.n_agents)
         else: 
-            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'])
+            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'], observation_space, self.n_agents)
             self.sample_weights_ph = tf.placeholder(tf.float32, shape= [None,] , name='sample_weights')
         
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape , name = 'obs_ph')

@@ -2,10 +2,10 @@ label: ""
 name: ""
 params:
   algo:
-    name: vdn
+    name: iql
 
   model:
-    name: vdn
+    name: iql
 
   load_checkpoint: False
   load_path: ""

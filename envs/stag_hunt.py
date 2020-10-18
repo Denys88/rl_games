@@ -34,6 +34,7 @@ import torch as th
 import numpy as np
 import random
 import pygame
+import gym
 from utils.dict2namedtuple import convert
 
 
@@ -42,7 +43,7 @@ int_type = np.int16
 float_type = np.float32
 
 
-class StagHuntEnv(MultiAgentEnv):
+class StagHuntEnv(MultiAgentEnv, gym.Env):
 
     # This is how the actions translate into "action-id" (second row for directed_observations=True)
     action_labels = {'right': 0, 'down': 1, 'left': 2, 'up': 3, 'stay': 4, 'catch': 5,
@@ -154,8 +155,16 @@ class StagHuntEnv(MultiAgentEnv):
         self.made_screen = False
         self.scaling = 5
 
+        # adaptations for RL_GAMES
+        self.action_space = gym.spaces.Discrete(self.n_actions)
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.obs_size, ), dtype=np.float32)
+        self.reward_range = (float("-inf"), float("inf"))
+        self.central_state_space = gym.spaces.Box(low=0, high=1, shape=(self.state_size,),
+                                                  dtype=np.float32)
+
     # ---------- INTERACTION METHODS -----------------------------------------------------------------------------------
     def reset(self):
+
         # Reset old episode
         self.prey_alive.fill(1)
         self.agents_not_frozen.fill(1)
@@ -180,10 +189,18 @@ class StagHuntEnv(MultiAgentEnv):
                 random.randint(0, len(self.ghost_indicator_potential_positions)-1)].tolist()
 
         # self.step(th.zeros(self.n_agents).fill_(self.action_labels['stay']))
-        return self.get_obs(), self.get_state()
+        ret = self.get_obs()[:,0,0,:] #, self.get_state() # MOD
+
+        return ret
+
+    def get_number_of_agents(self):
+        return self.n_agents
 
     def step(self, actions):
+
         """ Execute a*bs actions in the environment. """
+        actions = np.expand_dims(actions, axis=1)# MOD
+        # print("AcTIONS: ", actions)
         if not self.batch_mode:
             actions = np.expand_dims(np.asarray(actions.cpu(), dtype=int_type), axis=1)
         assert len(actions.shape) == 2 and actions.shape[0] == self.n_agents and actions.shape[1] == self.batch_size, \
@@ -329,10 +346,14 @@ class StagHuntEnv(MultiAgentEnv):
         if terminated[0] and self.print_caught_prey:
             print("Episode terminated at time %u with return %g" % (self.steps, self.sum_rewards))
 
-        if self.batch_mode:
-            return reward, terminated, info
-        else:
-            return reward[0].item(), int(terminated[0]), info
+        #if self.batch_mode:
+        #    return reward, terminated, info
+        #else:
+        #    return reward[0].item(), int(terminated[0]), info
+        return self.get_obs()[:,0,0,:], \
+               np.repeat(reward[0],
+               self.n_agents, axis=0), np.repeat(int(terminated[0]), self.n_agents, axis=0), \
+               info # MOD
 
     # ---------- OBSERVATION METHODS -----------------------------------------------------------------------------------
     def get_obs_agent(self, agent_id, batch=0):
@@ -357,7 +378,7 @@ class StagHuntEnv(MultiAgentEnv):
 
     def get_obs(self):
         agents_obs = [self.get_obs_agent(i) for i in range(self.n_agents)]
-        return agents_obs
+        return np.array(agents_obs)
 
     def get_state(self):
         # Return the entire grid
@@ -624,6 +645,9 @@ class StagHuntEnv(MultiAgentEnv):
     @classmethod
     def get_action_id(cls, label):
         return cls.action_labels[label]
+
+    def get_action_mask(self):
+        return np.array(self.get_avail_actions(), dtype=np.bool)
 
 # ######################################################################################################################
 if __name__ == "__main__":

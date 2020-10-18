@@ -192,6 +192,12 @@ def create_flex(path):
 
     return env
 
+def create_staghunt(name, **kwargs):
+    from envs.stag_hunt import StagHuntEnv
+    frames = kwargs.pop('frames', 1)
+    print(kwargs)
+    return wrappers.BatchedFrameStack(StagHuntEnv(1, **kwargs), frames, transpose=False, flatten=True)
+
 def create_smac(name, **kwargs):
     from envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
@@ -212,6 +218,13 @@ def create_smac_cnn(name, **kwargs):
     env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
     return env
 
+def create_staghunt_cnn(name, **kwargs):
+    from envs.stag_hunt import StagHuntEnv
+    env = StagHuntEnv(1, **kwargs)
+    frames = kwargs.pop('frames', 4)
+    transpose = kwargs.pop('transpose', False)
+    env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
+    return env
 
 configurations = {
     'CartPole-v1' : {
@@ -313,6 +326,10 @@ configurations = {
     'FlexHumanoidHard' : {
         'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'vecenv_type' : 'ISAAC'
+    },
+    'staghunt': {
+        'env_creator': lambda **kwargs: create_staghunt_cnn(**kwargs),
+        'vecenv_type': 'RAY_SMAC'
     },
     'smac' : {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),

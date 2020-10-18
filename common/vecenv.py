@@ -34,7 +34,12 @@ class IsaacEnv(IVecEnv):
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
-        self.obs = self.env.reset()
+
+        res = self.env.reset()
+        if isinstance(res, tuple):
+            self.obs, self.central_state = res
+        else:
+            self.obs = res
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
@@ -136,7 +141,16 @@ class RayVecSMACEnv(IVecEnv):
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
-        return np.concatenate(newobs, axis=0), np.concatenate(newrewards, axis=0), np.concatenate(newdones, axis=0), newinfos
+        #print("newobs: ", newobs)
+        #print("newrewards: ", newrewards)
+        #print("newdones: ", newdones)
+        #print("newinfos:", newinfos)
+        #raise Exception()
+        ro = np.concatenate(newobs, axis=0)
+        rr = np.concatenate(newrewards, axis=0)
+        rd = np.concatenate(newdones, axis=0)
+        ri = newinfos
+        return ro, rr, rd, ri
 
     def has_action_masks(self):
         return True

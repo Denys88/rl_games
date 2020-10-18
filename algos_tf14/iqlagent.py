@@ -12,7 +12,7 @@ from common.categorical import CategoricalQ
 import tensorflow_probability as tfp
 
 
-class VDNAgent:
+class IQLAgent:
     def __init__(self, sess, base_name, observation_space, action_space, config, logger, central_state_space=None):
         observation_shape = observation_space.shape
         actions_num = action_space.n
@@ -73,23 +73,23 @@ class VDNAgent:
         if central_state_space is not None:
             self.state_shape = central_state_space.shape
         else:
-            raise NotImplementedError("central_state_space input to VDN is NONE!")
+            raise NotImplementedError("central_state_space input to IQL is NONE!")
         self.n_agents = self.env.env_info['n_agents']
 
         if not self.is_prioritized:
-            self.exp_buffer = experience.ReplayBufferCentralState(config['replay_buffer_size'], observation_space, central_state_space, self.n_agents)
+            self.exp_buffer = experience.ReplayBuffer(config['replay_buffer_size'], observation_space, self.n_agents)
         else:
-            raise NotImplementedError("Not implemented! PrioritizedReplayBuffer with CentralState")
-            #self.exp_buffer = experience.PrioritizedReplayBufferCentralState(config['replay_buffer_size'], config['priority_alpha'])
-            #self.sample_weights_ph = tf.placeholder(tf.float32, shape=[None, 1], name='sample_weights')
+            self.exp_buffer = experience.PrioritizedReplayBuffer(config['replay_buffer_size'], config['priority_alpha'], observation_space, self.n_agents)
+            self.sample_weights_ph = tf.placeholder(tf.float32, shape=[None, 1], name='sample_weights')
 
+        self.batch_size_ph = tf.placeholder(tf.int32, name='batch_size_ph')
         self.batch_size_ph = tf.placeholder(tf.int32, name='batch_size_ph')
         self.obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.obs_shape, name='obs_ph')
         self.state_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.state_shape, name='state_ph')
         self.actions_ph = tf.placeholder(tf.int32, shape=[None, 1], name='actions_ph')
-        self.rewards_ph = tf.placeholder(tf.float32, shape=[None, 1], name='rewards_ph')
+        self.rewards_ph = tf.placeholder(tf.float32, shape=[None, self.n_agents, 1], name='rewards_ph')
         self.next_obs_ph = tf.placeholder(observation_space.dtype, shape=(None,) + self.obs_shape, name='next_obs_ph')
-        self.is_done_ph = tf.placeholder(tf.float32, shape=[None, 1], name='is_done_ph')
+        self.is_done_ph = tf.placeholder(tf.float32, shape=[None, self.n_agents, 1], name='is_done_ph')
         self.is_not_done = 1 - self.is_done_ph
         self.name = base_name
 
@@ -146,23 +146,23 @@ class VDNAgent:
             'n_agents': self.n_agents
         }
 
-        # (bs, n_agents, n_actions), (bs, 1), (bs, 1)
-        self.qvalues, self.current_action_qvalues_mix, self.target_action_qvalues_mix = self.network(config)
+        # (bs, n_agents, n_actions), (bs, n_agents, 1), (bs, n_agents, 1)
+        self.qvalues, self.current_action_qvalues, self.target_action_qvalues = self.network(config)
 
         self.weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='agent')
         self.target_weights = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target')
 
-        self.reference_qvalues = self.rewards_ph + self.gamma_step * self.is_not_done * self.target_action_qvalues_mix
+        self.reference_qvalues = self.rewards_ph + self.gamma_step * self.is_not_done * self.target_action_qvalues
 
         if self.is_prioritized:
             # we need to return l1 loss to update priority buffer
-            self.abs_errors = tf.abs(self.current_action_qvalues_mix - self.reference_qvalues) + 1e-5
+            self.abs_errors = tf.abs(self.current_action_qvalues - self.reference_qvalues) + 1e-5
             # the same as multiply gradients later (other way is used in different examples over internet) 
-            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues_mix, self.reference_qvalues,
+            self.td_loss = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues,
                                                 reduction=tf.losses.Reduction.NONE) * self.sample_weights_ph
             self.td_loss_mean = tf.reduce_mean(self.td_loss)
         else:
-            self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues_mix, self.reference_qvalues,
+            self.td_loss_mean = tf.losses.huber_loss(self.current_action_qvalues, self.reference_qvalues,
                                                      reduction=tf.losses.Reduction.MEAN)
 
         self.reg_loss = tf.losses.get_regularization_loss()
@@ -239,13 +239,13 @@ class VDNAgent:
             if len(self.obs_act_rew) < steps:
                 break
 
-            for i in range(steps):
+            for i in range(int(steps)):
                 sreward = self.obs_act_rew[i][2]
                 steps_rewards += sreward * cur_gamma
                 cur_gamma = cur_gamma * self.gamma
 
             next_obs, current_action, _, current_st = self.obs_act_rew[0]
-            self.exp_buffer.add(self.current_obs, current_action, current_st, steps_rewards, new_obs, is_done)
+            self.exp_buffer.add(self.current_obs, current_action, steps_rewards, new_obs, is_done)
             self.current_obs = next_obs
             break
 
@@ -262,31 +262,29 @@ class VDNAgent:
         self.sess.run(self.assigns_op)
 
     def sample_batch(self, exp_replay, batch_size):
-        obs_batch, act_batch, st_batch, reward_batch, next_obs_batch, is_done_batch = exp_replay.sample(batch_size)
+        obs_batch, act_batch, reward_batch, next_obs_batch, is_done_batch = exp_replay.sample(batch_size)
         obs_batch = obs_batch.reshape((batch_size * self.n_agents,) + self.obs_shape)
         act_batch = act_batch.reshape((batch_size * self.n_agents, 1))
-        st_batch = st_batch.reshape((batch_size,) + self.state_shape)
         next_obs_batch = next_obs_batch.reshape((batch_size * self.n_agents,) + self.obs_shape)
-        reward_batch = reward_batch.reshape((batch_size, 1))
-        is_done_batch = is_done_batch.reshape((batch_size, 1))
+        reward_batch = reward_batch.reshape((batch_size, 1, 1)).repeat(self.n_agents, axis=1)
+        is_done_batch = is_done_batch.reshape((batch_size, 1, 1)).repeat(self.n_agents, axis=1)
 
         return {
-            self.obs_ph: obs_batch, self.actions_ph: act_batch, self.state_ph: st_batch,
+            self.obs_ph: obs_batch, self.actions_ph: act_batch,
             self.rewards_ph: reward_batch, self.is_done_ph: is_done_batch, self.next_obs_ph: next_obs_batch,
             self.batch_size_ph: batch_size
         }
 
     def sample_prioritized_batch(self, exp_replay, batch_size, beta):
-        obs_batch, act_batch, st_batch, reward_batch, next_obs_batch, is_done_batch, sample_weights, sample_idxes = exp_replay.sample(
+        obs_batch, act_batch, reward_batch, next_obs_batch, is_done_batch, sample_weights, sample_idxes = exp_replay.sample(
             batch_size, beta)
         obs_batch = obs_batch.reshape((batch_size * self.n_agents,) + self.obs_shape)
         act_batch = act_batch.reshape((batch_size * self.n_agents, 1))
-        st_batch = st_batch.reshape((batch_size,) + self.state_shape)
         next_obs_batch = next_obs_batch.reshape((batch_size * self.n_agents,) + self.obs_shape)
-        reward_batch = reward_batch.reshape((batch_size, 1))
-        is_done_batch = is_done_batch.reshape((batch_size, 1))
+        reward_batch = reward_batch.reshape((batch_size, 1, 1)).repeat(self.n_agents, axis=1)
+        is_done_batch = is_done_batch.reshape((batch_size, 1, 1)).repeat(self.n_agents, axis=1)
         sample_weights = sample_weights.reshape((batch_size, 1))
-        batch = {self.obs_ph: obs_batch, self.actions_ph: act_batch, self.state_ph: st_batch,
+        batch = {self.obs_ph: obs_batch, self.actions_ph: act_batch,
                  self.rewards_ph: reward_batch,
                  self.is_done_ph: is_done_batch, self.next_obs_ph: next_obs_batch,
                  self.sample_weights_ph: sample_weights,

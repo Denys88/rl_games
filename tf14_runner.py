@@ -10,6 +10,7 @@ import algos_tf14.a2c_continuous as a2c_continuous
 import algos_tf14.a2c_discrete as a2c_discrete
 import algos_tf14.dqnagent as dqnagent
 import algos_tf14.vdnagent as vdnagent
+import algos_tf14.iqlagent as iqlagent
 
 import common.tr_helpers as tr_helpers
 import yaml
@@ -51,6 +52,7 @@ class Runner:
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.A2CAgent(**kwargs)) 
         self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
         self.algo_factory.register_builder('vdn', lambda **kwargs : vdnagent.VDNAgent(**kwargs))
+        self.algo_factory.register_builder('iql', lambda **kwargs : iqlagent.IQLAgent(**kwargs))
 
         self.player_factory = common.object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
@@ -64,9 +66,11 @@ class Runner:
         self.logger = logger
 
     def reset(self):
-        gpu_options = tf.GPUOptions(allow_growth=False)
+        gpu_options = tf.GPUOptions(allow_growth=True)
 
-        config = tf.ConfigProto(gpu_options=gpu_options)
+        config = tf.ConfigProto(log_device_placement=False,
+                                allow_soft_placement=True,
+                                gpu_options=gpu_options)
         tf.reset_default_graph()
         if self.sess:
             self.sess.close()
@@ -135,7 +139,7 @@ class Runner:
         else:
             self.reset()
             self.load_config(self.default_config)
-            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger, central_state_space=central_state_space)
+            agent = self.algo_factory.create(self.algo_name, sess=self.sess, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config, logger=self.logger)
             if self.load_check_point or (self.load_path is not None):
                 agent.restore(self.load_path)
             agent.train()

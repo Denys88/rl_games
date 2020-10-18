@@ -37,7 +37,7 @@ params:
           strides: 1
           padding: 'valid'
     mlp:
-      units: [256]
+      units: [256, 128]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -57,7 +57,7 @@ params:
     epsilon_decay_frames: 100000
     num_epochs_to_copy: 10000
     env_name:  smac_cnn
-    name: MMM2
+    name: 3m
     is_double: True
     score_to_win: 20
     num_steps_fill_buffer: 10000
@@ -78,7 +78,7 @@ params:
     truncate_grads: True
 
     env_config:
-      name: MMM2
+      name: 3m
       frames: 4
       transpose: True
       random_invalid_step: False
