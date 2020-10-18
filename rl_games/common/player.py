@@ -75,7 +75,9 @@ class BasePlayer(object):
         return self.model.state_dict()
 
     def set_weights(self, weights):
-        self.model.load_state_dict(weights)
+        self.model.load_state_dict(weights['model'])
+        if self.normalize_input:
+            self.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)

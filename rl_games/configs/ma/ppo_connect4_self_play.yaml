@@ -78,6 +78,6 @@ params:
     env_config:
       name: connect_four_v0
       self_play: True
-      is_human: True
+      is_human: False
       random_agent: False
       config_path: 'rl_games/configs/ma/ppo_connect4_self_play.yaml'

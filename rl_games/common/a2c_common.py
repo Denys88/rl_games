@@ -136,6 +136,7 @@ class A2CBase:
 
         #self_play
         if self.has_self_play_config:
+            print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
     def init_tensors(self):
@@ -277,6 +278,7 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
+        self.game_scores.clear()
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.last_mean_rewards = -100500

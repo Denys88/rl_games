@@ -57,3 +57,4 @@ params:
       name: SlimeVolleyDiscrete-v0
       #neg_scale: 1 #0.5
       self_play: False
+      config_path: 'rl_games/configs/ma/ppo_slime_self_play.yaml'
