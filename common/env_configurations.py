@@ -198,6 +198,12 @@ def create_smac(name, **kwargs):
     print(kwargs)
     return wrappers.BatchedFrameStack(SMACEnv(name, **kwargs), frames, transpose=False, flatten=True)
 
+def create_stag_hunt(name, **kwargs):
+    from envs.stag_hunt import StagHuntEnv
+    frames = kwargs.pop('frames', 1)
+    print(kwargs)
+    return wrappers.BatchedFrameStack(StagHuntEnv(name, **kwargs), frames, transpose=False, flatten=True)
+
 def create_smac_cnn(name, **kwargs):
     from envs.smac_env import SMACEnv
     env = SMACEnv(name, **kwargs)
