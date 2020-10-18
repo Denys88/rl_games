@@ -232,9 +232,10 @@ def create_smac(name, **kwargs):
 
 def create_smac_cnn(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
-    env = SMACEnv(name, **kwargs)
+    has_cv = kwargs.get('central_value', False)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
+    env = SMACEnv(name, **kwargs)
     if has_cv:
         env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False)
     else:
