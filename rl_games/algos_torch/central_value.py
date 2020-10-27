@@ -13,7 +13,6 @@ class CentralValueTrain(nn.Module):
         self.num_agents, self.num_steps, self.num_actors = num_agents, num_steps, num_actors
         self.num_actions = num_actions
         self.state_shape = state_shape
-        state_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
         state_config = {
             'input_shape' : state_shape,
             'actions_num' : num_actions,
@@ -67,7 +66,6 @@ class CentralValueTrain(nn.Module):
         is_done = input_dict['is_done']
         actions = input_dict['actions']
         #step_indices = input_dict['step_indices']
-
         obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
                                              'rnn_states': self.rnn_states})

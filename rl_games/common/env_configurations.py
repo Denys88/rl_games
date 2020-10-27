@@ -237,9 +237,9 @@ def create_smac_cnn(name, **kwargs):
     transpose = kwargs.pop('transpose', False)
     env = SMACEnv(name, **kwargs)
     if has_cv:
-        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False)
+        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=transpose)
     else:
-        env = wrappers.BatchedFrameStack(env, frames, transpose=False)
+        env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
         
     return env
 
