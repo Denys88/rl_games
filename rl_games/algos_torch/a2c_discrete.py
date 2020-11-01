@@ -27,7 +27,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
-        #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
+        #self.optimizer = torch_ext.AdaBelief(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).cuda()
@@ -86,7 +86,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
-                
+        print(logits)
         return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), rnn_states
 
     def get_action_values(self, obs):
@@ -177,13 +177,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy], rnn_masks)
         a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
 
         self.optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+        if self.config['truncate_grads']:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)

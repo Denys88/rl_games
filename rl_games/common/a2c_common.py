@@ -273,7 +273,6 @@ class A2CBase:
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
 
-
     def clear_stats(self):
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
@@ -365,8 +364,8 @@ class A2CBase:
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
+        #if len(obs_batch.size()) == 3:
+        #    obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
@@ -426,33 +425,32 @@ class DiscreteA2CBase(A2CBase):
 
             if self.is_rnn:
                 mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
-                mb_obs[indices,play_mask] = self.obs['obs']    
+                mb_obs[indices,play_mask] = self.obs['obs']   
+                mb_actions[indices,play_mask] = actions
+                mb_neglogpacs[indices,play_mask] = neglogpacs
+                mb_values[indices.cpu(), play_mask.cpu()] = values 
             else:
                 mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
+                mb_actions[n,:] = actions
+                mb_neglogpacs[n,:] = neglogpacs
+                mb_values[n,:] = values
+
+            if self.has_central_value:
+                mb_vobs[n,:] = self.obs['states']
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
-
-            if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
             
             shaped_rewards = self.rewards_shaper(rewards)
-            
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
             if self.is_rnn:
-                mb_actions[indices,play_mask] = actions
-                mb_neglogpacs[indices,play_mask] = neglogpacs
-                mb_values[indices.cpu(), play_mask.cpu()] = values
                 mb_rewards[indices.cpu(), play_mask.cpu()] = shaped_rewards
             else: 
-                mb_actions[n,:] = actions
-                mb_neglogpacs[n,:] = neglogpacs
-                mb_values[n,:] = values
                 mb_rewards[n,:] = shaped_rewards
                 
             self.current_rewards += rewards
@@ -505,6 +503,7 @@ class DiscreteA2CBase(A2CBase):
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
             fdones[non_finished] = 1.0
             last_extrinsic_values[non_finished] = 0.0
+
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
 
         mb_returns = mb_advs + mb_extrinsic_values
@@ -536,7 +535,6 @@ class DiscreteA2CBase(A2CBase):
         batch_dict = self.play_steps() 
         obses = batch_dict['obs']
         returns = batch_dict['returns'].cuda()
-        dones = batch_dict['dones'].cuda()
         values = batch_dict['values'].cuda()
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
@@ -602,25 +600,25 @@ class DiscreteA2CBase(A2CBase):
                     entropies.append(entropy)    
         else:
             for _ in range(0, self.mini_epochs_num):
+                '''
                 permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
                 obses = obses[permutation]
                 returns = returns[permutation]
-                
                 actions = actions[permutation]
                 values = values[permutation]
                 neglogpacs = neglogpacs[permutation]
                 advantages = advantages[permutation]
-
+                '''
                 for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
+                    start = i * self.minibatch_size
+                    end = (i + 1) * self.minibatch_size
                     input_dict = {}
-                    input_dict['old_values'] = values[batch]
-                    input_dict['old_logp_actions'] = neglogpacs[batch]
-                    input_dict['advantages'] = advantages[batch]
-                    input_dict['returns'] = returns[batch]
-                    input_dict['actions'] = actions[batch]
-                    input_dict['obs'] = obses[batch]
-                    input_dict['masks'] = dones[batch]
+                    input_dict['old_values'] = values[start:end]
+                    input_dict['old_logp_actions'] = neglogpacs[start:end]
+                    input_dict['advantages'] = advantages[start:end]
+                    input_dict['returns'] = returns[start:end]
+                    input_dict['actions'] = actions[start:end]
+                    input_dict['obs'] = obses[start:end]
                     input_dict['learning_rate'] = self.last_lr
                     
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
@@ -783,7 +781,9 @@ class ContinuousA2CBase(A2CBase):
             else:
                 mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
-
+                
+            if self.has_central_value:
+                mb_vobs[n,:] = self.obs['states']
 
             clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
             rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
@@ -793,8 +793,7 @@ class ContinuousA2CBase(A2CBase):
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
 
-            if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
+            
 
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
@@ -996,7 +995,6 @@ class ContinuousA2CBase(A2CBase):
                     input_dict['returns'] = returns[batch]
                     input_dict['actions'] = actions[batch]
                     input_dict['obs'] = obses[batch]
-                    input_dict['masks'] = dones[batch]
                     input_dict['mu'] = mus[batch]
                     input_dict['sigma'] = sigmas[batch]
                     input_dict['learning_rate'] = self.last_lr

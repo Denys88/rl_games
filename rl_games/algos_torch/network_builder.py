@@ -244,7 +244,7 @@ class A2CBuilder(NetworkBuilder):
                     torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
-                if isinstance(m, nn.Linear):    
+                if isinstance(m, nn.Linear):
                     mlp_init(m.weight)    
 
             if self.is_continuous:
@@ -507,7 +507,8 @@ class RNDCuriosityBuilder(NetworkBuilder):
 
             for m in self.rnd_mlp:
                 if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)   
+                    mlp_init(m.weight)
+
             for m in self.net_mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
