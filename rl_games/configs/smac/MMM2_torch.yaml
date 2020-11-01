@@ -20,14 +20,14 @@ params:
       activation: relu
       initializer:
         name: variance_scaling_initializer
-        scale: 2 
+        scale: 1.3 
       regularizer:
         name: 'None'
       convs:    
         - filters: 64
           kernel_size: 3
           strides: 2
-          padding: 2
+          padding: 0
         - filters: 128
           kernel_size: 3
           strides: 1
@@ -47,7 +47,7 @@ params:
   config:
     name: MMM2_cnn
     reward_shaper:
-        scale_value: 1
+        scale_value: 1.3
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95

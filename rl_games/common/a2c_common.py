@@ -466,9 +466,9 @@ class DiscreteA2CBase(A2CBase):
             for ind in done_indices:
                 info = infos[ind//self.num_agents]
                 game_res = 0
-                if infos is not None and isinstance(infos, dict):
-                    game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
-                self.game_scores.append(game_res)
+                if isinstance(info, dict):
+                    game_res = info.get('battle_won', 0.0)
+                    self.game_scores.append(game_res)
 
             epinfos.append(infos)
 
@@ -823,9 +823,12 @@ class ContinuousA2CBase(A2CBase):
                      
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
-            if infos is not None and isinstance(infos, dict):
-                for ind in done_indices:
-                    game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
+
+            for ind in done_indices:
+                info = infos[ind//self.num_agents]
+                game_res = 0
+                if isinstance(info, dict):
+                    game_res = info.get('battle_won', 0.0)
                     self.game_scores.append(game_res)
 
             epinfos.append(infos)

@@ -47,8 +47,8 @@ class CentralValueTrain(nn.Module):
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
+        #if len(obs_batch.size()) == 3:
+        #    obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
@@ -140,13 +140,15 @@ class CentralValueTrain(nn.Module):
                 # returning loss from last epoch
                 avg_loss = 0
                 for i in range(num_minibatches):
-                    batch = torch.range(i * mini_batch, (i + 1) * mini_batch - 1, dtype=torch.long, device='cuda:0')
-                    obs_batch = obs[batch]
-                    value_preds_batch = value_preds[batch]
-                    returns_batch = returns[batch]
+                    start = i * mini_batch
+                    end = (i + 1) * mini_batch
+                    
+                    obs_batch = obs[start:end]
+                    value_preds_batch = value_preds[start:end]
+                    returns_batch = returns[start:end]
                     actions_batch = None
                     if self.use_joint_obs_actions:
-                        actions_batch = actions[batch].view(mini_batch * self.num_agents)
+                        actions_batch = actions[start:end].view(mini_batch * self.num_agents)
                     values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
                     loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                     loss = loss.mean()

@@ -28,8 +28,8 @@ class BasePlayer(object):
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
+        #if len(obs_batch.size()) == 3:
+        #    obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:

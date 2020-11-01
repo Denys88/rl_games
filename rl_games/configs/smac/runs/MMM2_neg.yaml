@@ -34,7 +34,7 @@ params:
     learning_rate: 5e-4
     score_to_win: 20
     grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac
     ppo: true
