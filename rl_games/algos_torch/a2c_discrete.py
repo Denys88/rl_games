@@ -26,7 +26,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
         #self.optimizer = torch_ext.AdaBelief(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
@@ -86,7 +86,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
-        print(logits)
+   
         return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), rnn_states
 
     def get_action_values(self, obs):
@@ -179,8 +179,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
+        for param in self.model.parameters():
+            param.grad = None
 
-        self.optimizer.zero_grad()
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)

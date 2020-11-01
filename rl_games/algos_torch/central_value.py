@@ -125,7 +125,10 @@ class CentralValueTrain(nn.Module):
                 values, _ = self.model()
                 loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                 loss = loss.mean()
-                self.optimizer.zero_grad()
+
+                for param in self.model.parameters():
+                    param.grad = None
+
                 loss.backward()
                 self.optimizer.step()
                 avg_loss += loss.item()
@@ -147,7 +150,8 @@ class CentralValueTrain(nn.Module):
                     values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
                     loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                     loss = loss.mean()
-                    self.optimizer.zero_grad()
+                    for param in self.model.parameters():
+                        param.grad = None
                     loss.backward()
                     self.optimizer.step()
                     avg_loss += loss.item()

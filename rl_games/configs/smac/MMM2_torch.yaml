@@ -27,7 +27,7 @@ params:
         - filters: 64
           kernel_size: 3
           strides: 2
-          padding: 0
+          padding: 2
         - filters: 128
           kernel_size: 3
           strides: 1

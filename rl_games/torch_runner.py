@@ -30,6 +30,8 @@ class Runner:
 
         self.model_builder = model_builder.ModelBuilder()
         self.network_builder = network_builder.NetworkBuilder()
+        
+        torch.backends.cudnn.benchmark = True
 
     def reset(self):
         pass

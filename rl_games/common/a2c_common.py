@@ -466,7 +466,7 @@ class DiscreteA2CBase(A2CBase):
             for ind in done_indices:
                 info = infos[ind//self.num_agents]
                 game_res = 0
-                if info is not None:
+                if infos is not None and isinstance(infos, dict):
                     game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
                 self.game_scores.append(game_res)
 
@@ -777,11 +777,21 @@ class ContinuousA2CBase(A2CBase):
 
             if self.is_rnn:
                 mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
-                mb_obs[indices,play_mask] = self.obs['obs']    
+                mb_obs[indices,play_mask] = self.obs['obs'] 
+                mb_actions[n,:] = actions
+                mb_neglogpacs[n,:] = neglogpacs
+                mb_mus[n,:] = mu
+                mb_sigmas[n,:] = sigma
+                mb_values[n,:] = values   
             else:
                 mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
-                
+                mb_actions[indices,play_mask] = actions
+                mb_neglogpacs[indices,play_mask] = neglogpacs
+                mb_mus[indices,play_mask] = mu
+                mb_sigmas[indices,play_mask] = sigma
+                mb_values[indices.cpu(), play_mask.cpu()] = values
+
             if self.has_central_value:
                 mb_vobs[n,:] = self.obs['states']
 
@@ -800,18 +810,8 @@ class ContinuousA2CBase(A2CBase):
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             if self.is_rnn:
-                mb_actions[indices,play_mask] = actions
-                mb_neglogpacs[indices,play_mask] = neglogpacs
-                mb_mus[indices,play_mask] = mu
-                mb_sigmas[indices,play_mask] = sigma
-                mb_values[indices.cpu(), play_mask.cpu()] = values
                 mb_rewards[indices.cpu(), play_mask.cpu()] = shaped_rewards
             else: 
-                mb_actions[n,:] = actions
-                mb_neglogpacs[n,:] = neglogpacs
-                mb_mus[n,:] = mu
-                mb_sigmas[n,:] = sigma
-                mb_values[n,:] = values
                 mb_rewards[n,:] = shaped_rewards
                 
             self.current_rewards += rewards
@@ -823,7 +823,7 @@ class ContinuousA2CBase(A2CBase):
                      
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
-            if infos is not None:
+            if infos is not None and isinstance(infos, dict):
                 for ind in done_indices:
                     game_res = infos[ind//self.num_agents].get('battle_won', 0.0)
                     self.game_scores.append(game_res)
@@ -986,17 +986,18 @@ class ContinuousA2CBase(A2CBase):
 
             for _ in range(0, self.mini_epochs_num):
                 for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
-                    #batch = range(i * self.minibatch_size, (i + 1) * self.minibatch_size)
+                    #batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
+                    start = i * self.minibatch_size
+                    end = (i + 1) * self.minibatch_size
                     input_dict = {}
-                    input_dict['old_values'] = values[batch]
-                    input_dict['old_logp_actions'] = neglogpacs[batch]
-                    input_dict['advantages'] = advantages[batch]
-                    input_dict['returns'] = returns[batch]
-                    input_dict['actions'] = actions[batch]
-                    input_dict['obs'] = obses[batch]
-                    input_dict['mu'] = mus[batch]
-                    input_dict['sigma'] = sigmas[batch]
+                    input_dict['old_values'] = values[start:end]
+                    input_dict['old_logp_actions'] = neglogpacs[start:end]
+                    input_dict['advantages'] = advantages[start:end]
+                    input_dict['returns'] = returns[start:end]
+                    input_dict['actions'] = actions[start:end]
+                    input_dict['obs'] = obses[start:end]
+                    input_dict['mu'] = mus[start:end]
+                    input_dict['sigma'] = sigmas[start:end]
                     input_dict['learning_rate'] = self.last_lr
                     
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)

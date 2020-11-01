@@ -58,7 +58,10 @@ class RNDCuriosityTrain(nn.Module):
                 obs_batch = self._preproc_obs(obs_batch)
                 obs_batch = torch_ext.random_sample(obs_batch, self.exp_percent)
                 loss = self.model(obs_batch).mean()
-                self.optimizer.zero_grad()
+
+                for param in self.model.parameters():
+                    param.grad = None
+                    
                 loss.backward()
                 self.optimizer.step()
                 avg_loss += loss.item()

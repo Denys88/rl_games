@@ -154,7 +154,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
 
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
-        self.optimizer.zero_grad()
+        for param in self.model.parameters():
+            param.grad = None
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
