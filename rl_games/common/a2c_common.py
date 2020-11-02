@@ -464,6 +464,8 @@ class DiscreteA2CBase(A2CBase):
             self.game_lengths.extend(self.current_lengths[done_indices])
 
             for ind in done_indices:
+                if len(infos) <= ind//self.num_agents:
+                    continue
                 info = infos[ind//self.num_agents]
                 game_res = 0
                 if isinstance(info, dict):
@@ -778,19 +780,20 @@ class ContinuousA2CBase(A2CBase):
             if self.is_rnn:
                 mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
                 mb_obs[indices,play_mask] = self.obs['obs'] 
-                mb_actions[n,:] = actions
-                mb_neglogpacs[n,:] = neglogpacs
-                mb_mus[n,:] = mu
-                mb_sigmas[n,:] = sigma
-                mb_values[n,:] = values   
-            else:
-                mb_obs[n,:] = self.obs['obs']
-                mb_dones[n,:] = self.dones
                 mb_actions[indices,play_mask] = actions
                 mb_neglogpacs[indices,play_mask] = neglogpacs
                 mb_mus[indices,play_mask] = mu
                 mb_sigmas[indices,play_mask] = sigma
                 mb_values[indices.cpu(), play_mask.cpu()] = values
+
+            else:
+                mb_obs[n,:] = self.obs['obs']
+                mb_dones[n,:] = self.dones
+                mb_actions[n,:] = actions
+                mb_neglogpacs[n,:] = neglogpacs
+                mb_mus[n,:] = mu
+                mb_sigmas[n,:] = sigma
+                mb_values[n,:] = values
 
             if self.has_central_value:
                 mb_vobs[n,:] = self.obs['states']
@@ -825,6 +828,8 @@ class ContinuousA2CBase(A2CBase):
             self.game_lengths.extend(self.current_lengths[done_indices])
 
             for ind in done_indices:
+                if len(infos) <= ind//self.num_agents:
+                    continue
                 info = infos[ind//self.num_agents]
                 game_res = 0
                 if isinstance(info, dict):
@@ -1008,8 +1013,8 @@ class ContinuousA2CBase(A2CBase):
                     c_losses.append(c_loss)
                     kls.append(kl)
                     entropies.append(entropy)
-                    mus[batch] = cmu
-                    sigmas[batch] = csigma
+                    mus[start:end] = cmu
+                    sigmas[start:end] = csigma
                     if self.bounds_loss_coef is not None:
                         b_losses.append(b_loss) 
 
