@@ -28,7 +28,6 @@ class ModelA2C(BaseModel):
         def __init__(self, a2c_network):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
-            self.min_float = torch.cuda.FloatTensor([torch.finfo(torch.float32).min]).squeeze()
         def is_rnn(self):
             return self.a2c_network.is_rnn()
         
@@ -41,10 +40,6 @@ class ModelA2C(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if not is_train:
-                #u = torch.cuda.FloatTensor(logits.size()).uniform_()
-                #rand_logits = logits - torch.log(-torch.log(u))
-                #rand_logits = rand_logits + inf_mask
-                #selected_action = torch.argmax(rand_logits, axis=-1).long().detach()
                 if action_masks is not None:
                     inf_mask = torch.log(action_masks.float())
                     logits = logits + inf_mask

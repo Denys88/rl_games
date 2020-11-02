@@ -149,8 +149,6 @@ class A2CBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            print(kwargs)
-
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
