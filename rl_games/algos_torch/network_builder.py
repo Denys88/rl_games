@@ -158,7 +158,7 @@ class A2CBuilder(NetworkBuilder):
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-
+            
             if self.has_cnn:
                 cnn_args = {
                     'ctype' : self.cnn['type'], 
@@ -171,7 +171,6 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.separate:
                     self.critic_cnn = self._build_conv( **cnn_args)
-
             mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
 
             if self.use_joint_obs_actions:
@@ -243,7 +242,7 @@ class A2CBuilder(NetworkBuilder):
                     torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
-                if isinstance(m, nn.Linear):    
+                if isinstance(m, nn.Linear):
                     mlp_init(m.weight)    
 
             if self.is_continuous:
@@ -255,7 +254,6 @@ class A2CBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
-            
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
 
@@ -507,7 +505,8 @@ class RNDCuriosityBuilder(NetworkBuilder):
 
             for m in self.rnd_mlp:
                 if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)   
+                    mlp_init(m.weight)
+
             for m in self.net_mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)

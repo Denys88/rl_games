@@ -15,6 +15,7 @@ class BaseModel():
         return False
 
 
+
 class ModelA2C(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self)
@@ -27,7 +28,6 @@ class ModelA2C(BaseModel):
         def __init__(self, a2c_network):
             nn.Module.__init__(self)
             self.a2c_network = a2c_network
-
         def is_rnn(self):
             return self.a2c_network.is_rnn()
         
@@ -40,18 +40,18 @@ class ModelA2C(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if not is_train:
-                u = torch.cuda.FloatTensor(logits.size()).uniform_()
-                rand_logits = logits - torch.log(-torch.log(u))
                 if action_masks is not None:
-                    logits = logits - (1.0 - action_masks) * 1e10
-                
-                selected_action = torch.distributions.Categorical(logits=logits).sample().long()
+                    inf_mask = torch.log(action_masks.float())
+                    logits = logits + inf_mask
 
-                neglogp = F.cross_entropy(logits, selected_action, reduction='none')
+                categorical = torch.distributions.Categorical(logits=logits)
+                selected_action = categorical.sample().long()
+                neglogp = -categorical.log_prob(selected_action)
                 return  neglogp, value, selected_action, logits, states
             else:
-                entropy = -1.0 * ((F.softmax(logits, dim=1) * F.log_softmax(logits, dim=1))).sum(dim=1)
-                prev_neglogp = F.cross_entropy(logits, prev_actions, reduction='none')
+                categorical = torch.distributions.Categorical(logits=logits)
+                prev_neglogp = -categorical.log_prob(prev_actions)
+                entropy = categorical.entropy()
                 return prev_neglogp, value, entropy, states
 
 

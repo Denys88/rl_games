@@ -237,9 +237,9 @@ def create_smac_cnn(name, **kwargs):
     transpose = kwargs.pop('transpose', False)
     env = SMACEnv(name, **kwargs)
     if has_cv:
-        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False)
+        env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=transpose)
     else:
-        env = wrappers.BatchedFrameStack(env, frames, transpose=False)
+        env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
         
     return env
 
@@ -434,11 +434,11 @@ def get_obs_and_action_spaces_from_config(config):
     env.close()
     # workaround for deepmind control
 
-    if isinstance(observation_space, gym.spaces.dict.Dict):
-        result_shapes['observation_space'] = observation_space['observations']
-    if isinstance(observation_space, dict):
-        result_shapes['observation_space'] = observation_space['observations']
-        result_shapes['state_space'] = observation_space['states']
+    if isinstance(env.observation_space, gym.spaces.dict.Dict):
+        result_shapes['observation_space'] = env.observation_space['observations']
+    if isinstance(env.observation_space, dict):
+        result_shapes['observation_space'] = env.observation_space['observations']
+        result_shapes['state_space'] = env.observation_space['states']
     return result_shapes
 
 def get_env_info(env):

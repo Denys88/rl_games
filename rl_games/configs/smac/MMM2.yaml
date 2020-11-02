@@ -45,7 +45,7 @@ params:
       regularizer:
         name:  'None'
   config:
-    name: MMM_cnn
+    name: MMM2_cnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -68,10 +68,10 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: False
-    seq_len: 4
     use_action_masks: True
     ignore_dead_batches : False
-
+    seq_len: 4
+    
     env_config:
       name: MMM
       frames: 4

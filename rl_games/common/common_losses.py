@@ -19,9 +19,9 @@ def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value
 def actor_loss(old_action_log_probs_batch, action_log_probs, advantage, is_ppo, curr_e_clip):
     if is_ppo:
         ratio = torch.exp(old_action_log_probs_batch - action_log_probs)
-        surr1 = ratio * advantage
-        surr2 = torch.clamp(ratio, 1.0 - curr_e_clip,
-                                1.0 + curr_e_clip) * advantage
+        surr1 = advantage * ratio
+        surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip,
+                                1.0 + curr_e_clip)
         a_loss = torch.max(-surr1, -surr2)
     else:
         a_loss = (action_log_probs * advantage)

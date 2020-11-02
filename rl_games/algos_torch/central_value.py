@@ -13,7 +13,6 @@ class CentralValueTrain(nn.Module):
         self.num_agents, self.num_steps, self.num_actors = num_agents, num_steps, num_actors
         self.num_actions = num_actions
         self.state_shape = state_shape
-        state_shape = torch_ext.shape_whc_to_cwh(self.state_shape) 
         state_config = {
             'input_shape' : state_shape,
             'actions_num' : num_actions,
@@ -48,8 +47,8 @@ class CentralValueTrain(nn.Module):
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
-        if len(obs_batch.size()) == 3:
-            obs_batch = obs_batch.permute((0, 2, 1))
+        #if len(obs_batch.size()) == 3:
+        #    obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
@@ -67,7 +66,6 @@ class CentralValueTrain(nn.Module):
         is_done = input_dict['is_done']
         actions = input_dict['actions']
         #step_indices = input_dict['step_indices']
-
         obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
                                              'rnn_states': self.rnn_states})
@@ -127,7 +125,10 @@ class CentralValueTrain(nn.Module):
                 values, _ = self.model()
                 loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                 loss = loss.mean()
-                self.optimizer.zero_grad()
+
+                for param in self.model.parameters():
+                    param.grad = None
+
                 loss.backward()
                 self.optimizer.step()
                 avg_loss += loss.item()
@@ -139,17 +140,20 @@ class CentralValueTrain(nn.Module):
                 # returning loss from last epoch
                 avg_loss = 0
                 for i in range(num_minibatches):
-                    batch = torch.range(i * mini_batch, (i + 1) * mini_batch - 1, dtype=torch.long, device='cuda:0')
-                    obs_batch = obs[batch]
-                    value_preds_batch = value_preds[batch]
-                    returns_batch = returns[batch]
+                    start = i * mini_batch
+                    end = (i + 1) * mini_batch
+                    
+                    obs_batch = obs[start:end]
+                    value_preds_batch = value_preds[start:end]
+                    returns_batch = returns[start:end]
                     actions_batch = None
                     if self.use_joint_obs_actions:
-                        actions_batch = actions[batch].view(mini_batch * self.num_agents)
+                        actions_batch = actions[start:end].view(mini_batch * self.num_agents)
                     values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
                     loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                     loss = loss.mean()
-                    self.optimizer.zero_grad()
+                    for param in self.model.parameters():
+                        param.grad = None
                     loss.backward()
                     self.optimizer.step()
                     avg_loss += loss.item()
