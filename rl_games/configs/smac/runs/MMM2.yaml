@@ -32,7 +32,7 @@ params:
     gamma: 0.99
     tau: 0.95
     learning_rate: 1e-4
-    score_to_win: 20
+    score_to_win: 25
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True

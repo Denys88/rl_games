@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: ''
+  load_path: 'nn/corridor_cv.pth'
 
   network:
     name: actor_critic
@@ -24,13 +24,13 @@ params:
         name:  'None'
 
   config:
-    name: 6h_vs_8z_neg
+    name: corridor_cv
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.995
     tau: 0.95
-    learning_rate: 1e-4
+    learning_rate: 3e-4
     score_to_win: 20
     grad_norm: 0.5
     entropy_coef: 0.005
@@ -49,20 +49,20 @@ params:
     normalize_input: True
     use_action_masks: True
 
+
     env_config:
-      name: 6h_vs_8z
+      name: corridor
       central_value: True
-      reward_only_positive: False
+      reward_only_positive: True
       obs_last_action: True
       frames: 1
-      #reward_negative_scale: 0.9
       #apply_agent_ids: True
       #flatten: False
 
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      lr: 1e-4
+      lr: 3e-4
       clip_value: False
       normalize_input: True
       network:

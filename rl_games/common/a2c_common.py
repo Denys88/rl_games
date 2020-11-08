@@ -3,6 +3,8 @@ from rl_games.common import vecenv
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
+from rl_games.algos_torch import torch_ext
+
 import numpy as np
 import collections
 import time
@@ -194,7 +196,6 @@ class A2CBase:
     def process_rnn_dones(self, all_done_indices, indices, seq_indices):
         if self.is_rnn:
             if len(all_done_indices) > 0:
-                all_done_indices = all_done_indices.squeeze(-1)
                 shifts = self.seq_len - 1 - seq_indices[all_done_indices]
                 indices[all_done_indices] += shifts
                 for s in self.rnn_states:
@@ -499,7 +500,7 @@ class DiscreteA2CBase(A2CBase):
 
         '''
         if self.is_rnn:
-            non_finished = (indices != self.steps_num).nonzero()
+            non_finished = (indices != self.steps_num).nonzero(as_tuple=False)
             ind_to_fill = indices[non_finished]
             mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
@@ -557,11 +558,7 @@ class DiscreteA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                sum_mask = rnn_masks.sum()
-                advantages_mask = advantages * rnn_masks
-                advantages_mean = advantages_mask.sum() / sum_mask
-                advantages_std = torch.sqrt(rnn_masks*(((advantages_mask - advantages_mean)**2)/(sum_mask-1)).sum())
-                advantages = (advantages_mask - advantages_mean) / (advantages_std + 1e-8)
+                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
             
@@ -776,16 +773,14 @@ class ContinuousA2CBase(A2CBase):
                 
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
-
             if self.is_rnn:
-                mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
                 mb_obs[indices,play_mask] = self.obs['obs'] 
+                mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
                 mb_actions[indices,play_mask] = actions
                 mb_neglogpacs[indices,play_mask] = neglogpacs
                 mb_mus[indices,play_mask] = mu
                 mb_sigmas[indices,play_mask] = sigma
                 mb_values[indices.cpu(), play_mask.cpu()] = values
-
             else:
                 mb_obs[n,:] = self.obs['obs']
                 mb_dones[n,:] = self.dones
@@ -845,7 +840,6 @@ class ContinuousA2CBase(A2CBase):
         
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
-
         if self.has_curiosity:
             mb_intrinsic_values = mb_values[:,:,1]
             mb_extrinsic_values = mb_values[:,:,0]
@@ -863,17 +857,16 @@ class ContinuousA2CBase(A2CBase):
 
         '''
         if self.is_rnn:
-            non_finished = (indices != self.steps_num).nonzero()
+            non_finished = (indices != self.steps_num).nonzero(as_tuple=False)
             ind_to_fill = indices[non_finished]
             mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
             mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
             fdones[non_finished] = 1.0
             last_extrinsic_values[non_finished] = 0.0
-            
+
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
 
         mb_returns = mb_advs + mb_extrinsic_values
-
         if self.has_curiosity:
             mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
 
@@ -921,11 +914,7 @@ class ContinuousA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                sum_mask = rnn_masks.sum()
-                advantages_mask = advantages * rnn_masks
-                advantages_mean = advantages_mask.sum() / sum_mask
-                advantages_std = torch.sqrt(rnn_masks*(((advantages_mask - advantages_mean)**2)/(sum_mask-1)).sum())
-                advantages = (advantages_mask - advantages_mean) / (advantages_std + 1e-8)
+                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -952,13 +941,13 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                game_indexes = game_indexes[permutation]
+                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
-                    mb_indexes = game_indexes[batch]
-                    mbatch = flat_indexes[mb_indexes].flatten()        
-            
+                    start = i * num_games_batch
+                    end = (i + 1) * num_games_batch
+                    mb_indexes = game_indexes[start:end]
+                    mbatch = flat_indexes[mb_indexes].flatten()
                     input_dict = {}
                     input_dict['old_values'] = values[mbatch]
                     input_dict['old_logp_actions'] = neglogpacs[mbatch]
