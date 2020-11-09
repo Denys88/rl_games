@@ -135,7 +135,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         rnn_masks = None
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
+            rnn_masks = input_dict['rnn_masks'].bool()
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
@@ -164,7 +164,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             reduce_kl = not self.is_rnn
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
-                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
+                kl_dist = kl_dist[rnn_masks].mean()
             kl_dist = kl_dist.item()
             if self.is_adaptive_lr:
                 if kl_dist > (2.0 * self.lr_threshold):

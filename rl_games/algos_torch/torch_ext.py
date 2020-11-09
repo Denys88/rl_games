@@ -83,7 +83,7 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         sum_mask = mask.sum()
-        res_losses = [(l * mask).sum() / sum_mask for l in losses]
+        res_losses = [l[mask].mean() for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
     
