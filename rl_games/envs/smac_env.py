@@ -20,12 +20,11 @@ class SMACEnv(gym.Env):
         self.n_agents = self.env_info["n_agents"]
         self.action_space = gym.spaces.Discrete(self.n_actions)
         one_hot_agents = 0
+
         if self.apply_agent_ids:
             one_hot_agents = self.n_agents
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['obs_shape']+one_hot_agents, ), dtype=np.float32)
         self.state_space = gym.spaces.Box(low=0, high=1, shape=(self.env_info['state_shape'], ), dtype=np.float32)
-
-        
 
         self.obs_dict = {}
 

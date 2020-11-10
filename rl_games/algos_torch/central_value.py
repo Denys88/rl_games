@@ -63,8 +63,8 @@ class CentralValueTrain(nn.Module):
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
-        is_done = input_dict['is_done']
-        actions = input_dict['actions']
+        #is_done = input_dict['is_done']
+        actions = input_dict.get('actions', None)
         #step_indices = input_dict['step_indices']
         obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
