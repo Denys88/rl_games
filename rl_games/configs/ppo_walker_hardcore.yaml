@@ -28,7 +28,7 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn:
+    rnn1:
       name: lstm
       units: 128
       layers: 1   
@@ -48,21 +48,21 @@ params:
       grad_norm: 0.5
       entropy_coef: 0
       truncate_grads: True
-      env_name:  BipedalWalkerHardcore-v3
+      env_name:  BipedalWalker-v3
       ppo: True
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 2048
-      minibatch_size: 4096
+      steps_num: 128
+      minibatch_size: 1024
       mini_epochs: 8
       critic_coef: 1
       lr_schedule: adaptive
       lr_threshold: 0.008
       normalize_input: True
-      seq_len: 8
+      seq_len: 16
       bounds_loss_coef: 0.00
-      max_epochs: 100000
+      max_epochs: 10000
 
 
 experiment_config1:

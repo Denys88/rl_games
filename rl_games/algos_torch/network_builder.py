@@ -47,6 +47,7 @@ class NetworkBuilder:
             self.init_factory.register_builder('variance_scaling_initializer', lambda **kwargs : _create_initializer(torch_ext.variance_scaling_initializer,**kwargs))
             self.init_factory.register_builder('random_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.uniform_,**kwargs))
             self.init_factory.register_builder('kaiming_normal', lambda **kwargs : _create_initializer(nn.init.kaiming_normal_,**kwargs))
+            self.init_factory.register_builder('orthogonal', lambda **kwargs : _create_initializer(nn.init.orthogonal_,**kwargs))
             self.init_factory.register_builder('default', lambda **kwargs : nn.Identity() )
 
         def is_separate_critic(self):
@@ -238,12 +239,15 @@ class A2CBuilder(NetworkBuilder):
                 cnn_init = self.init_factory.create(**self.cnn['initializer'])
 
             for m in self.modules():
-                if getattr(m, "bias", None) is not None:
-                    torch.nn.init.zeros_(m.bias)
+                
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Linear):
-                    mlp_init(m.weight)    
+                    mlp_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)    
 
             if self.is_continuous:
                 mu_init(self.mu.weight)

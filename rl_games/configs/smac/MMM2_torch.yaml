@@ -75,3 +75,4 @@ params:
       frames: 4
       transpose: False # for pytorch transpose == not Transpose in tf
       random_invalid_step: False
+      replay_save_freq: 100
