@@ -497,7 +497,7 @@ class DiscreteA2CBase(A2CBase):
         mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
-        mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
+        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1).cpu())
 
         mb_returns = mb_advs + mb_extrinsic_values
 
@@ -671,7 +671,7 @@ class DiscreteA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                rnn_masks = rnn_masks.bool()
+                rnn_masks = rnn_masks
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -1126,10 +1126,10 @@ class ContinuousA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         advantages = returns - values
-        print((advantages - advantages * rnn_masks).sum())
+
         if self.normalize_advantage:
             if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks.bool())
+                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
