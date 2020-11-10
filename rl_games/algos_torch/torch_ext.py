@@ -82,7 +82,6 @@ def random_sample(obs_batch, prob):
 def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
-        sum_mask = mask.sum()
         res_losses = [l[mask].mean() for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
@@ -90,13 +89,15 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
-    sum_mask = masks.sum()
-    values_mask = values * masks
-    values_mean = values_mask.sum() / sum_mask
-    min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_std = torch.sqrt(min_sqr * sum_mask / (sum_mask-1))
-    normalized_values = (values_mask - values_mean) / (values_std + 1e-8)
-    return normalized_values
+    #sum_mask = masks.sum()
+    #values_mask = values * masks
+    #values_mean = values_mask.sum() / sum_mask
+    #min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
+    #values_std = torch.sqrt(min_sqr * sum_mask / (sum_mask-1))
+    #normalized_values = (values_mask - values_mean) / (values_std + 1e-8)
+
+    m_vals = values[masks]
+    return (values - m_vals.mean()) / m_vals.std()
 
 class CoordConv2d(nn.Conv2d):
     pool = {}
