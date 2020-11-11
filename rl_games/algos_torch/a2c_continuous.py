@@ -81,7 +81,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : states,
-                    #'rnn_states' : self.rnn_states
+                    'last_indices' : self.last_rnn_indices,
+                    'last_states_indices' :  self.last_state_indices
                 }
                 value = self.central_value_net.get_value(input_dict)
 

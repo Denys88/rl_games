@@ -55,6 +55,17 @@ class CentralValueTrain(nn.Module):
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
+    def pre_step_rnn(self, rnn_indices, state_indices):
+        rnn_indices = rnn_indices[::self.num_agents]
+        state_indices = state_indices[::self.num_agents]
+        for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
+            mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+
+    def post_step_rnn(self, all_done_indices):
+        all_done_indices = all_done_indices[::self.num_agents]
+        for s in self.rnn_states:
+            s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+
     def forward(self, input_dict):
         value, rnn_states = self.model(input_dict)
 
@@ -63,12 +74,14 @@ class CentralValueTrain(nn.Module):
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
-        #is_done = input_dict['is_done']
+        
         actions = input_dict.get('actions', None)
+        #is_done = input_dict['is_done']
         #step_indices = input_dict['step_indices']
         obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
                                              'rnn_states': self.rnn_states})
+
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
@@ -82,9 +95,11 @@ class CentralValueTrain(nn.Module):
         value_preds = input_dict['values'].cuda()
         returns = input_dict['returns'].cuda()
         actions = input_dict['actions']
+        
 
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']        
+            rnn_masks = input_dict['rnn_masks'] 
+            rnn_states = self.mb_rnn_states      
 
         if self.num_agents > 1:
             value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
@@ -97,7 +112,7 @@ class CentralValueTrain(nn.Module):
                 actions = actions.contiguous().view(batch_size, self.num_agents)
             if self.is_rnn:
                 assert(False, 'RNN not yet supported for central value')
-                rnn_masks = input_dict['rnn_masks']
+                rnn_masks = rnn_masks
                 rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
                 rnn_masks = rnn_masks.flatten(0)[:batch_size]           
 
@@ -113,18 +128,25 @@ class CentralValueTrain(nn.Module):
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             avg_loss = 0
             for i in range(num_minibatches):
-                batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
-                mb_indexes = game_indexes[batch]
+                start = i * num_games_batch
+                end = (i + 1) * num_games_batch
+                mb_indexes = game_indexes[start:end]
                 mbatch = flat_indexes[mb_indexes].flatten()     
                 obs_batch = obs[mbatch]
                 value_preds_batch = value_preds[mbatch]
                 returns_batch = returns[mbatch]
                 actions_batch = actions[mbatch]
-                batch_dict = {'obs' : obs_batch}
-                batch_dict['rnn_states'] = [s[:,mb_indexes,:] for s in self.rnn_states]
-                values, _ = self.model()
+                rnn_masks_batch = rnn_masks[mbatch]
+                batch_dict = {'obs' : obs_batch, 
+                             'actions' : actions_batch,
+                             'rnn_masks' : rnn_masks_batch }
+                batch_dict['rnn_states'] = [s[:,mb_indexes,:] for s in self.mb_rnn_states]
+
+                values, _ = self.forward()
+
                 loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
-                loss = loss.mean()
+                losses = torch_ext.apply_masks(losses, rnn_mask)
+                loss = losses[0]
 
                 for param in self.model.parameters():
                     param.grad = None
