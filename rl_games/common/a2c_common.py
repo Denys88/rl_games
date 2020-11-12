@@ -675,7 +675,6 @@ class DiscreteA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                rnn_masks = rnn_masks
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

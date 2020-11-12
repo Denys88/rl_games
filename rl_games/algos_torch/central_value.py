@@ -114,10 +114,7 @@ class CentralValueTrain(nn.Module):
                 actions = actions.contiguous().view(batch_size, self.num_agents)
             if self.is_rnn:
                 rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-                rnn_masks = rnn_masks.flatten(0)[:batch_size]
-                #rnn_masks = rnn_masks.view((self.num_actors, self.num_steps)).transpose(0,1) .flatten(0)          
-                #value_preds = value_preds.view((self.num_actors, self.num_steps)).transpose(0,1).flatten(0)
-                #returns = returns.view((self.num_actors, self.num_steps)).transpose(0,1).flatten(0) 
+                rnn_masks = rnn_masks.flatten(0)[:batch_size] 
         e_clip = input_dict.get('e_clip', 0.2)
         lr = input_dict.get('lr', self.lr)
         obs = self._preproc_obs(obs)

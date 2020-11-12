@@ -10,7 +10,7 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     #normalization: layer_norm
     space: 
       discrete:
@@ -23,9 +23,10 @@ params:
         scale: 2 
       regularizer:
         name:  'None'
-    lstm:
-      units: 64
-      concated: False
+    rnn:
+      name: lstm
+      units: 128
+      layers: 1
   config:
     name: 3m
     reward_shaper:
