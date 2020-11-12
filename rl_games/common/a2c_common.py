@@ -448,7 +448,7 @@ class DiscreteA2CBase(A2CBase):
 
 
             if self.has_central_value:
-                mb_vobs[indices,play_mask] = self.obs['states']
+                mb_vobs[indices[::self.num_agents]//self.num_agents,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
