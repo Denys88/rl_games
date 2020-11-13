@@ -100,7 +100,7 @@ class BasePlayer(object):
             rnn_states = self.model.get_default_rnn_state()
             self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).to(self.device) for s in rnn_states]
 
-    def run(self, n_games=10000, n_game_life = 1, render = False, is_determenistic = True):
+    def run(self, n_games=2000, n_game_life = 1, render = False, is_determenistic = True):
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0

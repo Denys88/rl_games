@@ -198,11 +198,11 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.a_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                     self.c_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                    self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
-                    self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    #self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    #self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
                     self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                    self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
 
             mlp_args = {
@@ -294,9 +294,9 @@ class A2CBuilder(NetworkBuilder):
                         a_out =a_out.transpose(0,1)
                         c_out =c_out.transpose(0,1)
                     else:
-                        #pass
-                        a_out = self.a_layer_norm(a_out)
-                        c_out = self.c_layer_norm(c_out)
+                        pass
+                        #a_out = self.a_layer_norm(a_out)
+                        #c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
                     if type(a_states) is not tuple:
@@ -346,8 +346,6 @@ class A2CBuilder(NetworkBuilder):
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
                     if self.rnn_name == 'sru':
                         out =out.transpose(0,1)
-                    else:
-                        out = self.layer_norm(out)
                     
                     if type(states) is not tuple:
                         states = (states,)
@@ -690,7 +688,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     rnn_in_size =  in_mlp_shape
                     in_mlp_shape = self.rnn_units
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
             mlp_args = {
                 'input_size' : in_mlp_shape, 
@@ -762,7 +760,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     states = states[0]
                 out, states = self.rnn(out, states)
                 out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
-                out = self.layer_norm(out)
+                #out = self.layer_norm(out)
                 if type(states) is not tuple:
                     states = (states,)
 

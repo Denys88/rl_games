@@ -13,24 +13,6 @@ FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        
-        self.num_stops = 0
-        self.stops_decay = 0
-        self.max_stops = 30
-
-    def reset(self, **kwargs):
-        self.num_stops = 0
-        self.stops_decay = 0
-        return self.env.reset(**kwargs)
-
-    def step(self, action):
-        observation, reward, done, info = self.env.step(action)
-        if self.num_stops > self.max_stops:
-            print('too many stops!')
-            reward = -100
-            observation = self.reset()
-            done = True
-        return observation, self.reward(reward), done, info
 
     def reward(self, reward):
         return np.max([-10, reward])
@@ -349,7 +331,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v3' : {
-        'env_creator' : lambda **kwargs  : HCRewardEnv(gym.make('BipedalWalkerHardcore-v3')),
+        'env_creator' : lambda **kwargs  : gym.make('BipedalWalkerHardcore-v3'),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcoreCnn-v3' : {
