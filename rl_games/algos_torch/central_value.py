@@ -8,9 +8,9 @@ from rl_games.common  import common_losses
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, num_agents, num_steps, num_actors, num_actions, model, config, writter):
+    def __init__(self, state_shape, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
         nn.Module.__init__(self)
-        self.num_agents, self.num_steps, self.num_actors = num_agents, num_steps, num_actors
+        self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
         
@@ -29,7 +29,6 @@ class CentralValueTrain(nn.Module):
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
         self.normalize_reward = config.get('normalize_reward', False)
-        self.seq_len = config.get('seq_len', 4)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
@@ -104,17 +103,7 @@ class CentralValueTrain(nn.Module):
             rnn_states = self.mb_rnn_states      
 
         if self.num_agents > 1:
-            value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-            returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-            value_preds = value_preds.flatten(0)[:batch_size]
-            returns = returns.flatten(0)[:batch_size]
-            if self.use_joint_obs_actions:
-                assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
-                actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
-                actions = actions.contiguous().view(batch_size, self.num_agents)
-            if self.is_rnn:
-                rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-                rnn_masks = rnn_masks.flatten(0)[:batch_size] 
+            value_preds, returns, actions, rnn_masks = self.update_multiagent_tensors(value_preds, returns, batch_size, actions, rnn_masks) 
         e_clip = input_dict.get('e_clip', 0.2)
         lr = input_dict.get('lr', self.lr)
         obs = self._preproc_obs(obs)
@@ -129,6 +118,20 @@ class CentralValueTrain(nn.Module):
         avg_loss = sum_loss / (num_minibatches * self.mini_epoch)
         self.writter.add_scalar('cval/train_loss', avg_loss, self.frame)
         return avg_loss
+
+    def update_multiagent_tensors(self, value_preds, returns, batch_size, actions, rnn_masks):
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
+        returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
+        value_preds = value_preds.flatten(0)[:batch_size]
+        returns = returns.flatten(0)[:batch_size]
+        if self.use_joint_obs_actions:
+            assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
+            actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
+            actions = actions.contiguous().view(batch_size, self.num_agents)
+        if self.is_rnn:
+            rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
+            rnn_masks = rnn_masks.flatten(0)[:batch_size] 
+        return value_preds, returns, actions, rnn_masks
 
     def train_mlp(self, batch_size, obs, value_preds, returns, actions, e_clip):
         mini_batch = self.mini_batch

@@ -446,7 +446,6 @@ class DiscreteA2CBase(A2CBase):
             mb_neglogpacs[indices,play_mask] = neglogpacs
             mb_values[indices.cpu(), play_mask.cpu()] = values 
 
-
             if self.has_central_value:
                 mb_vobs[indices[::self.num_agents]//self.num_agents,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 

@@ -11,7 +11,7 @@ params:
   network:
     name: actor_critic
     separate: True
-    normalization: 'layer_norm'
+    #normalization: 'layer_norm'
     space: 
       discrete:
 
@@ -52,7 +52,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: True
-    seq_len: 8
+    seq_len: 16
     weight_decay: 0.0001
 
     env_config:
