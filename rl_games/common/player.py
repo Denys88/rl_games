@@ -1,7 +1,7 @@
 from rl_games.common import env_configurations
 import numpy as np
 import torch
-
+import time
 
 class BasePlayer(object):
     def __init__(self, config):
@@ -16,15 +16,16 @@ class BasePlayer(object):
         self.state_shape = list(self.observation_space.shape)
         self.is_tensor_obses = False
         self.states = None
-        self.player_config = self.config.get('player', None)
+        self.player_config = self.config.get('player', {})
         self.use_cuda = True
         self.batch_size = 1
-        if self.player_config:
-            self.use_cuda = self.player_config.get('use_cuda', True)
-            #self.render = self.player_config.get('render', False)
-            #self.games_num = self.player_config.get('games_num', 200)
 
-        self.device = torch.device("cuda" if self.use_cuda else "cpu")
+        self.device_name = self.player_config.get('device_name', 'cuda')
+        self.render_env = self.player_config.get('render', False)
+        self.games_num = self.player_config.get('games_num', 2000)
+        self.is_determenistic = self.player_config.get('determenistic', True)
+        self.n_game_life = self.player_config.get('n_game_life', 1)
+        self.device = torch.device(self.device_name)
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -100,7 +101,11 @@ class BasePlayer(object):
             rnn_states = self.model.get_default_rnn_state()
             self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).to(self.device) for s in rnn_states]
 
-    def run(self, n_games=10000, n_game_life = 1, render = False, is_determenistic = True):
+    def run(self):
+        n_games = self.games_num
+        render = self.render_env
+        n_game_life = self.n_game_life
+        is_determenistic = self.is_determenistic
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -146,6 +151,7 @@ class BasePlayer(object):
   
                 if render:
                     self.env.render(mode = 'human')
+                    #time.sleep(0.05)
 
                 all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[::self.num_agents]
@@ -172,5 +178,4 @@ class BasePlayer(object):
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
-
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
