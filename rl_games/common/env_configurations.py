@@ -283,7 +283,11 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BreakoutNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4),
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4,sticky=True),
+        'vecenv_type' : 'RAY'
+    },
+    'MsPacmanNoFrameskip-v4' : {
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('MsPacmanNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
     'CarRacing-v0' : {

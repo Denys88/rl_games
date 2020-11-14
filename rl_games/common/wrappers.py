@@ -568,7 +568,7 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
         return  observation * self.mask
 
 
-def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
+def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
     env = gym.make(env_id)
     if 'Montezuma' in env_id:
         env._max_episode_steps = 16000
@@ -576,6 +576,8 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, directory=None):
         env = StickyActionEnv(env)
     if directory != None:
         env = gym.wrappers.Monitor(env,directory=directory,force=True)
+    if sticky:
+        env = StickyActionEnv(env)
     if not timelimit:
         env = env.env
     #assert 'NoFrameskip' in env.spec.id
@@ -617,8 +619,8 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=0, skip=4):
-    env = make_atari(env_id, noop_max=noop_max, skip=skip)
+def make_atari_deepmind(env_id, noop_max=0, skip=4, sticky=False):
+    env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
     return wrap_deepmind(env, clip_rewards=True)
 
 # turned off episode life to make a video, need to use ReallyDoneWrapper
