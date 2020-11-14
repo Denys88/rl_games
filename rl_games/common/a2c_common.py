@@ -106,6 +106,7 @@ class A2CBase:
         self.minibatch_size = self.config['minibatch_size']
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
+
         assert(self.batch_size % self.minibatch_size == 0)
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -136,6 +137,8 @@ class A2CBase:
 
         self.is_tensor_obses = False
 
+        self.last_rnn_indices = None
+        self.last_state_indices = None
         #self_play
         if self.has_self_play_config:
             print('Initializing SelfPlay Manager')
@@ -181,16 +184,18 @@ class A2CBase:
 
     def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states):
         seq_indices = None
-        if self.is_rnn:
-            if indices.max().item() >= self.steps_num:
-                return seq_indices, True
-            mb_rnn_masks[indices + steps_mask] = 1
-            seq_indices = indices % self.seq_len
-            state_indices = (seq_indices == 0).nonzero(as_tuple=False)
-            state_pos = indices // self.seq_len
-            rnn_indices = state_pos[state_indices] + steps_state[state_indices]
-            for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+        if indices.max().item() >= self.steps_num:
+            return seq_indices, True
+        mb_rnn_masks[indices + steps_mask] = 1
+        seq_indices = indices % self.seq_len
+        state_indices = (seq_indices == 0).nonzero(as_tuple=False)
+        state_pos = indices // self.seq_len
+        rnn_indices = state_pos[state_indices] + steps_state[state_indices]
+        for s, mb_s in zip(self.rnn_states, mb_rnn_states):
+            mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+
+        self.last_rnn_indices = rnn_indices
+        self.last_state_indices = state_indices
         return seq_indices, False
 
     def process_rnn_dones(self, all_done_indices, indices, seq_indices):
@@ -423,6 +428,8 @@ class DiscreteA2CBase(A2CBase):
             seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
             if full_tensor:
                 break
+            if self.has_central_value:
+                self.central_value_net.pre_step_rnn(self.last_rnn_indices, self.last_state_indices)
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -439,15 +446,14 @@ class DiscreteA2CBase(A2CBase):
             mb_neglogpacs[indices,play_mask] = neglogpacs
             mb_values[indices.cpu(), play_mask.cpu()] = values 
 
-
             if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
+                mb_vobs[indices[::self.num_agents]//self.num_agents,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
+                mb_intrinsic_rewards[indices.cpu(), play_mask.cpu()] = intrinsic_reward
             
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
@@ -461,7 +467,9 @@ class DiscreteA2CBase(A2CBase):
             done_indices = all_done_indices[::self.num_agents]
       
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
-                     
+            if self.has_central_value:
+                self.central_value_net.post_step_rnn(all_done_indices)
+
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
 
@@ -540,11 +548,6 @@ class DiscreteA2CBase(A2CBase):
         mb_rnn_masks = None
     
         for n in range(self.steps_num):
-            if self.is_rnn:
-                seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
-                if full_tensor:
-                    break
-
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 actions, values, neglogpacs, _, self.rnn_states = self.get_masked_action_values(self.obs, masks)
@@ -671,7 +674,6 @@ class DiscreteA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                rnn_masks = rnn_masks
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -879,7 +881,9 @@ class ContinuousA2CBase(A2CBase):
             seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
             if full_tensor:
                 break
-
+            if self.has_central_value:
+                self.central_value_net.pre_step_rnn(self.last_rnn_indices, self.last_state_indices)
+                
             actions, values, neglogpacs, mu, sigma, self.rnn_states = self.get_action_values(self.obs)
                 
             values = torch.squeeze(values)
@@ -916,7 +920,8 @@ class ContinuousA2CBase(A2CBase):
             done_indices = all_done_indices[::self.num_agents]
  
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
-                     
+            if self.has_central_value:
+                self.central_value_net.post_step_rnn(all_done_indices)                     
             self.game_rewards.extend(self.current_rewards[done_indices])
             self.game_lengths.extend(self.current_lengths[done_indices])
 
@@ -955,8 +960,8 @@ class ContinuousA2CBase(A2CBase):
         mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
+        
         mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1).cpu())
-
         mb_returns = mb_advs + mb_extrinsic_values
 
         if self.has_curiosity:
