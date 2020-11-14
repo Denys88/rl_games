@@ -178,5 +178,4 @@ class BasePlayer(object):
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
-
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
