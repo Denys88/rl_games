@@ -84,7 +84,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 }
                 value = self.central_value_net.get_value(input_dict)
 
-        return action.detach(), value.detach().cpu(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
+        return action.detach(), value.detach(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
 
     def get_values(self, obs, actions=None):
         if self.has_central_value:
@@ -95,7 +95,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'states' : states,
                 'is_done': self.dones,
             }
-            return self.get_central_value(input_dict).detach().cpu()
+            return self.get_central_value(input_dict).detach()
         else:
             self.model.eval()
             processed_obs = self._preproc_obs(obs['obs'])
@@ -107,7 +107,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
             with torch.no_grad():
                 _, value, _, _, _,_ = self.model(input_dict)
-            return value.detach().cpu()
+            return value.detach()
 
     def train_actor_critic(self, input_dict):
         self.set_train()

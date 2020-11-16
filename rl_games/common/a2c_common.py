@@ -153,15 +153,15 @@ class A2CBase:
 
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
-        self.dones = torch.zeros((batch_size,), dtype=torch.uint8)
+        self.dones = torch.zeros((batch_size,), dtype=torch.uint8).cuda()
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype).cuda()
 
         if self.has_central_value:
             self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype).cuda()
         
-        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
-        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8)
+        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8).cuda()
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
 
     def init_rnn_from_model(self, model):
@@ -254,9 +254,9 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return self.obs_to_tensors(obs), rewards.cpu(), dones.cpu(), infos
+            return self.obs_to_tensors(obs), rewards.cuda(), dones.cuda(), infos
         else:
-            return self.obs_to_tensors(obs), torch.from_numpy(rewards).float(), torch.from_numpy(dones), infos
+            return self.obs_to_tensors(obs), torch.from_numpy(rewards).cuda().float(), torch.from_numpy(dones).cuda(), infos
 
     def env_reset(self):
         obs = self.vec_env.reset() 
@@ -402,8 +402,8 @@ class DiscreteA2CBase(A2CBase):
         batch_size = self.num_agents * self.num_actors
         self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long).cuda()
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32).cuda()
+            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
 
     def play_steps_rnn(self):
         mb_rnn_states = []
@@ -440,11 +440,11 @@ class DiscreteA2CBase(A2CBase):
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
 
-            mb_dones[indices.cpu(), play_mask.cpu()] = self.dones.byte()
+            mb_dones[indices, play_mask] = self.dones.byte()
             mb_obs[indices,play_mask] = self.obs['obs']   
             mb_actions[indices,play_mask] = actions
             mb_neglogpacs[indices,play_mask] = neglogpacs
-            mb_values[indices.cpu(), play_mask.cpu()] = values 
+            mb_values[indices, play_mask] = values 
 
             if self.has_central_value:
                 mb_vobs[indices[::self.num_agents]//self.num_agents,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
@@ -453,15 +453,15 @@ class DiscreteA2CBase(A2CBase):
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[indices.cpu(), play_mask.cpu()] = intrinsic_reward
+                mb_intrinsic_rewards[indices, play_mask] = intrinsic_reward
             
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
 
-            mb_rewards[indices.cpu(), play_mask.cpu()] = shaped_rewards
+            mb_rewards[indices, play_mask] = shaped_rewards
 
-            self.current_rewards += rewards
+            self.current_rewards += rewards.cpu()
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -485,7 +485,7 @@ class DiscreteA2CBase(A2CBase):
             epinfos.append(infos)
 
             not_dones = 1.0 - self.dones.float()
-
+            not_dones = not_dones.cpu()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -505,7 +505,7 @@ class DiscreteA2CBase(A2CBase):
         mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
-        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1).cpu())
+        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
 
         mb_returns = mb_advs + mb_extrinsic_values
 
@@ -578,7 +578,7 @@ class DiscreteA2CBase(A2CBase):
     
             mb_rewards[n,:] = shaped_rewards
                 
-            self.current_rewards += rewards
+            self.current_rewards += rewards.cpu()
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -598,7 +598,7 @@ class DiscreteA2CBase(A2CBase):
             epinfos.append(infos)
 
             not_dones = 1.0 - self.dones.float()
-
+            not_dones = not_dones.cpu()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -653,8 +653,8 @@ class DiscreteA2CBase(A2CBase):
                 batch_dict = self.play_steps()
 
         obses = batch_dict['obs']
-        returns = batch_dict['returns'].cuda()
-        values = batch_dict['values'].cuda()
+        returns = batch_dict['returns']
+        values = batch_dict['values']
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
@@ -875,7 +875,6 @@ class ContinuousA2CBase(A2CBase):
         mb_rnn_masks = None
       
         mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states = self.init_rnn_step(batch_size, mb_rnn_states)
-        play_mask_cpu = play_mask.cpu()
         for n in range(self.steps_num):
             seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
             if full_tensor:
@@ -888,15 +887,14 @@ class ContinuousA2CBase(A2CBase):
             values = torch.squeeze(values)
             neglogpacs = torch.squeeze(neglogpacs)
             
-            indices_cpu = indices.cpu()
             
             mb_obs[indices,play_mask] = self.obs['obs'] 
             mb_actions[indices,play_mask] = actions
             mb_neglogpacs[indices,play_mask] = neglogpacs
             mb_mus[indices,play_mask] = mu
             mb_sigmas[indices,play_mask] = sigma
-            mb_dones[indices_cpu, play_mask_cpu] = self.dones.byte()
-            mb_values[indices_cpu, play_mask_cpu] = values
+            mb_dones[indices, play_mask] = self.dones.byte()
+            mb_values[indices, play_mask] = values
    
 
             if self.has_central_value:
@@ -910,10 +908,10 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
 
-            mb_rewards[indices_cpu, play_mask_cpu] = shaped_rewards
+            mb_rewards[indices, play_mask] = shaped_rewards
 
                 
-            self.current_rewards += rewards
+            self.current_rewards += rewards.cpu()
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -936,7 +934,7 @@ class ContinuousA2CBase(A2CBase):
             epinfos.append(infos)
 
             not_dones = 1.0 - self.dones.float()
-
+            not_dones = not_dones.cpu()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -960,7 +958,7 @@ class ContinuousA2CBase(A2CBase):
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
         
-        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1).cpu())
+        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
         mb_returns = mb_advs + mb_extrinsic_values
 
         if self.has_curiosity:
@@ -1041,7 +1039,7 @@ class ContinuousA2CBase(A2CBase):
  
             mb_rewards[n,:] = shaped_rewards
                 
-            self.current_rewards += rewards
+            self.current_rewards += rewards.cpu()
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -1061,7 +1059,7 @@ class ContinuousA2CBase(A2CBase):
             epinfos.append(infos)
 
             not_dones = 1.0 - self.dones.float()
-
+            not_dones = not_dones.cpu()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -1117,9 +1115,9 @@ class ContinuousA2CBase(A2CBase):
                 batch_dict = self.play_steps() 
             
         obses = batch_dict['obs']
-        returns = batch_dict['returns'].cuda()
-        dones = batch_dict['dones'].cuda()
-        values = batch_dict['values'].cuda()
+        returns = batch_dict['returns']
+        dones = batch_dict['dones']
+        values = batch_dict['values']
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         mus = batch_dict['mus']
