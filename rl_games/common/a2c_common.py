@@ -42,6 +42,8 @@ class A2CBase:
         self.env_name = config['env_name']
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.env_info = self.vec_env.get_env_info()
+        
+        self.ppo_device = config.get('device', 'cuda:0')
 
         print('Env info:')
         print(self.env_info)
@@ -153,16 +155,16 @@ class A2CBase:
 
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
-        self.dones = torch.zeros((batch_size,), dtype=torch.uint8).cuda()
-        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype).cuda()
+        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.ppo_device)
+        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
 
         if self.has_central_value:
-            self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype).cuda()
+            self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype, device=self.ppo_device)
         
-        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
-        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
-        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8).cuda()
-        self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
+        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
+        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8, device=self.ppo_device)
+        self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
     def init_rnn_from_model(self, model):
         self.is_rnn = self.model.is_rnn()
@@ -171,15 +173,15 @@ class A2CBase:
             batch_size = self.num_agents * self.num_actors
             num_seqs = self.steps_num * batch_size // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
-            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.rnn_states]
+            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
     def init_rnn_step(self, batch_size, mb_rnn_states):
         mb_rnn_states = self.mb_rnn_states
-        mb_rnn_masks = torch.zeros(self.steps_num*batch_size, dtype = torch.float32).cuda()
-        steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device='cuda:0')
-        play_mask = torch.arange(0, batch_size, 1, dtype=torch.long, device='cuda:0')
-        steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device='cuda:0')
-        indices = torch.zeros((batch_size), dtype = torch.long).cuda()
+        mb_rnn_masks = torch.zeros(self.steps_num*batch_size, dtype = torch.float32, device=self.ppo_device)
+        steps_mask = torch.arange(0, batch_size * self.steps_num, self.steps_num, dtype=torch.long, device=self.ppo_device)
+        play_mask = torch.arange(0, batch_size, 1, dtype=torch.long, device=self.ppo_device)
+        steps_state = torch.arange(0, batch_size * self.steps_num//self.seq_len, self.steps_num//self.seq_len, dtype=torch.long, device=self.ppo_device)
+        indices = torch.zeros((batch_size), dtype = torch.long, device=self.ppo_device)
         return mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states
 
     def process_rnn_indices(self, mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states):
@@ -233,9 +235,9 @@ class A2CBase:
         elif isinstance(obs, np.ndarray):
             assert(self.observation_space.dtype != np.int8)
             if self.observation_space.dtype == np.uint8:
-                obs = torch.ByteTensor(obs).cuda()
+                obs = torch.ByteTensor(obs).to(self.ppo_device)
             else:
-                obs = torch.FloatTensor(obs).cuda()
+                obs = torch.FloatTensor(obs).to(self.ppo_device)
         return obs
         
     def obs_to_tensors(self, obs):
@@ -254,9 +256,9 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
-            return self.obs_to_tensors(obs), rewards.cuda(), dones.cuda(), infos
+            return self.obs_to_tensors(obs), rewards.to(self.ppo_device), dones.to(self.ppo_device), infos
         else:
-            return self.obs_to_tensors(obs), torch.from_numpy(rewards).cuda().float(), torch.from_numpy(dones).cuda(), infos
+            return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device).float(), torch.from_numpy(dones).to(self.ppo_device), infos
 
     def env_reset(self):
         obs = self.vec_env.reset() 
@@ -400,10 +402,10 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long).cuda()
+        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long, device=self.ppo_device)
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32).cuda()
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32).cuda()
+            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
+            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
     def play_steps_rnn(self):
         mb_rnn_states = []
@@ -840,19 +842,19 @@ class ContinuousA2CBase(A2CBase):
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
         # todo introduce device instead of cuda()
-        self.actions_low = torch.from_numpy(action_space.low).float().cuda()
-        self.actions_high = torch.from_numpy(action_space.high).float().cuda()
+        self.actions_low = torch.from_numpy(action_space.low).float().to(self.ppo_device)
+        self.actions_high = torch.from_numpy(action_space.high).float().to(self.ppo_device)
         self.init_tensors()
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
-        self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
-        self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32).cuda()
+        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
+        self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
+        self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32)
+            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
+            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
 
     def play_steps_rnn(self):
