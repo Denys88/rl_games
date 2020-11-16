@@ -808,7 +808,6 @@ class DiscreteA2CBase(A2CBase):
                             self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
                             self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
-
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
@@ -1285,7 +1284,8 @@ class ContinuousA2CBase(A2CBase):
                     #self.writer.add_scalar('win_rate/frame', mean_scores, frame)
                     #self.writer.add_scalar('win_rate/iter', mean_scores, epoch_num)
                     #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
-
+                    if self.has_self_play_config:
+                        self.self_play_manager.update(self)
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
                             mean_cur_rewards = np.mean(self.curiosity_rewards)
