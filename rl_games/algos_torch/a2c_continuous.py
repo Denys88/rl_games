@@ -4,6 +4,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch import central_value, rnd_curiosity
 from rl_games.common import common_losses
+from rl_games.common import datasets
 
 from torch import optim
 import torch 
@@ -31,14 +32,17 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
-                                    self.central_value_config, self.writer).cuda()
+                                    self.central_value_config, self.writer).to(self.ppo_device)
+
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, False, self.is_rnn, self.ppo_device, self.seq_len)
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num

@@ -1,6 +1,5 @@
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
-from rl_games.common import datasets
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
@@ -401,7 +400,6 @@ class DiscreteA2CBase(A2CBase):
         A2CBase.__init__(self, base_name, config)
         self.actions_num = self.env_info['action_space'].n
         self.init_tensors()
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
@@ -702,6 +700,7 @@ class DiscreteA2CBase(A2CBase):
         self.dataset.update_values_dict(dataset_dict)
         if self.is_rnn:
             print(rnn_masks.sum().item() / (rnn_masks.nelement()))
+            for _ in range(0, self.mini_epochs_num):
                 for i in range(len(self.dataset)):
                     a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                     a_losses.append(a_loss)

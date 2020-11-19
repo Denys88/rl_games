@@ -1,10 +1,10 @@
 import torch
+from torch.utils.data import Dataset
 
-class PPODataset(torch.Dataset):
+class PPODataset(Dataset):
 
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_len):
 
-        self.values_dict = values_dict
         self.is_rnn = is_rnn
         self.seq_len = seq_len
         self.batch_size = batch_size
@@ -13,7 +13,7 @@ class PPODataset(torch.Dataset):
         self.length = self.batch_size // self.minibatch_size
         self.is_discrete = is_discrete
         self.is_continuous = not is_discrete
-        self.total_games = self.batch_size // self.seq_len
+        total_games = self.batch_size // self.seq_len
         self.num_games_batch = self.minibatch_size // self.seq_len
         self.game_indexes = torch.arange(total_games, dtype=torch.long, device=self.device)
         self.flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.device).reshape(total_games, self.seq_len)
@@ -22,14 +22,14 @@ class PPODataset(torch.Dataset):
         self.values_dict = values_dict
 
     def update_mu_sigma(self, mu, sigma):
-        self.self.values_dict['mu'][self.last_range] = mu
-        self.self.values_dict['mu'][self.last_range] = sigma
-        
+        self.values_dict['mu'][self.last_range] = mu
+        self.values_dict['sigma'][self.last_range] = sigma
+
     def __len__(self):
         return self.length
 
     def _get_item_rnn(self, idx):
-        batch = torch.range(idx * num_games_batch, (idx + 1) * num_games_batch - 1, dtype=torch.long, device=self.device)
+        batch = torch.range(idx * self.num_games_batch, (idx + 1) * self.num_games_batch - 1, dtype=torch.long, device=self.device)
         mb_indexes = self.game_indexes[batch]
         self.last_range = mbatch = self.flat_indexes[mb_indexes].flatten()    
        
@@ -41,7 +41,7 @@ class PPODataset(torch.Dataset):
         obs = self.values_dict['obs']
         rnn_states = self.values_dict['rnn_states']
         rnn_masks = self.values_dict['rnn_masks']
-
+        input_dict = {}
         input_dict['old_values'] = old_values[mbatch]
         input_dict['old_logp_actions'] = old_logp_actions[mbatch]
         input_dict['advantages'] = advantages[mbatch]
@@ -69,7 +69,7 @@ class PPODataset(torch.Dataset):
         returns = self.values_dict['returns']
         actions = self.values_dict['actions']
         obs = self.values_dict['obs']
-
+        input_dict = {}
         input_dict['old_values'] = old_values[start:end]
         input_dict['old_logp_actions'] = old_logp_actions[start:end]
         input_dict['advantages'] = advantages[start:end]

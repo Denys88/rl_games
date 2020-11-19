@@ -4,6 +4,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch import central_value, rnd_curiosity
 from rl_games.common import common_losses
+from rl_games.common import datasets
 
 from torch import optim
 import torch 
@@ -30,17 +31,18 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         #self.optimizer = torch_ext.AdaBelief(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
-                                    self.central_value_config, self.writer).cuda()
+                                    self.central_value_config, self.writer).to(self.ppo_device)
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
-    
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
+
 
     def set_eval(self):
         self.model.eval()
@@ -67,7 +69,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
-        action_masks = torch.Tensor(action_masks).cuda()
+        action_masks = torch.Tensor(action_masks).to(self.ppo_device)
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -167,7 +169,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.has_central_value:
-            c_loss = torch.zeros(1).cuda()
+            c_loss = torch.zeros(1, devi=self.ppo_device)
         else:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
