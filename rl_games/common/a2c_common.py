@@ -1,6 +1,6 @@
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
-
+from rl_games.common import datasets
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
@@ -329,6 +329,9 @@ class A2CBase:
     def train_actor_critic(self, obs_dict):
         pass 
 
+    def calc_gradients(self):
+        pass
+
     def get_intrinsic_reward(self, obs):
         return self.rnd_curiosity.get_loss(obs)
 
@@ -398,6 +401,7 @@ class DiscreteA2CBase(A2CBase):
         A2CBase.__init__(self, base_name, config)
         self.actions_num = self.env_info['action_space'].n
         self.init_tensors()
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
@@ -684,18 +688,27 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
-
+        value_dict = {
+            'old_values':,
+            'old_logp_actions':,
+            'old_values':,
+            'old_values':,
+            'old_values':,
+            'old_values':,
+            'old_values':,
+            'old_values':,
+        }
         if self.is_rnn:
             print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             total_games = self.batch_size // self.seq_len
             num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
-            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
+            game_indexes = torch.arange(total_games, dtype=torch.long, device=self.ppo_device)
+            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.ppo_device).reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
+                #permutation = torch.randperm(total_games, dtype=torch.long, device=self.ppo_device)
                 #game_indexes = game_indexes[permutation]
                 for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device='cuda:0')
+                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device=self.ppo_device)
                     mb_indexes = game_indexes[batch]
  
                     mbatch = flat_indexes[mb_indexes].flatten()           
@@ -766,6 +779,7 @@ class DiscreteA2CBase(A2CBase):
 
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
+            
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time

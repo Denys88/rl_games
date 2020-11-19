@@ -175,6 +175,11 @@ class DiscreteActionsEncoder(nn.Module):
         emb = self.linear(emb)
         return emb
 
+def get_model_gradients(model):
+    grad_list = []
+    for param in model.params():
+        grad_list.append(param.grad)
+    return grad_list
 
 import math
 import torch

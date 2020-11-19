@@ -109,9 +109,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 _, value, _, _, _,_ = self.model(input_dict)
             return value.detach()
 
-    def train_actor_critic(self, input_dict):
+    def calc_gradients(self):
         self.set_train()
-
+        input_dict = self.input_dict
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -157,7 +157,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        self.optimizer.step()
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
@@ -169,14 +168,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 if kl_dist > (2.0 * self.lr_threshold):
                     self.last_lr = max(self.last_lr / 1.5, 1e-6)
                 if kl_dist < (0.5 * self.lr_threshold):
-                    self.last_lr = min(self.last_lr * 1.5, 1e-2)        
-            
+                    self.last_lr = min(self.last_lr * 1.5, 1e-2)     
+                    
+        self.train_result = (a_loss.item(), c_loss.item(), entropy.item(), \
+            kl_dist, self.last_lr, lr_mul, \
+            mu.detach(), sigma.detach(), b_loss.item())
+
+    def train_actor_critic(self, input_dict):
+
+        self.input_dict = input_dict
+        self.calc_gradients()
+        self.optimizer.step()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
-
-        return a_loss.item(), c_loss.item(), entropy.item(), \
-            kl_dist, self.last_lr, lr_mul, \
-            mu.detach(), sigma.detach(), b_loss.item()
+   
+        return self.train_result
 
     def bound_loss(self, mu):
         if self.bounds_loss_coef is not None:
