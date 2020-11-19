@@ -1,7 +1,6 @@
 import torch
 
 class PPODataset(torch.Dataset):
-    """Face Landmarks dataset."""
 
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_len):
 
@@ -22,6 +21,10 @@ class PPODataset(torch.Dataset):
     def update_values_dict(self, values_dict):
         self.values_dict = values_dict
 
+    def update_mu_sigma(self, mu, sigma):
+        self.self.values_dict['mu'][self.last_range] = mu
+        self.self.values_dict['mu'][self.last_range] = sigma
+        
     def __len__(self):
         return self.length
 
@@ -38,6 +41,7 @@ class PPODataset(torch.Dataset):
         obs = self.values_dict['obs']
         rnn_states = self.values_dict['rnn_states']
         rnn_masks = self.values_dict['rnn_masks']
+
         input_dict['old_values'] = old_values[mbatch]
         input_dict['old_logp_actions'] = old_logp_actions[mbatch]
         input_dict['advantages'] = advantages[mbatch]
@@ -50,9 +54,9 @@ class PPODataset(torch.Dataset):
 
         if self.is_continuous:
             mus = self.values_dict['mu']
-            sigmas = self.values_dict['sigmas']
-            input_dict['mus'] = mus[mbatch]
-            input_dict['sigmas'] = sigmas[mbatch]
+            sigmas = self.values_dict['sigma']
+            input_dict['mu'] = mus[mbatch]
+            input_dict['sigma'] = sigmas[mbatch]
         return input_dict
 
     def _get_item(self, idx):
@@ -77,8 +81,8 @@ class PPODataset(torch.Dataset):
         if self.is_continuous:
             mus = self.values_dict['mu']
             sigmas = self.values_dict['sigmas']
-            input_dict['mus'] = mus[start:end]
-            input_dict['sigmas'] = sigmas[start:end]
+            input_dict['mu'] = mus[start:end]
+            input_dict['sigma'] = sigmas[start:end]
 
         return input_dict
 

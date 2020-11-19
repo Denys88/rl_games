@@ -688,70 +688,30 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
-        value_dict = {
-            'old_values':,
-            'old_logp_actions':,
-            'old_values':,
-            'old_values':,
-            'old_values':,
-            'old_values':,
-            'old_values':,
-            'old_values':,
-        }
+        dataset_dict = {}
+        dataset_dict['old_values'] = values
+        dataset_dict['old_logp_actions'] = neglogpacs
+        dataset_dict['advantages'] = advantages
+        dataset_dict['returns'] = returns
+        dataset_dict['actions'] = actions
+        dataset_dict['obs'] = obses
+        dataset_dict['rnn_states'] = rnn_states
+        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['learning_rate'] = self.last_lr
+
+        self.dataset.update_values_dict(dataset_dict)
         if self.is_rnn:
             print(rnn_masks.sum().item() / (rnn_masks.nelement()))
-            total_games = self.batch_size // self.seq_len
-            num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = torch.arange(total_games, dtype=torch.long, device=self.ppo_device)
-            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.ppo_device).reshape(total_games, self.seq_len)
-            for _ in range(0, self.mini_epochs_num):
-                #permutation = torch.randperm(total_games, dtype=torch.long, device=self.ppo_device)
-                #game_indexes = game_indexes[permutation]
-                for i in range(0, self.num_minibatches):
-                    batch = torch.range(i * num_games_batch, (i + 1) * num_games_batch - 1, dtype=torch.long, device=self.ppo_device)
-                    mb_indexes = game_indexes[batch]
- 
-                    mbatch = flat_indexes[mb_indexes].flatten()           
-                    input_dict = {}
-                    input_dict['old_values'] = values[mbatch]
-                    input_dict['old_logp_actions'] = neglogpacs[mbatch]
-                    input_dict['advantages'] = advantages[mbatch]
-                    input_dict['returns'] = returns[mbatch]
-                    input_dict['actions'] = actions[mbatch]
-                    input_dict['obs'] = obses[mbatch]
-                    input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
-                    input_dict['rnn_masks'] = rnn_masks[mbatch]
-                    input_dict['learning_rate'] = self.last_lr
-
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                for i in range(len(self.dataset)):
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
                     entropies.append(entropy)    
         else:
             for _ in range(0, self.mini_epochs_num):
-                '''
-                permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
-                obses = obses[permutation]
-                returns = returns[permutation]
-                actions = actions[permutation]
-                values = values[permutation]
-                neglogpacs = neglogpacs[permutation]
-                advantages = advantages[permutation]
-                '''
-                for i in range(0, self.num_minibatches):
-                    start = i * self.minibatch_size
-                    end = (i + 1) * self.minibatch_size
-                    input_dict = {}
-                    input_dict['old_values'] = values[start:end]
-                    input_dict['old_logp_actions'] = neglogpacs[start:end]
-                    input_dict['advantages'] = advantages[start:end]
-                    input_dict['returns'] = returns[start:end]
-                    input_dict['actions'] = actions[start:end]
-                    input_dict['obs'] = obses[start:end]
-                    input_dict['learning_rate'] = self.last_lr
-                    
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(input_dict)
+                for i in range(len(self.dataset)):            
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
@@ -1165,6 +1125,20 @@ class ContinuousA2CBase(A2CBase):
         entropies = []
         kls = []
 
+        dataset_dict = {}
+        dataset_dict['old_values'] = values
+        dataset_dict['old_logp_actions'] = neglogpacs
+        dataset_dict['advantages'] = advantages
+        dataset_dict['returns'] = returns
+        dataset_dict['actions'] = actions
+        dataset_dict['obs'] = obses
+        dataset_dict['rnn_states'] = rnn_states
+        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['learning_rate'] = self.last_lr
+        dataset_dict['mu'] = mus
+        dataset_dict['sigma'] = sigmas
+   
+        self.dataset.update_values_dict(dataset_dict)
         if self.is_rnn:
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
@@ -1174,70 +1148,25 @@ class ContinuousA2CBase(A2CBase):
             game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
             flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
             for _ in range(0, self.mini_epochs_num):
-                #permutation = torch.randperm(total_games, dtype=torch.long, device='cuda:0')
-                #game_indexes = game_indexes[permutation]
-                for i in range(0, self.num_minibatches):
-                    start = i * num_games_batch
-                    end = (i + 1) * num_games_batch
-                    mb_indexes = game_indexes[start:end]
-                    mbatch = flat_indexes[mb_indexes].flatten()
-                    input_dict = {}
-
-                    input_dict['old_values'] = values[mbatch]
-                    input_dict['old_logp_actions'] = neglogpacs[mbatch]
-                    input_dict['advantages'] = advantages[mbatch]
-                    input_dict['returns'] = returns[mbatch]
-                    input_dict['actions'] = actions[mbatch]
-                    input_dict['obs'] = obses[mbatch]
-                    input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
-                    input_dict['rnn_masks'] = rnn_masks[mbatch]
-                    input_dict['learning_rate'] = self.last_lr
-                    input_dict['mu'] = mus[mbatch]
-                    input_dict['sigma'] = sigmas[mbatch]
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
+                for i in range(len(self.dataset)):
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
                     entropies.append(entropy)        
-                    mus[mbatch] = cmu
-                    sigmas[mbatch] = csigma
+                    self.dataset.update_mu_sigma(cmu, csigma)
                     if self.bounds_loss_coef is not None:
                         b_losses.append(b_loss)                            
 
         else:
-            '''permutation = torch.randperm(self.batch_size, dtype=torch.long, device='cuda:0')
-            obses = obses[permutation]
-            returns = returns[permutation]      
-            actions = actions[permutation]
-            values = values[permutation]
-            neglogpacs = neglogpacs[permutation]
-            advantages = advantages[permutation]
-            mus = mus[permutation]
-            sigmas = sigmas[permutation]'''
-
             for _ in range(0, self.mini_epochs_num):
-                for i in range(0, self.num_minibatches):
-                    #batch = torch.range(i * self.minibatch_size, (i + 1) * self.minibatch_size - 1, dtype=torch.long, device='cuda:0')
-                    start = i * self.minibatch_size
-                    end = (i + 1) * self.minibatch_size
-                    input_dict = {}
-                    input_dict['old_values'] = values[start:end]
-                    input_dict['old_logp_actions'] = neglogpacs[start:end]
-                    input_dict['advantages'] = advantages[start:end]
-                    input_dict['returns'] = returns[start:end]
-                    input_dict['actions'] = actions[start:end]
-                    input_dict['obs'] = obses[start:end]
-                    input_dict['mu'] = mus[start:end]
-                    input_dict['sigma'] = sigmas[start:end]
-                    input_dict['learning_rate'] = self.last_lr
-                    
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(input_dict)
+                for i in range(len(self.dataset)):
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(dataset[i])
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
                     entropies.append(entropy)
-                    mus[start:end] = cmu
-                    sigmas[start:end] = csigma
+                    self.dataset.update_mu_sigma(cmu, csigma)
                     if self.bounds_loss_coef is not None:
                         b_losses.append(b_loss) 
 
