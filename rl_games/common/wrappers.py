@@ -621,7 +621,7 @@ def make_car_racing(env_id, skip=4):
 
 def make_atari_deepmind(env_id, noop_max=0, skip=4, sticky=False):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
-    return wrap_deepmind(env, clip_rewards=True)
+    return wrap_deepmind(env, clip_rewards=False)
 
 # turned off episode life to make a video, need to use ReallyDoneWrapper
 def make_atari_deepmind_test(env_id, noop_max=30, skip=4, directory='video_dddqn05'):

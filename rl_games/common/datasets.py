@@ -80,7 +80,7 @@ class PPODataset(Dataset):
 
         if self.is_continuous:
             mus = self.values_dict['mu']
-            sigmas = self.values_dict['sigmas']
+            sigmas = self.values_dict['sigma']
             input_dict['mu'] = mus[start:end]
             input_dict['sigma'] = sigmas[start:end]
 

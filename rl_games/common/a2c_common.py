@@ -164,15 +164,16 @@ class A2CBase:
         self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8, device=self.ppo_device)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
-
-    def init_rnn_from_model(self, model):
-        self.is_rnn = self.model.is_rnn()
         if self.is_rnn:
-            self.rnn_states = model.get_default_rnn_state()
+            self.rnn_states = self.model.get_default_rnn_state()
             batch_size = self.num_agents * self.num_actors
             num_seqs = self.steps_num * batch_size // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
+
+
+    def init_rnn_from_model(self, model):
+        self.is_rnn = self.model.is_rnn()
 
     def init_rnn_step(self, batch_size, mb_rnn_states):
         mb_rnn_states = self.mb_rnn_states
@@ -399,7 +400,6 @@ class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)
         self.actions_num = self.env_info['action_space'].n
-        self.init_tensors()
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
@@ -724,6 +724,7 @@ class DiscreteA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
     def train(self):
+        self.init_tensors()
         self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
@@ -817,7 +818,6 @@ class ContinuousA2CBase(A2CBase):
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high).float().to(self.ppo_device)
-        self.init_tensors()
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
@@ -1160,7 +1160,7 @@ class ContinuousA2CBase(A2CBase):
         else:
             for _ in range(0, self.mini_epochs_num):
                 for i in range(len(self.dataset)):
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(dataset[i])
+                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                     a_losses.append(a_loss)
                     c_losses.append(c_loss)
                     kls.append(kl)
@@ -1177,6 +1177,7 @@ class ContinuousA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
     
     def train(self):
+        self.init_tensors()
         self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
