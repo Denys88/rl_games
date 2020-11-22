@@ -153,7 +153,7 @@ class BasePlayer(object):
   
                 if render:
                     self.env.render(mode = 'human')
-                    time.sleep(0.05)
+                    #time.sleep(0.05)
 
                 all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[::self.num_agents]
@@ -175,9 +175,9 @@ class BasePlayer(object):
                     game_res = 0.0
                     if isinstance(info, dict):
                         game_res = info.get('battle_won', 0.5)
-
-                    print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
+                    print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count, 'w:', game_res)
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
+        print(sum_rewards)
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)

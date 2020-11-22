@@ -29,8 +29,9 @@ class PPODataset(Dataset):
         return self.length
 
     def _get_item_rnn(self, idx):
-        batch = torch.range(idx * self.num_games_batch, (idx + 1) * self.num_games_batch - 1, dtype=torch.long, device=self.device)
-        mb_indexes = self.game_indexes[batch]
+        start = idx * self.num_games_batch
+        end = (idx + 1) * self.num_games_batch
+        mb_indexes = self.game_indexes[start:end]
         self.last_range = mbatch = self.flat_indexes[mb_indexes].flatten()    
        
         old_values = self.values_dict['old_values']
@@ -80,7 +81,7 @@ class PPODataset(Dataset):
 
         if self.is_continuous:
             mus = self.values_dict['mu']
-            sigmas = self.values_dict['sigmas']
+            sigmas = self.values_dict['sigma']
             input_dict['mu'] = mus[start:end]
             input_dict['sigma'] = sigmas[start:end]
 
