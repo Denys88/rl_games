@@ -39,9 +39,12 @@ class A2CBase:
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-        self.env_info = self.vec_env.get_env_info()
-        
+
+        self.env_info = config.get('env_info', None)
+        if self.env_info is None:
+            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+            self.env_info = self.vec_env.get_env_info()
+
         self.ppo_device = config.get('device', 'cuda:0')
 
         print('Env info:')
@@ -63,7 +66,6 @@ class A2CBase:
 
         self.self_play_config = self.config.get('self_play_config', None)
         self.has_self_play_config = self.self_play_config is not None
-
 
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
