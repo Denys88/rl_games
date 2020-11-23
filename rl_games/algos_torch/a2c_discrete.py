@@ -22,7 +22,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.ppo_device)
 
         self.init_rnn_from_model(self.model)
 
@@ -34,7 +34,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
         if self.has_curiosity:
@@ -138,15 +138,25 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 _, value, _, _, _ = self.model(input_dict)
             return value.detach()
 
-    def train_actor_critic(self, input_dict):
-        self.model.train()
+    def train_actor_critic(self, input_dict, opt_step = True):
+        self.set_train()
+        self.input_dict = input_dict
+        self.calc_gradients()
+        if opt_step:
+            self.optimizer.step()
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.last_lr
 
-        value_preds_batch = input_dict['old_values']
-        old_action_log_probs_batch = input_dict['old_logp_actions']
-        advantage = input_dict['advantages']
-        return_batch = input_dict['returns']
-        actions_batch = input_dict['actions']
-        obs_batch = input_dict['obs']
+        return self.train_result
+
+
+    def calc_gradients(self):
+        value_preds_batch = self.input_dict['old_values']
+        old_action_log_probs_batch = self.input_dict['old_logp_actions']
+        advantage = self.input_dict['advantages']
+        return_batch = self.input_dict['returns']
+        actions_batch = self.input_dict['actions']
+        obs_batch = self.input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
         lr = self.last_lr
         kl = 1.0
@@ -160,8 +170,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         rnn_masks = None
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
-            batch_dict['rnn_states'] = input_dict['rnn_states']
+            rnn_masks = self.input_dict['rnn_masks']
+            batch_dict['rnn_states'] = self.input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
         action_log_probs, values, entropy, _ = self.model(batch_dict)
@@ -169,7 +179,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.has_central_value:
-            c_loss = torch.zeros(1, devi=self.ppo_device)
+            c_loss = torch.zeros(1, device=self.ppo_device)
         else:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
@@ -186,7 +196,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        self.optimizer.step()
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:
@@ -199,6 +208,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     self.last_lr = max(self.last_lr / 1.5, 1e-6)
                 if kl_dist < (0.5 * self.lr_threshold):
                     self.last_lr = min(self.last_lr * 1.5, 1e-2)
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-        return a_loss.item(), c_loss.item(), entropy.item(), kl_dist, self.last_lr, lr_mul
+
+        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
+

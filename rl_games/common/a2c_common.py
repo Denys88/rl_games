@@ -39,8 +39,10 @@ class A2CBase:
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-        self.env_info = self.vec_env.get_env_info()
+        self.env_info = config.get('env_info')
+        if self.env_info is None:
+            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+            self.env_info = self.vec_env.get_env_info()
         
         self.ppo_device = config.get('device', 'cuda:0')
 
@@ -82,7 +84,7 @@ class A2CBase:
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
-        self.num_agents = self.vec_env.get_number_of_agents()
+        self.num_agents = self.env_info.get('agents', 1)
         self.steps_num = config['steps_num']
         self.seq_len = self.config.get('seq_len', 4)
         self.normalize_advantage = config['normalize_advantage']
@@ -107,7 +109,6 @@ class A2CBase:
         self.minibatch_size = self.config['minibatch_size']
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
-
         assert(self.batch_size % self.minibatch_size == 0)
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -145,6 +146,9 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
+    def reset_envs(self):
+        self.obs = self.env_reset()
+        
     def init_tensors(self):
         if self.observation_space.dtype == np.uint8:
             torch_dtype = torch.uint8
@@ -166,6 +170,8 @@ class A2CBase:
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
+            self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
+        
             batch_size = self.num_agents * self.num_actors
             num_seqs = self.steps_num * batch_size // self.seq_len
             assert((self.steps_num * batch_size // self.num_minibatches) % self.seq_len == 0)
@@ -302,7 +308,7 @@ class A2CBase:
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
         self.last_mean_rewards = -100500
-        self.obs = self.env_reset()
+        #self.obs = self.env_reset()
 
     def update_epoch(self):
         pass
@@ -316,6 +322,8 @@ class A2CBase:
     def get_values(self, obs, actions=None):
         pass
 
+    def play_steps_rnn(self):
+        pass
 
     def play_steps(self):
         pass
@@ -323,10 +331,13 @@ class A2CBase:
     def train(self):       
         pass
 
+    def prepare_dataset(self, batch_dict):
+        pass
+
     def train_epoch(self):
         pass
 
-    def train_actor_critic(self, obs_dict):
+    def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
 
     def calc_gradients(self):
@@ -655,49 +666,18 @@ class DiscreteA2CBase(A2CBase):
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
-
-        obses = batch_dict['obs']
-        returns = batch_dict['returns']
-        values = batch_dict['values']
-        actions = batch_dict['actions']
-        neglogpacs = batch_dict['neglogpacs']
-        rnn_states = batch_dict.get('rnn_states', None)
-        rnn_masks = batch_dict.get('rnn_masks', None)
-
+                
         play_time_end = time.time()
         update_time_start = time.time()
-        advantages = returns - values
-
-        if self.has_curiosity:
-            self.train_intrinsic_reward(batch_dict)
-            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
-            advantages = torch.sum(advantages, axis=1)
-
-        if self.has_central_value:
-            self.train_central_value(batch_dict)
-
-        if self.normalize_advantage:
-            if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
-            else:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-            
+        rnn_masks = batch_dict.get('rnn_masks', None)
+        self.prepare_dataset(batch_dict)
+        
         a_losses = []
         c_losses = []
         entropies = []
         kls = []
-        dataset_dict = {}
-        dataset_dict['old_values'] = values
-        dataset_dict['old_logp_actions'] = neglogpacs
-        dataset_dict['advantages'] = advantages
-        dataset_dict['returns'] = returns
-        dataset_dict['actions'] = actions
-        dataset_dict['obs'] = obses
-        dataset_dict['rnn_states'] = rnn_states
-        dataset_dict['rnn_masks'] = rnn_masks
-        dataset_dict['learning_rate'] = self.last_lr
 
-        self.dataset.update_values_dict(dataset_dict)
+
         if self.is_rnn:
             print(rnn_masks.sum().item() / (rnn_masks.nelement()))
             for _ in range(0, self.mini_epochs_num):
@@ -722,6 +702,44 @@ class DiscreteA2CBase(A2CBase):
         total_time = update_time_end - play_time_start
 
         return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
+
+    def prepare_dataset(self, batch_dict):
+        rnn_masks = batch_dict.get('rnn_masks', None)
+        obses = batch_dict['obs']
+        returns = batch_dict['returns']
+        values = batch_dict['values']
+        actions = batch_dict['actions']
+        neglogpacs = batch_dict['neglogpacs']
+        rnn_states = batch_dict.get('rnn_states', None)
+        advantages = returns - values
+
+        if self.has_curiosity:
+            self.train_intrinsic_reward(batch_dict)
+            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
+            advantages = torch.sum(advantages, axis=1)
+
+        if self.has_central_value:
+            self.train_central_value(batch_dict)
+
+        if self.normalize_advantage:
+            if self.is_rnn:
+                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+            else:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+
+        dataset_dict = {}
+        dataset_dict['old_values'] = values
+        dataset_dict['old_logp_actions'] = neglogpacs
+        dataset_dict['advantages'] = advantages
+        dataset_dict['returns'] = returns
+        dataset_dict['actions'] = actions
+        dataset_dict['obs'] = obses
+        dataset_dict['rnn_states'] = rnn_states
+        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['learning_rate'] = self.last_lr
+        self.dataset.update_values_dict(dataset_dict)
+
 
     def train(self):
         self.init_tensors()
@@ -816,8 +834,8 @@ class ContinuousA2CBase(A2CBase):
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
         # todo introduce device instead of cuda()
-        self.actions_low = torch.from_numpy(action_space.low).float().to(self.ppo_device)
-        self.actions_high = torch.from_numpy(action_space.high).float().to(self.ppo_device)
+        self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
+        self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
@@ -1054,7 +1072,6 @@ class ContinuousA2CBase(A2CBase):
 
         '''
         TODO: rework this usecase better
-
         '''
 
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
@@ -1088,56 +1105,18 @@ class ContinuousA2CBase(A2CBase):
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps() 
-            
-        obses = batch_dict['obs']
-        returns = batch_dict['returns']
-        dones = batch_dict['dones']
-        values = batch_dict['values']
-        actions = batch_dict['actions']
-        neglogpacs = batch_dict['neglogpacs']
-        mus = batch_dict['mus']
-        sigmas = batch_dict['sigmas']
-        rnn_states = batch_dict.get('rnn_states', None)
-        rnn_masks = batch_dict.get('rnn_masks', None)
-
         play_time_end = time.time()
         update_time_start = time.time()
-        advantages = returns - values
 
-        if self.normalize_advantage:
-            if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
-            else:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        if self.has_central_value:
-            self.train_central_value(batch_dict)
-
-        if self.has_curiosity:
-            self.train_intrinsic_reward(batch_dict)
-            advantages[:, 1] = advantages[:, 1] * self.rnd_adv_coef
-            advantages = torch.sum(advantages, axis=1)  
+        rnn_masks = batch_dict.get('rnn_masks', None)
+        self.prepare_dataset(batch_dict)
 
         a_losses = []
         c_losses = []
         b_losses = []
         entropies = []
         kls = []
-
-        dataset_dict = {}
-        dataset_dict['old_values'] = values
-        dataset_dict['old_logp_actions'] = neglogpacs
-        dataset_dict['advantages'] = advantages
-        dataset_dict['returns'] = returns
-        dataset_dict['actions'] = actions
-        dataset_dict['obs'] = obses
-        dataset_dict['rnn_states'] = rnn_states
-        dataset_dict['rnn_masks'] = rnn_masks
-        dataset_dict['learning_rate'] = self.last_lr
-        dataset_dict['mu'] = mus
-        dataset_dict['sigma'] = sigmas
-   
-        self.dataset.update_values_dict(dataset_dict)
+        
         if self.is_rnn:
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
@@ -1175,6 +1154,49 @@ class ContinuousA2CBase(A2CBase):
         total_time = update_time_end - play_time_start
 
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
+
+    def prepare_dataset(self, batch_dict):
+        obses = batch_dict['obs']
+        returns = batch_dict['returns']
+        dones = batch_dict['dones']
+        values = batch_dict['values']
+        actions = batch_dict['actions']
+        neglogpacs = batch_dict['neglogpacs']
+        mus = batch_dict['mus']
+        sigmas = batch_dict['sigmas']
+        rnn_states = batch_dict.get('rnn_states', None)
+        rnn_masks = batch_dict.get('rnn_masks', None)
+        
+        advantages = returns - values
+
+        if self.normalize_advantage:
+            if self.is_rnn:
+                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+            else:
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        if self.has_central_value:
+            self.train_central_value(batch_dict)
+
+        if self.has_curiosity:
+            self.train_intrinsic_reward(batch_dict)
+            advantages[:, 1] = advantages[:, 1] * self.rnd_adv_coef
+            advantages = torch.sum(advantages, axis=1)  
+
+        dataset_dict = {}
+        dataset_dict['old_values'] = values
+        dataset_dict['old_logp_actions'] = neglogpacs
+        dataset_dict['advantages'] = advantages
+        dataset_dict['returns'] = returns
+        dataset_dict['actions'] = actions
+        dataset_dict['obs'] = obses
+        dataset_dict['rnn_states'] = rnn_states
+        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['learning_rate'] = self.last_lr
+        dataset_dict['mu'] = mus
+        dataset_dict['sigma'] = sigmas
+
+        self.dataset.update_values_dict(dataset_dict)
     
     def train(self):
         self.init_tensors()
@@ -1187,7 +1209,6 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = self.batch_size_envs
         while True:
             epoch_num = self.update_epoch()
-            
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
             self.frame += self.curr_frames

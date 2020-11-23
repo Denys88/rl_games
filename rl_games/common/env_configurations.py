@@ -256,6 +256,10 @@ def create_minigrid_env(name, **kwargs):
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
+        'env_creator' : lambda **kwargs : gym.make('CartPole-v1'),
+    },
+    'CartPoleMaskedVelocity-v1' : {
+        'vecenv_type' : 'RAY',
         'env_creator' : lambda **kwargs : wrappers.MaskVelocityWrapper(gym.make('CartPole-v1'), 'CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
@@ -411,21 +415,6 @@ def get_obs_and_action_spaces(name):
         observation_space = observation_space['observations']
     return observation_space, action_space
 
-def get_obs_and_action_spaces_from_config(config):
-    result_shapes = {}
-    env_config = config.get('env_config', {})
-    env = configurations[config['env_name']]['env_creator'](**env_config)
-    result_shapes['observation_space'] = env.observation_space
-    result_shapes['action_space'] = env.action_space
-    env.close()
-    # workaround for deepmind control
-
-    if isinstance(env.observation_space, gym.spaces.dict.Dict):
-        result_shapes['observation_space'] = env.observation_space['observations']
-    if isinstance(env.observation_space, dict):
-        result_shapes['observation_space'] = env.observation_space['observations']
-        result_shapes['state_space'] = env.observation_space['states']
-    return result_shapes
 
 def get_env_info(env):
     result_shapes = {}
@@ -439,7 +428,16 @@ def get_env_info(env):
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
+    print(result_shapes)
     return result_shapes
+
+def get_obs_and_action_spaces_from_config(config):
+    env_config = config.get('env_config', {})
+    env = configurations[config['env_name']]['env_creator'](**env_config)
+    result_shapes = get_env_info(env)
+    env.close()
+    return result_shapes
+
 
 def register(name, config):
     configurations[name] = config

@@ -8,8 +8,9 @@ from rl_games.common  import common_losses
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
+    def __init__(self, state_shape, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
         nn.Module.__init__(self)
+        self.ppo_device = ppo_device
         self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
@@ -43,9 +44,10 @@ class CentralValueTrain(nn.Module):
         self.rnn_states = None
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
+            self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             num_seqs = self.num_steps * self.num_actors // self.seq_len
             assert((self.num_steps * self.num_actors // self.num_minibatches) % self.seq_len == 0)
-            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32).cuda() for s in self.rnn_states]
+            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:

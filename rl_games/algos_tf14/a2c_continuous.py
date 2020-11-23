@@ -300,7 +300,7 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
-        max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
+        max_epochs = self.config.get('max_epochs', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']

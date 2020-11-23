@@ -16,14 +16,17 @@ params:
       discrete:
 
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128]
       activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
         name:  'None'
-
+    rnn:
+      name: lstm
+      units: 128
+      layers: 1
   config:
     name: 5m_vs_6m_cv
     reward_shaper:
@@ -51,10 +54,11 @@ params:
     normalize_reward: False
     use_action_masks: True
     ignore_dead_batches : False
+    seq_length: 8
     #max_epochs: 10000
 
     central_value_config:
-      use_joint_obs_actions: True
+      use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
@@ -62,21 +66,20 @@ params:
       normalize_input: True
       network:
         normalization: batch_norm
-        joint_obs_actions:
-            embedding: False
-            embedding_scale: 1 #(actions // embedding_scale)
-            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:
-          units: [256, 128,64]
+          units: [512, 256]
           activation: relu
           initializer:
             name: variance_scaling_initializer
             scale: 2 
           regularizer:
             name:  'None'
-
+        rnn:
+          name: lstm
+          units: 128
+          layers: 1
     env_config:
       name: 5m_vs_6m
       central_value: True

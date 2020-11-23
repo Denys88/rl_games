@@ -94,7 +94,7 @@ class RayWorker:
         info['observation_space'] = observation_space
         info['state_space'] = None
         info['use_global_observations'] = False
-
+        info['agents'] = self.get_number_of_agents()
         if hasattr(self.env, 'use_central_value'):
             info['use_global_observations'] = self.env.use_central_value
 

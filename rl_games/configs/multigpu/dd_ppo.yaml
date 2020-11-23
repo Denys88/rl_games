@@ -1,0 +1,2 @@
+params:
+  devices: ['cpu', 'cpu']

@@ -22,7 +22,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.ppo_device)
         self.states = None
 
         self.init_rnn_from_model(self.model)
@@ -38,7 +38,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device, self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, False, self.is_rnn, self.ppo_device, self.seq_len)
@@ -178,11 +178,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss.item())
 
-    def train_actor_critic(self, input_dict):
-
+    def train_actor_critic(self, input_dict, opt_step=True):
         self.input_dict = input_dict
         self.calc_gradients()
-        self.optimizer.step()
+        if opt_step:
+            self.optimizer.step()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
    
