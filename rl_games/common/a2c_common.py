@@ -40,8 +40,11 @@ class A2CBase:
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
-        self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-        self.env_info = self.vec_env.get_env_info()
+
+        self.env_info = config.get('env_info', None)
+        if self.env_info is None:
+            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+            self.env_info = self.vec_env.get_env_info()
 
         print('Env info:')
         print(self.env_info)
