@@ -66,7 +66,6 @@ class A2CBase:
         self.self_play_config = self.config.get('self_play_config', None)
         self.has_self_play_config = self.self_play_config is not None
 
-
         self.self_play = config.get('self_play', False)
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
