@@ -41,7 +41,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
 
 
     def set_eval(self):

@@ -181,3 +181,9 @@ def get_model_gradients(model):
         grad_list.append(param.grad)
     return grad_list
 
+def get_mean(v):
+    if len(v) > 0:
+        mean = np.mean(v)
+    else:
+        mean = 0
+    return mean

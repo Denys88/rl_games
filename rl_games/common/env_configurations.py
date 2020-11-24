@@ -342,6 +342,10 @@ configurations = {
         'env_creator' : lambda **kwargs  : gym.make('BipedalWalkerHardcore-v3'),
         'vecenv_type' : 'RAY'
     },
+    'ReacherPyBulletEnv-v0' : {
+        'env_creator' : lambda **kwargs  : create_roboschool_env('ReacherPyBulletEnv-v0'),
+        'vecenv_type' : 'RAY'
+    },
     'BipedalWalkerHardcoreCnn-v3' : {
         'env_creator' : lambda : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v3'), 4, False),
         'vecenv_type' : 'RAY'

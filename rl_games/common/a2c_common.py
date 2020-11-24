@@ -411,7 +411,7 @@ class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)
         self.actions_num = self.env_info['action_space'].n
-
+        self.is_discrete = True
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
@@ -828,6 +828,7 @@ class DiscreteA2CBase(A2CBase):
 class ContinuousA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)
+        self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
 

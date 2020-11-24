@@ -10,23 +10,24 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     #normalization: layer_norm
     space: 
       discrete:
 
     mlp:
-      units: [256, 128]
+      units: [512, 256, 128]
       activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
         name:  'None'
-    rnn:
+    rnn1:
       name: lstm
       units: 128
       layers: 1
+      layer_norm: True
   config:
     name: 5m_vs_6m_cv
     reward_shaper:
@@ -34,11 +35,11 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 5e-4
+    learning_rate: 1e-4
     score_to_win: 20
-    grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
+    grad_norm: 1.5
     env_name:  smac
     ppo: true
     e_clip: 0.2
@@ -53,19 +54,26 @@ params:
     normalize_input: True
     normalize_reward: False
     use_action_masks: True
-    ignore_dead_batches : False
     seq_length: 8
     #max_epochs: 10000
+    env_config:
+      name: 5m_vs_6m
+      central_value: False
+      reward_only_positive: True
+      obs_last_action: True
+      apply_agent_ids: False
 
-    central_value_config:
+    central_value_config1:
       use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      lr: 1e-4
       clip_value: False
       normalize_input: True
+      truncate_grads: True
+      grad_norm: 1.5
       network:
-        normalization: batch_norm
+        #normalization: layer_norm
         name: actor_critic
         central_value: True
         mlp:
@@ -80,11 +88,7 @@ params:
           name: lstm
           units: 128
           layers: 1
-    env_config:
-      name: 5m_vs_6m
-      central_value: True
-      reward_only_positive: True
-      obs_last_action: True
-      apply_agent_ids: True
+          layer_norm: True
+
       
       #reward_negative_scale: 0.1

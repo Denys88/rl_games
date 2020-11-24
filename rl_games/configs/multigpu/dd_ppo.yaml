@@ -1,2 +1,2 @@
 params:
-  devices: ['cpu', 'cpu']
+  devices: ['cuda:0', 'cuda:0']

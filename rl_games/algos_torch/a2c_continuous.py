@@ -41,7 +41,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device, self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, False, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_epoch(self):
         self.epoch_num += 1

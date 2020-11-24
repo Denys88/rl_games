@@ -98,7 +98,7 @@ class CentralValueTrain(nn.Module):
         value_preds = input_dict['values'].cuda()
         returns = input_dict['returns'].cuda()
         actions = input_dict['actions']
-        
+        rnn_masks = None
 
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks'] 
@@ -156,7 +156,7 @@ class CentralValueTrain(nn.Module):
                 for param in self.model.parameters():
                     param.grad = None
                 loss.backward()
-                if self.config['truncate_grads']:
+                if self.truncate_grads:
                     nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
                 self.optimizer.step()
                 sum_loss += loss.item()
