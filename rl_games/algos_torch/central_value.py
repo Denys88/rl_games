@@ -88,15 +88,14 @@ class CentralValueTrain(nn.Module):
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
-        
         return value
 
     def train_net(self, input_dict):
         self.train()
         obs = input_dict['states']
         batch_size = obs.size()[0]
-        value_preds = input_dict['values'].cuda()
-        returns = input_dict['returns'].cuda()
+        value_preds = input_dict['values']
+        returns = input_dict['returns']
         actions = input_dict['actions']
         rnn_masks = None
 
@@ -126,6 +125,7 @@ class CentralValueTrain(nn.Module):
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
         value_preds = value_preds.flatten(0)[:batch_size]
         returns = returns.flatten(0)[:batch_size]
+
         if self.use_joint_obs_actions:
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
             actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
@@ -151,6 +151,7 @@ class CentralValueTrain(nn.Module):
                 if self.use_joint_obs_actions:
                     actions_batch = actions[start:end].view(mini_batch * self.num_agents)
                 values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
+
                 loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
                 loss = loss.mean()
                 for param in self.model.parameters():
@@ -167,8 +168,8 @@ class CentralValueTrain(nn.Module):
         num_minibatches = batch_size // mini_batch
         total_games = batch_size // self.seq_len
         num_games_batch = self.mini_batch // self.seq_len
-        game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
-        flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
+        game_indexes = torch.arange(total_games, dtype=torch.long, device=self.ppo_device)
+        flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.ppo_device).reshape(total_games, self.seq_len)
         sum_loss = 0
         for _ in range(self.mini_epoch):
             for i in range(num_minibatches):

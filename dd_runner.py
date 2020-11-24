@@ -26,7 +26,7 @@ if __name__ == '__main__':
     with open(dd_config_name, 'r') as stream:
         dd_config = yaml.safe_load(stream)
 
-    ray.init()
+    ray.init(num_gpus=4)
     signal.signal(signal.SIGINT, exit_gracefully)
 
     runner = DDPpoRunner(ppo_config, dd_config)

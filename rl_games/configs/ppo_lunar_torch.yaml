@@ -39,7 +39,7 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
+      learning_rate: 5e-4
       name: test
       score_to_win: 300
 
