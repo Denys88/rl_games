@@ -69,5 +69,5 @@ params:
     lr_schedule:  adaptive
     lr_threshold: 0.05
     normalize_input: False
-    seq_len: 4
+    seq_length: 4
     use_action_masks: True

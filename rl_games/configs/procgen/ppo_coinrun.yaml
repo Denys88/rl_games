@@ -61,7 +61,7 @@ params:
     lr_schedule:  polynom_decay
     lr_threshold: 0.01
     normalize_input: False
-    seq_len: 4
+    seq_length: 4
     max_epochs: 2000
     env_config:
         name: "procgen:procgen-coinrun-v0"

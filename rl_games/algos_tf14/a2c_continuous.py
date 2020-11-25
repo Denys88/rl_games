@@ -76,7 +76,7 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
         self.normalize_input = self.config['normalize_input']
-        self.seq_len = self.config['seq_len']
+        self.seq_len = self.config['seq_length']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
 
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)

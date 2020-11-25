@@ -43,6 +43,7 @@ class CentralValueTrain(nn.Module):
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
         if self.is_rnn:
+            batch_size = self.num_steps * self.num_actors
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             num_seqs = self.num_steps * self.num_actors // self.seq_len
@@ -61,8 +62,12 @@ class CentralValueTrain(nn.Module):
         return obs_batch
 
     def pre_step_rnn(self, rnn_indices, state_indices):
-        rnn_indices = rnn_indices[::self.num_agents] // self.num_agents
-        state_indices = state_indices[::self.num_agents] // self.num_agents
+        if self.num_agents > 1:
+            rnn_indices = rnn_indices[::self.num_agents] 
+            shifts = rnn_indices % (self.num_steps // self.seq_len)
+            rnn_indices = (rnn_indices - shifts) // self.num_agents + shifts
+            state_indices = state_indices[::self.num_agents] // self.num_agents
+
         for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
             mb_s[:, rnn_indices, :] = s[:, state_indices, :]
 

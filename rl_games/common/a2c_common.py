@@ -85,7 +85,7 @@ class A2CBase:
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
         self.steps_num = config['steps_num']
-        self.seq_len = self.config.get('seq_len', 4)
+        self.seq_len = self.config.get('seq_length', 4)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
         self.normalize_reward = self.config.get('normalize_reward', False)

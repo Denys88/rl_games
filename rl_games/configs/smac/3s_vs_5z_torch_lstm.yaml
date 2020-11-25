@@ -52,7 +52,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    seq_len: 32
+    seq_length: 32
     use_action_masks: True
     max_epochs: 20000
     env_config:

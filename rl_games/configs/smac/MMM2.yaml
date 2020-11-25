@@ -70,7 +70,7 @@ params:
     normalize_input: False
     use_action_masks: True
     ignore_dead_batches : False
-    seq_len: 4
+    seq_length: 4
     
     env_config:
       name: MMM

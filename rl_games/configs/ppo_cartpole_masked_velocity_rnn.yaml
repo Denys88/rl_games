@@ -55,4 +55,4 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_len: 4
+    seq_length: 4

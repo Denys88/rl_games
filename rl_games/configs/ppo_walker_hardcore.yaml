@@ -61,7 +61,7 @@ params:
       lr_schedule: none
       lr_threshold: 0.008
       normalize_input: True
-      seq_len: 16
+      seq_length: 16
       bounds_loss_coef: 0.00
       max_epochs: 10000
       weight_decay: 0.0001

@@ -16,20 +16,20 @@ params:
       discrete:
 
     mlp:
-      units: [512, 256, 128]
+      units: [512, 256]
       activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
         name:  'None'
-    rnn1:
+    rnn:
       name: lstm
       units: 128
       layers: 1
       layer_norm: True
   config:
-    name: 5m_vs_6m_cv
+    name: 5m_vs_6m_rnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -62,33 +62,6 @@ params:
       reward_only_positive: True
       obs_last_action: True
       apply_agent_ids: False
-
-    central_value_config1:
-      use_joint_obs_actions: False
-      minibatch_size: 512
-      mini_epochs: 4
-      lr: 1e-4
-      clip_value: False
-      normalize_input: True
-      truncate_grads: True
-      grad_norm: 1.5
-      network:
-        #normalization: layer_norm
-        name: actor_critic
-        central_value: True
-        mlp:
-          units: [512, 256]
-          activation: relu
-          initializer:
-            name: variance_scaling_initializer
-            scale: 2 
-          regularizer:
-            name:  'None'
-        rnn:
-          name: lstm
-          units: 128
-          layers: 1
-          layer_norm: True
 
       
       #reward_negative_scale: 0.1
