@@ -6,8 +6,8 @@ class SelfPlayManager:
         self.writter = writter
         self.update_score = self.config['update_score']
         self.games_to_check = self.config['games_to_check']
-        self.check_scores = self.config.get('check_scores',False)
-        self.env_update_num = self.config.get('env_update_num',1)
+        self.check_scores = self.config.get('check_scores', False)
+        self.env_update_num = self.config.get('env_update_num', 1)
         self.env_indexes = np.arange(start=0, stop=self.env_update_num)
         self.updates_num = 0
         
@@ -17,10 +17,13 @@ class SelfPlayManager:
             data = algo.game_scores
         else:
             data = algo.game_rewards
+
         if len(data) >= self.games_to_check:
-            mean_rewards = np.mean(data)
-            if mean_rewards > self.update_score:
-                print('Mean rewards: ', mean_rewards,' updating weights')
+            mean_scores = np.mean(data)
+            mean_rewards = np.mean(algo.game_rewards)
+            if mean_scores > self.update_score:
+                print('Mean scores: ', mean_scores, ' mean rewards: ', mean_rewards, ' updating weights')
+
                 algo.clear_stats()
                 self.writter.add_scalar('selfplay/iters_update_weigths', self.updates_num, algo.frame)
                 algo.vec_env.set_weights(self.env_indexes, algo.get_weights())
