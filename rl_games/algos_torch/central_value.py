@@ -4,7 +4,7 @@ import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common  import common_losses
-
+from rl_games.common import datasets
 
 
 class CentralValueTrain(nn.Module):
@@ -42,13 +42,17 @@ class CentralValueTrain(nn.Module):
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
+        self.batch_size = self.num_steps * self.num_actors
         if self.is_rnn:
-            batch_size = self.num_steps * self.num_actors
+            batch_size = self.batch_size
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             num_seqs = self.num_steps * self.num_actors // self.seq_len
             assert((self.num_steps * self.num_actors // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
+
+        self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
+
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
@@ -103,7 +107,7 @@ class CentralValueTrain(nn.Module):
         returns = input_dict['returns']
         actions = input_dict['actions']
         rnn_masks = None
-
+        rnn_states = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks'] 
             rnn_states = self.mb_rnn_states      
@@ -112,10 +116,18 @@ class CentralValueTrain(nn.Module):
             value_preds, returns, actions, rnn_masks = self.update_multiagent_tensors(value_preds, returns, batch_size, actions, rnn_masks) 
         e_clip = input_dict.get('e_clip', 0.2)
         lr = input_dict.get('lr', self.lr)
-        obs = self._preproc_obs(obs)
+        
 
         self.frame = self.frame + 1
         num_minibatches = batch_size // self.mini_batch
+        train_dict = {
+            'obs' : obs,
+            'value_preds' : value_preds,
+            'returns' : returns,
+            'actions' : actions,
+            'rnn_masks' : rnn_masks,
+
+        }
         if self.is_rnn:
             sum_loss = self.train_rnn(batch_size, obs, value_preds, returns, actions, rnn_masks, rnn_states, e_clip)
         else:
@@ -149,7 +161,7 @@ class CentralValueTrain(nn.Module):
                 start = i * mini_batch
                 end = (i + 1) * mini_batch
 
-                obs_batch = obs[start:end]
+                obs_batch = self._preproc_obs(obs[start:end]) 
                 value_preds_batch = value_preds[start:end]
                 returns_batch = returns[start:end]
                 actions_batch = None
@@ -182,7 +194,7 @@ class CentralValueTrain(nn.Module):
                 end = (i + 1) * num_games_batch
                 mb_indexes = game_indexes[start:end]
                 mbatch = flat_indexes[mb_indexes].flatten()     
-                obs_batch = obs[mbatch]
+                obs_batch = self._preproc_obs(obs[mbatch]) 
                 value_preds_batch = value_preds[mbatch]
                 returns_batch = returns[mbatch]
                 actions_batch = actions[mbatch]

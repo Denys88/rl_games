@@ -39,7 +39,7 @@ params:
     score_to_win: 20
     entropy_coef: 0.005
     truncate_grads: True
-    grad_norm: 1.5
+    grad_norm: 10
     env_name:  smac
     ppo: true
     e_clip: 0.2
@@ -59,9 +59,16 @@ params:
     env_config:
       name: 5m_vs_6m
       central_value: True
-      reward_only_positive: False
+      reward_only_positive: True
       obs_last_action: True
-      apply_agent_ids: False
+      apply_agent_ids: True
+
+    player:
+      render: False
+      games_num: 200
+      n_game_life: 1
+      is_determenistic: True
+
 
     central_value_config:
       use_joint_obs_actions: False
@@ -71,7 +78,7 @@ params:
       clip_value: False
       normalize_input: True
       truncate_grads: True
-      grad_norm: 1.5
+      grad_norm: 10
       network:
         #normalization: layer_norm
         name: actor_critic

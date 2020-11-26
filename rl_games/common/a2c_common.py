@@ -120,7 +120,7 @@ class A2CBase:
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
         
         if self.normalize_reward:
-            self.reward_mean_std = RunningMeanStd((1,))
+            self.reward_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
         # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
@@ -461,7 +461,7 @@ class DiscreteA2CBase(A2CBase):
             mb_values[indices, play_mask] = values 
 
             if self.has_central_value:
-                mb_vobs[indices[::self.num_agents]//self.num_agents,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
+                mb_vobs[indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 
             self.obs, rewards, self.dones, infos = self.env_step(actions)
 
