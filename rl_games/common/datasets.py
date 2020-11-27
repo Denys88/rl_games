@@ -42,7 +42,7 @@ class PPODataset(Dataset):
         
         rnn_states = self.values_dict['rnn_states']
         input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
-        input_dict['learning_rate'] = self.values_dict['learning_rate']
+        input_dict['learning_rate'] = self.values_dict.get('learning_rate')
 
         return input_dict
 
@@ -55,7 +55,7 @@ class PPODataset(Dataset):
             if k not in self.special_names:
                 input_dict[k] = v[self.last_range]
                 
-        input_dict['learning_rate'] = self.values_dict['learning_rate']
+        input_dict['learning_rate'] = self.values_dict.get('learning_rate')
 
         return input_dict
 

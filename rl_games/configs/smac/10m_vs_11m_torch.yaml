@@ -72,6 +72,6 @@ params:
     use_action_masks: True
     env_config:
       name: 10m_vs_11m
-      frames: 4
+      frames: 14
       transpose: False
       random_invalid_step: False

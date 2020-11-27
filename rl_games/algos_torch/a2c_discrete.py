@@ -37,6 +37,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
+
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
@@ -140,8 +141,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def train_actor_critic(self, input_dict, opt_step = True):
         self.set_train()
-        self.input_dict = input_dict
-        self.calc_gradients()
+        self.calc_gradients(input_dict)
         if opt_step:
             self.optimizer.step()
         for param_group in self.optimizer.param_groups:
@@ -150,13 +150,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         return self.train_result
 
 
-    def calc_gradients(self):
-        value_preds_batch = self.input_dict['old_values']
-        old_action_log_probs_batch = self.input_dict['old_logp_actions']
-        advantage = self.input_dict['advantages']
-        return_batch = self.input_dict['returns']
-        actions_batch = self.input_dict['actions']
-        obs_batch = self.input_dict['obs']
+    def calc_gradients(self, input_dict):
+        value_preds_batch = input_dict['old_values']
+        old_action_log_probs_batch = input_dict['old_logp_actions']
+        advantage = input_dict['advantages']
+        return_batch = input_dict['returns']
+        actions_batch = input_dict['actions']
+        obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
         lr = self.last_lr
         kl = 1.0
@@ -170,8 +170,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         rnn_masks = None
         if self.is_rnn:
-            rnn_masks = self.input_dict['rnn_masks']
-            batch_dict['rnn_states'] = self.input_dict['rnn_states']
+            rnn_masks = input_dict['rnn_masks']
+            batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
         action_log_probs, values, entropy, _ = self.model(batch_dict)

@@ -37,6 +37,7 @@ class CentralValueTrain(nn.Module):
         self.running_mean_std = None
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
+        self.e_clip = config.get('e_clip', 0.2)
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(state_shape)
 
@@ -44,7 +45,6 @@ class CentralValueTrain(nn.Module):
         self.rnn_states = None
         self.batch_size = self.num_steps * self.num_actors
         if self.is_rnn:
-            batch_size = self.batch_size
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             num_seqs = self.num_steps * self.num_actors // self.seq_len
@@ -53,6 +53,19 @@ class CentralValueTrain(nn.Module):
 
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
+    def update_dataset(self, batch_dict):
+        value_preds = batch_dict['old_values']     
+        returns = batch_dict['returns']   
+        actions = batch_dict['actions']
+        rnn_masks = batch_dict['rnn_masks']
+
+        res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
+        batch_dict['old_values'] = res[0]
+        batch_dict['returns']  = res[1]
+        batch_dict['actions']  = res[2]
+        batch_dict['rnn_masks']  = res[3]
+        batch_dict['rnn_states'] = self.mb_rnn_states
+        self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
@@ -99,45 +112,15 @@ class CentralValueTrain(nn.Module):
             value = value.view(value.size()[0]*self.num_agents, -1)
         return value
 
-    def train_net(self, input_dict):
+    def train_critic(self, input_dict, opt_step = True):
         self.train()
-        obs = input_dict['states']
-        batch_size = obs.size()[0]
-        value_preds = input_dict['values']
-        returns = input_dict['returns']
-        actions = input_dict['actions']
-        rnn_masks = None
-        rnn_states = None
-        if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks'] 
-            rnn_states = self.mb_rnn_states      
+        loss = self.calc_gradients(input_dict)
+        if opt_step:
+            self.optimizer.step()
+        return loss.item()
 
-        if self.num_agents > 1:
-            value_preds, returns, actions, rnn_masks = self.update_multiagent_tensors(value_preds, returns, batch_size, actions, rnn_masks) 
-        e_clip = input_dict.get('e_clip', 0.2)
-        lr = input_dict.get('lr', self.lr)
-        
-
-        self.frame = self.frame + 1
-        num_minibatches = batch_size // self.mini_batch
-        train_dict = {
-            'obs' : obs,
-            'value_preds' : value_preds,
-            'returns' : returns,
-            'actions' : actions,
-            'rnn_masks' : rnn_masks,
-
-        }
-        if self.is_rnn:
-            sum_loss = self.train_rnn(batch_size, obs, value_preds, returns, actions, rnn_masks, rnn_states, e_clip)
-        else:
-            sum_loss = self.train_mlp(batch_size, obs, value_preds, returns, actions, e_clip)
-
-        avg_loss = sum_loss / (num_minibatches * self.mini_epoch)
-        self.writter.add_scalar('cval/train_loss', avg_loss, self.frame)
-        return avg_loss
-
-    def update_multiagent_tensors(self, value_preds, returns, batch_size, actions, rnn_masks):
+    def update_multiagent_tensors(self, value_preds, returns, actions, rnn_masks):
+        batch_size = self.batch_size
         value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
         value_preds = value_preds.flatten(0)[:batch_size]
@@ -147,76 +130,45 @@ class CentralValueTrain(nn.Module):
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
             actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
             actions = actions.contiguous().view(batch_size, self.num_agents)
+        rnn_masks = None
         if self.is_rnn:
             rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             rnn_masks = rnn_masks.flatten(0)[:batch_size] 
         return value_preds, returns, actions, rnn_masks
 
-    def train_mlp(self, batch_size, obs, value_preds, returns, actions, e_clip):
-        mini_batch = self.mini_batch
-        num_minibatches = batch_size // mini_batch
-        sum_loss = 0
+    def train_net(self):
+        self.train()
+        loss = 0
         for _ in range(self.mini_epoch):
-            for i in range(num_minibatches):
-                start = i * mini_batch
-                end = (i + 1) * mini_batch
+            for idx in range(len(self.dataset)):
+                loss += self.train_critic(self.dataset[idx])
+        avg_loss = loss / (self.mini_epoch * self.num_minibatches)
+        self.writter.add_scalar('cval/train_loss', avg_loss, self.frame)
+        self.frame += self.batch_size
+        return avg_loss
 
-                obs_batch = self._preproc_obs(obs[start:end]) 
-                value_preds_batch = value_preds[start:end]
-                returns_batch = returns[start:end]
-                actions_batch = None
-                if self.use_joint_obs_actions:
-                    actions_batch = actions[start:end].view(mini_batch * self.num_agents)
-                values, _ = self.forward({'obs' : obs_batch, 'actions' : actions_batch})
+    def calc_gradients(self, batch):
+        obs_batch = self._preproc_obs(batch['obs']) 
+        value_preds_batch = batch['old_values']
+        returns_batch = batch['returns']
+        actions_batch = batch['actions']
+        rnn_masks_batch = batch.get('rnn_masks')
 
-                loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
-                loss = loss.mean()
-                for param in self.model.parameters():
-                    param.grad = None
-                loss.backward()
-                if self.truncate_grads:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.optimizer.step()
-                sum_loss += loss.item()
-        return sum_loss
+        batch_dict = {'obs' : obs_batch, 
+                    'actions' : actions_batch,
+                    'seq_length' : self.seq_len }
+        if self.is_rnn:
+            batch_dict['rnn_states'] = batch['rnn_states']
 
-    def train_rnn(self, batch_size, obs, value_preds, returns, actions, rnn_masks, rnn_states, e_clip):
-        mini_batch = self.mini_batch
-        num_minibatches = batch_size // mini_batch
-        total_games = batch_size // self.seq_len
-        num_games_batch = self.mini_batch // self.seq_len
-        game_indexes = torch.arange(total_games, dtype=torch.long, device=self.ppo_device)
-        flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.ppo_device).reshape(total_games, self.seq_len)
-        sum_loss = 0
-        for _ in range(self.mini_epoch):
-            for i in range(num_minibatches):
-                start = i * num_games_batch
-                end = (i + 1) * num_games_batch
-                mb_indexes = game_indexes[start:end]
-                mbatch = flat_indexes[mb_indexes].flatten()     
-                obs_batch = self._preproc_obs(obs[mbatch]) 
-                value_preds_batch = value_preds[mbatch]
-                returns_batch = returns[mbatch]
-                actions_batch = actions[mbatch]
-                rnn_masks_batch = rnn_masks[mbatch]
+        values, _ = self.forward(batch_dict)
 
-                batch_dict = {'obs' : obs_batch, 
-                            'actions' : actions_batch,
-                            'seq_length' : self.seq_len }
+        loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
+        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
+        loss = losses[0]
 
-                batch_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
-
-                values, _ = self.forward(batch_dict)
-
-                loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, self.clip_value)
-                losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
-                loss = losses[0]
-
-                for param in self.model.parameters():
-                    param.grad = None
-                loss.backward()
-                if self.truncate_grads:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.optimizer.step()
-                sum_loss += loss.item()
-        return sum_loss
+        for param in self.model.parameters():
+            param.grad = None
+        loss.backward()
+        if self.truncate_grads:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+        return loss

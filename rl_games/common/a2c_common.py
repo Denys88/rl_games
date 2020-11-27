@@ -352,9 +352,8 @@ class A2CBase:
     def get_central_value(self, obs_dict):
         return self.central_value_net.get_value(obs_dict)
 
-    def train_central_value(self, obs_dict):
-        obs_dict['e_clip'] = self.e_clip
-        return self.central_value_net.train_net(obs_dict)
+    def train_central_value(self):
+        return self.central_value_net.train_net()
 
     def get_full_state_weights(self):
         state = self.get_weights()
@@ -675,6 +674,8 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
+        if self.has_central_value:
+            self.train_central_value()
 
 
         if self.is_rnn:
@@ -717,9 +718,6 @@ class DiscreteA2CBase(A2CBase):
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
             advantages = torch.sum(advantages, axis=1)
 
-        if self.has_central_value:
-            self.train_central_value(batch_dict)
-
         if self.normalize_advantage:
             if self.is_rnn:
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
@@ -739,6 +737,15 @@ class DiscreteA2CBase(A2CBase):
         dataset_dict['learning_rate'] = self.last_lr
         self.dataset.update_values_dict(dataset_dict)
 
+        if self.has_central_value:
+            dataset_dict = {}
+            dataset_dict['old_values'] = values
+            dataset_dict['advantages'] = advantages
+            dataset_dict['returns'] = returns
+            dataset_dict['actions'] = actions
+            dataset_dict['obs'] = batch_dict['states'] 
+            dataset_dict['rnn_masks'] = rnn_masks
+            self.central_value_net.update_dataset(dataset_dict)
 
     def train(self):
         self.init_tensors()
@@ -1110,6 +1117,9 @@ class ContinuousA2CBase(A2CBase):
 
         rnn_masks = batch_dict.get('rnn_masks', None)
         self.prepare_dataset(batch_dict)
+        
+        if self.has_central_value:
+            self.train_central_value()
 
         a_losses = []
         c_losses = []
@@ -1175,13 +1185,11 @@ class ContinuousA2CBase(A2CBase):
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        if self.has_central_value:
-            self.train_central_value(batch_dict)
-
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
             advantages[:, 1] = advantages[:, 1] * self.rnd_adv_coef
             advantages = torch.sum(advantages, axis=1)  
+
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1197,7 +1205,17 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['sigma'] = sigmas
 
         self.dataset.update_values_dict(dataset_dict)
-    
+
+        if self.has_central_value:
+            dataset_dict = {}
+            dataset_dict['old_values'] = values
+            dataset_dict['advantages'] = advantages
+            dataset_dict['returns'] = returns
+            dataset_dict['actions'] = actions
+            dataset_dict['obs'] = batch_dict['states']
+            dataset_dict['rnn_masks'] = rnn_masks
+            self.central_value_net.update_dataset(dataset_dict)
+
     def train(self):
         self.init_tensors()
         self.last_mean_rewards = -100500

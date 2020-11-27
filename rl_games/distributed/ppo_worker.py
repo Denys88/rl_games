@@ -63,7 +63,10 @@ class PPOWorker:
         return self.current_result
 
     def calc_central_value_gradients(self, batch_dix):
-        pass
+        self.agent.central_value_net.train_critic(self.agent.central_value_net.central_value_dataset[batch_idx], opt_step=False)
+        grads = torch_ext.get_model_gradients(self.agent.central_value_net.model)
+        self.runs_per_epoch += 1
+        self._update_train_stats(self.agent.train_result)
 
     def next_epoch(self):
         self.current_result = {

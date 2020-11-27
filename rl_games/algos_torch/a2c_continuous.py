@@ -113,9 +113,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 _, value, _, _, _,_ = self.model(input_dict)
             return value.detach()
 
-    def calc_gradients(self):
+    def calc_gradients(self, input_dict):
         self.set_train()
-        input_dict = self.input_dict
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -179,8 +178,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu.detach(), sigma.detach(), b_loss.item())
 
     def train_actor_critic(self, input_dict, opt_step=True):
-        self.input_dict = input_dict
-        self.calc_gradients()
+        self.calc_gradients(input_dict)
         if opt_step:
             self.optimizer.step()
         for param_group in self.optimizer.param_groups:
