@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
-
+from rl_games.algos_torch.d2rl import D2RLNet
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)   
@@ -78,7 +78,7 @@ class NetworkBuilder:
                 from sru import SRU
                 return SRU(input, units, layers, dropout=0, layer_norm=False)
 
-        def _build_mlp(self, 
+        def _build_sequential_mlp(self, 
         input_size, 
         units, 
         activation,
@@ -97,6 +97,19 @@ class NetworkBuilder:
                 in_size = unit
 
             return nn.Sequential(*layers)
+
+        def _build_mlp(self, 
+        input_size, 
+        units, 
+        activation,
+        dense_func, 
+        norm_func_name = None,
+        d2rl=False):
+            if d2rl:
+                act_layers = [self.activations_factory.create(activation) for i in range(len(units))]
+                return D2RLNet(input_size, units, act_layers, norm_func_name)
+            else:
+                return self._build_sequential_mlp(input_size, units, activation, dense_func, norm_func_name = None,)
 
         def _build_conv(self, ctype, **kwargs):
             print('conv_name:', ctype)
@@ -187,7 +200,6 @@ class A2CBuilder(NetworkBuilder):
                 out_size = mlp_input_shape
             else:
                 out_size = self.units[-1]
-
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     rnn_in_size = out_size
@@ -212,10 +224,10 @@ class A2CBuilder(NetworkBuilder):
                 'units' :self.units, 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
+                'dense_func' : torch.nn.Linear,
+                'd2rl' : self.is_d2rl
             }
             self.actor_mlp = self._build_mlp(**mlp_args)
-
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
 
@@ -401,7 +413,7 @@ class A2CBuilder(NetworkBuilder):
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
-            self.regularizer = params['mlp']['regularizer']
+            self.is_d2rl = params['mlp'].get('d2rl', False)
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
@@ -478,7 +490,7 @@ class RNDCuriosityBuilder(NetworkBuilder):
                 'units' :self.rnd_units[:-1], 
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
+                'dense_func' : torch.nn.Linear,
             }
             net_input_shape = self._calc_input_size(input_shape, self.net_cnn)
             net_mlp_args = {
