@@ -198,11 +198,13 @@ class A2CBuilder(NetworkBuilder):
                 if self.separate:
                     self.a_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                     self.c_rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                    #self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
-                    #self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    if self.rnn_ln:
+                        self.a_layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                        self.c_layer_norm = torch.nn.LayerNorm(self.rnn_units)
                 else:
                     self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                    #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                    if self.rnn_ln:
+                        self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
 
             mlp_args = {
@@ -294,9 +296,9 @@ class A2CBuilder(NetworkBuilder):
                         a_out =a_out.transpose(0,1)
                         c_out =c_out.transpose(0,1)
                     else:
-                        pass
-                        #a_out = self.a_layer_norm(a_out)
-                        #c_out = self.c_layer_norm(c_out)
+                        if self.rnn_ln:
+                            a_out = self.a_layer_norm(a_out)
+                            c_out = self.c_layer_norm(c_out)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
                     if type(a_states) is not tuple:
@@ -346,7 +348,9 @@ class A2CBuilder(NetworkBuilder):
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
                     if self.rnn_name == 'sru':
                         out =out.transpose(0,1)
-                    
+                    if self.rnn_ln:
+                        out = self.layer_norm(out)
+
                     if type(states) is not tuple:
                         states = (states,)
                 value = self.value_act(self.value(out))
@@ -378,19 +382,19 @@ class A2CBuilder(NetworkBuilder):
             num_layers = self.rnn_layers
             if self.rnn_name == 'lstm':
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(),
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
             else:
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())                
+                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))                
 
         def load(self, params):
             self.separate = params.get('separate', False)
@@ -420,6 +424,7 @@ class A2CBuilder(NetworkBuilder):
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
+                self.rnn_ln = params['rnn'].get('layer_norm', False)
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
 
             if 'cnn' in params:

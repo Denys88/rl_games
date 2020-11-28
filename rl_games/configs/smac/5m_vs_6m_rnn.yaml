@@ -10,32 +10,36 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     #normalization: layer_norm
     space: 
       discrete:
 
     mlp:
-      units: [512, 256, 128]
+      units: [512, 256]
       activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2 
       regularizer:
         name:  'None'
-
+    rnn:
+      name: lstm
+      units: 128
+      layers: 1
+      layer_norm: True
   config:
-    name: 5m_vs_6m_cv
+    name: 5m_vs_6m_rnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 5e-4
+    learning_rate: 1e-4
     score_to_win: 20
-    grad_norm: 0.5
-    entropy_coef: 0.001
+    entropy_coef: 0.005
     truncate_grads: True
+    grad_norm: 1.5
     env_name:  smac
     ppo: true
     e_clip: 0.2
@@ -50,38 +54,19 @@ params:
     normalize_input: True
     normalize_reward: False
     use_action_masks: True
-    ignore_dead_batches : False
+    seq_length: 8
     #max_epochs: 10000
-
-    central_value_config:
-      use_joint_obs_actions: True
-      minibatch_size: 512
-      mini_epochs: 4
-      lr: 5e-4
-      clip_value: False
-      normalize_input: True
-      network:
-        normalization: batch_norm
-        joint_obs_actions:
-            embedding: False
-            embedding_scale: 1 #(actions // embedding_scale)
-            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
-        name: actor_critic
-        central_value: True
-        mlp:
-          units: [256, 128,64]
-          activation: relu
-          initializer:
-            name: variance_scaling_initializer
-            scale: 2 
-          regularizer:
-            name:  'None'
-
     env_config:
       name: 5m_vs_6m
-      central_value: True
+      central_value: False
       reward_only_positive: True
       obs_last_action: True
-      apply_agent_ids: True
+      apply_agent_ids: False
+
+    player:
+      render: False
+      games_num: 200
+      n_game_life: 1
+      is_determenistic: True
       
       #reward_negative_scale: 0.1

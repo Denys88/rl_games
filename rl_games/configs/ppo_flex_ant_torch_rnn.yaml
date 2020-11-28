@@ -77,5 +77,5 @@ params:
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    seq_len : 32
+    seq_length : 32
     bounds_loss_coef: 0.000

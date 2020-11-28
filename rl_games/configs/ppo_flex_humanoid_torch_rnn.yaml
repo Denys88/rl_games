@@ -76,7 +76,7 @@ params:
     lr_schedule : adaptive
     lr_threshold : 0.01
     normalize_input : True
-    seq_len : 64
+    seq_length: 16
     bounds_loss_coef: 0.000
     weight_decay: 0.001
     max_epochs: 6000

@@ -52,7 +52,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: True
-    seq_len: 16
+    seq_length: 16
     weight_decay: 0.0001
 
     env_config:

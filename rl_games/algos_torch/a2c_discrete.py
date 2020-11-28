@@ -4,6 +4,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch import central_value, rnd_curiosity
 from rl_games.common import common_losses
+from rl_games.common import datasets
 
 from torch import optim
 import torch 
@@ -21,7 +22,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.ppo_device)
 
         self.init_rnn_from_model(self.model)
 
@@ -30,17 +31,19 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         #self.optimizer = torch_ext.AdaBelief(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
-                                    self.central_value_config, self.writer).cuda()
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
+                                    self.central_value_config, self.writer).to(self.ppo_device)
+
 
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
-    
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+
 
     def set_eval(self):
         self.model.eval()
@@ -67,7 +70,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
-        action_masks = torch.Tensor(action_masks).cuda()
+        action_masks = torch.Tensor(action_masks).to(self.ppo_device)
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -86,7 +89,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 }
                 value = self.get_central_value(input_dict)
    
-        return action.detach(), value.detach().cpu(), neglogp.detach(), logits.detach(), rnn_states
+        return action.detach(), value.detach(), neglogp.detach(), logits.detach(), rnn_states
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -110,7 +113,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 }
                 value = self.central_value_net(input_dict)
 
-        return action.detach(), value.detach().cpu(), neglogp.detach(), rnn_states
+        return action.detach(), value.detach(), neglogp.detach(), rnn_states
 
     def get_values(self, obs, actions=None):
         if self.has_central_value:
@@ -122,7 +125,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'actions' : actions,
                 'is_done': self.dones,
             }
-            return self.get_central_value(input_dict).detach().cpu()
+            return self.get_central_value(input_dict).detach()
         else:
             self.model.eval()
             processed_obs = self._preproc_obs(obs['obs'])
@@ -134,11 +137,20 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             }
             with torch.no_grad():
                 _, value, _, _, _ = self.model(input_dict)
-            return value.detach().cpu()
+            return value.detach()
 
-    def train_actor_critic(self, input_dict):
-        self.model.train()
+    def train_actor_critic(self, input_dict, opt_step = True):
+        self.set_train()
+        self.calc_gradients(input_dict)
+        if opt_step:
+            self.optimizer.step()
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = self.last_lr
 
+        return self.train_result
+
+
+    def calc_gradients(self, input_dict):
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -167,7 +179,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.has_central_value:
-            c_loss = torch.zeros(1).cuda()
+            c_loss = torch.zeros(1, device=self.ppo_device)
         else:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
@@ -184,7 +196,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        self.optimizer.step()
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:
@@ -197,6 +208,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     self.last_lr = max(self.last_lr / 1.5, 1e-6)
                 if kl_dist < (0.5 * self.lr_threshold):
                     self.last_lr = min(self.last_lr * 1.5, 1e-2)
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-        return a_loss.item(), c_loss.item(), entropy.item(), kl_dist, self.last_lr, lr_mul
+
+        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
+

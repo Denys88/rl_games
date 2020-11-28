@@ -63,7 +63,6 @@ params:
       reward_only_positive: True
       
     central_value_config:
-      seq_length : 8
       minibatch_size: 512
       mini_epochs: 4
       lr: 1e-4

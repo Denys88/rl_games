@@ -28,7 +28,7 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn:
+    rnn1:
       name: lstm
       units: 64
       layers: 1   
@@ -49,7 +49,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0
       truncate_grads: True
-      env_name:  BipedalWalkerHardcore-v3
+      env_name: ReacherPyBulletEnv-v0
       ppo: True
       e_clip: 0.2
       clip_value: False

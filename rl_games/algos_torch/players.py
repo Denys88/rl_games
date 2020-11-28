@@ -19,8 +19,8 @@ class PpoPlayerContinuous(BasePlayer):
         BasePlayer.__init__(self, config)
         self.network = config['network']
         self.actions_num = self.action_space.shape[0] 
-        self.actions_low = torch.from_numpy(self.action_space.low).float().to(self.device)
-        self.actions_high = torch.from_numpy(self.action_space.high).float().to(self.device)
+        self.actions_low = torch.from_numpy(self.action_space.low.copy()).float().to(self.device)
+        self.actions_high = torch.from_numpy(self.action_space.high.copy()).float().to(self.device)
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']

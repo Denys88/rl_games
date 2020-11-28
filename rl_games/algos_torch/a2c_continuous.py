@@ -4,6 +4,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch import central_value, rnd_curiosity
 from rl_games.common import common_losses
+from rl_games.common import datasets
 
 from torch import optim
 import torch 
@@ -21,7 +22,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'num_seqs' : self.num_actors * self.num_agents
         } 
         self.model = self.network.build(config)
-        self.model.cuda()
+        self.model.to(self.ppo_device)
         self.states = None
 
         self.init_rnn_from_model(self.model)
@@ -31,14 +32,17 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).cuda()
+            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
-                                    self.central_value_config, self.writer).cuda()
+            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device, self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
+                                    self.central_value_config, self.writer).to(self.ppo_device)
+
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -84,7 +88,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 }
                 value = self.central_value_net.get_value(input_dict)
 
-        return action.detach(), value.detach().cpu(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
+        return action.detach(), value.detach(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
 
     def get_values(self, obs, actions=None):
         if self.has_central_value:
@@ -95,7 +99,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'states' : states,
                 'is_done': self.dones,
             }
-            return self.get_central_value(input_dict).detach().cpu()
+            return self.get_central_value(input_dict).detach()
         else:
             self.model.eval()
             processed_obs = self._preproc_obs(obs['obs'])
@@ -107,11 +111,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
             with torch.no_grad():
                 _, value, _, _, _,_ = self.model(input_dict)
-            return value.detach().cpu()
+            return value.detach()
 
-    def train_actor_critic(self, input_dict):
+    def calc_gradients(self, input_dict):
         self.set_train()
-
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -157,7 +160,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        self.optimizer.step()
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
@@ -169,14 +171,20 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 if kl_dist > (2.0 * self.lr_threshold):
                     self.last_lr = max(self.last_lr / 1.5, 1e-6)
                 if kl_dist < (0.5 * self.lr_threshold):
-                    self.last_lr = min(self.last_lr * 1.5, 1e-2)        
-            
+                    self.last_lr = min(self.last_lr * 1.5, 1e-2)     
+                    
+        self.train_result = (a_loss.item(), c_loss.item(), entropy.item(), \
+            kl_dist, self.last_lr, lr_mul, \
+            mu.detach(), sigma.detach(), b_loss.item())
+
+    def train_actor_critic(self, input_dict, opt_step=True):
+        self.calc_gradients(input_dict)
+        if opt_step:
+            self.optimizer.step()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
-
-        return a_loss.item(), c_loss.item(), entropy.item(), \
-            kl_dist, self.last_lr, lr_mul, \
-            mu.detach(), sigma.detach(), b_loss.item()
+   
+        return self.train_result
 
     def bound_loss(self, mu):
         if self.bounds_loss_coef is not None:
