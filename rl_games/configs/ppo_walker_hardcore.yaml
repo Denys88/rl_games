@@ -20,7 +20,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256,128]
+      units: [256,128, 128]
       d2rl: True
       activation: relu
       initializer:
@@ -59,23 +59,14 @@ params:
       minibatch_size: 1024
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule: none
+      lr_schedule: adaptive
       lr_threshold: 0.008
-      normalize_input: True
-      seq_length: 16
+      normalize_input: False
+      seq_length: 4
       bounds_loss_coef: 0.00
       max_epochs: 10000
-      weight_decay: 0.0001
 
       player:
         render: True
         games_num: 200
 
-
-experiment_config1:
-  start_exp: 0
-  start_sub_exp: 0
-  experiments:
-    - exp:
-      - path: config.bounds_loss_coef
-        value: [0.5]

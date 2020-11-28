@@ -55,9 +55,9 @@ params:
       minibatch_size: 1024
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule: none
+      lr_schedule: adaptive
       lr_threshold: 0.008
-      normalize_input: True
+      normalize_input: False
       seq_length: 16
       bounds_loss_coef: 0.00
       max_epochs: 10000
