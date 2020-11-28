@@ -1,12 +1,17 @@
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+import isaacgym
 import torch
 import numpy as np
 import ray
-import os
 import rl_games.algos_torch.torch_ext as torch_ext
 from rl_games.torch_runner import Runner
 
+
 class PPOWorker:
     def __init__(self, config, name):
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+        print("Cuda enabled: ", torch.cuda.is_available())
         self.runner = Runner()
         self.runner.load(config)
         self.agent = self.runner.algo_factory.create(self.runner.algo_name, base_name=name, config=self.runner.config)
@@ -45,7 +50,6 @@ class PPOWorker:
 
     def get_env_info(self):
         return self.agent.env_info
-
 
     def update_stats(self):
         mean_rewards = torch_ext.get_mean(self.agent.game_rewards)

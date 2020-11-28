@@ -253,6 +253,28 @@ def create_minigrid_env(name, **kwargs):
     print('minigird_env observation space shape:', env.observation_space)
     return env
 
+
+# def create_rlgpu_env(**kwargs):
+
+#     cfg = kwargs['env_cfg']
+#     cfg_train = kwargs['train_cfg']
+#     print(cfg_train)
+#     sim_params = parse_sim_params(args, cfg, cfg_train)
+
+#     device = kwargs.pop('device') #kwargs.pop('device', 'cuda:0')
+#     env = parse_task_multigpu(args, cfg, cfg_train, sim_params, sim_device=device, rl_device=device)
+
+#     print(env.num_envs)
+#     print(env.num_actions)
+#     print(env.num_obs)
+#     print(env.num_states)
+
+#     frames = kwargs.pop('frames', 1)
+#     if frames > 1:
+#         env = wrappers.FrameStack(env, frames, False)
+#     return env
+
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -406,6 +428,9 @@ configurations = {
         'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'rlgpu': {
+    'env_creator': lambda **kwargs: create_rlgpu_env(**kwargs),
+    'vecenv_type': 'RLGPU'}
 }
 
 

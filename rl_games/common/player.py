@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import time
 
+
 class BasePlayer(object):
     def __init__(self, config):
         self.config = config
@@ -28,6 +29,7 @@ class BasePlayer(object):
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.device = torch.device(self.device_name)
+
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -119,9 +121,9 @@ class BasePlayer(object):
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
             agent_inited = True
-            #print('setting agent weights for selfplay')
-            #self.env.create_agent(self.env.config)
-            #self.env.set_weights(range(8),self.get_weights())
+            print('Setting agent weights for selfplay')
+            self.env.create_agent(self.env.config)
+            self.env.set_weights(range(8), self.get_weights())
 
         if has_masks_func:
             has_masks = self.env.has_action_mask()

@@ -20,6 +20,7 @@ class DDPpoRunner:
         self.workers = []
         for device in self.devices:
             self.ppo_config['params']['config']['device'] = device
+            self.ppo_config['params']['config']['env_config']['device'] = device
             name = 'run' + device
             self.workers.append(self.remote_worker.remote(self.ppo_config, name))
         

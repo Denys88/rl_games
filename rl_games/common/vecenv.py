@@ -1,3 +1,4 @@
+
 import ray
 from rl_games.common.env_configurations import configurations
 import numpy as np
@@ -231,6 +232,51 @@ class RayVecSMACEnv(IVecEnv):
             ret_obs = np.concatenate(ret_obs, axis=0)
         return ret_obs
 
+# class RLGPUEnv(IVecEnv):
+#     def __init__(self, config_name, num_actors, **kwargs):
+#         self.env = configurations[config_name]['env_creator'](**kwargs)
+#         self.use_global_obs = (self.env.num_states > 0)
+
+#         self.full_state = {}
+#         self.full_state["obs"] = self.env.reset()
+#         if self.use_global_obs:
+#             self.full_state["states"] = self.env.get_state()
+
+#     def step(self, action):
+#         next_obs, reward, is_done, info = self.env.step(action)
+
+#         # todo: improve, return only dictinary
+#         self.full_state["obs"] = next_obs
+#         if self.use_global_obs:
+#             self.full_state["states"] = self.env.get_state()
+#             return self.full_state, reward, is_done, info
+#         else:
+#             return self.full_state["obs"], reward, is_done, info
+
+#     def reset(self):
+#         self.full_state["obs"] = self.env.reset()
+#         if self.use_global_obs:
+#             self.full_state["states"] = self.env.get_state()
+#             return self.full_state
+#         else:
+#             return self.full_state["obs"]
+
+#     def get_number_of_agents(self):
+#         return self.env.get_number_of_agents()
+
+#     def get_env_info(self):
+#         info = {}
+#         info['action_space'] = self.env.action_space
+#         info['observation_space'] = self.env.observation_space
+
+#         if self.use_global_obs:
+#             info['state_space'] = self.env.state_space
+#             print(info['action_space'], info['observation_space'], info['state_space'])
+#         else:
+#             print(info['action_space'], info['observation_space'])
+
+#         return info
+
 
 vecenv_config = {}
 
@@ -244,3 +290,9 @@ def create_vec_env(config_name, num_actors, **kwargs):
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
 register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+#print("Cuda enabled task: ", torch.cuda.is_available())
+from isaacgym.rl_utils import RLGPUEnv
+#register('RLGPU', lambda config_name, num_actors, **kwargs: RLGPUEnv(config_name, num_actors, **kwargs))
