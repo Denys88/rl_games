@@ -5,8 +5,10 @@ import os
 import rl_games.algos_torch.torch_ext as torch_ext
 from rl_games.torch_runner import Runner
 
+
 class PPOWorker:
     def __init__(self, config, name):
+        # todo read from config
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
         self.runner = Runner()
         self.runner.load(config)
@@ -26,7 +28,7 @@ class PPOWorker:
             b_loss = 0
         else:
             a_loss, c_loss, entropy, kl_dist, _, _, mu, sigma, b_loss = stats
-        
+
         self.current_result['a_loss'] += a_loss
         self.current_result['c_loss'] += c_loss
         self.current_result['entropy'] += entropy
@@ -48,14 +50,13 @@ class PPOWorker:
     def get_env_info(self):
         return self.agent.env_info
 
-
     def update_stats(self):
         mean_rewards = torch_ext.get_mean(self.agent.game_rewards)
         mean_lengths = torch_ext.get_mean(self.agent.game_lengths)
         mean_scores = torch_ext.get_mean(self.agent.game_scores)
 
         self.current_result = {k: v/self.runs_per_epoch for k, v in self.current_result.items()}
-    
+
         for k, v in self.current_result.items():
             if k not in ['assymetric_value_loss']:
                 self.current_result[k] = v / self.runs_per_epoch
@@ -64,9 +65,6 @@ class PPOWorker:
         self.current_result['mean_rewards'] = mean_rewards
         self.current_result['mean_lengths'] = mean_lengths
         self.current_result['mean_scores'] = mean_scores
-
-        
-
 
     def get_stats(self):
         return self.current_result

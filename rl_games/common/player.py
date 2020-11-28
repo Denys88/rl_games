@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import time
 
+
 class BasePlayer(object):
     def __init__(self, config):
         self.config = config
@@ -12,6 +13,7 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
+
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
@@ -28,6 +30,7 @@ class BasePlayer(object):
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.device = torch.device(self.device_name)
+
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -35,18 +38,24 @@ class BasePlayer(object):
         #    obs_batch = obs_batch.permute((0, 2, 1))
         if len(obs_batch.size()) == 4:
             obs_batch = obs_batch.permute((0, 3, 1, 2))
+
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
+
         return obs_batch
 
     def env_step(self, env, actions):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
+
         obs, rewards, dones, infos = env.step(actions)
+
         if isinstance(obs, dict):
             obs = obs['obs']
+
         if obs.dtype == np.float64:
             obs = np.float32(obs)
+
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
@@ -58,6 +67,7 @@ class BasePlayer(object):
     def obs_to_torch(self, obs):
         if isinstance(obs, dict):
             obs = obs['obs']
+
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         else:
@@ -116,6 +126,9 @@ class BasePlayer(object):
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
 
+        # todo add RNN and manual loading different agents
+        # todo uncomment and get number of older agents from config
+        # todo add version of saved agent to the weight names
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
             agent_inited = True
@@ -126,14 +139,17 @@ class BasePlayer(object):
         if has_masks_func:
             has_masks = self.env.has_action_mask()
         need_init_rnn = self.is_rnn
+
         for _ in range(n_games):
             if games_played >= n_games:
                 break
+
             obses = self.env_reset(self.env)
             batch_size = 1
             if len(obses.size()) > len(self.state_shape):
                 batch_size = obses.size()[0]
             self.batch_size = batch_size
+
             if need_init_rnn:
                 self.init_rnn()
                 need_init_rnn = False
@@ -141,6 +157,7 @@ class BasePlayer(object):
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
 
+            # todo check magic number
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
@@ -159,6 +176,7 @@ class BasePlayer(object):
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
                 games_played += done_count
+
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
@@ -179,5 +197,6 @@ class BasePlayer(object):
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
+
         print(sum_rewards)
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
