@@ -386,6 +386,24 @@ class A2CBase:
             state['reward_mean_std'] = self.reward_mean_std.state_dict()   
         return state
 
+    def get_stats_weights(self):
+        state = {}
+        if self.normalize_input:
+            state['running_mean_std'] = self.running_mean_std.state_dict()
+        if self.normalize_reward:
+            state['reward_mean_std'] = self.reward_mean_std.state_dict()
+        if self.has_central_value:
+            state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
+        return state
+
+    def set_stats_weights(self, weights):
+        if self.normalize_input:
+            self.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_reward:
+            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
+        if self.has_central_value:
+            self.central_value_net.set_stats_weights(state['assymetric_vf_mean_std'])
+            
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         if self.normalize_input:
@@ -410,6 +428,7 @@ class DiscreteA2CBase(A2CBase):
         A2CBase.__init__(self, base_name, config)
         self.actions_num = self.env_info['action_space'].n
         self.is_discrete = True
+
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors

@@ -38,6 +38,10 @@ class DDPpoRunner:
         self.epoch_num = 0
         self.writer = self.main_agent.writer
 
+        if self.main_agent.has_central_value:
+            self.shared_cv_model_grads = SharedGradients(self.main_agent.central_value_net.model, self.main_agent.central_value_net.optimizer)
+
+
     def update_network(self, shared_grads, grads):
         shared_grads.zero_grads()
         [shared_grads.add_gradients(g) for g in grads]
@@ -48,6 +52,16 @@ class DDPpoRunner:
         res = [worker.set_model_weights.remote(weights) for worker in self.workers]
         ray.get(res)
     
+    '''
+    currently take first stats and use all them
+    '''
+    def sync_stats(self):
+        stats = self.workers[0].get_stats_weights.remote()
+        stats = ray.get(stats)
+        self.main_agent.set_stats_weights(stats)
+        #[worker.set_stats_weights.remote(stats) for worker in self.workers]
+
+
     def process_stats(self, stats):
         assert(len(stats) == self.num_ppo_agents)
         sum_stats = {}
@@ -82,6 +96,9 @@ class DDPpoRunner:
         self.writer.add_scalar('info/kl',stats['kl_dist'], self.frame)
         self.writer.add_scalar('epochs', self.epoch_num, self.frame)
 
+        if self.main_agent.has_central_value:
+            self.writer.add_scalar('cval/loss',stats['assymetric_value_loss'], self.frame)
+            
             
         self.writer.add_scalar('rewards/frame', stats['mean_rewards'], self.frame)
         self.writer.add_scalar('rewards/iter', stats['mean_rewards'], self.epoch_num)
@@ -112,8 +129,18 @@ class DDPpoRunner:
                 print('MAX EPOCHS NUM!')
                 return self.last_mean_rewards, epoch_num
 
+    def run_assymetric_critic_training_step(self):
+        for _ in range(self.main_agent.central_value_net.num_miniepochs):
+            for idx in range(self.main_agent.central_value_net.num_minibatches):
+                res = [worker.calc_central_value_gradients.remote(idx) for worker in self.workers]
+                res = ray.get(res)
+                grads = [r for r in res]
+                self.update_network(self.shared_cv_model_grads, grads)
+                self.sync_weights()   
+
     def run_training_step(self):
         play_time_start = time.time()
+        self.sync_stats()
         [worker.next_epoch.remote() for worker in self.workers]
         steps = [worker.play_steps.remote() for worker in self.workers]
         ray.get(steps)
@@ -127,6 +154,8 @@ class DDPpoRunner:
                 self.update_network(self.shared_model_grads, grads)
                 self.sync_weights()
         
+        if self.main_agent.has_central_value:
+            self.run_assymetric_critic_training_step()
         [worker.update_stats.remote() for worker in self.workers]
         stats = [worker.get_stats.remote() for worker in self.workers]
         stats = ray.get(stats)

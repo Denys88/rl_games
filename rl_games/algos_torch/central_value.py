@@ -53,6 +53,15 @@ class CentralValueTrain(nn.Module):
 
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
+    def get_stats_weights(self): 
+        if self.normalize_input:
+            return self.running_mean_std.state_dict()
+        else:
+            return None
+
+    def set_stats_weights(self, weights): 
+        self.running_mean_std.load_state_dict(weights)
+        
     def update_dataset(self, batch_dict):
         value_preds = batch_dict['old_values']     
         returns = batch_dict['returns']   
@@ -63,8 +72,10 @@ class CentralValueTrain(nn.Module):
         batch_dict['old_values'] = res[0]
         batch_dict['returns']  = res[1]
         batch_dict['actions']  = res[2]
-        batch_dict['rnn_masks']  = res[3]
-        batch_dict['rnn_states'] = self.mb_rnn_states
+        
+        if self.is_rnn:
+            batch_dict['rnn_states'] = self.mb_rnn_states
+            batch_dict['rnn_masks']  = res[3]
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
@@ -130,7 +141,7 @@ class CentralValueTrain(nn.Module):
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
             actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
             actions = actions.contiguous().view(batch_size, self.num_agents)
-        rnn_masks = None
+        
         if self.is_rnn:
             rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             rnn_masks = rnn_masks.flatten(0)[:batch_size] 

@@ -52,7 +52,7 @@ class PPODataset(Dataset):
         self.last_range = range(start, end)
         input_dict = {}
         for k,v in self.values_dict.items():
-            if k not in self.special_names:
+            if k not in self.special_names and v is not None:
                 input_dict[k] = v[self.last_range]
                 
         input_dict['learning_rate'] = self.values_dict.get('learning_rate')

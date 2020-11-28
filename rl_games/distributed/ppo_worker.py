@@ -7,6 +7,7 @@ from rl_games.torch_runner import Runner
 
 class PPOWorker:
     def __init__(self, config, name):
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
         self.runner = Runner()
         self.runner.load(config)
         self.agent = self.runner.algo_factory.create(self.runner.algo_name, base_name=name, config=self.runner.config)
@@ -15,6 +16,7 @@ class PPOWorker:
 
         self.current_result = None
         self.runs_per_epoch = 0
+        self.cv_runs_per_epoch = 0
 
     def _update_train_stats(self, stats):
         if self.agent.is_discrete:
@@ -53,20 +55,34 @@ class PPOWorker:
         mean_scores = torch_ext.get_mean(self.agent.game_scores)
 
         self.current_result = {k: v/self.runs_per_epoch for k, v in self.current_result.items()}
-
+    
+        for k, v in self.current_result.items():
+            if k not in ['assymetric_value_loss']:
+                self.current_result[k] = v / self.runs_per_epoch
+        if 'assymetric_value_loss' in self.current_result:
+            self.current_result['assymetric_value_loss'] = v / self.runs_per_epoch
         self.current_result['mean_rewards'] = mean_rewards
         self.current_result['mean_lengths'] = mean_lengths
         self.current_result['mean_scores'] = mean_scores
+
+        
 
 
     def get_stats(self):
         return self.current_result
 
+    def get_stats_weights(self):
+        return self.agent.get_stats_weights()
+
+    def set_stats_weights(self, weights):
+        return self.agent.set_stats_weights(weights)
+
     def calc_central_value_gradients(self, batch_dix):
-        self.agent.central_value_net.train_critic(self.agent.central_value_net.central_value_dataset[batch_idx], opt_step=False)
+        loss = self.agent.central_value_net.train_critic(self.agent.central_value_net.central_value_dataset[batch_idx], opt_step=False)
         grads = torch_ext.get_model_gradients(self.agent.central_value_net.model)
-        self.runs_per_epoch += 1
-        self._update_train_stats(self.agent.train_result)
+        self.cv_runs_per_epoch += 1
+        self.current_result['assymetric_value_loss'] += loss
+        return grads
 
     def next_epoch(self):
         self.current_result = {
@@ -82,6 +98,7 @@ class PPOWorker:
             'mean_length' : 0,
         }
         self.runs_per_epoch = 0
+        self.cv_runs_per_epoch = 0
 
     def play_steps(self):
         if self.agent.is_rnn:
