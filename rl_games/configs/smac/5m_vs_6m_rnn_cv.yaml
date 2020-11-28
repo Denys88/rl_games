@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/3m'
+  load_path: 'nn/5m_vs_6m_cv.pth'
 
   network:
     name: actor_critic
@@ -16,7 +16,7 @@ params:
       discrete:
 
     mlp:
-      units: [256, 128]
+      units: [512, 256]
       activation: relu
       initializer:
         name: variance_scaling_initializer
@@ -27,8 +27,9 @@ params:
       name: lstm
       units: 128
       layers: 1
+      layer_norm: True
   config:
-    name: 3s_vs_5z_cv_rnn
+    name: 5m_vs_6m_rnn_cv
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
@@ -36,16 +37,16 @@ params:
     tau: 0.95
     learning_rate: 1e-4
     score_to_win: 20
-    truncate_grads: True
-    grad_norm: 0.5
     entropy_coef: 0.005
+    truncate_grads: True
+    grad_norm: 10
     env_name:  smac
     ppo: true
     e_clip: 0.2
-    clip_value: False
+    clip_value: True
     num_actors: 8
     steps_num: 128
-    minibatch_size: 1536 # 3 * 512
+    minibatch_size: 2560 # 5 * 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
@@ -53,29 +54,37 @@ params:
     normalize_input: True
     normalize_reward: False
     use_action_masks: True
-    seq_length : 4
+    seq_length: 8
+    #max_epochs: 10000
     env_config:
-      name: 3s_vs_5z
-      frames: 1
-      transpose: False
-      random_invalid_step: False
+      name: 5m_vs_6m
       central_value: True
       reward_only_positive: True
       obs_last_action: True
+      apply_agent_ids: True
+
+    player:
+      render: False
+      games_num: 200
+      n_game_life: 1
+      is_determenistic: True
+
 
     central_value_config:
+      use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
       lr: 1e-4
       clip_value: False
       normalize_input: True
       truncate_grads: True
-      grad_norm: 0.5
+      grad_norm: 10
       network:
+        #normalization: layer_norm
         name: actor_critic
         central_value: True
         mlp:
-          units: [256, 128]
+          units: [512, 256]
           activation: relu
           initializer:
             name: variance_scaling_initializer
@@ -86,3 +95,7 @@ params:
           name: lstm
           units: 128
           layers: 1
+          layer_norm: True
+
+      
+      #reward_negative_scale: 0.1

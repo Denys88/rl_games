@@ -49,7 +49,7 @@ class A2CAgent:
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
         self.steps_num = config['steps_num']
-        self.seq_len = self.config['seq_len']
+        self.seq_len = self.config['seq_length']
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
        

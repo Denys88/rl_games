@@ -8,8 +8,10 @@ class BasePlayer(object):
         self.config = config
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
-        self.env = self.create_env()
-        self.env_info = env_configurations.get_env_info(self.env)
+        self.env_info = self.config.get('env_info')
+        if self.env_info is None:
+            self.env = self.create_env()
+            self.env_info = env_configurations.get_env_info(self.env)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
@@ -117,9 +119,9 @@ class BasePlayer(object):
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
             agent_inited = True
-            print('setting agent weights for selfplay')
-            self.env.create_agent(self.env.config_path)
-            #self.env.agent.set_weights(self.get_weights())
+            #print('setting agent weights for selfplay')
+            #self.env.create_agent(self.env.config)
+            #self.env.set_weights(range(8),self.get_weights())
 
         if has_masks_func:
             has_masks = self.env.has_action_mask()
@@ -173,9 +175,9 @@ class BasePlayer(object):
                     game_res = 0.0
                     if isinstance(info, dict):
                         game_res = info.get('battle_won', 0.5)
-
-                    print('reward:', cur_rewards/done_count * n_game_life, 'steps:', cur_steps/done_count * n_game_life, 'w:', game_res)
+                    print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count, 'w:', game_res)
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
+        print(sum_rewards)
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)

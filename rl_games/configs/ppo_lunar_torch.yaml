@@ -39,7 +39,7 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
+      learning_rate: 1e-3
       name: test
       score_to_win: 300
 
@@ -59,5 +59,5 @@ params:
       lr_threshold: 0.008
 
       normalize_input: True
-      seq_len: 8
+      seq_length: 8
       bounds_loss_coef: 0

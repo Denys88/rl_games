@@ -76,7 +76,7 @@ class A2CAgent:
         self.gamma = self.config['gamma']
         self.tau = self.config['tau']
         self.normalize_input = self.config['normalize_input']
-        self.seq_len = self.config['seq_len']
+        self.seq_len = self.config['seq_length']
         self.dones = np.asarray([False]*self.num_actors, dtype=np.bool)
 
         self.current_rewards = np.asarray([0]*self.num_actors, dtype=np.float32)
@@ -300,7 +300,7 @@ class A2CAgent:
         self.saver.restore(self.sess, fn)
 
     def train(self):
-        max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
+        max_epochs = self.config.get('max_epochs', 1e6)
         self.obs = self.vec_env.reset()
         batch_size = self.steps_num * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
