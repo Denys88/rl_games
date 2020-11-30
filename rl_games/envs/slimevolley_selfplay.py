@@ -32,7 +32,7 @@ class SlimeVolleySelfplay(gym.Env):
             runner = Runner()
             runner.load(config)
         config = runner.get_prebuilt_config()
-
+        config['params']['config']['env_params']
         'RAYLIB has bug here, CUDA_VISIBLE_DEVICES become unset'
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
