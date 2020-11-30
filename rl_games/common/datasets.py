@@ -23,8 +23,14 @@ class PPODataset(Dataset):
         self.values_dict = values_dict
 
     def update_mu_sigma(self, mu, sigma):
-        self.values_dict['mu'][self.last_range] = mu
-        self.values_dict['sigma'][self.last_range] = sigma
+        if self.is_rnn:
+            self.values_dict['mu'][self.last_range] = mu
+            self.values_dict['sigma'][self.last_range] = sigma
+        else:
+            start = self.last_range[0]
+            end = self.last_range[1]
+            self.values_dict['mu'][start:end] = mu
+            self.values_dict['sigma'][start:end] = sigma            
 
     def __len__(self):
         return self.length
@@ -49,11 +55,11 @@ class PPODataset(Dataset):
     def _get_item(self, idx):
         start = idx * self.minibatch_size
         end = (idx + 1) * self.minibatch_size
-        self.last_range = range(start, end)
+        self.last_range = (start, end)
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names and v is not None:
-                input_dict[k] = v[self.last_range]
+                input_dict[k] = v[start:end]
                 
         input_dict['learning_rate'] = self.values_dict.get('learning_rate')
 
