@@ -847,10 +847,10 @@ class A2CResnetBuilder(NetworkBuilder):
         def get_default_rnn_state(self):
             num_layers = self.rnn_layers
             if self.rnn_name == 'lstm':
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda(), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
             else:
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)).cuda())                
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))                
 
     def build(self, name, **kwargs):
         net = A2CResnetBuilder.Network(self.params, **kwargs)

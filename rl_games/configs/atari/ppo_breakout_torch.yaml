@@ -39,8 +39,6 @@ params:
     mlp:
       units: [512]
       activation: relu
-      regularizer:
-        name: 'None'
       initializer:
         name: orthogonal_initializer
         gain: 1.41421356237
@@ -62,9 +60,9 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 16
+    num_actors: 24
     steps_num: 128
-    minibatch_size: 1024
+    minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
@@ -76,6 +74,6 @@ params:
 
     player:
       render: True
-      games_num: 2
+      games_num: 200
       n_game_life: 5
-      is_determenistic: False
+      is_determenistic: True

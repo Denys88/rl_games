@@ -141,16 +141,15 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def train_actor_critic(self, input_dict, opt_step = True):
         self.set_train()
-        self.calc_gradients(input_dict)
-        if opt_step:
-            self.optimizer.step()
+        self.calc_gradients(input_dict, opt_step)
+
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
 
         return self.train_result
 
 
-    def calc_gradients(self, input_dict):
+    def calc_gradients(self, input_dict, opt_step):
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -196,7 +195,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         loss.backward()
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-            
+        if opt_step:
+            self.optimizer.step()
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:
