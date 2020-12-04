@@ -72,7 +72,7 @@ params:
     normalize_input: False
 
     player:
-        render: False
+        render: True
         games_num: 10
         n_game_life: 3
         is_determenistic: True

@@ -49,7 +49,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 3e-4
-    name: atari
+    name: breakout
     score_to_win: 900
     grad_norm: 10
     entropy_coef: 0.01

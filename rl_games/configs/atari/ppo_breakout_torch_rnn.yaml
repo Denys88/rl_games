@@ -58,7 +58,7 @@ params:
     gamma: 0.99
     tau: 0.95
     learning_rate: 5e-4
-    name: atari_lstm
+    name: breakout_lstm
     score_to_win: 900
     grad_norm: 0.5
     entropy_coef: 0.01
