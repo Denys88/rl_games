@@ -60,6 +60,9 @@ params:
       self_play: True
       config_path: 'rl_games/configs/ma/ppo_slime_self_play.yaml'
 
-
     player:
+      render: True
+      games_num: 200
+      n_game_life: 1
+      is_determenistic: True
       device_name: 'cpu'

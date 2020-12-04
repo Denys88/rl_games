@@ -16,7 +16,7 @@ params:
       discrete:
 
     mlp:
-      units: [64,64]
+      units: [128,64]
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -54,3 +54,10 @@ params:
 
     env_config:
       name: SlimeVolleyDiscrete-v0
+
+
+    player:
+      render: True
+      games_num: 200
+      n_game_life: 1
+      is_determenistic: True
