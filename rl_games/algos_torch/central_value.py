@@ -125,9 +125,8 @@ class CentralValueTrain(nn.Module):
 
     def train_critic(self, input_dict, opt_step = True):
         self.train()
-        loss = self.calc_gradients(input_dict)
-        if opt_step:
-            self.optimizer.step()
+        loss = self.calc_gradients(input_dict, opt_step)
+
         return loss.item()
 
     def update_multiagent_tensors(self, value_preds, returns, actions, rnn_masks):
@@ -158,7 +157,7 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         return avg_loss
 
-    def calc_gradients(self, batch):
+    def calc_gradients(self, batch, opt_step):
         obs_batch = self._preproc_obs(batch['obs']) 
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
@@ -182,4 +181,6 @@ class CentralValueTrain(nn.Module):
         loss.backward()
         if self.truncate_grads:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+        if opt_step:
+            self.optimizer.step()
         return loss

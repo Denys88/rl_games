@@ -26,6 +26,22 @@ class LimitStepsWrapper(gym.Wrapper):
             reward = -0.1
         return observation, reward, done, info
 
+class InfoWrapper(gym.Wrapper):
+    def __init__(self, env):
+        gym.RewardWrapper.__init__(self, env)
+        
+        self.reward = 0
+    def reset(self, **kwargs):
+        self.reward = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        self.reward += reward
+        if done:
+            info['scores'] = self.reward
+        return observation, reward, done, info
+
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
@@ -536,9 +552,9 @@ class MontezumaInfoWrapper(gym.Wrapper):
         obs, rew, done, info = self.env.step(action)
         self.visited_rooms.add(self.get_current_room())
         if done:
-            if 'episode' not in info:
-                info['episode'] = {}
-            info['episode'].update(visited_rooms=copy(self.visited_rooms))
+            if 'scores' not in info:
+                info['scores'] = {}
+            info['scores'].update(visited_rooms=copy(self.visited_rooms))
             self.visited_rooms.clear()
         return obs, rew, done, info
 
@@ -570,6 +586,7 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
     env = gym.make(env_id)
+    env = InfoWrapper(env)
     if 'Montezuma' in env_id:
         env._max_episode_steps = 16000
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
@@ -622,10 +639,4 @@ def make_car_racing(env_id, skip=4):
 def make_atari_deepmind(env_id, noop_max=0, skip=4, sticky=False):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
     return wrap_deepmind(env, clip_rewards=False)
-
-# turned off episode life to make a video, need to use ReallyDoneWrapper
-def make_atari_deepmind_test(env_id, noop_max=30, skip=4, directory='video_dddqn05'):
-    env = make_atari(env_id, noop_max=noop_max, skip=skip, directory=directory)
-
-    return wrap_deepmind(env, episode_life=False, clip_rewards=False)
 

@@ -98,9 +98,9 @@ class A2CBase:
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        self.game_rewards = deque([], maxlen=self.games_to_track)
-        self.game_lengths = deque([], maxlen=self.games_to_track)
-        self.game_scores = deque([], maxlen=self.games_to_track)   
+        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.game_scores = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)  
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
@@ -145,6 +145,20 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
+    def parse_infos(self, infos, done_indices):
+        if len(infos) > 0 and isinstance(infos[0], dict):
+            for ind in done_indices:
+                if len(infos) <= ind//self.num_agents:
+                    continue
+                info = infos[ind//self.num_agents]
+                game_res = None 
+                if 'battle_won' in info:
+                    game_res = info['battle_won']
+                if 'scores' in info:
+                    game_res = info['scores']
+                if game_res is not None:
+                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
+
     def reset_envs(self):
         self.obs = self.env_reset()
         
@@ -155,8 +169,8 @@ class A2CBase:
             torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
 
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
+        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.ppo_device)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
 
@@ -304,8 +318,8 @@ class A2CBase:
         self.game_rewards.clear()
         self.game_lengths.clear()
         self.game_scores.clear()
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32)
+        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.last_mean_rewards = -100500
         #self.obs = self.env_reset()
 
@@ -339,7 +353,7 @@ class A2CBase:
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
 
-    def calc_gradients(self):
+    def calc_gradients(self, opt_step):
         pass
 
     def get_intrinsic_reward(self, obs):
@@ -493,7 +507,7 @@ class DiscreteA2CBase(A2CBase):
 
             mb_rewards[indices, play_mask] = shaped_rewards
 
-            self.current_rewards += rewards.cpu()
+            self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -501,23 +515,15 @@ class DiscreteA2CBase(A2CBase):
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
             if self.has_central_value:
                 self.central_value_net.post_step_rnn(all_done_indices)
+        
+            self.parse_infos(infos, done_indices)
 
-            self.game_rewards.extend(self.current_rewards[done_indices])
-            self.game_lengths.extend(self.current_lengths[done_indices])
 
-            for ind in done_indices:
-                if len(infos) <= ind//self.num_agents:
-                    continue
-                info = infos[ind//self.num_agents]
-                game_res = 0
-                if isinstance(info, dict):
-                    game_res = info.get('battle_won', 0.0)
-                    self.game_scores.append(game_res)
-
-            epinfos.append(infos)
-
+            fdones = self.dones.float()
             not_dones = 1.0 - self.dones.float()
-            not_dones = not_dones.cpu()
+
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices]) 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -527,7 +533,6 @@ class DiscreteA2CBase(A2CBase):
 
         mb_extrinsic_values = mb_values
         last_extrinsic_values = last_values
-
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
 
@@ -610,27 +615,18 @@ class DiscreteA2CBase(A2CBase):
     
             mb_rewards[n,:] = shaped_rewards
                 
-            self.current_rewards += rewards.cpu()
+            self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
                      
-            self.game_rewards.extend(self.current_rewards[done_indices])
-            self.game_lengths.extend(self.current_lengths[done_indices])
-
-            for ind in done_indices:
-                if len(infos) <= ind//self.num_agents:
-                    continue
-                info = infos[ind//self.num_agents]
-                game_res = 0
-                if isinstance(info, dict):
-                    game_res = info.get('battle_won', 0.0)
-                    self.game_scores.append(game_res)
-
-            epinfos.append(infos)
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices])
+  
+            self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
-            not_dones = not_dones.cpu()
+  
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -804,10 +800,10 @@ class DiscreteA2CBase(A2CBase):
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
                 
-                if len(self.game_rewards) > 0:
-                    mean_rewards = np.mean(self.game_rewards)
-                    mean_lengths = np.mean(self.game_lengths)
-                    mean_scores = np.mean(self.game_scores)
+                if self.game_rewards.current_size > 0:
+                    mean_rewards = self.game_rewards.get_mean()
+                    mean_lengths = self.game_lengths.get_mean()
+                    mean_scores = self.game_scores.get_mean()
                     
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
@@ -815,8 +811,8 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    self.writer.add_scalar('win_rate/mean', mean_scores, frame)
-                    self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.writer.add_scalar('scores/mean', mean_scores, frame)
+                    self.writer.add_scalar('scores/time', mean_scores, total_time)
 
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
@@ -930,7 +926,7 @@ class ContinuousA2CBase(A2CBase):
             mb_rewards[indices, play_mask] = shaped_rewards
 
                 
-            self.current_rewards += rewards.cpu()
+            self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -938,22 +934,13 @@ class ContinuousA2CBase(A2CBase):
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
             if self.has_central_value:
                 self.central_value_net.post_step_rnn(all_done_indices)                     
-            self.game_rewards.extend(self.current_rewards[done_indices])
-            self.game_lengths.extend(self.current_lengths[done_indices])
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices])
 
-            for ind in done_indices:
-                if len(infos) <= ind//self.num_agents:
-                    continue
-                info = infos[ind//self.num_agents]
-                game_res = 0
-                if isinstance(info, dict):
-                    game_res = info.get('battle_won', 0.0)
-                    self.game_scores.append(game_res)
 
-            epinfos.append(infos)
+            self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
-            not_dones = not_dones.cpu()
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -1058,30 +1045,24 @@ class ContinuousA2CBase(A2CBase):
  
             mb_rewards[n,:] = shaped_rewards
                 
-            self.current_rewards += rewards.cpu()
-            self.current_lengths += 1
+
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-                     
-            self.game_rewards.extend(self.current_rewards[done_indices])
-            self.game_lengths.extend(self.current_lengths[done_indices])
-
-            for ind in done_indices:
-                if len(infos) <= ind//self.num_agents:
-                    continue
-                info = infos[ind//self.num_agents]
-                game_res = 0
-                if isinstance(info, dict):
-                    game_res = info.get('battle_won', 0.0)
-                    self.game_scores.append(game_res)
-
-            epinfos.append(infos)
-
+            
+            self.current_rewards += rewards
+            self.current_lengths += 1                    
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices])
+            
+            
+            self.parse_infos(infos, done_indices)
+            
+            
             not_dones = 1.0 - self.dones.float()
-            not_dones = not_dones.cpu()
+        
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-        
+            
         last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
         if self.has_curiosity:
@@ -1272,19 +1253,18 @@ class ContinuousA2CBase(A2CBase):
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
 
-                if len(self.game_rewards) > 0:
-                    mean_rewards = np.mean(self.game_rewards)
-                    mean_lengths = np.mean(self.game_lengths)
-                    #mean_scores = np.mean(self.game_scores)
+                if self.game_rewards.current_size > 0:
+                    mean_rewards = self.game_rewards.get_mean()
+                    mean_lengths = self.game_lengths.get_mean()
+                    mean_scores = self.game_scores.get_mean()
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    #self.writer.add_scalar('win_rate/frame', mean_scores, frame)
-                    #self.writer.add_scalar('win_rate/iter', mean_scores, epoch_num)
-                    #self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.writer.add_scalar('scores/frame', mean_scores, frame)
+                    self.writer.add_scalar('scores/time', mean_scores, total_time)
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
                     if self.has_curiosity:

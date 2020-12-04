@@ -83,15 +83,18 @@ class BasePlayer(object):
                 if done:
                     game_res = 0.0
                     if isinstance(info, dict):
-                        game_res = info.get('battle_won', 0.5)
+                        if 'battle_won' in info:
+                            game_res = info['battle_won']
+                        if 'scores' in info:
+                            game_res = info['scores']
 
-                    print('reward:', np.mean(cr), 'steps:', steps, 'w:', game_res)
+                    print('reward:', np.mean(cr), 'steps:', steps, 'scores:', game_res)
                     sum_game_res += game_res
                     sum_rewards += np.mean(cr)
                     sum_steps += steps
                     break
 
-        print('av reward:', sum_rewards / n_games * n_game_life, 'av steps:', sum_steps / n_games * n_game_life, 'winrate:', sum_game_res / n_games * n_game_life)        
+        print('av reward:', sum_rewards / n_games * n_game_life, 'av steps:', sum_steps / n_games * n_game_life, 'scores:', sum_game_res / n_games * n_game_life)        
     
 
 class PpoPlayerContinuous(BasePlayer):
