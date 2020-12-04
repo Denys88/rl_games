@@ -213,4 +213,4 @@ class AverageMeter(nn.Module):
         self.mean._fill(0)
 
     def get_mean(self):
-        return self.mean.cpu().numpy()
+        return self.mean.squeeze().cpu().numpy()

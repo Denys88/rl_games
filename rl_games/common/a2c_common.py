@@ -145,6 +145,20 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
+    def parse_infos(self, infos, done_indices):
+        if len(infos) > 0 and isinstance(infos[0], dict):
+            for ind in done_indices:
+                if len(infos) <= ind//self.num_agents:
+                    continue
+                info = infos[ind//self.num_agents]
+                game_res = None 
+                if 'battle_won' in info:
+                    game_res = info['battle_won']
+                if 'scores' in info:
+                    game_res = info['scores']
+                if game_res is not None:
+                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
+
     def reset_envs(self):
         self.obs = self.env_reset()
         
@@ -502,19 +516,7 @@ class DiscreteA2CBase(A2CBase):
             if self.has_central_value:
                 self.central_value_net.post_step_rnn(all_done_indices)
         
-            if len(infos) > 0 and isinstance(infos[0], dict):
-                for ind in done_indices:
-                    if len(infos) <= ind//self.num_agents:
-                        continue
-                    info = infos[ind//self.num_agents]
-                    game_res = 0
-                    
-                    game_res = 0
-                    if 'battle_won' in info:
-                        game_res = info['battle_won']
-                    if 'episode' in info:
-                        game_res = info['episode']
-                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
+            self.parse_infos(infos, done_indices)
 
 
             fdones = self.dones.float()
@@ -620,20 +622,8 @@ class DiscreteA2CBase(A2CBase):
                      
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-
-            
-            if len(infos) > 0 and isinstance(infos[0], dict):
-                for ind in done_indices:
-                    if len(infos) <= ind//self.num_agents:
-                        continue
-                    info = infos[ind//self.num_agents]
-                    game_res = 0
-                    if 'battle_won' in info:
-                        game_res = info['battle_won']
-                    if 'episode' in info:
-                        game_res = info['episode']
-                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
-
+  
+            self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
   
@@ -821,8 +811,8 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    self.writer.add_scalar('win_rate/mean', mean_scores, frame)
-                    self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.writer.add_scalar('scores/mean', mean_scores, frame)
+                    self.writer.add_scalar('scores/time', mean_scores, total_time)
 
                     if self.has_curiosity:
                         if len(self.curiosity_rewards) > 0:
@@ -948,20 +938,7 @@ class ContinuousA2CBase(A2CBase):
             self.game_lengths.update(self.current_lengths[done_indices])
 
 
-            if len(infos) > 0 and isinstance(infos[0], dict):
-                for ind in done_indices:
-                    if len(infos) <= ind//self.num_agents:
-                        continue
-                    info = infos[ind//self.num_agents]
-                    game_res = 0
-                    
-                    game_res = 0
-                    if 'battle_won' in info:
-                        game_res = info['battle_won']
-                    if 'episode' in info:
-                        game_res = info['episode']
-                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
-
+            self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
             self.current_rewards = self.current_rewards * not_dones
@@ -1078,19 +1055,7 @@ class ContinuousA2CBase(A2CBase):
             self.game_lengths.update(self.current_lengths[done_indices])
             
             
-            if len(infos) > 0 and isinstance(infos[0], dict):
-                for ind in done_indices:
-                    if len(infos) <= ind//self.num_agents:
-                        continue
-                    info = infos[ind//self.num_agents]
-                    game_res = 0
-                    
-                    game_res = 0
-                    if 'battle_won' in info:
-                        game_res = info['battle_won']
-                    if 'episode' in info:
-                        game_res = info['episode']
-                    self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
+            self.parse_infos(infos, done_indices)
             
             
             not_dones = 1.0 - self.dones.float()
@@ -1298,8 +1263,8 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                    self.writer.add_scalar('win_rate/frame', mean_scores, frame)
-                    self.writer.add_scalar('win_rate/time', mean_scores, total_time)
+                    self.writer.add_scalar('scores/frame', mean_scores, frame)
+                    self.writer.add_scalar('scores/time', mean_scores, total_time)
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
                     if self.has_curiosity:

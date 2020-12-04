@@ -106,8 +106,8 @@ class DDPpoRunner:
         self.writer.add_scalar('episode_lengths/frame', stats['mean_lengths'], self.frame)
         self.writer.add_scalar('episode_lengths/iter', stats['mean_lengths'], self.epoch_num)
         self.writer.add_scalar('episode_lengths/time', stats['mean_lengths'], self.total_time)
-        self.writer.add_scalar('win_rate/mean', stats['mean_scores'], self.frame)
-        self.writer.add_scalar('win_rate/time', stats['mean_scores'], self.total_time)
+        self.writer.add_scalar('scores/mean', stats['mean_scores'], self.frame)
+        self.writer.add_scalar('scores/time', stats['mean_scores'], self.total_time)
 
         mean_rewards = stats['mean_rewards']
 

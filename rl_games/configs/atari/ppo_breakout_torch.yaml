@@ -20,8 +20,6 @@ params:
       initializer:
         name: orthogonal_initializer
         gain: 1.41421356237 
-      regularizer:
-        name: 'None'
       convs:    
         - filters: 32
           kernel_size: 8

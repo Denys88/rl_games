@@ -19,8 +19,8 @@ class SelfPlayManager:
             data = algo.game_rewards
 
         if len(data) >= self.games_to_check:
-            mean_scores = np.mean(data)
-            mean_rewards = np.mean(algo.game_rewards)
+            mean_scores = data.get_mean()
+            mean_rewards = algo.game_rewards.get_mean()
             if mean_scores > self.update_score:
                 print('Mean scores: ', mean_scores, ' mean rewards: ', mean_rewards, ' updating weights')
 
