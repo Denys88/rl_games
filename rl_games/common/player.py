@@ -9,9 +9,11 @@ class BasePlayer(object):
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
+
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
+
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
@@ -28,6 +30,7 @@ class BasePlayer(object):
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.device = torch.device(self.device_name)
+
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -125,15 +128,18 @@ class BasePlayer(object):
 
         if has_masks_func:
             has_masks = self.env.has_action_mask()
+
         need_init_rnn = self.is_rnn
         for _ in range(n_games):
             if games_played >= n_games:
                 break
+
             obses = self.env_reset(self.env)
             batch_size = 1
             if len(obses.size()) > len(self.state_shape):
                 batch_size = obses.size()[0]
             self.batch_size = batch_size
+
             if need_init_rnn:
                 self.init_rnn()
                 need_init_rnn = False
@@ -179,5 +185,6 @@ class BasePlayer(object):
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
+
         print(sum_rewards)
         print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
