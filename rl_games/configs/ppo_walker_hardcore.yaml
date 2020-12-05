@@ -32,7 +32,8 @@ params:
     rnn:
       name: lstm
       units: 64
-      layers: 1   
+      layers: 1
+      concat_input: True   
   load_checkpoint: False
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
 

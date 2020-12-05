@@ -82,14 +82,21 @@ class NetworkBuilder:
         input_size, 
         units, 
         activation,
-        dense_func, 
+        dense_func,
+        norm_only_first_layer=False, 
         norm_func_name = None):
             print('build mlp:', input_size)
             in_size = input_size
             layers = []
+            need_norm = True
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
+
+                if not need_norm:
+                    continue
+                if norm_only_first_layer and norm_func_name is not None:
+                   need_norm = False 
                 if norm_func_name == 'layer_norm':
                     layers.append(torch.nn.LayerNorm(unit))
                 elif norm_func_name == 'batch_norm':
@@ -103,6 +110,7 @@ class NetworkBuilder:
         units, 
         activation,
         dense_func, 
+        norm_only_first_layer=False,
         norm_func_name = None,
         d2rl=False):
             if d2rl:
@@ -204,6 +212,8 @@ class A2CBuilder(NetworkBuilder):
                 if not self.is_rnn_before_mlp:
                     rnn_in_size = out_size
                     out_size = self.rnn_units
+                    if self.rnn_concat_input:
+                        rnn_in_size += in_mlp_shape
                 else:
                     rnn_in_size =  in_mlp_shape
                     in_mlp_shape = self.rnn_units
@@ -225,7 +235,8 @@ class A2CBuilder(NetworkBuilder):
                 'activation' : self.activation, 
                 'norm_func_name' : self.normalization,
                 'dense_func' : torch.nn.Linear,
-                'd2rl' : self.is_d2rl
+                'd2rl' : self.is_d2rl,
+                'norm_only_first_layer' : self.norm_only_first_layer
             }
             self.actor_mlp = self._build_mlp(**mlp_args)
             if self.separate:
@@ -285,9 +296,13 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.has_rnn:
                     if not self.is_rnn_before_mlp:
-                        a_out = self.actor_mlp(a_out)
-                        c_out = self.critic_mlp(c_out)
-
+                        a_out_in = a_out
+                        c_out_in = c_out
+                        a_out = self.actor_mlp(a_out_in)
+                        c_out = self.critic_mlp(c_out_in)
+                        if self.rnn_concat_input:
+                            a_out = torch.cat([a_out, a_out_in], dim=1)
+                            c_out = torch.cat([c_out, c_out_in], dim=1)
                     batch_size = a_out.size()[0]
                     num_seqs = batch_size // seq_length
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
@@ -345,9 +360,13 @@ class A2CBuilder(NetworkBuilder):
                     actions = obs_dict['actions']
                     actions_out = self.joint_actions(actions)
                     out = torch.cat([out, actions_out], dim=-1)
+
+                out_in = out
                 out = self.actor_mlp(out)
 
                 if self.has_rnn:
+                    if self.rnn_concat_input:
+                        c_out = torch.cat([out, out_in], dim=1)
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
@@ -414,6 +433,7 @@ class A2CBuilder(NetworkBuilder):
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
             self.is_d2rl = params['mlp'].get('d2rl', False)
+            self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
@@ -438,6 +458,7 @@ class A2CBuilder(NetworkBuilder):
                 self.rnn_name = params['rnn']['name']
                 self.rnn_ln = params['rnn'].get('layer_norm', False)
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
+                self.rnn_concat_input = params['rnn'].get('concat_input', False)
 
             if 'cnn' in params:
                 self.has_cnn = True

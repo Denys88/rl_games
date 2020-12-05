@@ -21,6 +21,8 @@ params:
     mlp:
       units: [64,64]
       activation: relu
+      normalization: 'layer_norm'
+      norm_only_first_layer: True
       initializer:
         name: variance_scaling_initializer
         scale: 2
@@ -31,6 +33,8 @@ params:
       units: 64
       layers: 1
       before_mlp: False
+      concat_input: True
+      layer_norm: True
   config:
     reward_shaper:
         scale_value: 0.1
@@ -47,9 +51,9 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 8
-    steps_num: 128
-    minibatch_size: 256
+    num_actors: 16
+    steps_num: 256
+    minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
