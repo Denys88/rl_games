@@ -361,12 +361,16 @@ class A2CBuilder(NetworkBuilder):
                     actions_out = self.joint_actions(actions)
                     out = torch.cat([out, actions_out], dim=-1)
 
-                out_in = out
-                out = self.actor_mlp(out)
+                
 
                 if self.has_rnn:
-                    if self.rnn_concat_input:
-                        out = torch.cat([out, out_in], dim=1)
+                    out_in = out
+                    if not self.is_rnn_before_mlp:
+                        out_in = out
+                        out = self.actor_mlp(out)
+                        if self.rnn_concat_input:
+                            out = torch.cat([out, out_in], dim=1)
+                        
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
@@ -381,7 +385,8 @@ class A2CBuilder(NetworkBuilder):
                         out =out.transpose(0,1)
                     if self.rnn_ln:
                         out = self.layer_norm(out)
-
+                    if self.is_rnn_before_mlp:
+                        out = self.actor_mlp(out)
                     if type(states) is not tuple:
                         states = (states,)
                 value = self.value_act(self.value(out))

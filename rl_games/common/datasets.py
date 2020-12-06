@@ -36,7 +36,6 @@ class PPODataset(Dataset):
         gend = (idx + 1) * self.num_games_batch
         start = gstart * self.seq_len
         end = gend * self.seq_len
-        #self.last_range = mbatch = self.flat_indexes[mb_indexes].flatten() 
         self.last_range = (start, end)   
         input_dict = {}
         for k,v in self.values_dict.items():

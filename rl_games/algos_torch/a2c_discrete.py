@@ -111,7 +111,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     'actions' : action,
                     #'rnn_states' : self.rnn_states
                 }
-                value = self.central_value_net(input_dict)
+                value = self.get_central_value(input_dict)
 
         return action.detach(), value.detach(), neglogp.detach(), rnn_states
 

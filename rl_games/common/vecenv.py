@@ -115,19 +115,45 @@ class RayVecEnv(IVecEnv):
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
+        res = self.workers[0].get_number_of_agents.remote()
+        self.num_agents = ray.get(res)
+
+        res = self.workers[0].get_env_info.remote()
+        env_info = ray.get(res)
+
+        self.use_global_obs = env_info['use_global_observations']
+
+        if self.num_agents == 1:
+            self.concat_func = np.stack
+        else:
+            self.concat_func = np.concatenate
+
     def step(self, actions):
-        newobs, newrewards, newdones, newinfos = [], [], [], []
+
+        newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
         res_obs = []
         for (action, worker) in zip(actions, self.workers):
             res_obs.append(worker.step.remote(action))
         all_res = ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res
-            newobs.append(cobs)
+            if self.use_global_obs:
+                newobs.append(cobs["obs"])
+                newstates.append(cobs["state"])
+            else:
+                newobs.append(cobs)
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
-        return np.asarray(newobs, dtype=cobs.dtype), np.asarray(newrewards, dtype=np.float32), np.asarray(newdones, dtype=np.uint8), newinfos
+
+        if self.use_global_obs:
+            newobsdict = {}
+            newobsdict["obs"] = self.concat_func(newobs, axis=0)
+            newobsdict["states"] = np.asarray(newstates)
+            ret_obs = newobsdict
+        else:
+            ret_obs = self.concat_func(newobs, axis=0)
+        return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
@@ -147,8 +173,24 @@ class RayVecEnv(IVecEnv):
         return np.asarray(ray.get(mask), dtype=np.int32)
 
     def reset(self):
-        obs = [worker.reset.remote() for worker in self.workers]
-        return np.asarray(ray.get(obs))
+        res_obs = [worker.reset.remote() for worker in self.workers]
+        if self.use_global_obs:
+            newobs, newstates = [],[]
+            for res in res_obs:
+                cobs = ray.get(res)
+                if self.use_global_obs:
+                    newobs.append(cobs["obs"])
+                    newstates.append(cobs["state"])
+                else:
+                    newobs.append(cobs)
+            newobsdict = {}
+            newobsdict["obs"] = self.concat_func(newobs, axis=0)
+            newobsdict["states"] = np.asarray(newstates)
+            ret_obs = newobsdict
+        else:
+            ret_obs = ray.get(res_obs)
+            ret_obs = self.concat_func(ret_obs, axis=0)
+        return ret_obs
 
 # todo rename multi-agent
 class RayVecSMACEnv(IVecEnv):
@@ -212,7 +254,6 @@ class RayVecSMACEnv(IVecEnv):
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]
-        
         if self.use_global_obs:
             newobs, newstates = [],[]
             for res in res_obs:
