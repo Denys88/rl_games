@@ -366,7 +366,7 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.has_rnn:
                     if self.rnn_concat_input:
-                        c_out = torch.cat([out, out_in], dim=1)
+                        out = torch.cat([out, out_in], dim=1)
                     batch_size = out.size()[0]
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
