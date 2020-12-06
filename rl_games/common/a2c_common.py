@@ -527,7 +527,14 @@ class DiscreteA2CBase(A2CBase):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs, actions)
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
+            else:
+                _, last_values, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
 
@@ -630,7 +637,14 @@ class DiscreteA2CBase(A2CBase):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs, actions)
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
+            else:
+                _, last_values, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
         if self.has_curiosity:
@@ -944,7 +958,10 @@ class ContinuousA2CBase(A2CBase):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs)
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
         mb_extrinsic_values = mb_values
@@ -1062,8 +1079,12 @@ class ContinuousA2CBase(A2CBase):
         
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-            
-        last_values = self.get_values(self.obs)
+        
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
         if self.has_curiosity:
             mb_intrinsic_values = mb_values[:,:,1]

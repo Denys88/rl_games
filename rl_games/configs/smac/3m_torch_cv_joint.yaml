@@ -60,7 +60,7 @@ params:
       state_last_action: True
 
     central_value_config:
-      use_joint_obs_actions: False
+      use_joint_obs_actions: True
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
@@ -68,9 +68,8 @@ params:
       normalize_input: True
       network:
         name: actor_critic
-        #normalization: batch_norm
         central_value: True
-        joint_obs_actions1:
+        joint_obs_actions:
             embedding: False
             embedding_scale: 1 #(actions // embedding_scale)
             mlp_scale: 4 # (mlp from obs size) // mlp_out_scale

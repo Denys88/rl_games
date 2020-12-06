@@ -115,14 +115,14 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         return action.detach(), value.detach(), neglogp.detach(), rnn_states
 
-    def get_values(self, obs, actions=None):
+    def get_values(self, obs):
         if self.has_central_value:
             states = obs['states']
             self.central_value_net.eval()
             input_dict = {
                 'is_train': False,
                 'states' : states,
-                'actions' : actions,
+                'actions' : None,
                 'is_done': self.dones,
             }
             return self.get_central_value(input_dict).detach()

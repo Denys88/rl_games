@@ -90,7 +90,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         return action.detach(), value.detach(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
 
-    def get_values(self, obs, actions=None):
+    def get_values(self, obs):
         if self.has_central_value:
             states = obs['states']
             self.central_value_net.eval()
