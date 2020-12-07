@@ -53,18 +53,17 @@ params:
     max_epochs: 20000
 
     central_value_config:
-      #use_joint_obs_actions: False
+      use_joint_obs_actions: True
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
       clip_value: False
       normalize_input: True
       network:
-        #normalization: batch_norm
-        #joint_obs_actions:
-        #    embedding: False
-        #    embedding_scale: 1 #(actions // embedding_scale)
-        #    mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
+        joint_obs_actions:
+            embedding: False
+            embedding_scale: 1 #(actions // embedding_scale)
+            mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:

@@ -5,3 +5,8 @@ gym.envs.register(
      entry_point='rl_games.envs.test.rnn_env:TestRNNEnv',
      max_episode_steps=50,
 )
+
+gym.envs.register(
+     id='TestAsymmetricEnv-v0',
+     entry_point='rl_games.envs.test.test_asymmetric_env:TestAsymmetricCritic'
+)
