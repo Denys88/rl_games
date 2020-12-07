@@ -52,10 +52,10 @@ class A2CAgent:
         self.seq_len = self.config['seq_length']
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
-       
+
         self.state_shape = observation_shape
         self.critic_coef = config['critic_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         self.sess = sess
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -139,7 +139,7 @@ class A2CAgent:
 
         self.saver = tf.train.Saver()
         self.variables = TensorFlowVariables([self.target_action, self.target_state_values, self.target_neglogp], self.sess)
-        
+
         if self.is_train:
             self.setup_losses()
 
@@ -167,7 +167,7 @@ class A2CAgent:
             self.critic_loss = self.c_loss
  
         self.critic_loss = tf.reduce_mean(self.critic_loss)
-        
+
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
         if self.is_adaptive_lr:
             self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
@@ -204,7 +204,6 @@ class A2CAgent:
         else:
             return (*self.sess.run(run_ops, {self.action_mask_ph: action_masks, self.target_obs_ph : obs}), None)
 
-
     def get_values(self, obs):
         if self.network.is_rnn():
             return self.sess.run([self.target_state_values], {self.target_obs_ph : obs, self.target_states_ph : self.states, self.target_masks_ph : self.dones})
@@ -213,11 +212,9 @@ class A2CAgent:
 
     def get_weights(self):
         return self.variables.get_flat()
-    
+
     def set_weights(self, weights):
         return self.variables.set_flat(weights)
-
-
 
     def play_steps(self):
         # here, we init the lists that will contain the mb of experiences
@@ -283,7 +280,7 @@ class A2CAgent:
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
-        
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - self.dones
@@ -420,7 +417,7 @@ class A2CAgent:
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
-                
+
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
@@ -450,5 +447,3 @@ class A2CAgent:
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num                               
                 update_time = 0
-            
-        

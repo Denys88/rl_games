@@ -110,6 +110,7 @@ class A2CBase:
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
+
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
@@ -118,7 +119,7 @@ class A2CBase:
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         if self.normalize_reward:
             self.reward_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
@@ -515,7 +516,7 @@ class DiscreteA2CBase(A2CBase):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-      
+
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
             if self.has_central_value:
                 self.central_value_net.post_step_rnn(all_done_indices)
@@ -529,7 +530,7 @@ class DiscreteA2CBase(A2CBase):
             self.game_lengths.update(self.current_lengths[done_indices]) 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-        
+
         if self.has_central_value and self.central_value_net.use_joint_obs_actions:
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -538,6 +539,7 @@ class DiscreteA2CBase(A2CBase):
                 _, last_values, _, _ = self.get_action_values(self.obs)
         else:
             last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
 
         mb_extrinsic_values = mb_values
@@ -617,25 +619,25 @@ class DiscreteA2CBase(A2CBase):
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
-            
+
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
-    
+
             mb_rewards[n,:] = shaped_rewards
 
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-                     
+  
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-  
+
             self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
-  
+
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
@@ -647,6 +649,7 @@ class DiscreteA2CBase(A2CBase):
                 _, last_values, _, _ = self.get_action_values(self.obs)
         else:
             last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
 
         if self.has_curiosity:
@@ -693,12 +696,12 @@ class DiscreteA2CBase(A2CBase):
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
-                
+      
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
         self.prepare_dataset(batch_dict)
-        
+
         a_losses = []
         c_losses = []
         entropies = []
@@ -1189,7 +1192,7 @@ class ContinuousA2CBase(A2CBase):
         sigmas = batch_dict['sigmas']
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
-        
+
         advantages = returns - values
 
         if self.normalize_advantage:
@@ -1311,5 +1314,5 @@ class ContinuousA2CBase(A2CBase):
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num
-                           
+
                 update_time = 0
