@@ -5,6 +5,7 @@ import os
 import rl_games.algos_torch.torch_ext as torch_ext
 from rl_games.torch_runner import Runner
 
+
 class PPOWorker:
     def __init__(self, config, name):
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -48,7 +49,6 @@ class PPOWorker:
     def get_env_info(self):
         return self.agent.env_info
 
-
     def update_stats(self):
         mean_rewards = torch_ext.get_mean(self.agent.game_rewards)
         mean_lengths = torch_ext.get_mean(self.agent.game_lengths)
@@ -64,9 +64,6 @@ class PPOWorker:
         self.current_result['mean_rewards'] = mean_rewards
         self.current_result['mean_lengths'] = mean_lengths
         self.current_result['mean_scores'] = mean_scores
-
-        
-
 
     def get_stats(self):
         return self.current_result

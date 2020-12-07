@@ -225,12 +225,10 @@ def create_smac_cnn(name, **kwargs):
         
     return env
 
-
 def create_test_env(name, **kwargs):
     import rl_games.envs.test
     env = gym.make(name, **kwargs)
     return env
-
 
 def create_minigrid_env(name, **kwargs):
     import gym_minigrid

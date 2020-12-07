@@ -158,10 +158,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         for param in self.model.parameters():
             param.grad = None
         loss.backward()
+
         if self.config['truncate_grads']:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         if opt_step:
             self.optimizer.step()
+
         with torch.no_grad():
             reduce_kl = not self.is_rnn
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
