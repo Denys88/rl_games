@@ -69,7 +69,7 @@ class A2CAgent:
         self.config = config
         self.state_shape = observation_space.shape
         self.critic_coef = config['critic_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d-%H-%M-%S"))
 
         self.sess = sess
         self.grad_norm = config['grad_norm']
@@ -167,7 +167,7 @@ class A2CAgent:
             self.critic_loss = tf.reduce_mean(tf.maximum(self.c_loss, self.c_loss_clipped))
         else:
             self.critic_loss = tf.reduce_mean(self.c_loss)
-        
+
         self._calc_kl_dist()
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
@@ -273,7 +273,7 @@ class A2CAgent:
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
-        
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - self.dones
@@ -334,12 +334,14 @@ class A2CAgent:
             play_time_end = time.time()
             play_time = play_time_end - play_time_start
             update_time_start = time.time()
+
             if self.network.is_rnn():
                 total_games = batch_size // self.seq_len
                 num_games_batch = minibatch_size // self.seq_len
                 game_indexes = np.arange(total_games)
                 flat_indexes = np.arange(total_games * self.seq_len).reshape(total_games, self.seq_len)
                 lstm_states = lstm_states[::self.seq_len]
+
                 for _ in range(0, mini_epochs_num):
                     np.random.shuffle(game_indexes)
 
@@ -359,12 +361,12 @@ class A2CAgent:
                         dict[self.old_sigma_ph] = sigmas[mbatch]
                         dict[self.masks_ph] = dones[mbatch]
                         dict[self.states_ph] = lstm_states[mb_indexes]
-                        
+
                         dict[self.learning_rate_ph] = last_lr
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier]
                         if self.bounds_loss is not None:
                             run_ops.append(self.bounds_loss)
-                        
+
                         run_ops.append(self.train_op)
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
 
@@ -399,7 +401,7 @@ class A2CAgent:
                     advantages = advantages[permutation]
                     mus = mus[permutation]
                     sigmas = sigmas[permutation] 
-                        
+
                     for i in range(0, num_minibatches):
                         batch = range(i * minibatch_size, (i + 1) * minibatch_size)
                         dict = {self.obs_ph: obses[batch], self.actions_ph : actions[batch], self.rewards_ph : returns[batch], 
@@ -411,7 +413,7 @@ class A2CAgent:
                         run_ops = [self.actor_loss, self.critic_loss, self.entropy, self.kl_dist, self.current_lr, self.mu, self.sigma, self.lr_multiplier]
                         if self.bounds_loss is not None:
                             run_ops.append(self.bounds_loss)
-                        
+
                         run_ops.append(self.train_op)
                         run_ops.append(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
 
@@ -447,7 +449,7 @@ class A2CAgent:
                     fps_step = batch_size / scaled_play_time
                     fps_total = batch_size / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-                    
+  
                 self.writer.add_scalar('performance/total_fps', batch_size / sum_time, frame)
                 self.writer.add_scalar('performance/step_fps', batch_size / play_time, frame)
                 self.writer.add_scalar('performance/upd_time', update_time, frame)
@@ -462,7 +464,7 @@ class A2CAgent:
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('epochs', epoch_num, frame)
-                
+
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
                     mean_lengths = np.mean(self.game_lengths)
