@@ -119,7 +119,7 @@ class A2CBase:
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d-%H-%M-%S"))        
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         if self.normalize_reward:
             self.reward_mean_std = RunningMeanStd((1,)).to(self.ppo_device)

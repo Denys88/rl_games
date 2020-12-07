@@ -46,7 +46,7 @@ class DQNAgent:
         self.network = config['network']
         self.state_shape = observation_shape
         self.actions_num = actions_num
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d-%H-%M-%S"))
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         self.epsilon = self.config['epsilon']
         self.rewards_shaper = self.config['reward_shaper']
         self.epsilon_processor = tr_helpers.LinearValueProcessor(self.config['epsilon'], self.config['min_epsilon'], self.config['epsilon_decay_frames'])

@@ -69,7 +69,7 @@ class A2CAgent:
         self.config = config
         self.state_shape = observation_space.shape
         self.critic_coef = config['critic_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d-%H-%M-%S"))
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         self.sess = sess
         self.grad_norm = config['grad_norm']
