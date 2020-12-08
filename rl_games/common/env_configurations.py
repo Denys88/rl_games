@@ -112,7 +112,8 @@ def create_connect_four_env(**kwargs):
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    env = wrappers.make_atari_deepmind(name, skip=4)
+    skip = kwargs.pop('skip',4)
+    env = wrappers.make_atari_deepmind(name, skip)
     return env    
 
 def create_dm_control_env(**kwargs):

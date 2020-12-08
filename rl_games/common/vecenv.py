@@ -78,7 +78,10 @@ class RayWorker:
         return self.env.get_action_mask()
 
     def get_number_of_agents(self):
-        return self.env.get_number_of_agents()
+        if hasattr(self.env, 'get_number_of_agents'):
+            return self.env.get_number_of_agents()
+        else:
+            return 1
 
     def set_weights(self, weights):
         self.env.update_weights(weights)
@@ -94,9 +97,8 @@ class RayWorker:
         info['observation_space'] = observation_space
         info['state_space'] = None
         info['use_global_observations'] = False
-        info['agents'] = 1
-        if hasattr(self.env, 'get_number_of_agents'):
-            info['agents'] = self.env.get_number_of_agents()
+        info['agents'] = self.get_number_of_agents()
+
         if hasattr(self.env, 'use_central_value'):
             info['use_global_observations'] = self.env.use_central_value
 

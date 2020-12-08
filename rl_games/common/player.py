@@ -159,7 +159,7 @@ class BasePlayer(object):
   
                 if render:
                     self.env.render(mode = 'human')
-                    #time.sleep(0.05)
+                    time.sleep(0.05)
 
                 all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[::self.num_agents]
