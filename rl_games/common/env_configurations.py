@@ -1,6 +1,6 @@
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
-
+import rl_games.envs.test
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np

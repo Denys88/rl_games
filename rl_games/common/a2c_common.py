@@ -110,6 +110,7 @@ class A2CBase:
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
+
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
@@ -118,7 +119,7 @@ class A2CBase:
         self.epoch_num = 0
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.entropy_coef = self.config['entropy_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("%d, %H:%M:%S"))        
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         if self.normalize_reward:
             self.reward_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
@@ -141,6 +142,7 @@ class A2CBase:
 
         self.last_rnn_indices = None
         self.last_state_indices = None
+
         #self_play
         if self.has_self_play_config:
             print('Initializing SelfPlay Manager')
@@ -152,11 +154,13 @@ class A2CBase:
                 if len(infos) <= ind//self.num_agents:
                     continue
                 info = infos[ind//self.num_agents]
-                game_res = None 
+                game_res = None
+
                 if 'battle_won' in info:
                     game_res = info['battle_won']
                 if 'scores' in info:
                     game_res = info['scores']
+
                 if game_res is not None:
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
 
@@ -512,7 +516,7 @@ class DiscreteA2CBase(A2CBase):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-      
+
             self.process_rnn_dones(all_done_indices, indices, seq_indices)  
             if self.has_central_value:
                 self.central_value_net.post_step_rnn(all_done_indices)
@@ -526,8 +530,16 @@ class DiscreteA2CBase(A2CBase):
             self.game_lengths.update(self.current_lengths[done_indices]) 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-        
-        last_values = self.get_values(self.obs, actions)
+
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
+            else:
+                _, last_values, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
 
         mb_extrinsic_values = mb_values
@@ -607,29 +619,37 @@ class DiscreteA2CBase(A2CBase):
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
-            
+
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
-    
+
             mb_rewards[n,:] = shaped_rewards
-                
+
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-                     
+  
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-  
+
             self.parse_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
-  
+
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs, actions)
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
+            else:
+                _, last_values, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
 
         if self.has_curiosity:
@@ -676,12 +696,12 @@ class DiscreteA2CBase(A2CBase):
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
-                
+      
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
         self.prepare_dataset(batch_dict)
-        
+
         a_losses = []
         c_losses = []
         entropies = []
@@ -808,6 +828,7 @@ class DiscreteA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('scores/mean', mean_scores, frame)
+                    self.writer.add_scalar('scores/iter', mean_scores, epoch_num)
                     self.writer.add_scalar('scores/time', mean_scores, total_time)
 
                     if self.has_curiosity:
@@ -861,6 +882,7 @@ class ContinuousA2CBase(A2CBase):
         self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
         self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
         self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
+
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
@@ -917,7 +939,7 @@ class ContinuousA2CBase(A2CBase):
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             mb_rewards[indices, play_mask] = shaped_rewards
-                
+
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
@@ -935,7 +957,10 @@ class ContinuousA2CBase(A2CBase):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
         
-        last_values = self.get_values(self.obs)
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
         last_values = torch.squeeze(last_values)
 
         mb_extrinsic_values = mb_values
@@ -994,6 +1019,7 @@ class ContinuousA2CBase(A2CBase):
         mb_neglogpacs = self.mb_neglogpacs
         mb_mus = self.mb_mus
         mb_sigmas = self.mb_sigmas
+
         if self.has_curiosity:
             mb_intrinsic_rewards = self.mb_intrinsic_rewards
 
@@ -1031,25 +1057,28 @@ class ContinuousA2CBase(A2CBase):
             shaped_rewards = self.rewards_shaper(rewards)
             if self.normalize_reward:
                 shaped_rewards = self.reward_mean_std(shaped_rewards)
- 
+
             mb_rewards[n,:] = shaped_rewards
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-            
+
             self.current_rewards += rewards
             self.current_lengths += 1                    
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-            
             self.parse_infos(infos, done_indices)
             
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
-            
-        last_values = self.get_values(self.obs)
+
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
+        else:
+            last_values = self.get_values(self.obs)
+
         last_values = torch.squeeze(last_values)
 
         if self.has_curiosity:
@@ -1163,7 +1192,7 @@ class ContinuousA2CBase(A2CBase):
         sigmas = batch_dict['sigmas']
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
-        
+
         advantages = returns - values
 
         if self.normalize_advantage:
@@ -1211,6 +1240,7 @@ class ContinuousA2CBase(A2CBase):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
+
         while True:
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
@@ -1284,5 +1314,5 @@ class ContinuousA2CBase(A2CBase):
                     self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num
-                           
+
                 update_time = 0

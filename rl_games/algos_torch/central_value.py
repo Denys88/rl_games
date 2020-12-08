@@ -138,7 +138,7 @@ class CentralValueTrain(nn.Module):
 
         if self.use_joint_obs_actions:
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
-            actions = actions.view(self.num_actors, self.num_agents, self.num_steps).permute(0,2,1)
+            actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             actions = actions.contiguous().view(batch_size, self.num_agents)
         
         if self.is_rnn:

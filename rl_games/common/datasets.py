@@ -23,31 +23,27 @@ class PPODataset(Dataset):
         self.values_dict = values_dict
 
     def update_mu_sigma(self, mu, sigma):
-        if self.is_rnn:
-            self.values_dict['mu'][self.last_range] = mu
-            self.values_dict['sigma'][self.last_range] = sigma
-        else:
-            start = self.last_range[0]
-            end = self.last_range[1]
-            self.values_dict['mu'][start:end] = mu
-            self.values_dict['sigma'][start:end] = sigma            
+        start = self.last_range[0]
+        end = self.last_range[1]
+        self.values_dict['mu'][start:end] = mu
+        self.values_dict['sigma'][start:end] = sigma            
 
     def __len__(self):
         return self.length
 
     def _get_item_rnn(self, idx):
-        start = idx * self.num_games_batch
-        end = (idx + 1) * self.num_games_batch
-        mb_indexes = self.game_indexes[start:end]
-        self.last_range = mbatch = self.flat_indexes[mb_indexes].flatten()    
-
+        gstart = idx * self.num_games_batch
+        gend = (idx + 1) * self.num_games_batch
+        start = gstart * self.seq_len
+        end = gend * self.seq_len
+        self.last_range = (start, end)   
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:
-                input_dict[k] = v[mbatch]
+                input_dict[k] = v[start:end]
         
         rnn_states = self.values_dict['rnn_states']
-        input_dict['rnn_states'] = [s[:,mb_indexes,:] for s in rnn_states]
+        input_dict['rnn_states'] = [s[:,gstart:gend,:] for s in rnn_states]
         input_dict['learning_rate'] = self.values_dict.get('learning_rate')
 
         return input_dict
