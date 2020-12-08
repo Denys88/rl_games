@@ -404,7 +404,8 @@ class A2CBuilder(NetworkBuilder):
                         out = self.actor_mlp(out)
                     if type(states) is not tuple:
                         states = (states,)
-
+                else:
+                    out = self.actor_mlp(out)
                 value = self.value_act(self.value(out))
 
                 if self.central_value:
