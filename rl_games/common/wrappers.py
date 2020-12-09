@@ -636,7 +636,7 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=0, skip=4, sticky=False):
+def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
     return wrap_deepmind(env, clip_rewards=False)
 
