@@ -101,7 +101,8 @@ class A2CBase:
         self.games_to_track = self.config.get('games_to_track', 100)
         self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
-        self.game_scores = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)  
+        self.game_scores = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.consecutive_successes = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
         self.batch_size = self.steps_num * self.num_actors * self.num_agents
@@ -149,7 +150,18 @@ class A2CBase:
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
 
     def parse_infos(self, infos, done_indices):
-        if len(infos) > 0 and isinstance(infos[0], dict):
+        
+        if isinstance(infos, dict):
+            cons_successes = torch.zeros([1], dtype=float, device=self.ppo_device)
+
+            if 'consecutive_successes' in infos:
+                cons_successes[0] = infos['consecutive_successes'].clone()
+                #print(cons_successes)
+
+            if cons_successes is not None:
+                self.consecutive_successes.update(cons_successes.to(self.ppo_device))
+
+        elif len(infos) > 0 and isinstance(infos[0], dict):
             for ind in done_indices:
                 if len(infos) <= ind//self.num_agents:
                     continue
@@ -164,6 +176,7 @@ class A2CBase:
                 if game_res is not None:
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
 
+            
     def reset_envs(self):
         self.obs = self.env_reset()
 
@@ -323,6 +336,7 @@ class A2CBase:
         self.game_rewards.clear()
         self.game_lengths.clear()
         self.game_scores.clear()
+        self.consecutive_successes.clear()
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.last_mean_rewards = -100500
@@ -1276,6 +1290,8 @@ class ContinuousA2CBase(A2CBase):
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
                     mean_scores = self.game_scores.get_mean()
+                    mean_consecutive_successes = self.consecutive_successes.get_mean()
+
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
                     self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                     self.writer.add_scalar('rewards/time', mean_rewards, total_time)
@@ -1283,7 +1299,12 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                     self.writer.add_scalar('scores/frame', mean_scores, frame)
+                    self.writer.add_scalar('scores/iter', mean_scores, epoch_num)
                     self.writer.add_scalar('scores/time', mean_scores, total_time)
+
+                    self.writer.add_scalar('consecutive_successes/mean', mean_consecutive_successes, frame)
+                    self.writer.add_scalar('consecutive_successes/iter', mean_consecutive_successes, epoch_num)
+                    self.writer.add_scalar('consecutive_successes/time', mean_consecutive_successes, total_time)
 
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)

@@ -189,7 +189,6 @@ def get_mean(v):
     return mean
 
 
-
 class AverageMeter(nn.Module):
     def __init__(self, in_shape, max_size):
         super(AverageMeter, self).__init__()
@@ -201,6 +200,7 @@ class AverageMeter(nn.Module):
         size = values.size()[0]
         if size == 0:
             return
+
         new_mean = torch.mean(values.float())
         size = np.clip(size, 0, self.max_size)
         old_size = min(self.max_size - size, self.current_size)
