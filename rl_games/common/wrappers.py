@@ -586,7 +586,8 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
     env = gym.make(env_id)
-    env._max_episode_steps = 16000
+    print('env._max_episode_steps: ', env._max_episode_steps)
+    #env._max_episode_steps = 160000
     if 'Montezuma' in env_id:
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
@@ -604,7 +605,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     #env = EpisodeStackedEnv(env)
     return env
 
-def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=True, scale =False):
+def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
@@ -636,7 +637,7 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False):
+def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
-    return wrap_deepmind(env, clip_rewards=False)
+    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False)
 
