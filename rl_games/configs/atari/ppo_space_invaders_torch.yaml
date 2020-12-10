@@ -5,8 +5,8 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
-  load_path: 'nn/invader_lstm.pth'
+  load_checkpoint: False
+  load_path: 'nn/invader.pth'
 
   network:
     name: actor_critic
@@ -44,19 +44,16 @@ params:
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
-    rnn:
-      name: lstm
-      units: 256
-      layers: 1
   config:
     reward_shaper:
-        scale_value: 1
+      min_val: -1
+      max_val: 1
         
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
-    name: invader_lstm
+    name: invader
     score_to_win: 9000
     grad_norm: 0.5
     entropy_coef: 0.005
@@ -65,9 +62,9 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 16
-    steps_num: 256
-    minibatch_size: 1024
+    num_actors: 24
+    steps_num: 128
+    minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
