@@ -1151,18 +1151,21 @@ class ContinuousA2CBase(A2CBase):
             self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
 
         for _ in range(0, self.mini_epochs_num):
+            ep_kls = []
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
-                kls.append(kl)
+                ep_kls.append(kl)
                 entropies.append(entropy)
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
-
-        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(kl))
-        self.update_lr(self.last_lr)
+                    
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
+            self.update_lr(self.last_lr)
+            
+            kls.append(np.mean(ep_kls))
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
