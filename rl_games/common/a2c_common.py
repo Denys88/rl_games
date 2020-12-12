@@ -3,7 +3,7 @@ from rl_games.common import vecenv
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
-
+from rl_games.common import schedulers
 import numpy as np
 import collections
 import time
@@ -75,11 +75,16 @@ class A2CBase:
         self.name = base_name
 
         self.ppo = config['ppo']
-
+        self.max_epochs = self.config.get('max_epochs', 1e6)
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
-        self.is_polynom_decay_lr = config['lr_schedule'] == 'polynom_decay'
-        self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
-
+        self.linear_lr = config['lr_schedule'] == 'linear'
+        if self.is_adaptive_lr:
+            self.lr_threshold = config['lr_threshold']
+            self.scheduler = schedulers.AdaptiveScheduler(self.lr_threshold)
+        elif self.linear_lr:
+            self.scheduler = schedulers.LinearScheduler(config['learning_rate'], max_steps=self.max_epochs)
+        else:
+            self.scheduler = schedulers.IdentityScheduler()
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
@@ -117,7 +122,7 @@ class A2CBase:
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-        self.max_epochs = self.config.get('max_epochs', 1e6)
+        
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
@@ -135,8 +140,6 @@ class A2CBase:
             self.curiosity_maxs = deque([], maxlen=self.games_to_track)
             self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
 
-        if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
 
         self.is_tensor_obses = False
 
@@ -147,6 +150,10 @@ class A2CBase:
         if self.has_self_play_config:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
+    
+    def update_lr(self, lr):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
 
     def parse_infos(self, infos, done_indices):
         if len(infos) > 0 and isinstance(infos[0], dict):
@@ -710,23 +717,18 @@ class DiscreteA2CBase(A2CBase):
             self.train_central_value()
 
         if self.is_rnn:
-            print(rnn_masks.sum().item() / (rnn_masks.nelement()))
-            for _ in range(0, self.mini_epochs_num):
-                for i in range(len(self.dataset)):
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    kls.append(kl)
-                    entropies.append(entropy)    
-        else:
-            for _ in range(0, self.mini_epochs_num):
-                for i in range(len(self.dataset)):            
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    kls.append(kl)
-                    entropies.append(entropy)
+            print('non masked rnn obs ratio: ',rnn_masks.sum().item() / (rnn_masks.nelement()))
 
+        for _ in range(0, self.mini_epochs_num):
+            for i in range(len(self.dataset)):
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
+                a_losses.append(a_loss)
+                c_losses.append(c_loss)
+                kls.append(kl)
+                entropies.append(entropy)    
+
+        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
+        self.update_lr(self.last_lr)
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -764,7 +766,7 @@ class DiscreteA2CBase(A2CBase):
         dataset_dict['obs'] = obses
         dataset_dict['rnn_states'] = rnn_states
         dataset_dict['rnn_masks'] = rnn_masks
-        dataset_dict['learning_rate'] = self.last_lr
+        
         self.dataset.update_values_dict(dataset_dict)
 
         if self.has_central_value:
@@ -1147,32 +1149,20 @@ class ContinuousA2CBase(A2CBase):
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
             self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
-            total_games = self.batch_size // self.seq_len
-            num_games_batch = self.minibatch_size // self.seq_len
-            game_indexes = torch.arange(total_games, dtype=torch.long, device='cuda:0')
-            flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device='cuda:0').reshape(total_games, self.seq_len)
 
-            for _ in range(0, self.mini_epochs_num):
-                for i in range(len(self.dataset)):
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    kls.append(kl)
-                    entropies.append(entropy)
-                    self.dataset.update_mu_sigma(cmu, csigma)
-                    if self.bounds_loss_coef is not None:
-                        b_losses.append(b_loss)
-        else:
-            for _ in range(0, self.mini_epochs_num):
-                for i in range(len(self.dataset)):
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    kls.append(kl)
-                    entropies.append(entropy)
-                    self.dataset.update_mu_sigma(cmu, csigma)
-                    if self.bounds_loss_coef is not None:
-                        b_losses.append(b_loss) 
+        for _ in range(0, self.mini_epochs_num):
+            for i in range(len(self.dataset)):
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
+                a_losses.append(a_loss)
+                c_losses.append(c_loss)
+                kls.append(kl)
+                entropies.append(entropy)
+                self.dataset.update_mu_sigma(cmu, csigma)
+                if self.bounds_loss_coef is not None:
+                    b_losses.append(b_loss)
+
+        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
+        self.update_lr(self.last_lr)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -1215,7 +1205,6 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['obs'] = obses
         dataset_dict['rnn_states'] = rnn_states
         dataset_dict['rnn_masks'] = rnn_masks
-        dataset_dict['learning_rate'] = self.last_lr
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
 
