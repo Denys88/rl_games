@@ -25,11 +25,10 @@ class AdaptiveScheduler(RLScheduler):
 
     def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
         lr = current_lr
-        if kl_dist > (2.0 * current_lr):
+        if kl_dist > (2.0 * self.kl_threshold):
             lr = max(current_lr / 1.5, self.min_lr)
-        if kl_dist < (0.5 * current_lr):
+        if kl_dist < (0.5 * self.kl_threshold):
             lr = min(current_lr * 1.5, self.max_lr)
-
         return lr, entropy_coef         
 
 

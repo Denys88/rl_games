@@ -727,7 +727,7 @@ class DiscreteA2CBase(A2CBase):
                 kls.append(kl)
                 entropies.append(entropy)    
 
-        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
+        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kls)
         self.update_lr(self.last_lr)
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
