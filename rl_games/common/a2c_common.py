@@ -152,14 +152,12 @@ class A2CBase:
     def parse_infos(self, infos, done_indices):
         
         if isinstance(infos, dict):
-            cons_successes = torch.zeros([1], dtype=float, device=self.ppo_device)
-
-            if 'consecutive_successes' in infos:
-                cons_successes[0] = infos['consecutive_successes'].clone()
+            if 'successes' in infos:
+                #cons_successes = infos['consecutive_successes'].clone()
                 #print(cons_successes)
-
-            if cons_successes is not None:
-                self.consecutive_successes.update(cons_successes.to(self.ppo_device))
+                #self.consecutive_successes.update(cons_successes.to(self.ppo_device))
+                successes = infos['successes'].clone()
+                self.consecutive_successes.update(successes[done_indices].to(self.ppo_device))
 
         elif len(infos) > 0 and isinstance(infos[0], dict):
             for ind in done_indices:
