@@ -12,7 +12,7 @@ class IdentityScheduler(RLScheduler):
         super().__init__()
 
      
-    def update(self,current_lr, entropy_coef, epoch, frames, **kwargs):
+    def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
         return current_lr, entropy_coef  
 
 
@@ -41,16 +41,16 @@ class LinearScheduler(RLScheduler):
         self.use_epochs = use_epochs
         self.apply_to_entropy = apply_to_entropy
         if apply_to_entropy:
-            self.start_entropy_coef = kwargs.pop('start_entropy_coef')
-            self.min_entropy_coef = kwargs.pop('min_entropy_coef')
+            self.start_entropy_coef = kwargs.pop('start_entropy_coef', 0.01)
+            self.min_entropy_coef = kwargs.pop('min_entropy_coef', 0.0001)
 
     def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
         if self.use_epochs:
             steps = epoch
         else:
             steps = frames
-        mul = max(0, self.max_steps - steps)
+        mul = max(0, self.max_steps - steps)/self.max_steps 
         lr = self.min_lr + (self.start_lr - self.min_lr) * mul
         if self.apply_to_entropy:
-            lr = self.min_entropy_coef + (self.start_entropy_coef - self.min_entropy_coef) * mul
+            entropy_coef = self.min_entropy_coef + (self.start_entropy_coef - self.min_entropy_coef) * mul
         return lr, entropy_coef     

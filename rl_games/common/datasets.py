@@ -21,13 +21,7 @@ class PPODataset(Dataset):
         self.special_names = ['rnn_states']
 
     def update_values_dict(self, values_dict):
-        self.values_dict = values_dict
-
-    def update_mu_sigma(self, mu, sigma):
-        start = self.last_range[0]
-        end = self.last_range[1]
-        #self.values_dict['mu'][start:end] = mu
-        #self.values_dict['sigma'][start:end] = sigma            
+        self.values_dict = values_dict     
 
     def __len__(self):
         return self.length
