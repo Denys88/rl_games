@@ -50,16 +50,17 @@ params:
       layers: 1
   config:
     reward_shaper:
-        scale_value: 1
+      min_val: -1
+      max_val: 1
         
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 0.001
+    learning_rate: 0.0005
     name: pacman_lstm
-    score_to_win: 900
+    score_to_win: 100000
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.01
     truncate_grads: True
     env_name: MsPacmanNoFrameskip-v4
     ppo: true
