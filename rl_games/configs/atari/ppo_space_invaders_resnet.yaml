@@ -1,0 +1,78 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  load_checkpoint: True
+  load_path: 'nn/invaders_resnet.pth'
+
+
+  network:
+    name: resnet_actor_critic
+    separate: False
+    value_shape: 1
+    space: 
+      discrete:
+    
+    cnn:
+      conv_depths: [16, 32, 32]
+      activation: elu
+      normalization: 'batch_norm'
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2
+      regularizer:
+        name: 'None'
+      
+    mlp:
+      units: [512]
+      activation: elu
+      regularizer:
+        name: 'None'
+      initializer:
+        name: variance_scaling_initializer
+        scale: 2 
+    rnn:
+      name: lstm
+      units: 256
+      layers: 1
+  config:
+    reward_shaper:
+      min_val: -1
+      max_val: 1
+        
+    normalize_advantage: True
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3e-4
+    name: invaders_resnet
+    score_to_win: 100000
+    grad_norm: 1.5
+    entropy_coef: 0.005
+    truncate_grads: True
+    env_name: 'atari_gym' #'openai_gym' #'PongNoFrameskip-v4' #
+    ppo: true
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 16
+    steps_num: 256
+    minibatch_size: 2048
+    mini_epochs: 3
+    critic_coef: 1
+    lr_schedule:  none
+    lr_threshold: 0.01
+    normalize_input: False
+    seq_length: 4
+    max_epochs: 200000
+
+    env_config:
+      skip: 3
+      name: 'SpaceInvadersNoFrameskip-v4'
+
+    player:
+        render: True
+        games_num: 10
+        n_game_life: 3
+        is_determenistic: True

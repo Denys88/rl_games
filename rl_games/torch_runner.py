@@ -3,6 +3,7 @@ import copy
 import torch
 import yaml
 import ray
+import signal
 from rl_games import envs
 from rl_games.common import object_factory
 from rl_games.common import env_configurations
@@ -15,7 +16,9 @@ from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 
-
+def exit_gracefully(signum, frame):
+    ray.shutdown()
+    
 class Runner:
     def __init__(self):
         self.algo_factory = object_factory.ObjectFactory()
@@ -85,6 +88,7 @@ class Runner:
     def run_train(self):
         print('Started to train')
         ray.init(object_store_memory=1024*1024*1000)
+        signal.signal(signal.SIGINT, exit_gracefully)
         if self.exp_config:
             self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0

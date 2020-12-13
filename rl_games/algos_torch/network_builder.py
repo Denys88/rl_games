@@ -716,6 +716,7 @@ class ImpalaSequential(nn.Module):
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.res_block1 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
         self.res_block2 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
+    
     def forward(self, x):
         x = self.conv(x)
         x = self.max_pool(x)
@@ -811,7 +812,6 @@ class A2CResnetBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
-
             out = obs
             out = self.cnn(out)
             out = out.flatten(1)         
@@ -858,7 +858,6 @@ class A2CResnetBuilder(NetworkBuilder):
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
-            self.regularizer = params['mlp']['regularizer']
             self.is_discrete = 'discrete' in params['space']
             self.is_continuous = 'continuous'in params['space']
             self.value_activation = params.get('value_activation', 'None')
@@ -885,7 +884,7 @@ class A2CResnetBuilder(NetworkBuilder):
             for d in depths:
                 layers.append(ImpalaSequential(in_channels, d))
                 in_channels = d
-            return layers
+            return nn.Sequential(*layers)
 
         def is_separate_critic(self):
             return False
