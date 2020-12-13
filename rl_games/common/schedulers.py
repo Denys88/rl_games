@@ -33,7 +33,7 @@ class AdaptiveScheduler(RLScheduler):
 
 
 class LinearScheduler(RLScheduler):
-    def __init__(self, start_lr, min_lr=1e-6, max_steps = 1000000, use_epochs=True, apply_to_entropy=True, **kwargs):
+    def __init__(self, start_lr, min_lr=1e-6, max_steps = 1000000, use_epochs=True, apply_to_entropy=False, **kwargs):
         super().__init__()
         self.start_lr = start_lr
         self.min_lr = min_lr

@@ -78,11 +78,14 @@ class A2CBase:
         self.max_epochs = self.config.get('max_epochs', 1e6)
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
+        self.schedule_type = config.get('schedule_type', 'legacy')
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
             self.scheduler = schedulers.AdaptiveScheduler(self.lr_threshold)
         elif self.linear_lr:
-            self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), max_steps=self.max_epochs)
+            self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
+                max_steps=self.max_epochs, 
+                apply_to_entropy=config.get('schedule_entropy', False))
         else:
             self.scheduler = schedulers.IdentityScheduler()
         self.e_clip = config['e_clip']
@@ -727,7 +730,7 @@ class DiscreteA2CBase(A2CBase):
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)    
-
+                
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
             self.update_lr(self.last_lr)
             kls.append(np.mean(ep_kls))
@@ -1161,12 +1164,19 @@ class ContinuousA2CBase(A2CBase):
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
+                
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
-                    
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
-            self.update_lr(self.last_lr)
-            
+
+                if self.schedule_type == 'legacy':
+                    self.dataset.update_mu_sigma(cmu, csigma)    
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+                    self.update_lr(self.last_lr)
+
+            if self.schedule_type == 'standard':
+                self.dataset.update_mu_sigma(cmu, csigma)    
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+                self.update_lr(self.last_lr)
             kls.append(np.mean(ep_kls))
 
         update_time_end = time.time()
