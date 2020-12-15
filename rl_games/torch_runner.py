@@ -15,12 +15,15 @@ from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
+from rl_games.common.algo_observer import DefaultAlgoObserver
+
 
 def exit_gracefully(signum, frame):
     ray.shutdown()
-    
+
+
 class Runner:
-    def __init__(self):
+    def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
@@ -33,6 +36,8 @@ class Runner:
 
         self.model_builder = model_builder.ModelBuilder()
         self.network_builder = network_builder.NetworkBuilder()
+
+        self.algo_observer = algo_observer
         
         torch.backends.cudnn.benchmark = True
 
@@ -87,10 +92,13 @@ class Runner:
 
     def run_train(self):
         print('Started to train')
+        if self.algo_observer is None:
+            self.algo_observer = DefaultAlgoObserver()
+
         ray.init(object_store_memory=1024*1024*1000)
         signal.signal(signal.SIGINT, exit_gracefully)
         if self.exp_config:
-            self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
+            self.experiment = experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
             exp = self.experiment.get_next_config()
             while exp is not None:
@@ -98,12 +106,18 @@ class Runner:
                 print('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
+                self.config['features'] = {
+                        'observer' : self.algo_observer
+                    }
                 agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
                 self.experiment.set_results(*agent.train())
                 exp = self.experiment.get_next_config()
         else:
             self.reset()
             self.load_config(self.default_config)
+            self.config['features'] = {
+                'observer' : self.algo_observer
+            }
             agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
             if self.load_check_point and (self.load_path is not None):
                 agent.restore(self.load_path)

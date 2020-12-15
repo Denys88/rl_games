@@ -37,7 +37,7 @@ params:
           padding: 0
       
     mlp:
-      units: [512]
+      units: [256]
       activation: relu
       regularizer:
         name: 'None'
@@ -45,21 +45,23 @@ params:
         name: glorot_normal_initializer
         gain: 1.4142 
     rnn:
+      before_mlp: True
       name: lstm
-      units: 256
+      units: 512
       layers: 1
   config:
     reward_shaper:
-        scale_value: 1
+      min_val: -1
+      max_val: 1
         
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 0.0005
     name: pacman_lstm
-    score_to_win: 900
+    score_to_win: 100000
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.01
     truncate_grads: True
     env_name: MsPacmanNoFrameskip-v4
     ppo: true
@@ -70,14 +72,11 @@ params:
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.008
+    lr_schedule:  linear
+    #lr_threshold: 0.004
     normalize_input: False
     seq_length: 8
-    #lr_schedule:  adaptive
-    # lr_threshold: 0.008
-    # bounds_loss_coef: 0.5
-    # max_epochs: 5000
+    max_epochs: 25000
 
     player:
         render: True

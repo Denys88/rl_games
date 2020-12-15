@@ -1,4 +1,8 @@
 
+
+'''
+TODO: move play_steps here
+'''
 class Rollout:
     def __init__(self, gamma):
         self.gamma = gamma

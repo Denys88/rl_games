@@ -47,7 +47,8 @@ params:
 
   config:
     reward_shaper:
-        scale_value: 1
+      min_val: -1
+      max_val: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -61,13 +62,13 @@ params:
     env_name: MsPacmanNoFrameskip-v4
     ppo: true
     e_clip: 0.2
-    clip_value: True
+    clip_value: False
     num_actors: 16
     steps_num: 256
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule:  adaptive
     lr_threshold: 0.008
     normalize_input: False
 

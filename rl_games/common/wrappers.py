@@ -586,8 +586,6 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
     env = gym.make(env_id)
-    print('env._max_episode_steps: ', env._max_episode_steps)
-    #env._max_episode_steps = 160000
     if 'Montezuma' in env_id:
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)

@@ -18,8 +18,7 @@ params:
     
     cnn:
       conv_depths: [16, 32, 32]
-      activation: elu
-      normalization: 'batch_norm'
+      activation: relu
       initializer:
         name: variance_scaling_initializer
         scale: 2
@@ -28,7 +27,7 @@ params:
       
     mlp:
       units: [512]
-      activation: elu
+      activation: relu
       regularizer:
         name: 'None'
       initializer:
@@ -59,7 +58,7 @@ params:
     num_actors: 16
     steps_num: 256
     minibatch_size: 2048
-    mini_epochs: 1
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  none
     lr_threshold: 0.01
