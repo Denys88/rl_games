@@ -102,6 +102,7 @@ class A2CBase:
         self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.game_scores = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.successes = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.consecutive_successes = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
@@ -152,12 +153,13 @@ class A2CBase:
     def parse_infos(self, infos, done_indices):
         
         if isinstance(infos, dict):
-            if 'successes' in infos:
-                #cons_successes = infos['consecutive_successes'].clone()
+            if 'consecutive_successes' in infos:
+                cons_successes = infos['consecutive_successes'].clone()
                 #print(cons_successes)
-                #self.consecutive_successes.update(cons_successes.to(self.ppo_device))
+                self.consecutive_successes.update(cons_successes.to(self.ppo_device))
+            if 'successes' in infos:
                 successes = infos['successes'].clone()
-                self.consecutive_successes.update(successes[done_indices].to(self.ppo_device))
+                self.successes.update(successes[done_indices].to(self.ppo_device))
 
         elif len(infos) > 0 and isinstance(infos[0], dict):
             for ind in done_indices:
@@ -334,6 +336,7 @@ class A2CBase:
         self.game_rewards.clear()
         self.game_lengths.clear()
         self.game_scores.clear()
+        self.successes.clear()
         self.consecutive_successes.clear()
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
@@ -1288,6 +1291,7 @@ class ContinuousA2CBase(A2CBase):
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
                     mean_scores = self.game_scores.get_mean()
+                    mean_successes = self.successes.get_mean()
                     mean_consecutive_successes = self.consecutive_successes.get_mean()
 
                     self.writer.add_scalar('rewards/frame', mean_rewards, frame)
@@ -1300,9 +1304,13 @@ class ContinuousA2CBase(A2CBase):
                     self.writer.add_scalar('scores/iter', mean_scores, epoch_num)
                     self.writer.add_scalar('scores/time', mean_scores, total_time)
 
-                    self.writer.add_scalar('consecutive_successes/mean', mean_consecutive_successes, frame)
-                    self.writer.add_scalar('consecutive_successes/iter', mean_consecutive_successes, epoch_num)
-                    self.writer.add_scalar('consecutive_successes/time', mean_consecutive_successes, total_time)
+                    # self.writer.add_scalar('successes/consecutive_successes_old/mean', mean_successes, frame)
+                    # self.writer.add_scalar('successes/consecutive_successes_old/iter', mean_successes, epoch_num)
+                    # self.writer.add_scalar('successes/consecutive_successes_old/time', mean_successes, total_time)
+
+                    self.writer.add_scalar('successes/consecutive_successes/mean', mean_consecutive_successes, frame)
+                    self.writer.add_scalar('successes/consecutive_successes/iter', mean_consecutive_successes, epoch_num)
+                    self.writer.add_scalar('successes/consecutive_successes/time', mean_consecutive_successes, total_time)
 
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
