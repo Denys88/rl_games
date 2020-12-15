@@ -15,7 +15,7 @@ from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
-
+from rl_games.common.algo_observer import DefaultAlgoObserver
 def exit_gracefully(signum, frame):
     ray.shutdown()
     
@@ -85,12 +85,17 @@ class Runner:
     def get_prebuilt_config(self):
         return self.config
 
-    def run_train(self):
+    def run_train(self, algo_observer=None):
         print('Started to train')
+        if algo_observer is None:
+            algo_observer = DefaultAlgoObserver()
+        
+
+
         ray.init(object_store_memory=1024*1024*1000)
         signal.signal(signal.SIGINT, exit_gracefully)
         if self.exp_config:
-            self.experiment =  experiment.Experiment(self.default_config, self.exp_config)
+            self.experiment = experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
             exp = self.experiment.get_next_config()
             while exp is not None:
@@ -98,12 +103,18 @@ class Runner:
                 print('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
+                self.config['features'] = {
+                        'observer' : algo_observer
+                    }
                 agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
                 self.experiment.set_results(*agent.train())
                 exp = self.experiment.get_next_config()
         else:
             self.reset()
             self.load_config(self.default_config)
+            self.config['features'] = {
+                'observer' : algo_observer
+            }
             agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
             if self.load_check_point and (self.load_path is not None):
                 agent.restore(self.load_path)

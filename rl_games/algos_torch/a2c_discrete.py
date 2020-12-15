@@ -43,7 +43,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
-
+        self.algo_observer.after_init(self)
 
     def set_eval(self):
         self.model.eval()

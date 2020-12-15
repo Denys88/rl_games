@@ -42,6 +42,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+        self.algo_observer.after_init(self)
 
     def update_epoch(self):
         self.epoch_num += 1

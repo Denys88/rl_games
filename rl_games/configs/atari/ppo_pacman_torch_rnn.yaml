@@ -37,7 +37,7 @@ params:
           padding: 0
       
     mlp:
-      units: [512]
+      units: [256]
       activation: relu
       regularizer:
         name: 'None'
@@ -45,8 +45,9 @@ params:
         name: glorot_normal_initializer
         gain: 1.4142 
     rnn:
+      before_mlp: True
       name: lstm
-      units: 256
+      units: 512
       layers: 1
   config:
     reward_shaper:
