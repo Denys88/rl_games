@@ -61,3 +61,6 @@ params:
       normalize_input: True
       seq_length: 8
       bounds_loss_coef: 0
+
+      player:
+        render: True

@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import time
 
+
 class BasePlayer(object):
     def __init__(self, config):
         self.config = config

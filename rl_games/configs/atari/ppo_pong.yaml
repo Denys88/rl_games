@@ -64,7 +64,7 @@ params:
     minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule:  adaptive
     lr_threshold: 0.008
     normalize_input: False
 
