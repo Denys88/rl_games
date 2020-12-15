@@ -176,7 +176,6 @@ class A2CBase:
                 if game_res is not None:
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.ppo_device))
 
-            
     def reset_envs(self):
         self.obs = self.env_reset()
 
