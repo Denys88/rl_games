@@ -16,11 +16,14 @@ from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
+
+
 def exit_gracefully(signum, frame):
     ray.shutdown()
-    
+
+
 class Runner:
-    def __init__(self):
+    def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
@@ -33,6 +36,8 @@ class Runner:
 
         self.model_builder = model_builder.ModelBuilder()
         self.network_builder = network_builder.NetworkBuilder()
+
+        self.algo_observer = algo_observer
         
         torch.backends.cudnn.benchmark = True
 
@@ -85,12 +90,10 @@ class Runner:
     def get_prebuilt_config(self):
         return self.config
 
-    def run_train(self, algo_observer=None):
+    def run_train(self):
         print('Started to train')
-        if algo_observer is None:
-            algo_observer = DefaultAlgoObserver()
-        
-
+        if self.algo_observer is None:
+            self.algo_observer = DefaultAlgoObserver()
 
         ray.init(object_store_memory=1024*1024*1000)
         signal.signal(signal.SIGINT, exit_gracefully)
@@ -104,7 +107,7 @@ class Runner:
                 self.reset()
                 self.load_config(exp)
                 self.config['features'] = {
-                        'observer' : algo_observer
+                        'observer' : self.algo_observer
                     }
                 agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
                 self.experiment.set_results(*agent.train())
@@ -113,7 +116,7 @@ class Runner:
             self.reset()
             self.load_config(self.default_config)
             self.config['features'] = {
-                'observer' : algo_observer
+                'observer' : self.algo_observer
             }
             agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
             if self.load_check_point and (self.load_path is not None):

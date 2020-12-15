@@ -2,6 +2,7 @@ from rl_games.algos_torch import torch_ext
 import torch
 import numpy as np
 
+
 class AlgoObserver():
     def __init__(self):
         pass
@@ -17,7 +18,6 @@ class AlgoObserver():
 
     def after_print_stats(self):
         pass
-
 
 
 class DefaultAlgoObserver(AlgoObserver):
