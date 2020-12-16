@@ -153,7 +153,7 @@ class CentralValueTrain(nn.Module):
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
-        self.writter.add_scalar('cval/train_loss', avg_loss, self.frame)
+        self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
         self.frame += self.batch_size
         return avg_loss
 

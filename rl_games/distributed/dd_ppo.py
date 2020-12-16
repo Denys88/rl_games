@@ -83,9 +83,10 @@ class DDPpoRunner:
             fps_step = self.batch_size / play_time
             fps_total = self.batch_size / sum_time
             print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
+
         self.writer.add_scalar('performance/total_fps', self.batch_size / sum_time, self.frame)
         self.writer.add_scalar('performance/step_fps', self.batch_size / play_time, self.frame)
-        self.writer.add_scalar('performance/upd_time', update_time, self.frame)
+        self.writer.add_scalar('performance/update_time', update_time, self.frame)
         self.writer.add_scalar('performance/play_time', play_time, self.frame)
         self.writer.add_scalar('losses/a_loss', stats['a_loss'], self.frame)
         self.writer.add_scalar('losses/c_loss', stats['c_loss'], self.frame)
@@ -94,12 +95,11 @@ class DDPpoRunner:
         #self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         #self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, self.frame)
         self.writer.add_scalar('info/kl',stats['kl_dist'], self.frame)
-        self.writer.add_scalar('epochs', self.epoch_num, self.frame)
+        self.writer.add_scalar('info/epochs', self.epoch_num, self.frame)
 
         if self.main_agent.has_central_value:
-            self.writer.add_scalar('cval/loss',stats['assymetric_value_loss'], self.frame)
-            
-            
+            self.writer.add_scalar('losses/cval_loss', stats['assymetric_value_loss'], self.frame)
+
         self.writer.add_scalar('rewards/frame', stats['mean_rewards'], self.frame)
         self.writer.add_scalar('rewards/iter', stats['mean_rewards'], self.epoch_num)
         self.writer.add_scalar('rewards/time', stats['mean_rewards'], self.total_time)

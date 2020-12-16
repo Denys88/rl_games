@@ -803,7 +803,7 @@ class DiscreteA2CBase(A2CBase):
 
                 self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
                 self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
-                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
@@ -812,7 +812,7 @@ class DiscreteA2CBase(A2CBase):
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
-                self.writer.add_scalar('epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
@@ -1252,7 +1252,7 @@ class ContinuousA2CBase(A2CBase):
 
                 self.writer.add_scalar('performance/total_fps', self.curr_frames / scaled_time, frame)
                 self.writer.add_scalar('performance/step_fps', self.curr_frames / scaled_play_time, frame)
-                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
@@ -1264,7 +1264,7 @@ class ContinuousA2CBase(A2CBase):
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
-                self.writer.add_scalar('epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
                 

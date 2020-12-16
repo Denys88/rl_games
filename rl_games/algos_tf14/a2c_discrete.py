@@ -407,7 +407,7 @@ class A2CAgent:
                 scaled_time = self.num_agents * sum_time
                 print('frames per seconds: ', batch_size / scaled_time)
                 self.writer.add_scalar('performance/fps', batch_size / scaled_time, frame)
-                self.writer.add_scalar('performance/upd_time', update_time, frame)
+                self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
@@ -416,7 +416,7 @@ class A2CAgent:
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
-                self.writer.add_scalar('epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)
