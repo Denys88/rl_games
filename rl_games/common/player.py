@@ -30,6 +30,7 @@ class BasePlayer(object):
         self.games_num = self.player_config.get('games_num', 2000)
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
+        self.print_stats = self.player_config.get('print_stats', True)
         self.device = torch.device(self.device_name)
 
     def _preproc_obs(self, obs_batch):
@@ -148,6 +149,8 @@ class BasePlayer(object):
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
 
+            print_game_res = False
+
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
@@ -166,6 +169,7 @@ class BasePlayer(object):
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
                 games_played += done_count
+
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
@@ -181,11 +185,22 @@ class BasePlayer(object):
 
                     game_res = 0.0
                     if isinstance(info, dict):
+                        if 'battle_won' in info:
+                            print_game_res = True
                         game_res = info.get('battle_won', 0.5)
-                    print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count, 'w:', game_res)
+
+                    if self.print_stats:
+                        if print_game_res:
+                            print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count, 'w:', game_res)
+                        else:
+                            print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count)
+
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
                         break
 
         print(sum_rewards)
-        print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
+        if print_game_res:
+            print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
+        else:
+            print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life)
