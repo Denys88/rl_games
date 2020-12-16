@@ -449,21 +449,26 @@ class A2CAgent:
                     fps_step = batch_size / scaled_play_time
                     fps_total = batch_size / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-  
+
+                # performance
                 self.writer.add_scalar('performance/total_fps', batch_size / sum_time, frame)
                 self.writer.add_scalar('performance/step_fps', batch_size / play_time, frame)
-                self.writer.add_scalar('performance/upd_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
+                self.writer.add_scalar('performance/update_time', update_time, frame)
+
+                # losses
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
                 self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
                 if len(b_losses) > 0:
                     self.writer.add_scalar('losses/bounds_loss', np.mean(b_losses), frame)
                 self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
+
+                # info
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
-                self.writer.add_scalar('epochs', epoch_num, frame)
+                self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 if len(self.game_rewards) > 0:
                     mean_rewards = np.mean(self.game_rewards)

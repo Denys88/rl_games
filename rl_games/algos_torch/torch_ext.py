@@ -33,7 +33,7 @@ def save_scheckpoint(filename, state):
     torch.save(state, filename + '.pth')
 
 def load_checkpoint(filename):
-    print("=> loading checkpoint '{}'".format(filename + '.pth'))
+    print("=> loading checkpoint '{}'".format(filename))
     state = torch.load(filename)
     return state
 
