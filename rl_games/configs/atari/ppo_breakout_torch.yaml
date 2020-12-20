@@ -65,6 +65,7 @@ params:
     critic_coef: 1
     lr_schedule:  adaptive
     lr_threshold: 0.008
+    
     normalize_input: False
     max_epochs: 20000
 

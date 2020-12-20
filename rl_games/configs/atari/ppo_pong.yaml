@@ -52,8 +52,8 @@ params:
     learning_rate: 5e-4
     name: PongNoFrameskip
     score_to_win: 20
-    grad_norm: 1
-    entropy_coef: 0.005
+    grad_norm: 10
+    entropy_coef: 0.01
     truncate_grads: True
     env_name:  PongNoFrameskip-v4
     ppo: true
@@ -64,10 +64,11 @@ params:
     minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  adaptive
-    lr_threshold: 0.008
+    lr_schedule:  none
+    #lr_threshold: 0.008
+    #schedule_entropy : True
     normalize_input: False
-
+    max_epochs: 1000
     player:
       render: True
       games_num: 100

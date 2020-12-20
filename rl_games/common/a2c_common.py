@@ -85,7 +85,8 @@ class A2CBase:
         elif self.linear_lr:
             self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
                 max_steps=self.max_epochs, 
-                apply_to_entropy=config.get('schedule_entropy', False))
+                apply_to_entropy=config.get('schedule_entropy', False),
+                start_entropy_coef=config.get('entropy_coef'))
         else:
             self.scheduler = schedulers.IdentityScheduler()
         self.e_clip = config['e_clip']

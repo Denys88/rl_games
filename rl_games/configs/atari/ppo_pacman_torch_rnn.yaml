@@ -73,6 +73,7 @@ params:
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  linear
+    schedule_entropy : True
     #lr_threshold: 0.004
     normalize_input: False
     seq_length: 8
