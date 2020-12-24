@@ -152,7 +152,7 @@ class ModelA2CContinuousLogStd(BaseModel):
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
-                #prev_neglogp2 = -distr.log_prob(prev_actions).sum(dim=-1)
+                #prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
                 #print(((prev_neglogp - prev_neglogp2)**2).sum())
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),

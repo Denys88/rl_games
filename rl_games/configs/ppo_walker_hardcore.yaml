@@ -22,7 +22,7 @@ params:
     mlp:
       units: [256,128]
       d2rl: False
-      activation: relu
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2         
@@ -56,7 +56,7 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 1024
+      steps_num: 2048
       minibatch_size: 4096
       mini_epochs: 4
       critic_coef: 1
@@ -69,6 +69,6 @@ params:
       max_epochs: 100000
 
       player:
-        render: True
-        games_num: 200
+        render: False
+        games_num: 50
 

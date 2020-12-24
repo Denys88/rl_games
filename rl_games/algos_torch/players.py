@@ -49,7 +49,10 @@ class PpoPlayerContinuous(BasePlayer):
             'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, mu, sigma, self.states = self.model(input_dict)
+            res_dict = self.model(input_dict)
+        mu = res_dict['mu']
+        action = res_dict['action']
+        self.states = res_dict['rnn_state']
         if is_determenistic:
             current_action = mu
         else:
@@ -105,7 +108,9 @@ class PpoPlayerDiscrete(BasePlayer):
 
         with torch.no_grad():
             neglogp, value, action, logits, self.states = self.model(input_dict)
-
+        logits = res_dict['logits']
+        action = res_dict['action']
+        self.states = res_dict['rnn_states']
         if is_determenistic:
             return torch.argmax(logits.squeeze().detach(), axis=-1)
         else:    
@@ -123,8 +128,10 @@ class PpoPlayerDiscrete(BasePlayer):
             'rnn_states' : self.states
         }
         with torch.no_grad():
-            neglogp, value, action, logits, self.states = self.model(input_dict)
-        
+            res_dict = self.model(input_dict)
+        logits = res_dict['logits']
+        action = res_dict['action']
+        self.states = res_dict['rnn_state']
         if is_determenistic:
             return torch.argmax(logits.detach(), axis=1).squeeze()
         else:    
