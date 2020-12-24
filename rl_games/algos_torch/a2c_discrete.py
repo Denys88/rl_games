@@ -80,7 +80,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
 
         with torch.no_grad():
-            neglogp, value, action, logits, rnn_states = self.model(input_dict)
+            res_dict = self.model(input_dict)
             if self.has_central_value:
                 input_dict = {
                     'is_train': False,
@@ -88,56 +88,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
-   
-        return action.detach(), value.detach(), neglogp.detach(), logits.detach(), rnn_states
-
-    def get_action_values(self, obs):
-        processed_obs = self._preproc_obs(obs['obs'])
-        self.model.eval()
-        input_dict = {
-            'is_train': False,
-            'prev_actions': None, 
-            'obs' : processed_obs,
-            'rnn_states' : self.rnn_states
-        }
-
-        with torch.no_grad():
-            neglogp, value, action, logits, rnn_states = self.model(input_dict)
-            if self.has_central_value:
-                states = obs['states']
-                input_dict = {
-                    'is_train': False,
-                    'states' : states,
-                    'actions' : action,
-                    #'rnn_states' : self.rnn_states
-                }
-                value = self.get_central_value(input_dict)
-
-        return action.detach(), value.detach(), neglogp.detach(), rnn_states
-
-    def get_values(self, obs):
-        if self.has_central_value:
-            states = obs['states']
-            self.central_value_net.eval()
-            input_dict = {
-                'is_train': False,
-                'states' : states,
-                'actions' : None,
-                'is_done': self.dones,
-            }
-            return self.get_central_value(input_dict).detach()
-        else:
-            self.model.eval()
-            processed_obs = self._preproc_obs(obs['obs'])
-            input_dict = {
-                'is_train': False,
-                'prev_actions': None, 
-                'obs' : processed_obs,
-                'rnn_states' : self.rnn_states
-            }
-            with torch.no_grad():
-                _, value, _, _, _ = self.model(input_dict)
-            return value.detach()
+                res_dict['value'] = value
+        return res_dict
 
     def train_actor_critic(self, input_dict, opt_step = True):
         self.set_train()
@@ -173,8 +125,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-        action_log_probs, values, entropy, _ = self.model(batch_dict)
-
+        res_dict = self.model(batch_dict)
+        action_log_probs = res_dict['prev_neglogp']
+        values = res_dict['value']
+        entropy = res_dict['entropy']
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.has_central_value:

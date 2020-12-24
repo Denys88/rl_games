@@ -161,7 +161,54 @@ class A2CBase:
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
+    def get_action_values(self, obs):
+        processed_obs = self._preproc_obs(obs['obs'])
+        self.model.eval()
+        input_dict = {
+            'is_train': False,
+            'prev_actions': None, 
+            'obs' : processed_obs,
+            'rnn_states' : self.rnn_states
+        }
 
+        with torch.no_grad():
+            res_dict = self.model(input_dict)
+            if self.has_central_value:
+                states = obs['states']
+                input_dict = {
+                    'is_train': False,
+                    'states' : states,
+                    'actions' : action,
+                    #'rnn_states' : self.rnn_states
+                }
+                value = self.get_central_value(input_dict)
+                res_dict['value'] = value
+        return res_dict
+
+    def get_values(self, obs):
+        with torch.no_grad():
+            if self.has_central_value:
+                states = obs['states']
+                self.central_value_net.eval()
+                input_dict = {
+                    'is_train': False,
+                    'states' : states,
+                    'actions' : None,
+                    'is_done': self.dones,
+                }
+                return self.get_central_value(input_dict)
+            else:
+                self.model.eval()
+                processed_obs = self._preproc_obs(obs['obs'])
+                input_dict = {
+                    'is_train': False,
+                    'prev_actions': None, 
+                    'obs' : processed_obs,
+                    'rnn_states' : self.rnn_states
+                }
+                
+                result = self.model(input_dict)
+                return result['value']
 
     def reset_envs(self):
         self.obs = self.env_reset()
@@ -274,9 +321,13 @@ class A2CBase:
             upd_obs = {'obs' : self.cast_obs(obs)}
         return upd_obs
 
-    def env_step(self, actions):
+    def preprocess_actions(self, actions):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
+        return actions
+
+    def env_step(self, actions):
+        actions = self.preprocess_actions(actions)
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
@@ -321,28 +372,13 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        #self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        #self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
         #self.obs = self.env_reset()
 
     def update_epoch(self):
-        pass
-
-    def get_action_values(self, obs):
-        pass
-
-    def get_masked_action_values(self, obs, action_masks):
-        pass
-
-    def get_values(self, obs, actions=None):
-        pass
-
-    def play_steps_rnn(self):
-        pass
-
-    def play_steps(self):
         pass
 
     def train(self):       
@@ -440,31 +476,133 @@ class A2CBase:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
+    def play_steps(self):
+        mb_rnn_states = []
+        epinfos = []
 
-class DiscreteA2CBase(A2CBase):
-    def __init__(self, base_name, config):
-        A2CBase.__init__(self, base_name, config)
-        self.actions_num = self.env_info['action_space'].n
-        self.is_discrete = True
+        mb_obs = self.mb_obs
+        mb_rewards = self.mb_rewards
+        mb_values = self.mb_values
+        mb_dones = self.mb_dones
+        
+        tensors_dict = self.tensors_dict
+        update_list = self.update_list
+        update_dict = self.update_dict
 
-    def init_tensors(self):
-        A2CBase.init_tensors(self)
-        batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long, device=self.ppo_device)
         if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
+            mb_intrinsic_rewards = self.mb_intrinsic_rewards
+
+        if self.has_central_value:
+            mb_vobs = self.mb_vobs
+
+        batch_size = self.num_agents * self.num_actors
+        mb_rnn_masks = None
+
+        for n in range(self.steps_num):
+
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                res_dict = self.get_masked_action_values(self.obs, masks)
+            else:
+                res_dict = self.get_action_values(self.obs)
+
+            mb_obs[n,:] = self.obs['obs']
+            mb_dones[n,:] = self.dones
+
+            for k in update_list:
+                tensors_dict[k][n,:] = res_dict[k]
+
+            if self.has_central_value:
+                mb_vobs[n,:] = self.obs['states']
+
+            self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
+
+            if self.has_curiosity:
+                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
+                mb_intrinsic_rewards[n,:] = intrinsic_reward
+
+            shaped_rewards = self.rewards_shaper(rewards)
+            if self.normalize_reward:
+                shaped_rewards = self.reward_mean_std(shaped_rewards)
+
+            mb_rewards[n,:] = shaped_rewards
+
+            self.current_rewards += rewards
+            self.current_lengths += 1
+            all_done_indices = self.dones.nonzero(as_tuple=False)
+            done_indices = all_done_indices[::self.num_agents]
+  
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices])
+
+            self.algo_observer.process_infos(infos, done_indices)
+
+            not_dones = 1.0 - self.dones.float()
+
+            self.current_rewards = self.current_rewards * not_dones
+            self.current_lengths = self.current_lengths * not_dones
+        
+        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                val_dict = self.get_masked_action_values(self.obs, masks)
+            else:
+                val_dict = self.get_action_values(self.obs)
+            last_values = val_dict['value']
+        else:
+            last_values = self.get_values(self.obs)
+
+        last_values = torch.squeeze(last_values)
+
+        if self.has_curiosity:
+            mb_intrinsic_values = mb_values[:,:,1]
+            mb_extrinsic_values = mb_values[:,:,0]
+            last_intrinsic_values = last_values[:, 1]
+            last_extrinsic_values = last_values[:, 0]
+        else:
+            mb_extrinsic_values = mb_values
+            last_extrinsic_values = last_values
+
+        fdones = self.dones.float()
+        mb_fdones = mb_dones.float()
+
+        '''
+        TODO: rework this usecase better
+        '''
+
+        mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
+        mb_returns = mb_advs + mb_extrinsic_values
+
+        if self.has_curiosity:
+            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
+
+        batch_dict = {
+            'obs' : mb_obs,
+            'returns' : mb_returns,
+            'dones' : mb_dones,
+        }
+        for k in update_list:
+            batch_dict[update_dict[k]] = tensors_dict[k]
+
+        if self.has_central_value:
+            batch_dict['states'] = mb_vobs
+
+        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
+
+        return batch_dict
 
     def play_steps_rnn(self):
         mb_rnn_states = []
         epinfos = []
 
         mb_obs = self.mb_obs
+        mb_values = self.mb_values
         mb_rewards = self.mb_rewards.fill_(0)
-        mb_values = self.mb_values.fill_(0)
         mb_dones = self.mb_dones.fill_(1)
-        mb_actions = self.mb_actions
-        mb_neglogpacs = self.mb_neglogpacs
+
+        tensors_dict = self.tensors_dict
+        update_list = self.update_list
+        update_dict = self.update_dict
 
         if self.has_central_value:
             mb_vobs = self.mb_vobs
@@ -483,23 +621,22 @@ class DiscreteA2CBase(A2CBase):
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
-                actions, values, neglogpacs, _, self.rnn_states = self.get_masked_action_values(self.obs, masks)
+                res_dict = self.get_masked_action_values(self.obs, masks)
             else:
-                actions, values, neglogpacs, self.rnn_states = self.get_action_values(self.obs)
-
-            values = torch.squeeze(values)
-            neglogpacs = torch.squeeze(neglogpacs)
+                res_dict = self.get_action_values(self.obs)
+                
+            self.rnn_states = res_dict['rnn_state']
 
             mb_dones[indices, play_mask] = self.dones.byte()
             mb_obs[indices,play_mask] = self.obs['obs']   
-            mb_actions[indices,play_mask] = actions
-            mb_neglogpacs[indices,play_mask] = neglogpacs
-            mb_values[indices, play_mask] = values 
+
+            for k in update_list:
+                tensors_dict[k][indices,play_mask] = res_dict[k]
 
             if self.has_central_value:
                 mb_vobs[indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 
-            self.obs, rewards, self.dones, infos = self.env_step(actions)
+            self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
             if self.has_curiosity:
                 intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
@@ -533,9 +670,11 @@ class DiscreteA2CBase(A2CBase):
         if self.has_central_value and self.central_value_net.use_joint_obs_actions:
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
-                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
+                val_dict = self.get_masked_action_values(self.obs, masks)
             else:
-                _, last_values, _, _ = self.get_action_values(self.obs)
+                val_dict = self.get_action_values(self.obs)
+            
+            last_values = val_dict['value']
         else:
             last_values = self.get_values(self.obs)
 
@@ -560,10 +699,10 @@ class DiscreteA2CBase(A2CBase):
             'obs' : mb_obs,
             'returns' : mb_returns,
             'dones' : mb_dones,
-            'actions' : mb_actions,
-            'values' : mb_values,
-            'neglogpacs' : mb_neglogpacs,
         }
+        for k in update_list:
+            batch_dict[update_dict[k]] = tensors_dict[k]
+
         if self.has_central_value:
             batch_dict['states'] = mb_vobs
 
@@ -574,119 +713,31 @@ class DiscreteA2CBase(A2CBase):
 
         return batch_dict
 
-    def play_steps(self):
-        mb_rnn_states = []
-        epinfos = []
+class DiscreteA2CBase(A2CBase):
+    def __init__(self, base_name, config):
+        A2CBase.__init__(self, base_name, config)
+        self.actions_num = self.env_info['action_space'].n
+        self.is_discrete = True
 
-        mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards
-        mb_values = self.mb_values
-        mb_dones = self.mb_dones
-        mb_actions = self.mb_actions
-        mb_neglogpacs = self.mb_neglogpacs
-
-        if self.has_curiosity:
-            mb_intrinsic_rewards = self.mb_intrinsic_rewards
-
-        if self.has_central_value:
-            mb_vobs = self.mb_vobs
-
+    def init_tensors(self):
+        A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        mb_rnn_masks = None
-
-        for n in range(self.steps_num):
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                actions, values, neglogpacs, _, self.rnn_states = self.get_masked_action_values(self.obs, masks)
-            else:
-                actions, values, neglogpacs, self.rnn_states = self.get_action_values(self.obs)
-
-            values = torch.squeeze(values)
-            neglogpacs = torch.squeeze(neglogpacs)
-
-            mb_obs[n,:] = self.obs['obs']
-            mb_dones[n,:] = self.dones
-            mb_actions[n,:] = actions
-            mb_neglogpacs[n,:] = neglogpacs
-            mb_values[n,:] = values
-
-            if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
-
-            self.obs, rewards, self.dones, infos = self.env_step(actions)
-
-            if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
-
-            shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_reward:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
-
-            mb_rewards[n,:] = shaped_rewards
-
-            self.current_rewards += rewards
-            self.current_lengths += 1
-            all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-  
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-
-            self.algo_observer.process_infos(infos, done_indices)
-
-            not_dones = 1.0 - self.dones.float()
-
-            self.current_rewards = self.current_rewards * not_dones
-            self.current_lengths = self.current_lengths * not_dones
-        
-        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                _, last_values, _, _, _ = self.get_masked_action_values(self.obs, masks)
-            else:
-                _, last_values, _, _ = self.get_action_values(self.obs)
-        else:
-            last_values = self.get_values(self.obs)
-
-        last_values = torch.squeeze(last_values)
-
+        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long, device=self.ppo_device)
         if self.has_curiosity:
-            mb_intrinsic_values = mb_values[:,:,1]
-            mb_extrinsic_values = mb_values[:,:,0]
-            last_intrinsic_values = last_values[:, 1]
-            last_extrinsic_values = last_values[:, 0]
-        else:
-            mb_extrinsic_values = mb_values
-            last_extrinsic_values = last_values
+            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
+            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
-        fdones = self.dones.float()
-        mb_fdones = mb_dones.float()
-
-        '''
-        TODO: rework this usecase better
-        '''
-
-        mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
-        mb_returns = mb_advs + mb_extrinsic_values
-
-        if self.has_curiosity:
-            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
-
-        batch_dict = {
-            'obs' : mb_obs,
-            'returns' : mb_returns,
-            'dones' : mb_dones,
-            'actions' : mb_actions,
-            'values' : mb_values,
-            'neglogpacs' : mb_neglogpacs,
+        self.update_list = ['action', 'neglogp', 'value']
+        self.update_dict = {
+            'action' : 'actions',
+            'neglogp' : 'neglogpacs',
+            'value' : 'values',
         }
-        if self.has_central_value:
-            batch_dict['states'] = mb_vobs
-
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-
-        return batch_dict
+        self.tensors_dict = {
+            'action' : self.mb_actions,
+            'neglogp' : self.mb_neglogpacs,
+            'value' : self.mb_values,
+        }
 
     def train_epoch(self):
         play_time_start = time.time()
@@ -873,6 +924,14 @@ class ContinuousA2CBase(A2CBase):
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
 
+
+    def pre_process_actions(self, actions):
+        clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
+        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        if not self.is_tensor_obses:
+            rescaled_actions = rescaled_actions.cpu().numpy()
+        return rescaled_actions
+
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
@@ -884,239 +943,21 @@ class ContinuousA2CBase(A2CBase):
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
-    def play_steps_rnn(self):
-        mb_rnn_states = []
-        epinfos = []
-
-        mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards.fill_(0)
-        mb_values = self.mb_values.fill_(0)
-        mb_dones = self.mb_dones.fill_(1)
-        mb_actions = self.mb_actions
-        mb_neglogpacs = self.mb_neglogpacs
-        mb_mus = self.mb_mus.fill_(0)
-        mb_sigmas = self.mb_sigmas.fill_(0) 
-
-        if self.has_central_value:
-            mb_vobs = self.mb_vobs
-
-        batch_size = self.num_agents * self.num_actors
-        mb_rnn_masks = None
-      
-        mb_rnn_masks, indices, steps_mask, steps_state, play_mask, mb_rnn_states = self.init_rnn_step(batch_size, mb_rnn_states)
-        for n in range(self.steps_num):
-            seq_indices, full_tensor = self.process_rnn_indices(mb_rnn_masks, indices, steps_mask, steps_state, mb_rnn_states)
-            if full_tensor:
-                break
-            if self.has_central_value:
-                self.central_value_net.pre_step_rnn(self.last_rnn_indices, self.last_state_indices)
-                
-            actions, values, neglogpacs, mu, sigma, self.rnn_states = self.get_action_values(self.obs)
-                
-            values = torch.squeeze(values)
-            neglogpacs = torch.squeeze(neglogpacs)
-            
-            mb_obs[indices,play_mask] = self.obs['obs'] 
-            mb_actions[indices,play_mask] = actions
-            mb_neglogpacs[indices,play_mask] = neglogpacs
-            mb_mus[indices,play_mask] = mu
-            mb_sigmas[indices,play_mask] = sigma
-            mb_dones[indices, play_mask] = self.dones.byte()
-            mb_values[indices, play_mask] = values
-
-            if self.has_central_value:
-                mb_vobs[indices,play_mask] = self.obs['states']
-
-            clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
-            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
-            self.obs, rewards, self.dones, infos = self.env_step(rescaled_actions)
-
-            shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_reward:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
-
-            mb_rewards[indices, play_mask] = shaped_rewards
-
-            self.current_rewards += rewards
-            self.current_lengths += 1
-            all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
- 
-            self.process_rnn_dones(all_done_indices, indices, seq_indices)  
-            if self.has_central_value:
-                self.central_value_net.post_step_rnn(all_done_indices)                     
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-
-            self.algo_observer.process_infos(infos, done_indices)
-
-            not_dones = 1.0 - self.dones.float()
-            self.current_rewards = self.current_rewards * not_dones
-            self.current_lengths = self.current_lengths * not_dones
-        
-        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
-            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
-        else:
-            last_values = self.get_values(self.obs)
-        last_values = torch.squeeze(last_values)
-
-        mb_extrinsic_values = mb_values
-        last_extrinsic_values = last_values
-
-        fdones = self.dones.float()
-        mb_fdones = mb_dones.float()
-
-        '''
-        TODO: rework this usecase better
-
-        '''
-        non_finished = (indices != self.steps_num).nonzero(as_tuple=False)
-        ind_to_fill = indices[non_finished]
-        mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
-        mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
-        fdones[non_finished] = 1.0
-        last_extrinsic_values[non_finished] = 0
-        
-        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
-        mb_returns = mb_advs + mb_extrinsic_values
-
-        if self.has_curiosity:
-            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
-
-        batch_dict = {
-            'obs' : mb_obs,
-            'returns' : mb_returns,
-            'dones' : mb_dones,
-            'actions' : mb_actions,
-            'values' : mb_values,
-            'neglogpacs' : mb_neglogpacs,
-            'mus' : mb_mus,
-            'sigmas' : mb_sigmas,
+        self.update_list = ['action', 'neglogp', 'value', 'mu', 'sigma']
+        self.update_dict = {
+            'action' : 'actions',
+            'neglogp' : 'neglogpacs',
+            'value' : 'values',
+            'mu' : 'mus',
+            'sigma' : 'sigmas'
         }
-
-        if self.has_central_value:
-            batch_dict['states'] = mb_vobs
-
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-
-        batch_dict['rnn_states'] = mb_rnn_states
-        batch_dict['rnn_masks'] = mb_rnn_masks
-
-        return batch_dict
-
-    def play_steps(self):
-        mb_rnn_states = []
-        epinfos = []
-
-        mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards
-        mb_values = self.mb_values
-        mb_dones = self.mb_dones
-        mb_actions = self.mb_actions
-        mb_neglogpacs = self.mb_neglogpacs
-        mb_mus = self.mb_mus
-        mb_sigmas = self.mb_sigmas
-
-        if self.has_curiosity:
-            mb_intrinsic_rewards = self.mb_intrinsic_rewards
-
-        if self.has_central_value:
-            mb_vobs = self.mb_vobs
-
-        batch_size = self.num_agents * self.num_actors
-        mb_rnn_masks = None
-
-        for n in range(self.steps_num):
-            actions, values, neglogpacs, mu, sigma, self.rnn_states = self.get_action_values(self.obs)
-                
-            values = torch.squeeze(values)
-            neglogpacs = torch.squeeze(neglogpacs)
-
-            mb_obs[n,:] = self.obs['obs']
-            mb_dones[n,:] = self.dones
-            mb_actions[n,:] = actions
-            mb_neglogpacs[n,:] = neglogpacs
-            mb_mus[n,:] = mu
-            mb_sigmas[n,:] = sigma
-            mb_values[n,:] = values
-
-            if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
-
-            clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
-            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
-            self.obs, rewards, self.dones, infos = self.env_step(rescaled_actions)
-
-            if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
-
-            shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_reward:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
-
-            mb_rewards[n,:] = shaped_rewards
-
-            all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-
-            self.current_rewards += rewards
-            self.current_lengths += 1                    
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-            self.algo_observer.process_infos(infos, done_indices)
-            
-            not_dones = 1.0 - self.dones.float()
-
-            self.current_rewards = self.current_rewards * not_dones
-            self.current_lengths = self.current_lengths * not_dones
-
-        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
-            _, last_values, _, _, _, _ = self.get_action_values(self.obs)
-        else:
-            last_values = self.get_values(self.obs)
-
-        last_values = torch.squeeze(last_values)
-
-        if self.has_curiosity:
-            mb_intrinsic_values = mb_values[:,:,1]
-            mb_extrinsic_values = mb_values[:,:,0]
-            last_intrinsic_values = last_values[:, 1]
-            last_extrinsic_values = last_values[:, 0]
-        else:
-            mb_extrinsic_values = mb_values
-            last_extrinsic_values = last_values
-
-        fdones = self.dones.float()
-        mb_fdones = mb_dones.float()
-
-        '''
-        TODO: rework this usecase better
-        '''
-
-        mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
-
-        mb_returns = mb_advs + mb_extrinsic_values
-        if self.has_curiosity:
-            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
-
-        batch_dict = {
-            'obs' : mb_obs,
-            'returns' : mb_returns,
-            'dones' : mb_dones,
-            'actions' : mb_actions,
-            'values' : mb_values,
-            'neglogpacs' : mb_neglogpacs,
-            'mus' : mb_mus,
-            'sigmas' : mb_sigmas,
+        self.tensors_dict = {
+            'action' : self.mb_actions,
+            'neglogp' : self.mb_neglogpacs,
+            'value' : self.mb_values,
+            'mu' : self.mb_mus,
+            'sigma' : self.mb_sigmas,
         }
-
-        if self.has_central_value:
-            batch_dict['states'] = mb_vobs
-
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-
-        return batch_dict
 
     def train_epoch(self):
         play_time_start = time.time()

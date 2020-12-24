@@ -69,51 +69,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.normalize_input:
             self.running_mean_std.train()
 
-    def get_action_values(self, obs):
-        processed_obs = self._preproc_obs(obs['obs'])
-        self.model.eval()
-        input_dict = {
-            'is_train': False,
-            'prev_actions': None, 
-            'obs' : processed_obs,
-            'rnn_states' : self.rnn_states
-        }
-
-        with torch.no_grad():
-            neglogp, value, action, mu, sigma, rnn_states = self.model(input_dict)
-            if self.has_central_value:
-                states = obs['states']
-                input_dict = {
-                    'is_train': False,
-                    'states' : states,
-                }
-                value = self.central_value_net.get_value(input_dict)
-
-        return action.detach(), value.detach(), neglogp.detach(), mu.detach(), sigma.detach(), rnn_states
-
-    def get_values(self, obs):
-        if self.has_central_value:
-            states = obs['states']
-            self.central_value_net.eval()
-            input_dict = {
-                'is_train': False,
-                'states' : states,
-                'is_done': self.dones,
-            }
-            return self.get_central_value(input_dict).detach()
-        else:
-            self.model.eval()
-            processed_obs = self._preproc_obs(obs['obs'])
-            input_dict = {
-                'is_train': False,
-                'prev_actions': None, 
-                'obs' : processed_obs,
-                'rnn_states' : self.rnn_states
-            }
-            with torch.no_grad():
-                _, value, _, _, _,_ = self.model(input_dict)
-            return value.detach()
-
     def calc_gradients(self, input_dict, opt_step):
         self.set_train()
         value_preds_batch = input_dict['old_values']
@@ -143,7 +98,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-        action_log_probs, values, entropy, mu, sigma,_ = self.model(batch_dict)
+        res_dict = self.model(batch_dict)
+        action_log_probs = res_dict['prev_neglogp']
+        values = res_dict['value']
+        entropy = res_dict['entropy']
+        mu = res_dict['mu']
+        sigma = res_dict['sigma']
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
         
