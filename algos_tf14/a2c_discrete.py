@@ -349,7 +349,7 @@ class A2CAgent:
         last_mean_rewards = -100500
         play_time = 0
         epoch_num = 0
-        max_epochs = self.config.get('max_epochs', 1e6)
+        max_epochs = self.config.get('max_epochs', 1e4)
 
         start_time = time.time()
         total_time = 0
@@ -357,6 +357,7 @@ class A2CAgent:
         while True:
             play_time_start = time.time()
             epoch_num = self.update_epoch()
+            print(epoch_num)
             frame += batch_size_envs
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
