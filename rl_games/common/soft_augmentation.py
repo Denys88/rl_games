@@ -1,4 +1,4 @@
-import kornia
+from  common.transforms import transforms
 
 
 class SoftAugmentation():
