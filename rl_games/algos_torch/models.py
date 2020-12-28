@@ -39,7 +39,18 @@ class ModelA2C(BaseModel):
             action_masks = input_dict.pop('action_masks', None)
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
-            if not is_train:
+            if is_train:
+                categorical = torch.distributions.Categorical(logits=logits)
+                prev_neglogp = -categorical.log_prob(prev_actions)
+                entropy = categorical.entropy()
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'value' : torch.squeeze(value),
+                    'entropy' : entropy,
+                    'rnn_state' : states
+                }
+                return result
+            else:
                 if action_masks is not None:
                     inf_mask = torch.log(action_masks.float())
                     logits = logits + inf_mask
@@ -47,12 +58,14 @@ class ModelA2C(BaseModel):
                 categorical = torch.distributions.Categorical(logits=logits)
                 selected_action = categorical.sample().long()
                 neglogp = -categorical.log_prob(selected_action)
-                return  neglogp, value, selected_action, logits, states
-            else:
-                categorical = torch.distributions.Categorical(logits=logits)
-                prev_neglogp = -categorical.log_prob(prev_actions)
-                entropy = categorical.entropy()
-                return prev_neglogp, value, entropy, states
+                result = {
+                    'neglogp' : torch.squeeze(neglogp),
+                    'value' : torch.squeeze(value),
+                    'action' : selected_action,
+                    'logits' : logits,
+                    'rnn_state' : states
+                }
+                return  result
 
 
 class ModelA2CContinuous(BaseModel):
@@ -80,14 +93,32 @@ class ModelA2CContinuous(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             mu, sigma, value, states = self.a2c_network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
-            if not is_train:
-                selected_action = distr.sample().squeeze()
-                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
-                return  neglogp, value, selected_action, mu, sigma, states
-            else:
+
+            if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
-                return prev_neglogp, value, entropy, mu, sigma, states
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'value' : torch.squeeze(value),
+                    'entropy' : entropy,
+                    'rnn_state' : states,
+                    'mu' : mu,
+                    'sigma' : sigma
+                }
+                return result
+            else:
+                selected_action = distr.sample().squeeze()
+                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
+                result = {
+                    'neglogp' : torch.squeeze(neglogp),
+                    'value' : torch.squeeze(value),
+                    'action' : selected_action,
+                    'entropy' : entropy,
+                    'rnn_state' : states,
+                    'mu' : mu,
+                    'sigma' : sigma
+                }
+                return  result          
 
 
 class ModelA2CContinuousLogStd(BaseModel):
@@ -118,14 +149,32 @@ class ModelA2CContinuousLogStd(BaseModel):
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
-            if not is_train:
-                selected_action = distr.sample()
-                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
-                return  neglogp, value, selected_action, mu, sigma, states
-            else:
+            if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
-                return prev_neglogp, value, entropy, mu, sigma, states
+                #prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
+                #print(((prev_neglogp - prev_neglogp2)**2).sum())
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'value' : torch.squeeze(value),
+                    'entropy' : entropy,
+                    'rnn_state' : states,
+                    'mu' : mu,
+                    'sigma' : sigma
+                }                
+                return result
+            else:
+                selected_action = distr.sample()
+                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
+                result = {
+                    'neglogp' : torch.squeeze(neglogp),
+                    'value' : torch.squeeze(value),
+                    'action' : selected_action,
+                    'rnn_state' : states,
+                    'mu' : mu,
+                    'sigma' : sigma
+                }
+                return result
 
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \

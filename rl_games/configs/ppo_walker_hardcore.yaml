@@ -20,22 +20,23 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256,128]
-      d2rl: False
-      activation: relu
+      units: [256,128, 64]
+      d2rl: True
+      activation: elu
       initializer:
         name: variance_scaling_initializer
         scale: 2         
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn:
+    rnn_removed:
       name: lstm
       units: 64
       layers: 1
       concat_input: False   
+      
   load_checkpoint: False
-  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
+  load_path: './nn/walker_hc.pth'
 
   config:
       reward_shaper:
@@ -56,10 +57,11 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 1024
+      steps_num: 2048
       minibatch_size: 4096
       mini_epochs: 4
       critic_coef: 1
+      schedule_type: 'standard'
       lr_schedule: adaptive
       lr_threshold: 0.008
       normalize_input: True
@@ -69,5 +71,5 @@ params:
 
       player:
         render: True
-        games_num: 200
+        games_num: 50
 

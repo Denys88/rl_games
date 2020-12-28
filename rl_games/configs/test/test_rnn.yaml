@@ -27,7 +27,7 @@ params:
       name: 'lstm'
       units: 32
       layers: 1
-      before_mlp: True
+      before_mlp: False
   config:
     reward_shaper:
         scale_value: 1
@@ -52,8 +52,8 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: True
-    seq_length: 16
-    weight_decay: 0.0001
+    seq_length: 8
+    weight_decay: 0.0000
 
     env_config:
       name: TestRnnEnv-v0
