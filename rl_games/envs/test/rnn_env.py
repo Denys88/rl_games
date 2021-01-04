@@ -11,7 +11,7 @@ class TestRNNEnv(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
         self.state_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
         self.obs_dict = {}
-        self.max_steps = kwargs.pop('max_steps', 21)
+        self.max_steps = kwargs.pop('max_steps', 61)
         self.show_time = kwargs.pop('show_time', 1)
         self.min_dist = kwargs.pop('min_dist', 2)
         self.max_dist = kwargs.pop('max_dist', 8)
@@ -33,6 +33,7 @@ class TestRNNEnv(gym.Env):
         rand_dir = - 2 * np.random.randint(0, 2, (2,)) + 1
         self._goal_pos = rand_dir * np.random.randint(self.min_dist, self.max_dist+1, (2,))
         obs = np.concatenate([self._current_pos, self._goal_pos, [1, 0]], axis=None)
+        #print(self._goal_pos)
         if self.use_central_value:
             obses = {}
             obses["obs"] = obs.astype(np.float32)
