@@ -1,3 +1,30 @@
+# RL Games: high-performance implementations of reinforcement learning algorithms
+
+**[Overview](#overview)** |
+**[Installation](#installation)** |
+**[Examples]** |
+**[Benchmarks]**
+
+RL Games is a library of reinforcement learning (RL) algorithms with with focus
+perfromance, especially in challeging domains - high dimensional continuous control tasks,
+training from images, multi-agent and self-play scenarious. Todo: add more detials.
+
+## Overview
+TODO (or to merge with installation?)
+
+## Installation
+
+# How to run configs:
+* pip install -e .
+# Pytorch
+* python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
+* python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
+
+# Tensorflow
+* python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
+* python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
+* tensorboard --logdir runs
+
 # Basic RL Algorithms Implementations
 * Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
 * Every agent was controlled independently and has restricted information
@@ -12,14 +39,10 @@
 
 [![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
 
-# How to run configs:
-# Pytorch
-* python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-# Tensorflow
-* python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-* tensorboard --logdir runs
+
+## Benchmarks
+TODO - split on discrete and continuous control, MAML (SMAC), self-play.
+
 # Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
 * corridor took near 2 hours for 95+% WR
@@ -27,7 +50,6 @@
 * 6h_vs_8z got 82% WR after 8 hours of training
 * 5m_vs_6m got 72% WR after 8 hours of training
 
-# Plots:
 FPS in these plots is calculated on per env basis except MMM2 (it was scaled by number of agents which is 10), to get a win rate per number of environmental steps info, the same as used in plots in QMIX, MAVEN, QTRAN or Deep Coordination Graphs (https://arxiv.org/pdf/1910.00091.pdf) papers FPS numbers under the horizontal axis should be devided by number of agents in player's team.
 
 * 2m_vs_1z:
