@@ -21,7 +21,7 @@ params:
         fixed_sigma: True
     mlp:
       units: [256,128, 64]
-      d2rl: True
+      d2rl: False
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -58,7 +58,7 @@ params:
       clip_value: False
       num_actors: 16
       steps_num: 2048
-      minibatch_size: 4096
+      minibatch_size: 8192
       mini_epochs: 4
       critic_coef: 1
       schedule_type: 'standard'
@@ -68,8 +68,8 @@ params:
       seq_length: 4
       bounds_loss_coef: 0.00
       max_epochs: 100000
-
+      weight_decay: 0
       player:
         render: True
-        games_num: 50
+        games_num: 200
 
