@@ -178,7 +178,7 @@ class A2CBase:
                 input_dict = {
                     'is_train': False,
                     'states' : states,
-                    'actions' : action,
+                    #'actions' : action,
                     #'rnn_states' : self.rnn_states
                 }
                 value = self.get_central_value(input_dict)
@@ -404,7 +404,7 @@ class A2CBase:
         self.rnd_curiosity.train_net(obs)
 
     def get_central_value(self, obs_dict):
-        return self.central_value_net.get_value(obs_dict)
+        return self.central_value_net.get_value(obs_dict).squeeze()
 
     def train_central_value(self):
         return self.central_value_net.train_net()
