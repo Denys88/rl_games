@@ -2,8 +2,8 @@
 
 **[Overview](#overview)** |
 **[Installation](#installation)** |
-**[Examples](#examples)**** |
-**[Benchmarks](#benchmarks)****
+**[Examples](#examples)** |
+**[Benchmarks](#benchmarks)**
 
 RL Games is a library of reinforcement learning (RL) algorithms with with focus
 perfromance, especially in challeging domains - high dimensional continuous control tasks,
