@@ -13,7 +13,7 @@ training from images, multi-agent and self-play scenarious. Todo: add more detia
 TODO (or to merge with installation?)
 
 ## Installation
-* pip install -e .
+```pip install -e .```
 
 ## Examples
 
