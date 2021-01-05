@@ -16,22 +16,17 @@ TODO (or to merge with installation?)
 * pip install -e .
 
 ## Examples
-To start training:
-# Pytorch
-* python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
 
-# Tensorflow
-* python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-* tensorboard --logdir runs
+Starting training is simple:
+```python runner.py --train --file rl_games/configs/smac/3m_torch.yaml```
 
-
+To load and test a trained model run:
+```python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint nn/3m_cnn.pth```
 
 ## Benchmarks
 TODO - split on discrete and continuous control, MAML (SMAC), self-play.
 
-# Basic RL Algorithms Implementations
+### Basic RL Algorithms Implementations
 * Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
 * Every agent was controlled independently and has restricted information
 * All the environments were trained with a default difficulty level 7
@@ -45,7 +40,7 @@ TODO - split on discrete and continuous control, MAML (SMAC), self-play.
 
 [![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
 
-# Results on some environments:
+### Results on some SMAC environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
 * corridor took near 2 hours for 95+% WR
 * MMM2 4 hours for 90+% WR
@@ -99,7 +94,7 @@ Less then 200k frames to take score > 18.
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/pong_dqn.png)
 DQN has more optimistic Q value estimations.
 
-# Other Games Results
+### Other Games Results
 This results are not stable. Just best games, for good average results you need to train network more then 10 million steps.
 Some games need 50m steps.
 
@@ -111,8 +106,7 @@ Some games need 50m steps.
 
 [![Watch the video](https://j.gifs.com/D1RQE5.gif)](https://www.youtube.com/watch?v=LO0RL437rh4)
 
-
-# A2C and PPO Results
+### A2C and PPO Results
 * More than 2 hours for Pong to achieve 20 score with one actor playing. 
 * 8 Hours for Supermario lvl1
 
@@ -121,6 +115,5 @@ Some games need 50m steps.
 * PPO with LSTM layers
 
 [![Watch the video](https://j.gifs.com/YWV9W0.gif)](https://www.youtube.com/watch?v=fjY4AWbmhHg)
-
 
 ![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/mario_random_stages.png)
