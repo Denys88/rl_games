@@ -2,8 +2,8 @@
 
 **[Overview](#overview)** |
 **[Installation](#installation)** |
-**[Examples]** |
-**[Benchmarks]**
+**[Examples](#examples)**** |
+**[Benchmarks](#benchmarks)****
 
 RL Games is a library of reinforcement learning (RL) algorithms with with focus
 perfromance, especially in challeging domains - high dimensional continuous control tasks,
@@ -13,9 +13,10 @@ training from images, multi-agent and self-play scenarious. Todo: add more detia
 TODO (or to merge with installation?)
 
 ## Installation
-
-# How to run configs:
 * pip install -e .
+
+## Examples
+To start training:
 # Pytorch
 * python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
 * python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
@@ -24,6 +25,11 @@ TODO (or to merge with installation?)
 * python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
 * python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
 * tensorboard --logdir runs
+
+
+
+## Benchmarks
+TODO - split on discrete and continuous control, MAML (SMAC), self-play.
 
 # Basic RL Algorithms Implementations
 * Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
@@ -38,10 +44,6 @@ TODO (or to merge with installation?)
 * Simple MLP networks didnot work good on hard envs
 
 [![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
-
-
-## Benchmarks
-TODO - split on discrete and continuous control, MAML (SMAC), self-play.
 
 # Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
