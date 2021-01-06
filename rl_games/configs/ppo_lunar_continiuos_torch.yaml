@@ -20,14 +20,15 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [64, 64]
+      units: [64]
       activation: relu
       initializer:
           name: variance_scaling_initializer
           scale: 2
-      regularizer:
-        name:  'None' #'l2_regularizer'
-        #scale: 0.001
+    rnn:
+      name: 'lstm'
+      units: 64
+      layers: 1
 
   load_checkpoint: False
   load_path: path
@@ -57,9 +58,9 @@ params:
       critic_coef: 1
       lr_schedule:  adaptive
       lr_threshold: 0.008
-
+      schedule_type: standard
       normalize_input: True
-      seq_length: 8
+      seq_length: 4
       bounds_loss_coef: 0
 
       player:

@@ -33,8 +33,22 @@ params:
       name: lstm
       units: 64
       layers: 1
+<<<<<<< Updated upstream
       concat_input: False   
       
+=======
+<<<<<<< Updated upstream
+      concat_input: True   
+=======
+<<<<<<< Updated upstream
+      concat_input: False   
+=======
+      concat_input: False
+      #layer_norm: True  
+      
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
   load_checkpoint: False
   load_path: './nn/walker_hc.pth'
 
@@ -46,7 +60,7 @@ params:
       normalize_advantage: True
       gamma: 0.995
       tau: 0.95
-      learning_rate: 3e-4
+      learning_rate: 5e-4
       name: walker_hc
       score_to_win: 300
       grad_norm: 1.5
@@ -61,8 +75,16 @@ params:
       minibatch_size: 8192
       mini_epochs: 4
       critic_coef: 1
+<<<<<<< Updated upstream
       schedule_type: 'standard'
+=======
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
       lr_schedule: adaptive
+=======
+      schedule_type: 'standard'
+      lr_schedule: 'adaptive' #None #
+>>>>>>> Stashed changes
       lr_threshold: 0.008
       normalize_input: True
       seq_length: 4
