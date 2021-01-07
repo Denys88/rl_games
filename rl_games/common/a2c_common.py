@@ -596,7 +596,7 @@ class A2CBase:
         epinfos = []
 
         mb_obs = self.mb_obs
-        mb_values = self.mb_values
+        mb_values = self.mb_values.fill_(0)
         mb_rewards = self.mb_rewards.fill_(0)
         mb_dones = self.mb_dones.fill_(1)
 
