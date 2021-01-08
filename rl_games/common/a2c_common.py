@@ -920,6 +920,8 @@ class ContinuousA2CBase(A2CBase):
 
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
+        self.use_old_cv = config.get('use_old_cv', True)
+
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
