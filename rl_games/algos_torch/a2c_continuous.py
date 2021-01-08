@@ -107,7 +107,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
         
-        c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+        if self.has_central_value:
+            c_loss = torch.zeros(1, device=self.ppo_device)
+        else:
+            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)
 

@@ -1000,13 +1000,12 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                if self.schedule_type == 'legacy':
-                    self.dataset.update_mu_sigma(cmu, csigma)    
+                self.dataset.update_mu_sigma(cmu, csigma)   
+                if self.schedule_type == 'legacy':   
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
                     self.update_lr(self.last_lr)
 
-            if self.schedule_type == 'standard':
-                self.dataset.update_mu_sigma(cmu, csigma)    
+            if self.schedule_type == 'standard': 
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
                 self.update_lr(self.last_lr)
             kls.append(np.mean(ep_kls))
