@@ -58,6 +58,8 @@ class A2CBase:
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
 
+        self.use_experimental_cv = config.get('use_experimental_cv', True)
+
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             self.state_shape = None
@@ -76,6 +78,7 @@ class A2CBase:
 
         self.ppo = config['ppo']
         self.max_epochs = self.config.get('max_epochs', 1e6)
+
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
         self.schedule_type = config.get('schedule_type', 'legacy')
@@ -89,6 +92,7 @@ class A2CBase:
                 start_entropy_coef=config.get('entropy_coef'))
         else:
             self.scheduler = schedulers.IdentityScheduler()
+
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
@@ -142,7 +146,6 @@ class A2CBase:
             self.curiosity_mins = deque([], maxlen=self.games_to_track)
             self.curiosity_maxs = deque([], maxlen=self.games_to_track)
             self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
-
 
         self.is_tensor_obses = False
 
@@ -920,12 +923,9 @@ class ContinuousA2CBase(A2CBase):
 
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
-        self.use_old_cv = config.get('use_old_cv', True)
-
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
-
 
     def pre_process_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
