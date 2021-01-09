@@ -20,7 +20,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents
-        } 
+        }
+
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -29,14 +30,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.last_lr = float(self.last_lr)
 
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
-        #self.optimizer = torch_ext.RangerQH(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
+
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
-
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device, self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
                                     self.central_value_config, self.writer).to(self.ppo_device)
@@ -107,7 +107,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
         
-        if self.use_old_cv:
+        if self.use_experimental_cv:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
         else:
             if self.has_central_value:
