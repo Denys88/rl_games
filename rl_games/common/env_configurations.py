@@ -253,6 +253,12 @@ def create_minigrid_env(name, **kwargs):
     print('minigird_env observation space shape:', env.observation_space)
     return env
 
+def create_multiwalker_env(**kwargs):
+    from rl_games.envs.multiwalker import MultiWalker
+    env = MultiWalker('', **kwargs) 
+
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -404,6 +410,10 @@ configurations = {
     },
     'connect4_env' : {
         'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
+    'multiwalker_env' : {
+        'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
 }
