@@ -7,7 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     space:
       continuous:
         mu_activation: None
@@ -54,7 +54,7 @@ params:
       steps_num: 256
       minibatch_size: 1024
       mini_epochs: 4
-      critic_coef: 1
+      critic_coef: 4
       schedule_type: 'standard'
       lr_schedule: adaptive
       lr_threshold: 0.008
@@ -66,5 +66,6 @@ params:
       #weight_decay: 0.0001
 
       player:
-        render: True
+        render: False
+        determenistic: True
         games_num: 200

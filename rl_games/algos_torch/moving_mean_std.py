@@ -5,7 +5,7 @@ import numpy as np
 updates moving statistics with momentum
 '''
 class MovingMeanStd(nn.Module):
-    def __init__(self, insize, momentum = 0.998, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, momentum = 0.9998, epsilon=1e-05, per_channel=False, norm_only=False):
         super(MovingMeanStd, self).__init__()
         self.insize = insize
         self.epsilon = epsilon
@@ -50,8 +50,9 @@ class MovingMeanStd(nn.Module):
             current_var = self.moving_var
         # get output
         if unnorm:
-            y = torch.sqrt(current_var.float() + self.epsilon) * input + current_mean.float()
+            y = torch.clamp(input, min=-5.0, max=5.0)
+            y = torch.sqrt(current_var.float() + self.epsilon)*y + current_mean.float()
         else:
             y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
-
-        return torch.clamp(y.squeeze(), min=-5.0, max=5.0)
+            y = torch.clamp(y, min=-5.0, max=5.0)
+        return y

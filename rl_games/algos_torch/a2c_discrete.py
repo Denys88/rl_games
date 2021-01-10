@@ -79,7 +79,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 res_dict['value'] = value
 
         if self.normalize_value:
-            value = self.reward_mean_std(value, True)
+            value = self.value_mean_std(value, True)
         return res_dict
 
     def train_actor_critic(self, input_dict, opt_step = True):
@@ -124,7 +124,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.normalize_value:
-            value_preds_batch = self.reward_mean_std(value_preds_batch)
+            value_preds_batch = self.value_mean_std(value_preds_batch)
+            return_batch = self.value_mean_std(return_batch)
 
         if self.use_experimental_cv:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)

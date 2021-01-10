@@ -135,7 +135,7 @@ class A2CBase:
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         if self.normalize_value:
-            self.reward_mean_std = MovingMeanStd((1,)).to(self.ppo_device)
+            self.value_mean_std = MovingMeanStd((1,)).to(self.ppo_device)
 
         # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
@@ -166,14 +166,14 @@ class A2CBase:
         if self.normalize_input:
             self.running_mean_std.eval()
         if self.normalize_value:
-            value = self.reward_mean_std.eval()
+            value = self.value_mean_std.eval()
 
     def set_train(self):
         self.model.train()
         if self.normalize_input:
             self.running_mean_std.train()
         if self.normalize_value:
-            value = self.reward_mean_std.train()
+            value = self.value_mean_std.train()
 
     def update_lr(self, lr):
         for param_group in self.optimizer.param_groups:
@@ -202,7 +202,7 @@ class A2CBase:
                 value = self.get_central_value(input_dict)
                 res_dict['value'] = value
         if self.normalize_value:
-            res_dict['value'] = self.reward_mean_std(res_dict['value'], True)
+            res_dict['value'] = self.value_mean_std(res_dict['value'], True)
         return res_dict
 
     def get_values(self, obs):
@@ -231,7 +231,7 @@ class A2CBase:
                 value = result['value']
 
             if self.normalize_value:
-                value = self.reward_mean_std(value, True)
+                value = self.value_mean_std(value, True)
             return value
 
     def reset_envs(self):
@@ -461,7 +461,7 @@ class A2CBase:
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
         if self.normalize_value:
-            state['reward_mean_std'] = self.reward_mean_std.state_dict()   
+            state['reward_mean_std'] = self.value_mean_std.state_dict()   
         return state
 
     def get_stats_weights(self):
@@ -469,7 +469,7 @@ class A2CBase:
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
         if self.normalize_value:
-            state['reward_mean_std'] = self.reward_mean_std.state_dict()
+            state['reward_mean_std'] = self.value_mean_std.state_dict()
         if self.has_central_value:
             state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
         return state
@@ -478,7 +478,7 @@ class A2CBase:
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value:
-            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
+            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.has_central_value:
             self.central_value_net.set_stats_weights(state['assymetric_vf_mean_std'])
   
@@ -487,7 +487,7 @@ class A2CBase:
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value:
-            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
+            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
@@ -544,8 +544,6 @@ class A2CBase:
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_value:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             mb_rewards[n,:] = shaped_rewards
 
