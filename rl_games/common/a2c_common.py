@@ -920,14 +920,13 @@ class ContinuousA2CBase(A2CBase):
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
-
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
 
-    def pre_process_actions(self, actions):
+    def preprocess_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
         if not self.is_tensor_obses:
