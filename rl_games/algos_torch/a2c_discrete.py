@@ -83,7 +83,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : obs['states'],
-                    'actions' : action,
+                    #'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['value'] = value
