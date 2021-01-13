@@ -44,16 +44,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
 
-    def set_eval(self):
-        self.model.eval()
-        if self.normalize_input:
-            self.running_mean_std.eval()
-
-    def set_train(self):
-        self.model.train()
-        if self.normalize_input:
-            self.running_mean_std.train()
-
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -87,6 +77,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['value'] = value
+
+        if self.normalize_value:
+            value = self.value_mean_std(value, True)
         return res_dict
 
     def train_actor_critic(self, input_dict, opt_step = True):
@@ -129,6 +122,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         entropy = res_dict['entropy']
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+
+        if self.normalize_value:
+            value_preds_batch = self.value_mean_std(value_preds_batch)
+            return_batch = self.value_mean_std(return_batch)
+
         if self.use_experimental_cv:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
         else:

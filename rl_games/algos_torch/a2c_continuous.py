@@ -59,16 +59,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
-    def set_eval(self):
-        self.model.eval()
-        if self.normalize_input:
-            self.running_mean_std.eval()
-
-    def set_train(self):
-        self.model.train()
-        if self.normalize_input:
-            self.running_mean_std.train()
-
     def calc_gradients(self, input_dict, opt_step):
         self.set_train()
         value_preds_batch = input_dict['old_values']
@@ -107,6 +97,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
         
+        if self.normalize_value:
+            value_preds_batch = self.value_mean_std(value_preds_batch)
+            return_batch = self.value_mean_std(return_batch)
+
         if self.use_experimental_cv:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
         else:

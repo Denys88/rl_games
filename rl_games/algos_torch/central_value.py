@@ -29,7 +29,7 @@ class CentralValueTrain(nn.Module):
         self.num_minibatches = self.num_steps * self.num_actors // self.mini_batch
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
-        self.normalize_reward = config.get('normalize_reward', False)
+        self.normalize_value = config.get('normalize_value', False)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
