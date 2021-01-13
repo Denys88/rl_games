@@ -28,27 +28,7 @@ params:
         scale: 2         
       regularizer:
         name:  'None' #'l2_regularizer'
-        #scale: 0.001
-    rnn_removed:
-      name: lstm
-      units: 64
-      layers: 1
-<<<<<<< Updated upstream
-      concat_input: False   
-      
-=======
-<<<<<<< Updated upstream
-      concat_input: True   
-=======
-<<<<<<< Updated upstream
-      concat_input: False   
-=======
-      concat_input: False
-      #layer_norm: True  
-      
->>>>>>> Stashed changes
->>>>>>> Stashed changes
->>>>>>> Stashed changes
+        #scale: 0.001  
   load_checkpoint: False
   load_path: './nn/walker_hc.pth'
 
@@ -71,20 +51,12 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 2048
+      steps_num: 4096
       minibatch_size: 8192
       mini_epochs: 4
       critic_coef: 1
-<<<<<<< Updated upstream
-      schedule_type: 'standard'
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-      lr_schedule: adaptive
-=======
       schedule_type: 'standard'
       lr_schedule: 'adaptive' #None #
->>>>>>> Stashed changes
       lr_threshold: 0.008
       normalize_input: True
       seq_length: 4
@@ -92,6 +64,7 @@ params:
       max_epochs: 100000
       weight_decay: 0
       player:
-        render: True
+        render: False
         games_num: 200
+        is_determenistic: True 
 

@@ -1002,8 +1002,8 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset.update_mu_sigma(cmu, csigma)   
                 if self.schedule_type == 'legacy':   
+                    #self.dataset.update_mu_sigma(cmu, csigma)   
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
                     self.update_lr(self.last_lr)
 
