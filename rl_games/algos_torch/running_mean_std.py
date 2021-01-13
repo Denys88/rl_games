@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
+'''
+updates statistic from a full data
+'''
 class RunningMeanStd(nn.Module):
-    def __init__(self, insize, momentum=0.99, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
         super(RunningMeanStd, self).__init__()
         print('RunningMeanStd: ', insize)
-        self.momentum = momentum
         self.insize = insize
         self.epsilon = epsilon
 

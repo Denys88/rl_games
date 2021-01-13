@@ -32,7 +32,7 @@ params:
           strides: 2
           padding: 0
         - filters: 64
-          kernel_size: 3
+          kernel_size: 3t
           strides: 1
           padding: 0
       

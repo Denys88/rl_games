@@ -1,6 +1,7 @@
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
@@ -58,6 +59,8 @@ class A2CBase:
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
 
+        self.use_experimental_cv = config.get('use_experimental_cv', True)
+
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             self.state_shape = None
@@ -76,6 +79,7 @@ class A2CBase:
 
         self.ppo = config['ppo']
         self.max_epochs = self.config.get('max_epochs', 1e6)
+
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
         self.schedule_type = config.get('schedule_type', 'legacy')
@@ -89,6 +93,7 @@ class A2CBase:
                 start_entropy_coef=config.get('entropy_coef'))
         else:
             self.scheduler = schedulers.IdentityScheduler()
+
         self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
@@ -98,7 +103,7 @@ class A2CBase:
         self.seq_len = self.config.get('seq_length', 4)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
-        self.normalize_reward = self.config.get('normalize_reward', False)
+        self.normalize_value = self.config.get('normalize_value', False)
 
         self.obs_shape = self.observation_space.shape
  
@@ -129,8 +134,8 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
-        if self.normalize_reward:
-            self.reward_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
+        if self.normalize_value:
+            self.value_mean_std = MovingMeanStd((1,)).to(self.ppo_device)
 
         # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
@@ -142,7 +147,6 @@ class A2CBase:
             self.curiosity_mins = deque([], maxlen=self.games_to_track)
             self.curiosity_maxs = deque([], maxlen=self.games_to_track)
             self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
-
 
         self.is_tensor_obses = False
 
@@ -156,7 +160,21 @@ class A2CBase:
         
         # features
         self.algo_observer = config['features']['observer']
-    
+
+    def set_eval(self):
+        self.model.eval()
+        if self.normalize_input:
+            self.running_mean_std.eval()
+        if self.normalize_value:
+            value = self.value_mean_std.eval()
+
+    def set_train(self):
+        self.model.train()
+        if self.normalize_input:
+            self.running_mean_std.train()
+        if self.normalize_value:
+            value = self.value_mean_std.train()
+
     def update_lr(self, lr):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
@@ -183,6 +201,8 @@ class A2CBase:
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['value'] = value
+        if self.normalize_value:
+            res_dict['value'] = self.value_mean_std(res_dict['value'], True)
         return res_dict
 
     def get_values(self, obs):
@@ -196,7 +216,7 @@ class A2CBase:
                     'actions' : None,
                     'is_done': self.dones,
                 }
-                return self.get_central_value(input_dict)
+                value = self.get_central_value(input_dict)
             else:
                 self.model.eval()
                 processed_obs = self._preproc_obs(obs['obs'])
@@ -208,7 +228,11 @@ class A2CBase:
                 }
                 
                 result = self.model(input_dict)
-                return result['value']
+                value = result['value']
+
+            if self.normalize_value:
+                value = self.value_mean_std(value, True)
+            return value
 
     def reset_envs(self):
         self.obs = self.env_reset()
@@ -436,16 +460,16 @@ class A2CBase:
 
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_reward:
-            state['reward_mean_std'] = self.reward_mean_std.state_dict()   
+        if self.normalize_value:
+            state['reward_mean_std'] = self.value_mean_std.state_dict()   
         return state
 
     def get_stats_weights(self):
         state = {}
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_reward:
-            state['reward_mean_std'] = self.reward_mean_std.state_dict()
+        if self.normalize_value:
+            state['reward_mean_std'] = self.value_mean_std.state_dict()
         if self.has_central_value:
             state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
         return state
@@ -453,8 +477,8 @@ class A2CBase:
     def set_stats_weights(self, weights):
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_reward:
-            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
+        if self.normalize_value:
+            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.has_central_value:
             self.central_value_net.set_stats_weights(state['assymetric_vf_mean_std'])
   
@@ -462,8 +486,8 @@ class A2CBase:
         self.model.load_state_dict(weights['model'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_reward:
-            self.reward_mean_std.load_state_dict(weights['reward_mean_std'])
+        if self.normalize_value:
+            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
 
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
@@ -499,7 +523,6 @@ class A2CBase:
         mb_rnn_masks = None
 
         for n in range(self.steps_num):
-
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -508,7 +531,6 @@ class A2CBase:
 
             mb_obs[n,:] = self.obs['obs']
             mb_dones[n,:] = self.dones
-
             for k in update_list:
                 tensors_dict[k][n,:] = res_dict[k]
 
@@ -522,8 +544,6 @@ class A2CBase:
                 mb_intrinsic_rewards[n,:] = intrinsic_reward
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_reward:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             mb_rewards[n,:] = shaped_rewards
 
@@ -643,8 +663,6 @@ class A2CBase:
                 mb_intrinsic_rewards[indices, play_mask] = intrinsic_reward
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.normalize_reward:
-                shaped_rewards = self.reward_mean_std(shaped_rewards)
 
             mb_rewards[indices, play_mask] = shaped_rewards
 
@@ -917,17 +935,13 @@ class ContinuousA2CBase(A2CBase):
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
-
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
-
-        self.use_old_cv = config.get('use_old_cv', True)
 
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
 
-
-    def pre_process_actions(self, actions):
+    def preprocess_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
         if not self.is_tensor_obses:
@@ -1002,8 +1016,8 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                if self.schedule_type == 'legacy':   
-                    #self.dataset.update_mu_sigma(cmu, csigma)   
+                self.dataset.update_mu_sigma(cmu, csigma)   
+                if self.schedule_type == 'legacy':  
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
                     self.update_lr(self.last_lr)
 

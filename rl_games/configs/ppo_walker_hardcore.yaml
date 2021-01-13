@@ -28,7 +28,6 @@ params:
         scale: 2         
       regularizer:
         name:  'None' #'l2_regularizer'
-        #scale: 0.001  
   load_checkpoint: False
   load_path: './nn/walker_hc.pth'
 

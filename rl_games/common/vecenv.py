@@ -131,11 +131,15 @@ class RayVecEnv(IVecEnv):
             self.concat_func = np.concatenate
 
     def step(self, actions):
-
         newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
         res_obs = []
-        for (action, worker) in zip(actions, self.workers):
-            res_obs.append(worker.step.remote(action))
+        if self.num_agents == 1:
+            for (action, worker) in zip(actions, self.workers):	        
+                res_obs.append(worker.step.remote(action))
+        else:
+            for num, worker in enumerate(self.workers):
+                res_obs.append(worker.step.remote(actions[self.num_agents * num: self.num_agents * num + self.num_agents]))
+
         all_res = ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res

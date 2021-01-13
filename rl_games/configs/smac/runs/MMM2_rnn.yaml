@@ -52,7 +52,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.05
     normalize_input: True
-    normalize_reward: False
+    normalize_value: False
     use_action_masks: True
     max_epochs: 30000
     player:

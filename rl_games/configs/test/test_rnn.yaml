@@ -52,32 +52,11 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
-<<<<<<< Updated upstream
     normalize_input: False
     seq_length: 8
     weight_decay: 0.0000
     max_epochs: 10000
-    env_config:
-      name: TestRnnEnv-v0
-      hide_object: True
-      apply_dist_reward: True
-      min_dist: 2
-      max_dist: 8
-      $use_central_value: False
-=======
-<<<<<<< Updated upstream
-    normalize_input: True
-    seq_length: 16
-    weight_decay: 0.0001
 
-    env_config:
-      name: TestRnnEnv-v0
-      hide_object: True
-=======
-    normalize_input: False
-    seq_length: 16
-    weight_decay: 0.0000
-    max_epochs: 10000
     env_config:
       name: TestRnnEnv-v0
       hide_object: True
@@ -85,15 +64,8 @@ params:
       min_dist: 2
       max_dist: 8
       use_central_value: False
->>>>>>> Stashed changes
 
     player:
         games_num: 100
         is_determenistic: True
 
-<<<<<<< Updated upstream
-    
-=======
-    
->>>>>>> Stashed changes
->>>>>>> Stashed changes

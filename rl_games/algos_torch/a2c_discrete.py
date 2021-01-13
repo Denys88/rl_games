@@ -20,7 +20,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents
-        } 
+        }
+
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
 
@@ -28,7 +29,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
-        #self.optimizer = torch_ext.AdaBelief(self.model.parameters(), float(self.last_lr))
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
@@ -37,23 +37,12 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
                                     self.central_value_config, self.writer).to(self.ppo_device)
 
-
         if self.has_curiosity:
             self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
                                     self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
-
-    def set_eval(self):
-        self.model.eval()
-        if self.normalize_input:
-            self.running_mean_std.eval()
-
-    def set_train(self):
-        self.model.train()
-        if self.normalize_input:
-            self.running_mean_std.train()
 
     def update_epoch(self):
         self.epoch_num += 1
@@ -66,7 +55,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.set_full_state_weights(checkpoint)
-
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -85,10 +73,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : obs['states'],
-                    'actions' : action,
+                    #'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['value'] = value
+
+        if self.normalize_value:
+            value = self.value_mean_std(value, True)
         return res_dict
 
     def train_actor_critic(self, input_dict, opt_step = True):
@@ -99,7 +90,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             param_group['lr'] = self.last_lr
 
         return self.train_result
-
 
     def calc_gradients(self, input_dict, opt_step):
         value_preds_batch = input_dict['old_values']
@@ -119,6 +109,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'prev_actions': actions_batch, 
             'obs' : obs_batch,
         }
+
         rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
@@ -129,12 +120,20 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         action_log_probs = res_dict['prev_neglogp']
         values = res_dict['value']
         entropy = res_dict['entropy']
+
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-        if self.has_central_value:
-            c_loss = torch.zeros(1, device=self.ppo_device)
-        else:
+        if self.normalize_value:
+            value_preds_batch = self.value_mean_std(value_preds_batch)
+            return_batch = self.value_mean_std(return_batch)
+
+        if self.use_experimental_cv:
             c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+        else:
+            if self.has_central_value:
+                c_loss = torch.zeros(1, device=self.ppo_device)
+            else:
+                c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
         if self.has_curiosity:
             c_loss = c_loss.sum(dim=1)
@@ -158,5 +157,5 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             else:
                 kl_dist = kl_dist.mean()
             kl_dist = kl_dist.item()
-        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
 
+        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
