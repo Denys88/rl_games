@@ -41,7 +41,7 @@ class RunningMeanStd(nn.Module):
         new_count = tot_count
         return new_mean, new_var, new_count
 
-    def forward(self, input):
+    def forward(self, input, unnorm=False):
         if self.training:
             mean = input.mean(self.axis) # along channel axis
             var = input.var(self.axis)
@@ -64,9 +64,15 @@ class RunningMeanStd(nn.Module):
             current_var = self.running_var
         # get output
 
-        if self.norm_only:
-            y = input/ torch.sqrt(current_var.float() + self.epsilon)
-        else:
-            y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
 
-        return torch.clamp(y, min=-5.0, max=5.0)
+        if unnorm:
+            y = torch.clamp(input, min=-5.0, max=5.0)
+            y = torch.sqrt(current_var.float() + self.epsilon)*y + current_mean.float()
+        else:
+            if self.norm_only:
+                y = input/ torch.sqrt(current_var.float() + self.epsilon)
+            else:
+                y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
+                y = torch.clamp(y, min=-5.0, max=5.0)
+
+        return y
