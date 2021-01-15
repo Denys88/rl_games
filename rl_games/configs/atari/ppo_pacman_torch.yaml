@@ -5,7 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
+  load_checkpoint: False
   load_path: 'nn/pacman_ff.pth'
 
   network:
@@ -53,13 +53,13 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 3e-4
-    name: pacman_ff
+    learning_rate: 5e-4
+    name: gopher_ff
     score_to_win: 50000
     grad_norm: 0.5
-    entropy_coef: 0.005
+    entropy_coef: 0.01
     truncate_grads: True
-    env_name: MsPacmanNoFrameskip-v4
+    env_name: 'atari_gym' 
     ppo: true
     e_clip: 0.2
     clip_value: False
@@ -68,10 +68,14 @@ params:
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  adaptive
-    lr_threshold: 0.008
+    lr_schedule:  linear
+    schedule_entropy: True
     normalize_input: False
-
+    max_epochs: 20000
+    env_config:
+      skip: 4
+      name: 'MsPacmanNoFrameskip-v4'
+      episode_life: True
     player:
         render: True
         games_num: 10
