@@ -135,7 +135,7 @@ class A2CBase:
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         if self.normalize_value:
-            self.value_mean_std = MovingMeanStd((1,)).to(self.ppo_device)
+            self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
         # curiosity
         self.curiosity_config = self.config.get('rnd_config', None)
@@ -812,6 +812,10 @@ class DiscreteA2CBase(A2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
 
+        if self.normalize_value:
+            values = self.value_mean_std(values)
+            returns = self.value_mean_std(returns)       
+
         if self.has_curiosity:
             self.train_intrinsic_reward(batch_dict)
             advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
@@ -1046,6 +1050,10 @@ class ContinuousA2CBase(A2CBase):
         rnn_masks = batch_dict.get('rnn_masks', None)
 
         advantages = returns - values
+
+        if self.normalize_value:
+            values = self.value_mean_std(values)
+            returns = self.value_mean_std(returns)
 
         if self.normalize_advantage:
             if self.is_rnn:

@@ -28,9 +28,12 @@ class BasePlayer(object):
         self.device_name = self.player_config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
+        self.render_env = self.player_config.get('render', False)
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
+        self.render_sleep = self.player_config.get('render_sleep', 0.002)
+        self.max_steps = 100500
         self.device = torch.device(self.device_name)
 
     def _preproc_obs(self, obs_batch):
@@ -151,7 +154,7 @@ class BasePlayer(object):
 
             print_game_res = False
 
-            for _ in range(5000):
+            for _ in range(self.max_steps):
                 if has_masks:
                     masks = self.env.get_action_mask()
                     action = self.get_masked_action(obses, masks, is_determenistic)
@@ -163,7 +166,7 @@ class BasePlayer(object):
   
                 if render:
                     self.env.render(mode = 'human')
-                    time.sleep(0.002)
+                    time.sleep(self.render_sleep)
 
                 all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[::self.num_agents]
