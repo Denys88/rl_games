@@ -77,10 +77,10 @@ params:
     env_config:
       skip: 4
       name: 'GopherNoFrameskip-v4'
-      episode_life: True
+      episode_life: False
     player:
         render: True
         games_num: 10
         n_game_life: 1
-        is_determenistic: False
-        render_sleep: 0.01
+        is_determenistic: True
+        render_sleep: 0.001

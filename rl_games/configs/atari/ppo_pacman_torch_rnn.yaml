@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 
+  load_path: 'nn/pacman_ff.pth'
 
   network:
     name: actor_critic
@@ -37,7 +37,7 @@ params:
           padding: 0
       
     mlp:
-      units: [256]
+      units: [512]
       activation: relu
       regularizer:
         name: 'None'
@@ -45,42 +45,48 @@ params:
         name: glorot_normal_initializer
         gain: 1.4142 
     rnn:
-      before_mlp: True
+      before_mlp: False
       name: lstm
       units: 512
       layers: 1
+      layer_norm: True
   config:
     reward_shaper:
-      min_val: -1
-      max_val: 1
+      #min_val: -1
+      #max_val: 1
+      scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 0.0005
-    name: pacman_lstm
-    score_to_win: 100000
+    learning_rate: 5e-4
+    name: pacman_rnn
+    score_to_win: 50000
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: MsPacmanNoFrameskip-v4
+    env_name: 'atari_gym' 
     ppo: true
     e_clip: 0.2
-    clip_value: True
+    clip_value: False
     num_actors: 16
     steps_num: 256
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
+    seq_len: 16
     lr_schedule:  linear
-    schedule_entropy : True
-    #lr_threshold: 0.004
+    schedule_entropy: True
     normalize_input: False
-    seq_length: 8
-    max_epochs: 25000
-
+    normalize_value: True
+    max_epochs: 50000
+    env_config:
+      skip: 4
+      name: 'MsPacmanNoFrameskip-v4'
+      episode_life: True
     player:
         render: True
         games_num: 10
         n_game_life: 3
-        is_determenistic: True
+        determenistic: True
+        render_sleep: 0.05

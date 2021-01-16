@@ -33,7 +33,7 @@ class BasePlayer(object):
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
-        self.max_steps = 100500
+        self.max_steps = 108000 // 4
         self.device = torch.device(self.device_name)
 
     def _preproc_obs(self, obs_batch):
@@ -154,7 +154,7 @@ class BasePlayer(object):
 
             print_game_res = False
 
-            for _ in range(self.max_steps):
+            for n in range(self.max_steps):
                 if has_masks:
                     masks = self.env.get_action_mask()
                     action = self.get_masked_action(obses, masks, is_determenistic)

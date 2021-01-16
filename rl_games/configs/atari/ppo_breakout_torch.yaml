@@ -44,6 +44,7 @@ params:
     reward_shaper:
       min_val: -1
       max_val: 1
+      scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -54,7 +55,7 @@ params:
     grad_norm: 10
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: BreakoutNoFrameskip-v4
+    env_name: atari_gym
     ppo: true
     e_clip: 0.2
     clip_value: True
@@ -65,9 +66,15 @@ params:
     critic_coef: 1
     lr_schedule:  adaptive
     lr_threshold: 0.008
-    
+    #lr_schedule:  linear
+    #schedule_entropy: True
+    normalize_value: False
     normalize_input: False
     max_epochs: 20000
+    env_config:
+      skip: 4
+      name: 'BreakoutNoFrameskip-v4'
+      episode_life: True
 
     player:
       render: True
