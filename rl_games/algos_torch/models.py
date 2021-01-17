@@ -67,6 +67,63 @@ class ModelA2C(BaseModel):
                 }
                 return  result
 
+class ModelA2CMultiDiscrete(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self)
+        self.network_builder = network
+
+    def build(self, config):
+        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config))
+
+    class Network(nn.Module):
+        def __init__(self, a2c_network):
+            nn.Module.__init__(self)
+            self.a2c_network = a2c_network
+
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+        
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def forward(self, input_dict):
+            is_train = input_dict.pop('is_train', True)
+            action_masks = input_dict.pop('action_masks', None)
+            prev_actions = input_dict.pop('prev_actions', None)
+            logits, value, states = self.a2c_network(input_dict)
+            if is_train:
+                
+                categorical = [torch.distributions.Categorical(logits=logit) for logit in logits]
+                prev_actions = torch.split(prev_actions, 1, dim=-1)
+                prev_neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, prev_actions)]
+                prev_neglogp = torch.stack(prev_neglogp, dim=-1).sum(dim=-1)
+                entropy = [c.entropy() for c in categorical]
+                entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'value' : torch.squeeze(value),
+                    'entropy' : torch.squeeze(entropy),
+                    'rnn_state' : states
+                }
+                return result
+            else:
+                if action_masks is not None:
+                    inf_mask = [torch.log(masks.float()) for masks in action_masks]
+                    logits = [logit + mask for logit, mask in zip(logits,inf_mask)]
+
+                categorical = [torch.distributions.Categorical(logits=logit) for logit in logits]
+                selected_action = [c.sample().long() for c in categorical]
+                neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, selected_action)]
+                selected_action = torch.stack(selected_action, dim=-1)
+                neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
+                result = {
+                    'neglogp' : torch.squeeze(neglogp),
+                    'value' : torch.squeeze(value),
+                    'action' : selected_action,
+                    'logits' : logits,
+                    'rnn_state' : states
+                }
+                return  result
 
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
@@ -152,8 +209,6 @@ class ModelA2CContinuousLogStd(BaseModel):
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
-                #prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
-                #print(((prev_neglogp - prev_neglogp2)**2).sum())
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'value' : torch.squeeze(value),

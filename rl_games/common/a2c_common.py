@@ -734,13 +734,23 @@ class A2CBase:
 class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)
-        self.actions_num = self.env_info['action_space'].n
+        batch_size = self.num_agents * self.num_actors
+        action_space = self.env_info['action_space'] 
+        if type(action_space) is gym.spaces.Discrete:
+            self.actions_shape = (self.steps_num, batch_size)
+            self.actions_num = action_space.n
+            self.is_multi_discrete = False
+        if type(action_space) is gym.spaces.Tuple:
+            self.actions_shape = (self.steps_num, batch_size, len(action_space)) 
+            self.actions_num = [action.n for action in action_space]
+            self.is_multi_discrete = True
         self.is_discrete = True
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size), dtype = torch.long, device=self.ppo_device)
+        #self.mb_neglogpacs = torch.zeros(self.actions_shape, dtype = torch.float32, device=self.ppo_device)
+        self.mb_actions = torch.zeros(self.actions_shape, dtype = torch.long, device=self.ppo_device)
         if self.has_curiosity:
             self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
             self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)

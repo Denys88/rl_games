@@ -3,7 +3,7 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c
+    name: multi_discrete_a2c
 
   load_checkpoint: False
   load_path: path
@@ -13,7 +13,7 @@ params:
     separate: True
     #normalization: 'layer_norm'
     space: 
-      discrete:
+      multi_discrete:
 
     mlp:
       units: [64]
@@ -36,7 +36,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 2e-4
-    name: test_rnn
+    name: test_rnn_md
     score_to_win: 0.95
     grad_norm: 10.5
     entropy_coef: 0.005
@@ -64,7 +64,7 @@ params:
       min_dist: 2
       max_dist: 8
       use_central_value: False
-
+      multi_discrete_space: True
     player:
         games_num: 100
         is_determenistic: True

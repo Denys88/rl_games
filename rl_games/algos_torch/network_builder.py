@@ -252,6 +252,11 @@ class A2CBuilder(NetworkBuilder):
 
             if self.is_discrete:
                 self.logits = torch.nn.Linear(out_size, actions_num)
+            '''
+                for multidiscrete actions num is a tuple
+            '''
+            if self.is_multi_discrete:
+                self.logits = torch.nn.ModuleList([torch.nn.Linear(out_size, num) for num in actions_num])
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
@@ -355,6 +360,10 @@ class A2CBuilder(NetworkBuilder):
                     logits = self.logits(a_out)
                     return logits, value, states
 
+                if self.is_multi_discrete:
+                    logits = [logit(a_out) for logit in self.logits]
+                    return logits, value, states
+
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(a_out))
                     if self.space_config['fixed_sigma']:
@@ -414,7 +423,9 @@ class A2CBuilder(NetworkBuilder):
                 if self.is_discrete:
                     logits = self.logits(out)
                     return logits, value, states
-
+                if self.is_multi_discrete:
+                    logits = [logit(out) for logit in self.logits]
+                    return logits, value, states
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
                     if self.space_config['fixed_sigma']:
@@ -467,12 +478,15 @@ class A2CBuilder(NetworkBuilder):
             self.use_joint_obs_actions = self.joint_obs_actions_config is not None
 
             if self.has_space:
+                self.is_multi_discrete = 'multi_discrete'in params['space']
                 self.is_discrete = 'discrete' in params['space']
                 self.is_continuous = 'continuous'in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
+                elif self.is_multi_discrete:
+                    self.space_config = params['space']['multi_discrete']
             else:
                 self.is_discrete = False
                 self.is_continuous = False
@@ -859,7 +873,8 @@ class A2CResnetBuilder(NetworkBuilder):
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
             self.is_discrete = 'discrete' in params['space']
-            self.is_continuous = 'continuous'in params['space']
+            self.is_continuous = 'continuous' in params['space']
+            self.is_multi_discrete = 'multi_discrete'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.value_shape = params.get('value_shape', 1)
@@ -867,7 +882,8 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.space_config = params['space']['continuous']
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
-                
+            elif self.is_multi_discrete:
+                self.space_config = params['space']['multi_discrete']    
             self.has_rnn = 'rnn' in params
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
