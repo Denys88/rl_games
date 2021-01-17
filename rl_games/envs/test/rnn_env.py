@@ -5,11 +5,7 @@ import numpy as np
 class TestRNNEnv(gym.Env):
     def __init__(self,  **kwargs):
         gym.Env.__init__(self)
-        self.n_actions = 4
-        self.action_space = gym.spaces.Discrete(self.n_actions)
-
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
-        self.state_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
+ 
         self.obs_dict = {}
         self.max_steps = kwargs.pop('max_steps', 61)
         self.show_time = kwargs.pop('show_time', 1)
@@ -19,6 +15,13 @@ class TestRNNEnv(gym.Env):
         self.use_central_value = kwargs.pop('use_central_value', False)
         self.apply_dist_reward = kwargs.pop('apply_dist_reward', False)
         self.apply_exploration_reward = kwargs.pop('apply_exploration_reward', False)
+        self.multi_discrete_space = kwargs.pop('multi_discrete_space', False)
+        if self.multi_discrete_space:
+            self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2),gym.spaces.Discrete(3)])
+        else:
+            self.action_space = gym.spaces.Discrete(4)
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
+        self.state_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
         if self.apply_exploration_reward:
             pass
         self.reset()
@@ -42,10 +45,7 @@ class TestRNNEnv(gym.Env):
             obses = obs.astype(np.float32)
         return obses
 
-    def step(self, action):
-        info = {}  
-        self._curr_steps += 1
-
+    def step_categorical(self, action):
         if self._curr_steps > 1:
             if action == 0:
                 self._current_pos[0] += 1
@@ -54,7 +54,28 @@ class TestRNNEnv(gym.Env):
             if action == 2:
                 self._current_pos[1] += 1
             if action == 3:
-                self._current_pos[1] -= 1          
+                self._current_pos[1] -= 1   
+
+    def step_multi_categorical(self, action):
+        if self._curr_steps > 1:
+            if action[0] == 0:
+                self._current_pos[0] += 1
+            if action[0] == 1:
+                self._current_pos[0] -= 1
+            if action[1] == 0:
+                self._current_pos[1] += 1
+            if action[1] == 1:
+                self._current_pos[1] -= 1
+            if action[1] == 2:
+                pass
+
+    def step(self, action):
+        info = {}  
+        self._curr_steps += 1
+        if self.multi_discrete_space:
+            self.step_multi_categorical(action)
+        else:
+            self.step_categorical(action)
         reward = 0.0
         done = False
         dist = self._current_pos - self._goal_pos
