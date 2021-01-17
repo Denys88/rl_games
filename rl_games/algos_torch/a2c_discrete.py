@@ -117,7 +117,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         action_log_probs = res_dict['prev_neglogp']
         values = res_dict['value']
         entropy = res_dict['entropy']
-
         a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
         if self.use_experimental_cv:
@@ -129,6 +128,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
                 
         losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+
         a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 

@@ -533,14 +533,8 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
-
-        '''
-        TODO: rework this usecase better
-        '''
-
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
-
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
