@@ -528,9 +528,6 @@ class A2CBase:
         else:
             last_values = self.get_values(self.obs)
 
-        last_values = torch.squeeze(last_values)
-
-
         mb_extrinsic_values = mb_values
         last_extrinsic_values = last_values
 
@@ -761,13 +758,13 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-
+        
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       
 
         advantages = torch.sum(advantages, axis=1)
-
+        
         if self.normalize_advantage:
             if self.is_rnn:
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
@@ -990,8 +987,7 @@ class ContinuousA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
 
-        if self.value_size > 1:
-            advantages = torch.sum(advantages, axis=1)
+        advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
             if self.is_rnn:

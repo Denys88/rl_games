@@ -90,9 +90,9 @@ class TestRNNEnv(gym.Env):
             info = {'scores' : 1} 
             done = True
         elif self._curr_steps == self.max_steps:
-            reward[0] = -1.0
             info = {'scores' : 0} 
             done = True
+            print(info)
 
         dist_coef = -0.1
         if self.apply_dist_reward:

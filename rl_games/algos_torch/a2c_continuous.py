@@ -104,7 +104,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
         b_loss = self.bound_loss(mu)
-        losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy, b_loss], rnn_masks)
+        losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
         a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
