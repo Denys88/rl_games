@@ -2,7 +2,7 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.algos_torch import central_value, rnd_curiosity
+from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 
@@ -35,9 +35,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
-        if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
-                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device, self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'],
                                     self.central_value_config, self.writer).to(self.ppo_device)
@@ -105,9 +102,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 c_loss = torch.zeros(1, device=self.ppo_device)
             else:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-
-        if self.has_curiosity:
-            c_loss = c_loss.sum(dim=1)
 
         b_loss = self.bound_loss(mu)
         losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy, b_loss], rnn_masks)

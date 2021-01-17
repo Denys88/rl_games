@@ -23,7 +23,6 @@ class ModelBuilder:
         self.network_factory.set_builders(NETWORK_REGISTRY)
         self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
         self.network_factory.register_builder('resnet_actor_critic', lambda **kwargs : network_builder.A2CResnetBuilder())
-        self.network_factory.register_builder('rnd_curiosity', lambda **kwargs : network_builder.RNDCuriosityBuilder())
 
     def load(self, params):
         self.model_name = params['model']['name']

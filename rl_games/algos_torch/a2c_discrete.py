@@ -2,7 +2,7 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.algos_torch import central_value, rnd_curiosity
+from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 
@@ -37,10 +37,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.has_central_value:
             self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
                                     self.central_value_config, self.writer).to(self.ppo_device)
-
-        if self.has_curiosity:
-            self.rnd_curiosity = rnd_curiosity.RNDCuriosityTrain(torch_ext.shape_whc_to_cwh(self.obs_shape), self.curiosity_config['network'], 
-                                    self.curiosity_config, self.writer, lambda obs: self._preproc_obs(obs))
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
@@ -131,10 +127,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 c_loss = torch.zeros(1, device=self.ppo_device)
             else:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-
-        if self.has_curiosity:
-            c_loss = c_loss.sum(dim=1)
-
+                
         losses, sum_mask = torch_ext.apply_masks([a_loss, c_loss, entropy], rnn_masks)
         a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
         loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
