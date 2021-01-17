@@ -96,7 +96,7 @@ class TestRNNEnv(gym.Env):
 
         dist_coef = -0.1
         if self.apply_dist_reward:
-            reward[1] += dist_coef * np.abs(dist).sum() / self.max_dist
+            reward[1] = dist_coef * np.abs(dist).sum() / self.max_dist
 
         show_object = 0
         if self.hide_object:

@@ -82,6 +82,7 @@ def random_sample(obs_batch, prob):
 def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
+        mask = mask.unsqueeze(1)
         sum_mask = mask.sum()
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
@@ -201,7 +202,7 @@ class AverageMeter(nn.Module):
         size = values.size()[0]
         if size == 0:
             return
-        new_mean = torch.mean(values.float())
+        new_mean = torch.mean(values.float(), dim=0)
         size = np.clip(size, 0, self.max_size)
         old_size = min(self.max_size - size, self.current_size)
         size_sum = old_size + size
@@ -216,4 +217,4 @@ class AverageMeter(nn.Module):
         return self.current_size
 
     def get_mean(self):
-        return self.mean.squeeze().cpu().numpy()
+        return self.mean.squeeze(0).cpu().numpy()

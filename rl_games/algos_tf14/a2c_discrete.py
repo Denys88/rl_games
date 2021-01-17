@@ -329,6 +329,7 @@ class A2CAgent:
             frame += batch_size_envs
             obses, returns, dones, actions, values, neglogpacs, lstm_states, _ = self.play_steps()
             advantages = returns - values
+            
             if self.normalize_advantage:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
