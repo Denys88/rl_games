@@ -418,23 +418,12 @@ configurations = {
     },
 }
 
-
-def get_obs_and_action_spaces(name):
-    env = configurations[name]['env_creator']()
-    observation_space = env.observation_space
-    action_space = env.action_space
-    env.close()
-    # workaround for deepmind control
-    if isinstance(observation_space, gym.spaces.dict.Dict):
-        observation_space = observation_space['observations']
-    return observation_space, action_space
-
-
 def get_env_info(env):
     result_shapes = {}
     result_shapes['observation_space'] = env.observation_space
     result_shapes['action_space'] = env.action_space
     result_shapes['agents'] = 1
+    result_shapes['value_size'] = 1
     if hasattr(env, "get_number_of_agents"):
         result_shapes['agents'] = env.get_number_of_agents()
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
@@ -442,6 +431,8 @@ def get_env_info(env):
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
+    if hasattr(env, "value_size"):    
+        result_shapes['value_size'] = env.value_size
     print(result_shapes)
     return result_shapes
 
