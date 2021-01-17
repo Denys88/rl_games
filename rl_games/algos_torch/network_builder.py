@@ -176,6 +176,7 @@ class A2CBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
+            self.value_size = kwargs.pop('value_size')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
@@ -247,7 +248,7 @@ class A2CBuilder(NetworkBuilder):
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
 
-            self.value = torch.nn.Linear(out_size, self.value_shape)
+            self.value = torch.nn.Linear(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
 
             if self.is_discrete:
@@ -472,7 +473,6 @@ class A2CBuilder(NetworkBuilder):
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
             self.has_space = 'space' in params
-            self.value_shape = params.get('value_shape', 1)
             self.central_value = params.get('central_value', False)
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
             self.use_joint_obs_actions = self.joint_obs_actions_config is not None
@@ -508,167 +508,6 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
-
-
-class RNDCuriosityBuilder(NetworkBuilder):
-    def __init__(self, **kwargs):
-        NetworkBuilder.__init__(self)
-
-    def load(self, params):
-        self.params = params
-
-    class Network(NetworkBuilder.BaseNetwork):
-        def __init__(self, params, **kwargs):
-            input_shape = kwargs.pop('input_shape')
-            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
-            self.load(params)
-            self.rnd_cnn = []
-            self.net_cnn = []
-            self.rnd_mlp = []
-            self.net_mlp = []
-
-            if self.has_cnn:
-                rnd_cnn_args = {
-                    'ctype' : self.cnn['type'], 
-                    'input_shape' : input_shape, 
-                    'convs' :self.rnd_cnn_layers['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'norm_func_name' : self.normalization,
-                }
-                net_cnn_args = {
-                    'ctype' : self.cnn['type'], 
-                    'input_shape' : input_shape, 
-                    'convs' :self.net_cnn_layers['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'norm_func_name' : self.normalization,
-                }
-                self.rnd_cnn = self._build_conv(**rnd_cnn_args)
-                self.net_cnn = self._build_conv(**net_cnn_args)
-
-            rnd_input_shape = self._calc_input_size(input_shape, self.rnd_cnn)
-            rnd_mlp_args = {
-                'input_size' : rnd_input_shape, 
-                'units' :self.rnd_units[:-1], 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear,
-            }
-            net_input_shape = self._calc_input_size(input_shape, self.net_cnn)
-            net_mlp_args = {
-                'input_size' : net_input_shape, 
-                'units' :self.net_units[:-1], 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
-            }
-            self.rnd_mlp = self._build_mlp(**rnd_mlp_args)
-            self.net_mlp = self._build_mlp(**net_mlp_args)
-            if len(self.rnd_units) >= 2:
-                self.rnd_mlp.append(torch.nn.Linear(self.rnd_units[-2], self.rnd_units[-1]))
-            else:
-                self.rnd_mlp.append(torch.nn.Linear(rnd_input_shape, self.rnd_units[-1]))
-            if len(self.net_units) >= 2:    
-                self.net_mlp.append(torch.nn.Linear(self.net_units[-2], self.net_units[-1]))
-            else:
-                self.net_mlp.append(torch.nn.Linear(net_input_shape, self.net_units[-1]))
-
-            mlp_init = self.init_factory.create(**self.initializer)
-            if self.has_cnn:
-                cnn_init = self.init_factory.create(**self.cnn['initializer'])
-
-            for m in self.rnd_cnn:
-                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
-                    cnn_init(m.weight)
-            for m in self.net_cnn:
-                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
-                    cnn_init(m.weight)   
-
-            for m in self.rnd_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)
-
-            for m in self.net_mlp:
-                if isinstance(m, nn.Linear):    
-                    mlp_init(m.weight)
-
-        def forward(self, obs):
-            rnd_out = net_out = obs
-
-            with torch.no_grad():
-                rnd_out = self.rnd_cnn(rnd_out)
-                rnd_out = rnd_out.view(rnd_out.size(0), -1)
-                rnd_out = self.rnd_mlp(rnd_out)
-
-            net_out = self.net_cnn(rnd_out)
-            net_out = net_out.view(net_out.size(0), -1)                    
-
-                
-            net_out = self.net_mlp(rnd_out)
-                    
-            return rnd_out, net_out
-
-        def load(self, params):
-            self.rnd_units = params['mlp']['rnd']['units']
-            self.net_units = params['mlp']['net']['units']
-            self.activation = params['mlp']['activation']
-            self.initializer = params['mlp']['initializer']
-            self.regularizer = params['mlp']['regularizer']
-            self.normalization = params.get('normalization', None)
-
-            self.has_lstm = 'rnn' in params
-                
-            if self.has_lstm:
-                self.lstm_units = params['rnn']['units']
-
-            if 'cnn' in params:
-                self.has_cnn = True
-                self.rnd_cnn_layers = params['cnn']['rnd']
-                self.net_cnn_layers = params['cnn']['net']
-                self.cnn = params['cnn']
-            else:
-                self.has_cnn = False
-
-    def build(self, name, **kwargs):
-        net = RNDCuriosityBuilder.Network(self.params, **kwargs)
-        return net
-
-
-class ChannelAttention(nn.Module):
-    def __init__(self, in_planes, ratio=16):
-        super(ChannelAttention, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-
-        self.fc1   = nn.Conv2d(in_planes, in_planes // 2, 1, bias=False)
-        self.relu1 = nn.ReLU()
-        self.fc2   = nn.Conv2d(in_planes // 2, in_planes, 1, bias=False)
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        avg_out = self.fc2(self.relu1(self.fc1(self.avg_pool(x))))
-        max_out = self.fc2(self.relu1(self.fc1(self.max_pool(x))))
-        out = avg_out + max_out
-        return self.sigmoid(out)
-
-
-class SpatialAttention(nn.Module):
-    def __init__(self, kernel_size=7):
-        super(SpatialAttention, self).__init__()
-
-        assert kernel_size in (3, 7), 'kernel size must be 3 or 7'
-        padding = 3 if kernel_size == 7 else 1
-
-        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        x = torch.cat([avg_out, max_out], dim=1)
-        x = self.conv1(x)
-        return self.sigmoid(x)
-
 
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
@@ -751,6 +590,8 @@ class A2CResnetBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.value_size = kwargs.pop('value_size')
+
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
   
@@ -784,7 +625,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
             self.mlp = self._build_mlp(**mlp_args)
 
-            self.value = torch.nn.Linear(out_size, self.value_shape)
+            self.value = torch.nn.Linear(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
             self.flatten_act = self.activations_factory.create(self.activation) 
             if self.is_discrete:
@@ -877,7 +718,6 @@ class A2CResnetBuilder(NetworkBuilder):
             self.is_multi_discrete = 'multi_discrete'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
-            self.value_shape = params.get('value_shape', 1)
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
             elif self.is_discrete:

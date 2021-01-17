@@ -50,7 +50,7 @@ class A2CBase:
         self.ppo_device = config.get('device', 'cuda:0')
         print('Env info:')
         print(self.env_info)
-
+        self.value_size = self.env_info['value_size']
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
@@ -113,7 +113,7 @@ class A2CBase:
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.game_rewards = torch_ext.AverageMeter(value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
@@ -232,8 +232,13 @@ class A2CBase:
         else:
             torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
-
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        if self.value_size == 1:
+            val_shape = (self.steps_num, batch_size)
+            current_rewards_shape = (batch_size,)
+        else:
+            val_shape = (self.steps_num, batch_size, value_size)
+            current_rewards_shape = (batch_size, value_size)
+        self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.ppo_device)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
@@ -241,8 +246,8 @@ class A2CBase:
         if self.has_central_value:
             self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype, device=self.ppo_device)
 
-        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
-        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
+        self.mb_rewards = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
+        self.mb_values = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8, device=self.ppo_device)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
@@ -365,12 +370,8 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
-        #self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
-        #self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
-        #self.obs = self.env_reset()
-
     def update_epoch(self):
         pass
 
@@ -688,7 +689,6 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        #self.mb_neglogpacs = torch.zeros(self.actions_shape, dtype = torch.float32, device=self.ppo_device)
         self.mb_actions = torch.zeros(self.actions_shape, dtype = torch.long, device=self.ppo_device)
 
         self.update_list = ['action', 'neglogp', 'value']
@@ -834,10 +834,16 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    if self.value_size == 1:
+                        self.writer.add_scalar('rewards/frame', mean_rewards, frame)
+                        self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
+                        self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    else:
+                        for i in range(self.value_size):
+                            self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                            self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                            self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
 
-                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
-                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
-                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
@@ -1059,9 +1065,17 @@ class ContinuousA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
-                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
-                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
-                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+
+                    if self.value_size == 1:
+                        self.writer.add_scalar('rewards/frame', mean_rewards, frame)
+                        self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
+                        self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+                    else:
+                        for i in range(self.value_size):
+                            self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                            self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                            self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
 

@@ -15,6 +15,12 @@ class TestRNNEnv(gym.Env):
         self.use_central_value = kwargs.pop('use_central_value', False)
         self.apply_dist_reward = kwargs.pop('apply_dist_reward', False)
         self.apply_exploration_reward = kwargs.pop('apply_exploration_reward', False)
+        self.multi_head_value = kwargs.pop('multi_head_value', False)
+        if self.multi_head_value:
+            self.value_size = 2
+        else:
+            self.value_size = 1
+
         self.multi_discrete_space = kwargs.pop('multi_discrete_space', False)
         if self.multi_discrete_space:
             self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2),gym.spaces.Discrete(3)])
@@ -36,7 +42,7 @@ class TestRNNEnv(gym.Env):
         rand_dir = - 2 * np.random.randint(0, 2, (2,)) + 1
         self._goal_pos = rand_dir * np.random.randint(self.min_dist, self.max_dist+1, (2,))
         obs = np.concatenate([self._current_pos, self._goal_pos, [1, 0]], axis=None)
-        #print(self._goal_pos)
+
         if self.use_central_value:
             obses = {}
             obses["obs"] = obs.astype(np.float32)
@@ -76,21 +82,21 @@ class TestRNNEnv(gym.Env):
             self.step_multi_categorical(action)
         else:
             self.step_categorical(action)
-        reward = 0.0
+        reward = [0.0, 0.0]
         done = False
         dist = self._current_pos - self._goal_pos
         if (dist**2).sum() < 0.0001:
-            reward = 1.0
+            reward[0] = 1.0
             info = {'scores' : 1} 
             done = True
         elif self._curr_steps == self.max_steps:
-            reward = -1.0
+            reward[0] = -1.0
             info = {'scores' : 0} 
             done = True
 
         dist_coef = -0.1
         if self.apply_dist_reward:
-            reward += dist_coef * np.abs(dist).sum() / self.max_dist
+            reward[1] += dist_coef * np.abs(dist).sum() / self.max_dist
 
         show_object = 0
         if self.hide_object:
@@ -106,6 +112,10 @@ class TestRNNEnv(gym.Env):
             obses["state"] = obs.astype(np.float32)
         else:
             obses = obs.astype(np.float32)
+        if self.multi_head_value:
+            pass
+        else:
+            reward = reward[0] + reward[1]
         return obses, reward, done, info
     
     def has_action_mask(self):
