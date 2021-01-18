@@ -20,7 +20,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info['value_size']
+            'value_size': self.env_info.get('value_size',1)
         }
 
         self.model = self.network.build(config)

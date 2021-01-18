@@ -50,7 +50,7 @@ class A2CBase:
         self.ppo_device = config.get('device', 'cuda:0')
         print('Env info:')
         print(self.env_info)
-        self.value_size = self.env_info['value_size']
+        self.value_size = self.env_info.get('value_size',1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
