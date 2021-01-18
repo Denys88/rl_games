@@ -17,9 +17,9 @@ setup(name='rl_games',
             # this setup is only for pytorch
             # 
             'gym>=0.17.2',
-            'torch>=1.6',
+            'torch>=1.7.1',
             'numpy>=1.16.0',
-            'ray>=1.0.0',
+            'ray>=1.1.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
             'opencv-python>=4.1.0.25',
