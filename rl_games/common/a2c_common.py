@@ -500,7 +500,6 @@ class A2CBase:
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
             shaped_rewards = self.rewards_shaper(rewards)
-
             mb_rewards[n,:] = shaped_rewards
 
             self.current_rewards += rewards

@@ -30,6 +30,8 @@ class DefaultAlgoObserver(AlgoObserver):
         self.writer = self.algo.writer
 
     def process_infos(self, infos, done_indices):
+        if not infos:
+            return
         if len(infos) > 0 and isinstance(infos[0], dict):
             for ind in done_indices:
                 if len(infos) <= ind//self.algo.num_agents:
