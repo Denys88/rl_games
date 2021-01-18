@@ -50,7 +50,7 @@ class A2CBase:
         self.ppo_device = config.get('device', 'cuda:0')
         print('Env info:')
         print(self.env_info)
-
+        self.value_size = self.env_info['value_size']
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
@@ -113,7 +113,7 @@ class A2CBase:
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
+        self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
@@ -136,17 +136,6 @@ class A2CBase:
 
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
-
-        # curiosity
-        self.curiosity_config = self.config.get('rnd_config', None)
-        self.has_curiosity = self.curiosity_config is not None
-        if self.has_curiosity:
-            self.curiosity_gamma = self.curiosity_config['gamma']
-            self.curiosity_lr = self.curiosity_config['lr']
-            self.curiosity_rewards = deque([], maxlen=self.games_to_track)
-            self.curiosity_mins = deque([], maxlen=self.games_to_track)
-            self.curiosity_maxs = deque([], maxlen=self.games_to_track)
-            self.rnd_adv_coef = self.curiosity_config.get('adv_coef', 1.0)
 
         self.is_tensor_obses = False
 
@@ -243,8 +232,10 @@ class A2CBase:
         else:
             torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
-
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+ 
+        val_shape = (self.steps_num, batch_size, self.value_size)
+        current_rewards_shape = (batch_size, self.value_size)
+        self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.ppo_device)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
@@ -252,8 +243,8 @@ class A2CBase:
         if self.has_central_value:
             self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype, device=self.ppo_device)
 
-        self.mb_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
-        self.mb_values = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
+        self.mb_rewards = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
+        self.mb_values = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
         self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8, device=self.ppo_device)
         self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
@@ -304,26 +295,6 @@ class A2CBase:
                 s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
         indices += 1  
 
-    def calc_returns_with_rnd(self, mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards):
-        mb_intrinsic_advs = torch.zeros_like(mb_intrinsic_rewards)
-        lastgaelam = 0
-
-        self.curiosity_rewards.append(torch.sum(torch.mean(mb_intrinsic_rewards, axis=1)))
-        self.curiosity_mins.append(torch.min(mb_intrinsic_rewards))
-        self.curiosity_maxs.append(torch.max(mb_intrinsic_rewards))
-
-        for t in reversed(range(self.steps_num)):
-            if t == self.steps_num - 1:
-                nextvalues = last_intrinsic_values
-            else:
-                nextvalues = mb_intrinsic_values[t+1]
-
-            delta = mb_intrinsic_rewards[t] + self.curiosity_gamma * nextvalues - mb_intrinsic_values[t]
-            mb_intrinsic_advs[t] = lastgaelam = delta + self.curiosity_gamma * self.tau * lastgaelam
-
-        mb_intrinsic_returns = mb_intrinsic_advs + mb_intrinsic_values
-        mb_returns = torch.stack((mb_returns, mb_intrinsic_returns), dim=-1)
-        return mb_returns
 
     def cast_obs(self, obs):
         if isinstance(obs, torch.Tensor):
@@ -355,8 +326,12 @@ class A2CBase:
         obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
+            if self.value_size == 1:
+                rewards = rewards.unsqueeze()
             return self.obs_to_tensors(obs), rewards.to(self.ppo_device), dones.to(self.ppo_device), infos
         else:
+            if self.value_size == 1:
+                rewards = np.expand_dims(rewards, axis=1)
             return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device).float(), torch.from_numpy(dones).to(self.ppo_device), infos
 
     def env_reset(self):
@@ -374,6 +349,7 @@ class A2CBase:
             else:
                 nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
+            nextnonterminal = nextnonterminal.unsqueeze(1)
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
@@ -388,19 +364,17 @@ class A2CBase:
             else:
                 nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
+            nextnonterminal = nextnonterminal.unsqueeze(1)
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
-            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * mb_masks[t]
+            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * mb_masks[t].unsqueeze(1)
         return mb_advs
 
     def clear_stats(self):
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
-        #self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
-        #self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
-        #self.obs = self.env_reset()
 
     def update_epoch(self):
         pass
@@ -420,13 +394,6 @@ class A2CBase:
     def calc_gradients(self, opt_step):
         pass
 
-    def get_intrinsic_reward(self, obs):
-        return self.rnd_curiosity.get_loss(obs)
-
-    def train_intrinsic_reward(self, obs_dict):
-        obs = obs_dict['obs']
-        self.rnd_curiosity.train_net(obs)
-
     def get_central_value(self, obs_dict):
         return self.central_value_net.get_value(obs_dict).squeeze()
 
@@ -441,8 +408,6 @@ class A2CBase:
 
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
-        if self.has_curiosity:
-            state['rnd_nets'] = self.rnd_curiosity.state_dict()
         return state
 
     def set_full_state_weights(self, weights):
@@ -451,8 +416,6 @@ class A2CBase:
         self.epoch_num = weights['epoch']
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
-        if self.has_curiosity:
-            self.rnd_curiosity.load_state_dict(weights['rnd_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
 
     def get_weights(self):
@@ -513,9 +476,6 @@ class A2CBase:
         update_list = self.update_list
         update_dict = self.update_dict
 
-        if self.has_curiosity:
-            mb_intrinsic_rewards = self.mb_intrinsic_rewards
-
         if self.has_central_value:
             mb_vobs = self.mb_vobs
 
@@ -539,10 +499,6 @@ class A2CBase:
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
-            if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[n,:] = intrinsic_reward
-
             shaped_rewards = self.rewards_shaper(rewards)
 
             mb_rewards[n,:] = shaped_rewards
@@ -559,7 +515,7 @@ class A2CBase:
 
             not_dones = 1.0 - self.dones.float()
 
-            self.current_rewards = self.current_rewards * not_dones
+            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
         
         if self.has_central_value and self.central_value_net.use_joint_obs_actions:
@@ -572,30 +528,13 @@ class A2CBase:
         else:
             last_values = self.get_values(self.obs)
 
-        last_values = torch.squeeze(last_values)
-
-        if self.has_curiosity:
-            mb_intrinsic_values = mb_values[:,:,1]
-            mb_extrinsic_values = mb_values[:,:,0]
-            last_intrinsic_values = last_values[:, 1]
-            last_extrinsic_values = last_values[:, 0]
-        else:
-            mb_extrinsic_values = mb_values
-            last_extrinsic_values = last_values
+        mb_extrinsic_values = mb_values
+        last_extrinsic_values = last_values
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
-
-        '''
-        TODO: rework this usecase better
-        '''
-
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
-
-        if self.has_curiosity:
-            mb_returns = self.calc_returns_with_rnd(mb_returns, last_intrinsic_values, mb_intrinsic_values, mb_intrinsic_rewards)
-
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
@@ -658,10 +597,6 @@ class A2CBase:
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
-            if self.has_curiosity:
-                intrinsic_reward = self.get_intrinsic_reward(self.obs['obs'])
-                mb_intrinsic_rewards[indices, play_mask] = intrinsic_reward
-
             shaped_rewards = self.rewards_shaper(rewards)
 
             mb_rewards[indices, play_mask] = shaped_rewards
@@ -681,8 +616,9 @@ class A2CBase:
             not_dones = 1.0 - self.dones.float()
 
             self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices]) 
-            self.current_rewards = self.current_rewards * not_dones
+            self.game_lengths.update(self.current_lengths[done_indices])
+
+            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
 
         if self.has_central_value and self.central_value_net.use_joint_obs_actions:
@@ -696,8 +632,6 @@ class A2CBase:
         else:
             last_values = self.get_values(self.obs)
 
-        last_values = torch.squeeze(last_values)
-
         mb_extrinsic_values = mb_values
         last_extrinsic_values = last_values
         fdones = self.dones.float()
@@ -709,6 +643,7 @@ class A2CBase:
         mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
+
         mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
 
         mb_returns = mb_advs + mb_extrinsic_values
@@ -749,11 +684,7 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         batch_size = self.num_agents * self.num_actors
-        #self.mb_neglogpacs = torch.zeros(self.actions_shape, dtype = torch.float32, device=self.ppo_device)
         self.mb_actions = torch.zeros(self.actions_shape, dtype = torch.long, device=self.ppo_device)
-        if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
         self.update_list = ['action', 'neglogp', 'value']
         self.update_dict = {
@@ -821,16 +752,13 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-
+        
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       
 
-        if self.has_curiosity:
-            self.train_intrinsic_reward(batch_dict)
-            advantages[:,1] = advantages[:,1] * self.rnd_adv_coef
-            advantages = torch.sum(advantages, axis=1)
-
+        advantages = torch.sum(advantages, axis=1)
+        
         if self.normalize_advantage:
             if self.is_rnn:
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
@@ -903,23 +831,15 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    for i in range(self.value_size):
+                        self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                        self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                        self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
 
-                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
-                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
-                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
-                    if self.has_curiosity:
-                        if len(self.curiosity_rewards) > 0:
-                            mean_cur_rewards = np.mean(self.curiosity_rewards)
-                            mean_min_rewards = np.mean(self.curiosity_mins)
-                            mean_max_rewards = np.mean(self.curiosity_maxs)
-
-                            self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
-                            self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
-                            self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
@@ -927,9 +847,9 @@ class DiscreteA2CBase(A2CBase):
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
                             self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
 
-                    if mean_rewards > self.last_mean_rewards and epoch_num >= self.save_best_after:
+                    if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
-                        self.last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards[0]
                         self.save("./nn/" + self.config['name'])
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
@@ -968,10 +888,6 @@ class ContinuousA2CBase(A2CBase):
         self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
         self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
         self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
-
-        if self.has_curiosity:
-            self.mb_values = torch.zeros((self.steps_num, batch_size, 2), dtype = torch.float32, device=self.ppo_device)
-            self.mb_intrinsic_rewards = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
 
         self.update_list = ['action', 'neglogp', 'value', 'mu', 'sigma']
         self.update_dict = {
@@ -1065,16 +981,13 @@ class ContinuousA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
 
+        advantages = torch.sum(advantages, axis=1)
+
         if self.normalize_advantage:
             if self.is_rnn:
                 advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        if self.has_curiosity:
-            self.train_intrinsic_reward(batch_dict)
-            advantages[:, 1] = advantages[:, 1] * self.rnd_adv_coef
-            advantages = torch.sum(advantages, axis=1)  
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1146,31 +1059,25 @@ class ContinuousA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
-                    self.writer.add_scalar('rewards/frame', mean_rewards, frame)
-                    self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
-                    self.writer.add_scalar('rewards/time', mean_rewards, total_time)
+
+                    for i in range(self.value_size):
+                        self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                        self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                        self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
 
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
-                    if self.has_curiosity:
-                        if len(self.curiosity_rewards) > 0:
-                            mean_cur_rewards = np.mean(self.curiosity_rewards)
-                            mean_min_rewards = np.mean(self.curiosity_mins)
-                            mean_max_rewards = np.mean(self.curiosity_maxs)
-                            self.writer.add_scalar('rnd/rewards_sum', mean_cur_rewards, frame)
-                            self.writer.add_scalar('rnd/rewards_min', mean_min_rewards, frame)
-                            self.writer.add_scalar('rnd/rewards_max', mean_max_rewards, frame)
-
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
                             self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
 
-                    if mean_rewards > self.last_mean_rewards and epoch_num >= self.save_best_after:
+                    if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
-                        self.last_mean_rewards = mean_rewards
+                        self.last_mean_rewards = mean_rewards[0]
                         self.save("./nn/" + self.config['name'])
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')

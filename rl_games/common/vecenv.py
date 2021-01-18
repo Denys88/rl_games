@@ -22,28 +22,6 @@ class IVecEnv(object):
     def get_env_info(self):
         pass
 
-
-class IsaacEnv(IVecEnv):
-    def __init__(self, config_name, num_actors, **kwargs):
-        self.env = configurations[config_name]['env_creator'](**kwargs)
-        self.obs = self.env.reset()
-    
-    def step(self, action):
-        next_state, reward, is_done, info = self.env.step(action)
-        next_state = self.reset()
-        return next_state, reward, is_done, info
-
-    def reset(self):
-        self.obs = self.env.reset()
-        return self.obs
-
-    def get_env_info(self):
-        info = {}
-        info['action_space'] = self.env.action_space
-        info['observation_space'] = self.env.observation_space
-        return info
-
-
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
@@ -98,10 +76,11 @@ class RayWorker:
         info['state_space'] = None
         info['use_global_observations'] = False
         info['agents'] = self.get_number_of_agents()
-
+        info['value_size'] = 1
         if hasattr(self.env, 'use_central_value'):
             info['use_global_observations'] = self.env.use_central_value
-
+        if hasattr(self.env, 'value_size'):
+            info['value_size'] = self.env.value_size
         if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
 

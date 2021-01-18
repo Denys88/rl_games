@@ -2,7 +2,6 @@ from torch import nn
 import torch
 
 def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
-    values = torch.squeeze(values)
     if clip_value:
         value_pred_clipped = value_preds_batch + \
                 (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
