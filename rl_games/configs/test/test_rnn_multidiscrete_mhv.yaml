@@ -37,7 +37,7 @@ params:
     tau: 0.9
     learning_rate: 2e-4
     name: test_rnn_md_mhv
-    score_to_win: 0.95
+    score_to_win: 0.99
     grad_norm: 10.5
     entropy_coef: 0.005
     truncate_grads: True

@@ -1,7 +1,7 @@
 from rl_games.common.player import BasePlayer
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-
+import gym
 import torch 
 from torch import nn
 import numpy as np
@@ -72,8 +72,14 @@ def reset(self):
 class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, config):
         BasePlayer.__init__(self, config)
+
         self.network = config['network']
-        self.actions_num = self.action_space.n
+        if type(self.action_space) is gym.spaces.Discrete:
+            self.actions_num = self.action_space.n
+            self.is_multi_discrete = False
+        if type(self.action_space) is gym.spaces.Tuple:
+            self.actions_num = [action.n for action in self.action_space]
+            self.is_multi_discrete = True
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
@@ -82,8 +88,10 @@ class PpoPlayerDiscrete(BasePlayer):
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'num_seqs' : self.num_agents
-        } 
+            'num_seqs' : self.num_agents,
+            'value_size': self.value_size
+        }
+
         self.model = self.network.build(config)
         self.model.to(self.device)
         self.model.eval()
@@ -111,10 +119,17 @@ class PpoPlayerDiscrete(BasePlayer):
         logits = res_dict['logits']
         action = res_dict['action']
         self.states = res_dict['rnn_states']
-        if is_determenistic:
-            return torch.argmax(logits.squeeze().detach(), axis=-1)
-        else:    
-            return action.squeeze()
+        if self.is_multi_discrete:
+            if is_determenistic:
+                action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
+                return torch.stack(action,dim=-1)
+            else:    
+                return action.squeeze().detach()
+        else:
+            if is_determenistic:
+                return torch.argmax(logits.detach(), axis=1).squeeze()
+            else:    
+                return action.squeeze().detach()
 
     def get_action(self, obs, is_determenistic = False):
         if len(obs.size()) == len(self.state_shape):
@@ -132,10 +147,17 @@ class PpoPlayerDiscrete(BasePlayer):
         logits = res_dict['logits']
         action = res_dict['action']
         self.states = res_dict['rnn_state']
-        if is_determenistic:
-            return torch.argmax(logits.detach(), axis=1).squeeze()
-        else:    
-            return action.squeeze().detach()
+        if self.is_multi_discrete:
+            if is_determenistic:
+                action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
+                return torch.stack(action,dim=-1)
+            else:    
+                return action.squeeze().detach()
+        else:
+            if is_determenistic:
+                return torch.argmax(logits.detach(), axis=1).squeeze()
+            else:    
+                return action.squeeze().detach()
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)

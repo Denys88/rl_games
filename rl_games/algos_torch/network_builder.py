@@ -176,7 +176,7 @@ class A2CBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            self.value_size = kwargs.pop('value_size')
+            self.value_size = kwargs.pop('value_size', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
@@ -590,7 +590,7 @@ class A2CResnetBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
-            self.value_size = kwargs.pop('value_size')
+            self.value_size = kwargs.pop('value_size', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)

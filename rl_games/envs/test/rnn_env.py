@@ -116,7 +116,7 @@ class TestRNNEnv(gym.Env):
             pass
         else:
             reward = reward[0] + reward[1]
-        return obses, reward, done, info
+        return obses, np.array(reward).astype(np.float32), done, info
     
     def has_action_mask(self):
         return False

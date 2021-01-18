@@ -14,7 +14,7 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
-
+        self.value_size = self.env_info['value_size']
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
@@ -55,10 +55,12 @@ class BasePlayer(object):
             obs = obs['obs']
         if obs.dtype == np.float64:
             obs = np.float32(obs)
+        if self.value_size > 1:
+            rewards = rewards[0]
         if self.is_tensor_obses:
             return obs, rewards.cpu(), dones.cpu(), infos
         else:
-            if np.isscalar(rewards):
+            if np.isscalar(dones):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
             return torch.from_numpy(obs).to(self.device), torch.from_numpy(rewards), torch.from_numpy(dones), infos
