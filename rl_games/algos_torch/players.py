@@ -66,8 +66,8 @@ class PpoPlayerContinuous(BasePlayer):
         if self.normalize_input:
             self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
-def reset(self):
-    self.init_rnn()
+    def reset(self):
+        self.init_rnn()
 
 class PpoPlayerDiscrete(BasePlayer):
     def __init__(self, config):
