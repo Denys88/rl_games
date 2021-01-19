@@ -327,7 +327,7 @@ class A2CBase:
 
         if self.is_tensor_obses:
             if self.value_size == 1:
-                rewards = rewards.unsqueeze()
+                rewards = rewards.unsqueeze(1)
             return self.obs_to_tensors(obs), rewards.to(self.ppo_device), dones.to(self.ppo_device), infos
         else:
             if self.value_size == 1:
