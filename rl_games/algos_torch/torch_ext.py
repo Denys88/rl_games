@@ -43,8 +43,8 @@ def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     alpha = (a - mu) / sigma
     beta = (b - mu) / sigma
 
-    alpha_normal_cdf = normal.cdf(alpha)
-    p = alpha_normal_cdf + (normal.cdf(beta) - alpha_normal_cdf) * uniform
+    alpha_normal_cdf = normal.cdf(torch.from_numpy(np.array(alpha)))
+    p = alpha_normal_cdf + (normal.cdf(torch.from_numpy(np.array(beta))) - alpha_normal_cdf) * uniform
 
     p = p.numpy()
     one = np.array(1, dtype=p.dtype)
