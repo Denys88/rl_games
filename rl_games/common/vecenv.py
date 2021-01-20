@@ -270,3 +270,8 @@ def create_vec_env(config_name, num_actors, **kwargs):
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
 register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+from isaacgym.rl_utils import RLGPUEnv

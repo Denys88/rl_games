@@ -1,3 +1,7 @@
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+import isaacgym
+
 import torch
 import numpy as np
 import ray
@@ -50,9 +54,11 @@ class PPOWorker:
         return self.agent.env_info
 
     def update_stats(self):
-        mean_rewards = torch_ext.get_mean(self.agent.game_rewards)
-        mean_lengths = torch_ext.get_mean(self.agent.game_lengths)
-        mean_scores = torch_ext.get_mean(self.agent.game_scores)
+        mean_rewards = self.agent.game_rewards.get_mean()
+        mean_lengths = self.agent.game_lengths.get_mean()
+        #mean_rewards = torch_ext.get_mean(self.agent.game_rewards)
+        #mean_lengths = torch_ext.get_mean(self.agent.game_lengths)
+        #mean_scores = torch_ext.get_mean(self.agent.game_scores)
 
         self.current_result = {k: v/self.runs_per_epoch for k, v in self.current_result.items()}
     
@@ -63,7 +69,7 @@ class PPOWorker:
             self.current_result['assymetric_value_loss'] = v / self.runs_per_epoch
         self.current_result['mean_rewards'] = mean_rewards
         self.current_result['mean_lengths'] = mean_lengths
-        self.current_result['mean_scores'] = mean_scores
+        #self.current_result['mean_scores'] = mean_scores
 
     def get_stats(self):
         return self.current_result

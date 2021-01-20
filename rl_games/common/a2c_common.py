@@ -18,6 +18,8 @@ from torch import nn
  
 from time import sleep
 
+from rl_games.common.algo_observer import DefaultAlgoObserver
+
 
 def swap_and_flatten01(arr):
     """
@@ -148,7 +150,7 @@ class A2CBase:
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
         # features
-        self.algo_observer = config['features']['observer']
+        self.algo_observer = DefaultAlgoObserver() #config['features']['observer']
 
     def set_eval(self):
         self.model.eval()
