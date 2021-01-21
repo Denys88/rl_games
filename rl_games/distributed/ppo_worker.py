@@ -1,5 +1,5 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+#os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import isaacgym
 
 import torch
@@ -12,7 +12,7 @@ from rl_games.torch_runner import Runner
 
 class PPOWorker:
     def __init__(self, config, name):
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+        #os.environ['CUDA_VISIBLE_DEVICES'] = '0'
         self.runner = Runner()
         self.runner.load(config)
         self.agent = self.runner.algo_factory.create(self.runner.algo_name, base_name=name, config=self.runner.config)
