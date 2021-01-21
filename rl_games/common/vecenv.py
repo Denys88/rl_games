@@ -271,7 +271,8 @@ register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name,
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
 register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
 
-#import os
-#os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+import os
+#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 from isaacgym.rl_utils import RLGPUEnv
