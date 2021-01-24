@@ -61,7 +61,6 @@ class DDPpoRunner:
         self.main_agent.set_stats_weights(stats)
         #[worker.set_stats_weights.remote(stats) for worker in self.workers]
 
-
     def process_stats(self, stats):
         assert(len(stats) == self.num_ppo_agents)
         sum_stats = {}
@@ -113,7 +112,7 @@ class DDPpoRunner:
 
         if self.main_agent.save_freq > 0:
             if (self.epoch_num % self.main_agent.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
-                self.main_agent.save("./nn/" + 'last_' + self.main_agent.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                self.main_agent.save("./nn/" + 'last_' + self.main_agent.config['name'] + 'ep=' + str(self.epoch_num) + 'rew=' + str(mean_rewards))
 
         if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.main_agent.save_best_after:
             print('saving next best rewards: ', mean_rewards)
@@ -121,13 +120,13 @@ class DDPpoRunner:
             self.main_agent.save("./nn/" + self.main_agent.config['name'])
             if self.last_mean_rewards > self.main_agent.config['score_to_win']:
                 print('Network won!')
-                self.main_agent.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
-                return self.last_mean_rewards, epoch_num
+                self.main_agent.save("./nn/" + self.config['name'] + 'ep=' + str(self.epoch_num) + 'rew=' + str(mean_rewards))
+                return self.last_mean_rewards, self.epoch_num
 
             if self.epoch_num > self.max_epochs:
-                self.main_agent.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                self.main_agent.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(self.epoch_num) + 'rew=' + str(mean_rewards))
                 print('MAX EPOCHS NUM!')
-                return self.last_mean_rewards, epoch_num
+                return self.last_mean_rewards, self.epoch_num
 
     def run_assymetric_critic_training_step(self):
         for _ in range(self.main_agent.central_value_net.num_miniepochs):

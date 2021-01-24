@@ -50,7 +50,7 @@ class A2CBase:
         self.ppo_device = config.get('device', 'cuda:0')
         print('Env info:')
         print(self.env_info)
-        self.value_size = self.env_info.get('value_size',1)
+        self.value_size = self.env_info.get('value_size', 1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
@@ -148,7 +148,7 @@ class A2CBase:
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
         # features
-        self.algo_observer = config['features']['observer']
+        self.algo_observer = config['features'].get('observer', None)
 
     def set_eval(self):
         self.model.eval()
@@ -830,10 +830,16 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
-                    for i in range(self.value_size):
-                        self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
-                        self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
-                        self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+
+                    if self.value_size > 1:
+                        for i in range(self.value_size):
+                            self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                            self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                            self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+                    else:
+                        self.writer.add_scalar('rewards/frame', mean_rewards[0], frame)
+                        self.writer.add_scalar('rewards/iter', mean_rewards[0], epoch_num)
+                        self.writer.add_scalar('rewards/time', mean_rewards[0], total_time)
 
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
@@ -1059,10 +1065,15 @@ class ContinuousA2CBase(A2CBase):
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
 
-                    for i in range(self.value_size):
-                        self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
-                        self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
-                        self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+                    if self.value_size > 1:
+                        for i in range(self.value_size):
+                            self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
+                            self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
+                            self.writer.add_scalar('rewards{0}/time'.format(i), mean_rewards[i], total_time)
+                    else:
+                        self.writer.add_scalar('rewards/frame', mean_rewards[0], frame)
+                        self.writer.add_scalar('rewards/iter', mean_rewards[0], epoch_num)
+                        self.writer.add_scalar('rewards/time', mean_rewards[0], total_time)
 
                     self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
