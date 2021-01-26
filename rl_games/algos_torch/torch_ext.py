@@ -64,10 +64,10 @@ def sample_truncated_normal(shape=(), mu=0.0, sigma=1.0, a=-2, b=2):
 def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)
     print(fan, scale)
-    #sigma = np.sqrt(1.3 * scale / fan)
     sigma = np.sqrt(scale / fan)
     with torch.no_grad():
-        return sample_truncated_normal(tensor.size(), sigma=sigma)
+        tensor[:] = sample_truncated_normal(tensor.size(), sigma=sigma)
+        return tensor
 
 
 def random_sample(obs_batch, prob):
