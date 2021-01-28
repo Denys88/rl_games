@@ -47,7 +47,7 @@ class DefaultAlgoObserver(AlgoObserver):
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.algo.ppo_device))
 
     def after_clear_stats(self):
-        self.mean_scores.clear()
+        self.game_scores.clear()
 
     def after_print_stats(self, frame, epoch_num, total_time):
         if self.game_scores.current_size > 0:
