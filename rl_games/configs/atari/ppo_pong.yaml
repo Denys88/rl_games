@@ -18,8 +18,8 @@ params:
       type: conv2d
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_normal_initializer
+        gain: 1
       regularizer:
         name: 'None'
       convs:    
@@ -40,8 +40,8 @@ params:
       units: [512]
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: glorot_normal_initializer
+        gain: 1
   config:
     reward_shaper:
       min_val: -1

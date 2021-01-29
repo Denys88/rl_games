@@ -19,8 +19,7 @@ params:
       type: conv2d
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
       convs:    
@@ -43,8 +42,7 @@ params:
       regularizer:
         name: 'None'
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: default 
   config:
     reward_shaper:
         scale_value: 1.0
@@ -92,7 +90,7 @@ params:
               type: conv2d
               activation: elu
               initializer:
-                name: variance_scaling_initializer
+                name: default
                 scale: 2
               regularizer:
                 name: 'None'
@@ -133,5 +131,5 @@ params:
               regularizer:
                 name: 'None'
               initializer:
-                name: variance_scaling_initializer
+                name: default
                 scale: 2

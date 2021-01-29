@@ -13,23 +13,23 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: variance_scaling_initializer
+          name: default
           scale: 0.02 
         sigma_init:
           name: const_initializer
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256,128]
-      d2rl: True
+      units: [256,128,64]
+      d2rl: False
       activation: relu
       initializer:
-        name: variance_scaling_initializer
+        name: default
         scale: 2         
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn:
+    rnn_removed:
       name: lstm
       units: 128
       layers: 1

@@ -24,8 +24,7 @@ params:
       normalization: 'layer_norm'
       norm_only_first_layer: True
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
     rnn:

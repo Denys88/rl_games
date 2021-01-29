@@ -16,7 +16,7 @@ params:
         
         mu_init:
           # pytorch
-          name: variance_scaling_initializer
+          name: default
           scale: 0.02
 
           # tf
@@ -34,7 +34,7 @@ params:
 
       initializer:
         # pytorch
-          name: variance_scaling_initializer
+          name: default
           scale: 2
 
       # tf

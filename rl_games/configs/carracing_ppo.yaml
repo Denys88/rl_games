@@ -16,8 +16,7 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: variance_scaling_initializer
-          scale: 0.02
+          name: default
         sigma_init:
           name: const_initializer
           val: 0
@@ -27,8 +26,7 @@ params:
       type: conv2d
       activation: relu
       initializer:
-          name: variance_scaling_initializer
-          scale: 0.02
+          name: default
       regularizer:
         name: 'None'
       convs:    
@@ -49,13 +47,12 @@ params:
       units: [512]
       activation: relu
       initializer:
-          name: variance_scaling_initializer
-          scale: 0.02
+          name: default
       regularizer:
         name: 'None'
   config:
     reward_shaper:
-        scale_value: 0.1
+        scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -78,7 +75,7 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_length: 8
+    normalize_value: True
     #lr_schedule:  adaptive
     # lr_threshold: 0.008
     bounds_loss_coef: 0.001

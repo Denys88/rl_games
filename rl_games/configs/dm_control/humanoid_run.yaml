@@ -13,7 +13,7 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: variance_scaling_initializer
+          name: default
           scale: 0.02
         sigma_init:
           name: const_initializer
@@ -23,8 +23,7 @@ params:
       units: [256, 128, 64]
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
