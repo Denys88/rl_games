@@ -58,7 +58,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 5e-4
-    name: atari
+    name: racing
     score_to_win: 900
     grad_norm: 0.5
     entropy_coef: 0.000
@@ -68,7 +68,7 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    steps_num: 256
+    steps_num: 128
     minibatch_size: 1024
     mini_epochs: 8
     critic_coef: 1
@@ -80,3 +80,7 @@ params:
     # lr_threshold: 0.008
     bounds_loss_coef: 0.001
     # max_epochs: 5000
+
+    player:
+      render: True
+      deterministic: True
