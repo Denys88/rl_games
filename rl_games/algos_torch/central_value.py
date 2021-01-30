@@ -133,8 +133,8 @@ class CentralValueTrain(nn.Module):
         batch_size = self.batch_size
         value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        value_preds = value_preds.flatten(0)[:batch_size]
-        returns = returns.flatten(0)[:batch_size]
+        value_preds = value_preds.flatten(0)[:batch_size].unsqueeze(1)
+        returns = returns.flatten(0)[:batch_size].unsqueeze(1)
 
         if self.use_joint_obs_actions:
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
@@ -171,7 +171,6 @@ class CentralValueTrain(nn.Module):
             batch_dict['rnn_states'] = batch['rnn_states']
 
         values, _ = self.forward(batch_dict)
-
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
