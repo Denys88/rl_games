@@ -120,7 +120,7 @@ class CentralValueTrain(nn.Module):
 
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
-            value = value.view(value.size()[0]*self.num_agents, -1)
+            value = value.view(value.size()[0]*self.num_agents, -1).unsqueeze(1)
         return value
 
     def train_critic(self, input_dict, opt_step = True):

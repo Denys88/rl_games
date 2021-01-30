@@ -77,7 +77,6 @@ params:
           activation: relu
           initializer:
             name: default
-            scale: 2 
           regularizer:
             name:  'None'
         rnn:

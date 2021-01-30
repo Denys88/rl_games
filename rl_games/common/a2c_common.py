@@ -395,7 +395,7 @@ class A2CBase:
         pass
 
     def get_central_value(self, obs_dict):
-        return self.central_value_net.get_value(obs_dict).squeeze()
+        return self.central_value_net.get_value(obs_dict)
 
     def train_central_value(self):
         return self.central_value_net.train_net()

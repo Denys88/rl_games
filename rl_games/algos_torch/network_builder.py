@@ -490,6 +490,7 @@ class A2CBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
+                self.is_multi_discrete = False
      
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
