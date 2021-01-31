@@ -35,9 +35,22 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
-            self.central_value_net = central_value.CentralValueTrain(torch_ext.shape_whc_to_cwh(self.state_shape), self.ppo_device,self.num_agents, self.steps_num, self.num_actors, self.actions_num, self.seq_len, self.central_value_config['network'], 
-                                    self.central_value_config, self.writer).to(self.ppo_device)
+            cv_config = {
+                'state_shape' : torch_ext.shape_whc_to_cwh(self.state_shape), 
+                'value_size' : self.value_size,
+                'ppo_device' : self.ppo_device, 
+                'num_agents' : self.num_agents, 
+                'num_steps' : self.steps_num, 
+                'num_actors' : self.num_actors, 
+                'num_actions' : self.actions_num, 
+                'seq_len' : self.seq_len, 
+                'model' : self.central_value_config['network'],
+                'config' : self.central_value_config, 
+                'writter' : self.writer
+            }
+            self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
+        self.use_experimental_cv = self.config.get('use_experimental_cv', False)        
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
 

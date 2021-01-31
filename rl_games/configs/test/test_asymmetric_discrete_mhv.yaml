@@ -10,58 +10,65 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
+    #normalization: 'layer_norm'
     space: 
       discrete:
 
     mlp:
-      units: [64]
-      #normalization: 'layer_norm'
-      activation: elu
+      units: [32]
+      activation: relu
       initializer:
         name: default
       regularizer:
         name: 'None'
     rnn:
-      name: 'lstm'
-      units: 64
+      name: lstm
+      units: 32
       layers: 1
-      layer_norm: True
+      layer_norm: False
+      before_mlp: False
   config:
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
-    learning_rate: 5e-4
-    name: test_asymmetric
-    score_to_win: 100000
-    grad_norm: 0.5
+    learning_rate: 2e-4
+    name: test_md
+    score_to_win: 0.95
+    grad_norm: 10.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  openai_gym
+    env_name:  test_env
     ppo: true
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 256
+    steps_num: 512
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
-    normalize_input: True
-    seq_length: 4
+    normalize_input: False
     weight_decay: 0.0000
-
+    max_epochs: 10000
+    seq_length: 4
     env_config:
-      name: TestAsymmetricEnv-v0
-      wrapped_env_name: "LunarLander-v2"
-      apply_mask: False
+      name: TestRnnEnv-v0
+      hide_object: True
+      apply_dist_reward: True
+      min_dist: 2
+      max_dist: 8
       use_central_value: True
+      multi_discrete_space: False
+      multi_head_value: True
+    player:
+        games_num: 100
+        determenistic: True
 
     central_value_config:
-      use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
