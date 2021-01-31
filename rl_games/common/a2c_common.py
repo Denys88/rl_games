@@ -59,8 +59,6 @@ class A2CBase:
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
 
-        self.use_experimental_cv = config.get('use_experimental_cv', True)
-
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             self.state_shape = None
@@ -616,7 +614,6 @@ class A2CBase:
 
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
 
