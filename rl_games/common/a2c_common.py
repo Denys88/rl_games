@@ -148,7 +148,7 @@ class A2CBase:
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
         # features
-        self.algo_observer = config['features'].get('observer', None)
+        self.algo_observer = config['features'].get('observer', 'EmptyObserver')
 
     def set_eval(self):
         self.model.eval()
