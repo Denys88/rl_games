@@ -8,14 +8,15 @@ from rl_games.common import datasets
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
-        
+        self.value_size = value_size
         state_config = {
+            'value_size' : value_size,
             'input_shape' : state_shape,
             'actions_num' : num_actions,
             'num_agents' : num_agents,
@@ -67,15 +68,17 @@ class CentralValueTrain(nn.Module):
         returns = batch_dict['returns']   
         actions = batch_dict['actions']
         rnn_masks = batch_dict['rnn_masks']
-
-        res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
-        batch_dict['old_values'] = res[0]
-        batch_dict['returns']  = res[1]
-        batch_dict['actions']  = res[2]
+        if self.num_agents > 1:
+            res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
+            batch_dict['old_values'] = res[0]
+            batch_dict['returns']  = res[1]
+            batch_dict['actions']  = res[2]
         
         if self.is_rnn:
             batch_dict['rnn_states'] = self.mb_rnn_states
-            batch_dict['rnn_masks']  = res[3]
+            if self.num_agents > 1:
+                rnn_masks = res[3]
+            batch_dict['rnn_masks'] = rnn_masks
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
@@ -117,10 +120,10 @@ class CentralValueTrain(nn.Module):
         obs_batch = self._preproc_obs(obs_batch)
         value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
                                              'rnn_states': self.rnn_states})
-
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
+
         return value
 
     def train_critic(self, input_dict, opt_step = True):
@@ -131,10 +134,11 @@ class CentralValueTrain(nn.Module):
 
     def update_multiagent_tensors(self, value_preds, returns, actions, rnn_masks):
         batch_size = self.batch_size
-        value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        returns = returns.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        value_preds = value_preds.flatten(0)[:batch_size]
-        returns = returns.flatten(0)[:batch_size]
+        ma_batch_size = self.num_actors * self.num_agents * self.num_steps
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
+        returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
+        value_preds = value_preds.view(ma_batch_size, -1)[:batch_size]
+        returns = returns.view(ma_batch_size, -1)[:batch_size]
 
         if self.use_joint_obs_actions:
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
@@ -171,7 +175,6 @@ class CentralValueTrain(nn.Module):
             batch_dict['rnn_states'] = batch['rnn_states']
 
         values, _ = self.forward(batch_dict)
-
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]

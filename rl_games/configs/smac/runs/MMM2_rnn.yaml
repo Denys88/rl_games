@@ -19,8 +19,7 @@ params:
       units: [512, 256]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: default 
       regularizer:
         name:  'None'
     rnn:
@@ -80,7 +79,7 @@ params:
           units: [512, 256]
           activation: relu
           initializer:
-            name: variance_scaling_initializer
+            name: default
             scale: 2 
           regularizer:
             name:  'None'

@@ -21,8 +21,7 @@ params:
       units: [32,32]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
   config:

@@ -19,8 +19,7 @@ params:
       type: conv1d
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
       convs:    
@@ -40,8 +39,7 @@ params:
       units: [256, 128]
       activation: relu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: default 
       regularizer:
         name:  'None'
   config:

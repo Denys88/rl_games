@@ -19,8 +19,7 @@ params:
       #normalization: 'layer_norm'
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
     rnn:
@@ -59,9 +58,9 @@ params:
       name: TestAsymmetricEnv-v0
       wrapped_env_name: "LunarLander-v2"
       apply_mask: False
-      use_central_value: False
+      use_central_value: True
 
-    central_value_config1:
+    central_value_config:
       use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
@@ -77,8 +76,7 @@ params:
           units: [64]
           activation: relu
           initializer:
-            name: variance_scaling_initializer
-            scale: 2 
+            name: default
           regularizer:
             name:  'None'
         rnn:

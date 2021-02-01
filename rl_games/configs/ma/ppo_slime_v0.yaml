@@ -19,8 +19,7 @@ params:
       units: [128,64]
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: default 
       regularizer:
         name:  'None'
   config:

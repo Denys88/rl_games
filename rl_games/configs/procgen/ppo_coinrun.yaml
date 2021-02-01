@@ -19,8 +19,7 @@ params:
       conv_depths: [16, 32, 32]
       activation: elu
       initializer:
-        name: variance_scaling_initializer
-        scale: 2
+        name: default
       regularizer:
         name: 'None'
       
@@ -30,8 +29,7 @@ params:
       regularizer:
         name: 'None'
       initializer:
-        name: variance_scaling_initializer
-        scale: 2 
+        name: default 
     rnn1:
       name: lstm
       units: 256
