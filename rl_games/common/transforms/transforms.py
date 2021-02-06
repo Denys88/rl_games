@@ -9,7 +9,7 @@ class DatasetTransform(nn.Module):
         return dataset
 
 
-class AtariDatasetTransform(DatasetTransform):
+class ImageDatasetTransform(DatasetTransform):
     def __init__(self):
         super().__init__()
         import kornia

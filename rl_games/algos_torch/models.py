@@ -3,14 +3,15 @@ import numpy as np
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-
+import rl_games.common.divergence as divergence
 
 class BaseModel():
     def __init__(self):
         pass
+
     def is_rnn(self):
         return False
-    
+
     def is_separate_critic(self):
         return False
 
@@ -32,7 +33,13 @@ class ModelA2C(BaseModel):
             return self.a2c_network.is_rnn()
         
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.a2c_network.get_default_rnn_state()            
+
+
+        def kl(self, p_dict, q_dict):
+            p = p_dict['logits']
+            q = q_dict['logits']
+            return divergence.d_kl_discrete(p, q)
 
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
@@ -61,6 +68,7 @@ class ModelA2C(BaseModel):
                 result = {
                     'neglogp' : torch.squeeze(neglogp),
                     'value' : value,
+                    'logits' : logits,
                     'action' : selected_action,
                     'logits' : logits,
                     'rnn_state' : states
@@ -86,6 +94,11 @@ class ModelA2CMultiDiscrete(BaseModel):
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
+        def kl(self, p_dict, q_dict):
+            p = p_dict['logits']
+            q = q_dict['logits']
+            return divergence.d_kl_discrete_list(p, q)
+
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             action_masks = input_dict.pop('action_masks', None)
@@ -102,6 +115,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'value' : value,
+                    'logits' : logits,
                     'entropy' : torch.squeeze(entropy),
                     'rnn_state' : states
                 }
@@ -144,6 +158,11 @@ class ModelA2CContinuous(BaseModel):
             
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
+
+        def kl(self, p_dict, q_dict):
+            p = p_dict['mu'], p_dict['sigma']
+            q = q_dict['mu'], q_dict['sigma']
+            return divergence.d_kl_normal(p, q)
 
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
