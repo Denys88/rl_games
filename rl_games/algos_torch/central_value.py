@@ -137,8 +137,8 @@ class CentralValueTrain(nn.Module):
         ma_batch_size = self.num_actors * self.num_agents * self.num_steps
         value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
-        value_preds = value_preds.view(ma_batch_size, -1)[:batch_size]
-        returns = returns.view(ma_batch_size, -1)[:batch_size]
+        value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
 
         if self.use_joint_obs_actions:
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
