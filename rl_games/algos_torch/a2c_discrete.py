@@ -68,7 +68,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
-        action_masks = torch.Tensor(action_masks).to(self.ppo_device)
+        action_masks = torch.BoolTensor(action_masks).to(self.ppo_device)
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -90,6 +90,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         if self.normalize_value:
             value = self.value_mean_std(value, True)
+        res_dict['action_masks'] = action_masks
         return res_dict
 
     def train_actor_critic(self, input_dict, opt_step = True):

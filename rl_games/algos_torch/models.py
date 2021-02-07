@@ -40,6 +40,9 @@ class ModelA2C(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
+                if action_masks is not None:
+                    inf_mask = torch.log(action_masks.float())
+                    logits = logits + inf_mask
                 categorical = torch.distributions.Categorical(logits=logits)
                 prev_neglogp = -categorical.log_prob(prev_actions)
                 entropy = categorical.entropy()
@@ -92,7 +95,10 @@ class ModelA2CMultiDiscrete(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
-                
+                if action_masks is not None:
+                    inf_mask = [torch.log(masks.float()) for masks in action_masks]
+                    logits = [logit + mask for logit, mask in zip(logits,inf_mask)]
+
                 categorical = [torch.distributions.Categorical(logits=logit) for logit in logits]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
                 prev_neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, prev_actions)]
