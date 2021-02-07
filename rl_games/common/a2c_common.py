@@ -693,6 +693,11 @@ class DiscreteA2CBase(A2CBase):
             'neglogp' : self.mb_neglogpacs,
             'value' : self.mb_values,
         }
+        if self.use_action_masks:
+            self.mb_action_masks = torch.zeros((self.steps_num, batch_size, np.sum(self.actions_num)), dtype = torch.bool, device=self.ppo_device)
+            self.update_list.append('action_masks')
+            self.update_dict['action_masks'] = 'action_masks'
+            self.tensors_dict['action_masks'] = self.mb_action_masks
 
     def train_epoch(self):
         play_time_start = time.time()
@@ -771,6 +776,9 @@ class DiscreteA2CBase(A2CBase):
         dataset_dict['rnn_states'] = rnn_states
         dataset_dict['rnn_masks'] = rnn_masks
         
+        if self.use_action_masks:
+            dataset_dict['action_masks'] = batch_dict['action_masks']
+
         self.dataset.update_values_dict(dataset_dict)
 
         if self.has_central_value:
