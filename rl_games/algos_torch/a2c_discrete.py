@@ -120,7 +120,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'prev_actions': actions_batch, 
             'obs' : obs_batch,
         }
-
+        if self.use_action_masks:
+            batch_dict['action_masks'] = input_dict['action_masks']
         rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
