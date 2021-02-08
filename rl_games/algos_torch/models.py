@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from rl_games.algos_torch.torch_ext import CategoricalMasked
-
+from torch.distributions import Categorical
 class BaseModel():
     def __init__(self):
         pass
@@ -40,7 +40,6 @@ class ModelA2C(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
-                action_masks = None
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
                 prev_neglogp = -categorical.log_prob(prev_actions)
                 entropy = categorical.entropy()
@@ -89,7 +88,10 @@ class ModelA2CMultiDiscrete(BaseModel):
             prev_actions = input_dict.pop('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
-                categorical = [CategoricalMasked(logits=logit, masks=action_mask) for logit, mask in zip(logits, masks)]
+                if action_masks is None:
+                    categorical = [Categorical(logits=logit) for logit in logits]
+                else:   
+                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
                 prev_neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, prev_actions)]
                 prev_neglogp = torch.stack(prev_neglogp, dim=-1).sum(dim=-1)
@@ -103,7 +105,11 @@ class ModelA2CMultiDiscrete(BaseModel):
                 }
                 return result
             else:
-                categorical = [CategoricalMasked(logits=logit, masks=action_mask) for logit, mask in zip(logits, masks)]
+                if action_masks is None:
+                    categorical = [Categorical(logits=logit) for logit in logits]
+                else:   
+                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]                
+                
                 selected_action = [c.sample().long() for c in categorical]
                 neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, selected_action)]
                 selected_action = torch.stack(selected_action, dim=-1)
