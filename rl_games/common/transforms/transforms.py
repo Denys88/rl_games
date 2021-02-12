@@ -10,7 +10,7 @@ class DatasetTransform(nn.Module):
 
 
 class ImageDatasetTransform(DatasetTransform):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
         import kornia
         self.transform = torch.nn.Sequential(
