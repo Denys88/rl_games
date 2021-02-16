@@ -11,7 +11,6 @@ def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value
                                          value_losses_clipped)
     else:
         c_loss = (return_batch - values)**2
-
     return c_loss
 
 

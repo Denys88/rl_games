@@ -19,9 +19,7 @@ params:
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
-      regularizer:
-        name: 'None'
+        gain: 1.41421356237 
       convs:    
         - filters: 32
           kernel_size: 8
@@ -41,7 +39,7 @@ params:
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
+        gain: 1.41421356237 
   config:
     reward_shaper:
       min_val: -1
@@ -50,7 +48,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 2e-4
-    name: PongNoFrameskip
+    name: PongNoFrameskip_soft_aug
     score_to_win: 20
     grad_norm: 10
     entropy_coef: 0.01
@@ -69,6 +67,12 @@ params:
     #schedule_entropy : True
     normalize_input: False
     max_epochs: 1500
+
+    features:
+      soft_augmentation:
+        aug_coef: 0.001
+        transform:
+          name: 'default'
     player:
       render: True
       games_num: 100

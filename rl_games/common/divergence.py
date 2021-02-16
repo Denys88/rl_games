@@ -7,7 +7,7 @@ def d_kl_discrete(p, q):
     # p = target, q = online
     # categorical distribution parametrized by logits
     logits_diff = p - q
-    p_probs = torch.softmax(p, dim=-1)
+    p_probs = torch.exp(p)
     d_kl = (p_probs * logits_diff).sum(-1)
     return d_kl
 

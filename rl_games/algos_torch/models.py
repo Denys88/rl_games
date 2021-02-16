@@ -55,6 +55,7 @@ class ModelA2C(BaseModel):
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'value' : value,
+                    'logits' : categorical.logits,
                     'entropy' : entropy,
                     'rnn_state' : states
                 }
@@ -115,7 +116,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'value' : value,
-                    'logits' : logits,
+                    'logits' : [c.logits for c in categorical],
                     'entropy' : torch.squeeze(entropy),
                     'rnn_state' : states
                 }
@@ -134,7 +135,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     'neglogp' : torch.squeeze(neglogp),
                     'value' : value,
                     'action' : selected_action,
-                    'logits' : logits,
+                    'logits' : [c.logits for c in categorical],
                     'rnn_state' : states
                 }
                 return  result

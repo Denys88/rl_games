@@ -130,7 +130,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-        res_dict = self.model(batch_dict)
+        res_dict = self.model(batch_dict.copy())
         action_log_probs = res_dict['prev_neglogp']
         values = res_dict['value']
         entropy = res_dict['entropy']
@@ -143,12 +143,24 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 c_loss = torch.zeros(1, device=self.ppo_device)
             else:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-                
-        losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+
+        loss_list = [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)]
+
+        if self.has_soft_aug:
+            aug_loss = self.soft_aug.get_loss(res_dict, self.model, batch_dict)
+            loss_list.append(aug_loss.unsqueeze(1))
+        else:
+            aug_loss = torch.zeros(1, device=self.ppo_device)
+        losses, sum_mask = torch_ext.apply_masks(loss_list, rnn_masks)
 
         a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
+
+        loss = a_loss + c_loss * 0.5 * self.critic_coef - entropy * self.entropy_coef
+        if self.has_soft_aug:
+            aug_loss = losses[3]
+            loss = loss + aug_loss * self.soft_aug.get_coef()
+            
         for param in self.model.parameters():
             param.grad = None
 
@@ -165,4 +177,4 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = kl_dist.mean()
             kl_dist = kl_dist.item()
 
-        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
+        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), aug_loss.item(), kl_dist,self.last_lr, lr_mul)

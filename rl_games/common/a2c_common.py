@@ -720,6 +720,7 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
+        aug_losses = []
         if self.has_central_value:
             self.train_central_value()
 
@@ -729,10 +730,11 @@ class DiscreteA2CBase(A2CBase):
         for _ in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
-                a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
+                a_loss, c_loss, entropy, aug_loss, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
+                aug_losses.append(aug_loss)
                 entropies.append(entropy)    
                 
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
@@ -744,7 +746,7 @@ class DiscreteA2CBase(A2CBase):
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
 
-        return play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
+        return play_time, update_time, total_time, a_losses, c_losses, entropies, aug_losses, kls, last_lr, lr_mul
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
@@ -807,7 +809,7 @@ class DiscreteA2CBase(A2CBase):
             self.frame += self.batch_size_envs
             frame = self.frame
 
-            play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+            play_time, update_time, sum_time, a_losses, c_losses, entropies, aug_losses, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
 
             if True:
@@ -831,7 +833,8 @@ class DiscreteA2CBase(A2CBase):
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', np.mean(kls), frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
-
+                if self.has_soft_aug:
+                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
                 if self.game_rewards.current_size > 0:
