@@ -42,9 +42,9 @@ class DDPpoRunner:
         if self.main_agent.has_central_value:
             self.shared_cv_model_grads = SharedGradients(self.main_agent.central_value_net.model, self.main_agent.central_value_net.optimizer)
 
-
     def update_network(self, shared_grads, grads):
         shared_grads.zero_grads()
+
         [shared_grads.add_gradients(g) for g in grads]
         shared_grads.update_gradients()
 
@@ -61,7 +61,6 @@ class DDPpoRunner:
         stats = ray.get(stats)
         self.main_agent.set_stats_weights(stats)
         #[worker.set_stats_weights.remote(stats) for worker in self.workers]
-
 
     def process_stats(self, stats):
         assert(len(stats) == self.num_ppo_agents)
