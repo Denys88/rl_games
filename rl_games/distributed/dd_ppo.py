@@ -68,6 +68,7 @@ class DDPpoRunner:
         sum_stats = {}
         for s in stats:
             for k,v in s.items():
+                #print(k, v)
                 if k not in sum_stats:
                     sum_stats[k] = 0
                 sum_stats[k] += v

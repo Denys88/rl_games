@@ -36,8 +36,8 @@ class PPOWorker:
         self.current_result['c_loss'] += c_loss
         self.current_result['entropy'] += entropy
         self.current_result['kl_dist'] += kl_dist
-        self.current_result['mu'] += mu
-        self.current_result['sigma'] += sigma
+        # self.current_result['mu'] += mu
+        # self.current_result['sigma'] += sigma
         self.current_result['b_loss'] += b_loss
 
     def set_model_weights(self, weights):
