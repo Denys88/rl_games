@@ -122,7 +122,7 @@ class A2CBase:
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
 
-        self.mixed_precision = self.config.get('mixed_precision', False)
+        self.mixed_precision = self.config.get('mixed_precision', True)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
         self.last_lr = self.config['learning_rate']
@@ -216,7 +216,6 @@ class A2CBase:
                     'obs' : processed_obs,
                     'rnn_states' : self.rnn_states
                 }
-                
                 result = self.model(input_dict)
                 value = result['value']
 
