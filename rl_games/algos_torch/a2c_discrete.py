@@ -30,7 +30,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
-
+        
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
@@ -130,33 +130,36 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-        res_dict = self.model(batch_dict)
-        action_log_probs = res_dict['prev_neglogp']
-        values = res_dict['value']
-        entropy = res_dict['entropy']
-        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            res_dict = self.model(batch_dict)
+            action_log_probs = res_dict['prev_neglogp']
+            values = res_dict['value']
+            entropy = res_dict['entropy']
+            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-        if self.use_experimental_cv:
-            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-        else:
-            if self.has_central_value:
-                c_loss = torch.zeros(1, device=self.ppo_device)
-            else:
+            if self.use_experimental_cv:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-                
-        losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+            else:
+                if self.has_central_value:
+                    c_loss = torch.zeros(1, device=self.ppo_device)
+                else:
+                    c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                    
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
 
-        a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-        loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
+            a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
+            loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
-        for param in self.model.parameters():
-            param.grad = None
+            for param in self.model.parameters():
+                param.grad = None
 
-        loss.backward()
+        self.scaler.scale(loss).backward()
         if self.config['truncate_grads']:
+            self.scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         if opt_step:
-            self.optimizer.step()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:

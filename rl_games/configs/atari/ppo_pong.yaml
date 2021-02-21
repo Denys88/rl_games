@@ -49,7 +49,7 @@ params:
     normalize_advantage: True
     gamma: 0.995
     tau: 0.9
-    learning_rate: 5e-4
+    learning_rate: 3e-4
     name: PongNoFrameskip
     score_to_win: 20
     grad_norm: 10
@@ -68,7 +68,7 @@ params:
     #lr_threshold: 0.008
     #schedule_entropy : True
     normalize_input: False
-    max_epochs: 1000
+    max_epochs: 1500
     player:
       render: True
       games_num: 100
