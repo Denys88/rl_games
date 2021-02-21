@@ -122,7 +122,7 @@ class A2CBase:
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
 
-        self.mixed_precision = self.config.get('mixed_precision', True)
+        self.mixed_precision = self.config.get('mixed_precision', False)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
         self.last_lr = self.config['learning_rate']
@@ -402,18 +402,19 @@ class A2CBase:
 
     def get_full_state_weights(self):
         state = self.get_weights()
-
         state['epoch'] = self.epoch_num
         state['optimizer'] = self.optimizer.state_dict()      
-
+        if self.mixed_precision:
+            state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
         return state
 
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
-
         self.epoch_num = weights['epoch']
+        if self.mixed_precision and 'scaler' in weights:
+            self.scaler.load_state_dict(weights['scaler'])
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
