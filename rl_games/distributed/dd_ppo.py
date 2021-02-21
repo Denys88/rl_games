@@ -1,6 +1,8 @@
 from rl_games.distributed.ppo_worker import PPOWorker
 from rl_games.distributed.gradients import SharedGradients
 from rl_games.torch_runner import Runner
+from rl_games.common import schedulers
+
 import time
 import ray
 
@@ -14,6 +16,20 @@ class DDPpoRunner:
         self.remote_worker = ray.remote(PPOWorker)
         self.max_epochs = self.ppo_config['params']['config'].get('max_epochs', int(1e6))
 
+        # self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
+        # self.linear_lr = config['lr_schedule'] == 'linear'
+        # self.schedule_type = config.get('schedule_type', 'legacy')
+        # if self.is_adaptive_lr:
+        #     self.lr_threshold = config['lr_threshold']
+        #     self.scheduler = schedulers.AdaptiveScheduler(self.lr_threshold)
+        # elif self.linear_lr:
+        #     self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
+        #         max_steps=self.max_epochs,
+        #         apply_to_entropy=config.get('schedule_entropy', False),
+        #         start_entropy_coef=config.get('entropy_coef'))
+        # else:
+        #     self.scheduler = schedulers.IdentityScheduler()
+
         self.last_mean_rewards = -100500
 
     def init_workers(self):
@@ -26,6 +42,7 @@ class DDPpoRunner:
         
         info = self.workers[0].get_env_info.remote()
         info = ray.get(info)
+
         self.ppo_config['params']['config']['env_info'] = info
         self.runner = Runner()
         self.runner.load(self.ppo_config)
@@ -35,6 +52,7 @@ class DDPpoRunner:
         self.num_miniepochs = self.main_agent.mini_epochs_num
         self.num_minibatches = self.main_agent.num_minibatches
         self.batch_size = self.main_agent.steps_num * self.main_agent.num_actors * self.main_agent.num_agents * self.num_ppo_agents
+
         self.frame = 0
         self.epoch_num = 0
         self.writer = self.main_agent.writer
@@ -147,7 +165,9 @@ class DDPpoRunner:
         ray.get(steps)
         play_time_end = time.time()
         update_time_start = time.time()
+
         for _ in range(self.num_miniepochs):
+            ep_kls = []
             for idx in range(self.num_minibatches):
                 res = [worker.calc_ppo_gradients.remote(idx) for worker in self.workers]
                 res = ray.get(res)
@@ -157,7 +177,9 @@ class DDPpoRunner:
         
         if self.main_agent.has_central_value:
             self.run_assymetric_critic_training_step()
+
         [worker.update_stats.remote() for worker in self.workers]
+
         stats = [worker.get_stats.remote() for worker in self.workers]
         stats = ray.get(stats)
         update_time_end = time.time()
@@ -170,6 +192,7 @@ class DDPpoRunner:
     def train(self):
         start_time = time.time()
         self.sync_weights()
+
         for ep in range(self.max_epochs):
             stats, play_time, update_time = self.run_training_step()
             

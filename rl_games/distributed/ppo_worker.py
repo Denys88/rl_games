@@ -1,5 +1,4 @@
 import os
-#os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import isaacgym
 
 import torch
@@ -12,7 +11,6 @@ from rl_games.torch_runner import Runner
 
 class PPOWorker:
     def __init__(self, config, name):
-        #os.environ['CUDA_VISIBLE_DEVICES'] = '0'
         self.runner = Runner()
         self.runner.load(config)
         self.agent = self.runner.algo_factory.create(self.runner.algo_name, base_name=name, config=self.runner.config)
@@ -46,8 +44,10 @@ class PPOWorker:
     def calc_ppo_gradients(self, batch_idx):
         self.agent.train_actor_critic(self.agent.dataset[batch_idx], opt_step=False)
         grads = torch_ext.get_model_gradients(self.agent.model)
+
         self.runs_per_epoch += 1
         self._update_train_stats(self.agent.train_result)
+
         return grads
 
     def get_env_info(self):

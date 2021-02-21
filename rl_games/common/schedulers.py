@@ -7,13 +7,13 @@ class RLScheduler:
     def update(self,current_lr, entropy_coef, epoch, frames, **kwargs):
         pass
 
+
 class IdentityScheduler(RLScheduler):
     def __init__(self):
         super().__init__()
 
-     
     def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
-        return current_lr, entropy_coef  
+        return current_lr, entropy_coef
 
 
 class AdaptiveScheduler(RLScheduler):
@@ -29,7 +29,7 @@ class AdaptiveScheduler(RLScheduler):
             lr = max(current_lr / 1.5, self.min_lr)
         if kl_dist < (0.5 * self.kl_threshold):
             lr = min(current_lr * 1.5, self.max_lr)
-        return lr, entropy_coef         
+        return lr, entropy_coef
 
 
 class LinearScheduler(RLScheduler):

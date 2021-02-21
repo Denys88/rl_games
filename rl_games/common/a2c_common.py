@@ -297,7 +297,6 @@ class A2CBase:
                 s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
         indices += 1  
 
-
     def cast_obs(self, obs):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
@@ -634,6 +633,7 @@ class A2CBase:
             last_values = self.get_values(self.obs)
 
         mb_extrinsic_values = mb_values
+
         last_extrinsic_values = last_values
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
@@ -912,7 +912,8 @@ class ContinuousA2CBase(A2CBase):
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
             else:
-                batch_dict = self.play_steps() 
+                batch_dict = self.play_steps()
+
         play_time_end = time.time()
         update_time_start = time.time()
 
@@ -949,11 +950,11 @@ class ContinuousA2CBase(A2CBase):
 
                 self.dataset.update_mu_sigma(cmu, csigma)   
                 if self.schedule_type == 'legacy':  
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
                     self.update_lr(self.last_lr)
 
             if self.schedule_type == 'standard': 
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
                 self.update_lr(self.last_lr)
             kls.append(np.mean(ep_kls))
 
