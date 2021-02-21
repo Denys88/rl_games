@@ -97,37 +97,40 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
+            
+        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            res_dict = self.model(batch_dict)
+            action_log_probs = res_dict['prev_neglogp']
+            values = res_dict['value']
+            entropy = res_dict['entropy']
+            mu = res_dict['mu']
+            sigma = res_dict['sigma']
 
-        res_dict = self.model(batch_dict)
-        action_log_probs = res_dict['prev_neglogp']
-        values = res_dict['value']
-        entropy = res_dict['entropy']
-        mu = res_dict['mu']
-        sigma = res_dict['sigma']
+            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-        if self.use_experimental_cv:
-            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-        else:
-            if self.has_central_value:
-                c_loss = torch.zeros(1, device=self.ppo_device)
-            else:
+            if self.use_experimental_cv:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+            else:
+                if self.has_central_value:
+                    c_loss = torch.zeros(1, device=self.ppo_device)
+                else:
+                    c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
 
-        b_loss = self.bound_loss(mu)
-        losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
-        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+            b_loss = self.bound_loss(mu)
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
+            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
-        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
-        for param in self.model.parameters():
-            param.grad = None
-        loss.backward()
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            for param in self.model.parameters():
+                param.grad = None
 
+        self.scaler.scale(loss).backward()
         if self.config['truncate_grads']:
+            self.scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         if opt_step:
-            self.optimizer.step()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn

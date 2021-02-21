@@ -122,6 +122,9 @@ class A2CBase:
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
 
+        self.mixed_precision = self.config.get('mixed_precision', False)
+        self.scaler = torch.cuda.amp.GradScaler()
+
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
