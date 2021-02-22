@@ -26,7 +26,8 @@ class DefaultAlgoObserver(AlgoObserver):
 
     def after_init(self, algo):
         self.algo = algo
-        self.game_scores = torch_ext.AverageMeter(1, self.algo.games_to_track).to(self.algo.ppo_device)  
+        self.game_scores = torch_ext.AverageMeter(1, self.algo.games_to_track).to(self.algo.ppo_device)
+        self.direct_info = {}
         self.writer = self.algo.writer
 
     def process_infos(self, infos, done_indices):
@@ -45,6 +46,8 @@ class DefaultAlgoObserver(AlgoObserver):
 
                 if game_res is not None:
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.algo.ppo_device))
+        if len(infos) > 1 and isinstance(infos[1], dict): # allow direct logging from env
+            self.direct_info = infos[1]
 
     def after_clear_stats(self):
         self.game_scores.clear()
@@ -55,3 +58,5 @@ class DefaultAlgoObserver(AlgoObserver):
             self.writer.add_scalar('scores/mean', mean_scores, frame)
             self.writer.add_scalar('scores/iter', mean_scores, epoch_num)
             self.writer.add_scalar('scores/time', mean_scores, total_time)
+        for k, v in self.direct_info.items():
+            self.writer.add_scalar(k, v, frame)
