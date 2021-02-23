@@ -176,10 +176,10 @@ class DiscreteActionsEncoder(nn.Module):
         emb = self.linear(emb)
         return emb
 
-def get_model_gradients(model):
+def get_model_gradients(model, device='cpu'):
     grad_list = []
     for param in model.parameters():
-        grad_list.append(param.grad)
+        grad_list.append(param.grad.to(device=device))
     return grad_list
 
 def get_mean(v):

@@ -667,6 +667,7 @@ class A2CBase:
 
         return batch_dict
 
+
 class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)

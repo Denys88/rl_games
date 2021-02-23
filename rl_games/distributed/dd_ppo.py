@@ -16,6 +16,13 @@ class DDPpoRunner:
         self.remote_worker = ray.remote(PPOWorker)
         self.max_epochs = self.ppo_config['params']['config'].get('max_epochs', int(1e6))
 
+        self.is_adaptive_lr = True
+        if self.is_adaptive_lr:
+             self.lr_threshold = ppo_config.get('lr_threshold', 0.008) #todo doublecheck it is read!
+             self.scheduler = schedulers.AdaptiveScheduler(self.lr_threshold)
+        else:
+            self.scheduler = schedulers.IdentityScheduler()
+
         # self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         # self.linear_lr = config['lr_schedule'] == 'linear'
         # self.schedule_type = config.get('schedule_type', 'legacy')
@@ -174,6 +181,11 @@ class DDPpoRunner:
                 grads = [r for r in res]
                 self.update_network(self.shared_model_grads, grads)
                 self.sync_weights()
+
+            #if self.schedule_type == 'standard':
+            # self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
+            # self.update_lr(self.last_lr)
+            # kls.append(np.mean(ep_kls))
         
         if self.main_agent.has_central_value:
             self.run_assymetric_critic_training_step()
