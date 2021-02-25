@@ -31,10 +31,6 @@ params:
           kernel_size: 4
           strides: 2
           padding: 0
-        - filters: 32
-          kernel_size: 3
-          strides: 1
-          padding: 0
       
     mlp:
       units: [128]
@@ -48,7 +44,7 @@ params:
       name: 'lstm'
       units: 128
       layers: 1
-      before_mlp: False
+      before_mlp: True
   config:
     reward_shaper:
         scale_value: 1
@@ -59,7 +55,7 @@ params:
     name: minigrid_env_rnn
     score_to_win: 1000
     grad_norm: 0.5
-    entropy_coef: 0.02
+    entropy_coef: 0.01
     truncate_grads: True
     env_name:  minigrid_env
     ppo: true
@@ -73,10 +69,16 @@ params:
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    seq_length: 8
+    seq_length: 16
     weight_decay: 0.0000
 
     env_config:
       #action_bonus: True
       #state_bonus : True
       name: MiniGrid-MemoryS7-v0
+      fully_obs: False
+    player:
+      games_num: 100
+      render: True
+      determenistic: False
+      
