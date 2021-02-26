@@ -916,56 +916,56 @@ class ContinuousA2CBase(A2CBase):
 
     def train_epoch(self):
         play_time_start = time.time()
-        with torch.cuda.amp.autocast(self.mixed_precision):
-            with torch.no_grad():
-                if self.is_rnn:
-                    batch_dict = self.play_steps_rnn()
-                else:
-                    batch_dict = self.play_steps()
-
-            play_time_end = time.time()
-            update_time_start = time.time()
-
-            rnn_masks = batch_dict.get('rnn_masks', None)
-
-            self.prepare_dataset(batch_dict)
-            self.algo_observer.after_steps()
-
-            if self.has_central_value:
-                self.train_central_value()
-
-            a_losses = []
-            c_losses = []
-            b_losses = []
-            entropies = []
-            kls = []
-
+        #with torch.cuda.amp.autocast(self.mixed_precision):
+        with torch.no_grad():
             if self.is_rnn:
-                frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
-                print(frames_mask_ratio)
-                self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
+                batch_dict = self.play_steps_rnn()
+            else:
+                batch_dict = self.play_steps()
 
-            for _ in range(0, self.mini_epochs_num):
-                ep_kls = []
-                for i in range(len(self.dataset)):
-                    a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
-                    a_losses.append(a_loss)
-                    c_losses.append(c_loss)
-                    ep_kls.append(kl)
-                    entropies.append(entropy)
+        play_time_end = time.time()
+        update_time_start = time.time()
 
-                    if self.bounds_loss_coef is not None:
-                        b_losses.append(b_loss)
+        rnn_masks = batch_dict.get('rnn_masks', None)
 
-                    self.dataset.update_mu_sigma(cmu, csigma)   
-                    if self.schedule_type == 'legacy':  
-                        self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
-                        self.update_lr(self.last_lr)
+        self.prepare_dataset(batch_dict)
+        self.algo_observer.after_steps()
 
-                if self.schedule_type == 'standard': 
+        if self.has_central_value:
+            self.train_central_value()
+
+        a_losses = []
+        c_losses = []
+        b_losses = []
+        entropies = []
+        kls = []
+
+        if self.is_rnn:
+            frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
+            print(frames_mask_ratio)
+            self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
+
+        for _ in range(0, self.mini_epochs_num):
+            ep_kls = []
+            for i in range(len(self.dataset)):
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
+                a_losses.append(a_loss)
+                c_losses.append(c_loss)
+                ep_kls.append(kl)
+                entropies.append(entropy)
+
+                if self.bounds_loss_coef is not None:
+                    b_losses.append(b_loss)
+
+                self.dataset.update_mu_sigma(cmu, csigma)   
+                if self.schedule_type == 'legacy':  
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
                     self.update_lr(self.last_lr)
-                kls.append(np.mean(ep_kls))
+
+            if self.schedule_type == 'standard': 
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, kl)
+                self.update_lr(self.last_lr)
+            kls.append(np.mean(ep_kls))
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start

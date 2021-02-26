@@ -103,15 +103,15 @@ class CentralValueTrain(nn.Module):
         return obs_batch
 
     def pre_step_rnn(self, rnn_indices, state_indices):
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
-            if self.num_agents > 1:
-                rnn_indices = rnn_indices[::self.num_agents] 
-                shifts = rnn_indices % (self.num_steps // self.seq_len)
-                rnn_indices = (rnn_indices - shifts) // self.num_agents + shifts
-                state_indices = state_indices[::self.num_agents] // self.num_agents
+        #with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        if self.num_agents > 1:
+            rnn_indices = rnn_indices[::self.num_agents] 
+            shifts = rnn_indices % (self.num_steps // self.seq_len)
+            rnn_indices = (rnn_indices - shifts) // self.num_agents + shifts
+            state_indices = state_indices[::self.num_agents] // self.num_agents
 
-            for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-                mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+        for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
+            mb_s[:, rnn_indices, :] = s[:, state_indices, :]
 
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
@@ -119,8 +119,8 @@ class CentralValueTrain(nn.Module):
             s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
 
     def forward(self, input_dict):
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
-            value, rnn_states = self.model(input_dict)
+        #with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        value, rnn_states = self.model(input_dict)
 
         return value, rnn_states
 
@@ -185,12 +185,12 @@ class CentralValueTrain(nn.Module):
             actions_batch = batch['actions']
             rnn_masks_batch = batch.get('rnn_masks')
 
-            if self.is_rnn:
-                batch_dict['rnn_states'] = batch['rnn_states']
-
             batch_dict = {'obs': obs_batch, 
                 'actions': actions_batch,
                 'seq_length': self.seq_len }
+            
+            if self.is_rnn:
+                batch_dict['rnn_states'] = batch['rnn_states']
 
             values, _ = self.forward(batch_dict)
             loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
