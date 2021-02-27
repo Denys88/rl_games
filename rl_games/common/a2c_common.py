@@ -38,6 +38,13 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
+        self.multi_gpu = config.get('multi_gpu', True)
+        self.rank = 0
+        if self.multi_gpu:
+            from rl_games.distributed.hvd_wrapper import HorovodWrapper
+            self.hvd = HorovodWrapper()
+            self.config = self.hvd.update_algo_config(config)
+            self.rank = self.hvd
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
@@ -404,8 +411,6 @@ class A2CBase:
         state = self.get_weights()
         state['epoch'] = self.epoch_num
         state['optimizer'] = self.optimizer.state_dict()      
-        if self.mixed_precision:
-            state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
         return state
@@ -413,19 +418,13 @@ class A2CBase:
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
         self.epoch_num = weights['epoch']
-        if self.mixed_precision and 'scaler' in weights:
-            self.scaler.load_state_dict(weights['scaler'])
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
 
     def get_weights(self):
-        state = {'model': self.model.state_dict()}
-
-        if self.normalize_input:
-            state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_value:
-            state['reward_mean_std'] = self.value_mean_std.state_dict()   
+        state = self.get_stats_weights()
+        state['model'] = self.model.state_dict()
         return state
 
     def get_stats_weights(self):
@@ -436,6 +435,8 @@ class A2CBase:
             state['reward_mean_std'] = self.value_mean_std.state_dict()
         if self.has_central_value:
             state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
+        if self.mixed_precision:
+            state['scaler'] = self.scaler.state_dict()
         return state
 
     def set_stats_weights(self, weights):
@@ -445,14 +446,13 @@ class A2CBase:
             self.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.has_central_value:
             self.central_value_net.set_stats_weights(state['assymetric_vf_mean_std'])
-  
+        if self.mixed_precision and 'scaler' in weights:
+            self.scaler.load_state_dict(weights['scaler'])
+
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value:
-            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
-
+        self.set_stats_weights(weights)
+        
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -802,7 +802,8 @@ class DiscreteA2CBase(A2CBase):
         rep_count = 0
         self.frame = 0
         self.obs = self.env_reset()
-
+        if self.multi_gpu:
+            self.hvd.setup_algo(self)
         while True:
             epoch_num = self.update_epoch()
             self.frame += self.batch_size_envs
@@ -810,7 +811,8 @@ class DiscreteA2CBase(A2CBase):
 
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-
+            if self.multi_gpu:
+                self.hvd.broadcast_stats(self)            
             if True:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
