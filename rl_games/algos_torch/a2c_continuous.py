@@ -51,6 +51,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
+
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
 
@@ -71,6 +72,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
     def calc_gradients(self, input_dict, opt_step):
         self.set_train()
+
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -89,16 +91,16 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         batch_dict = {
             'is_train': True,
             'prev_actions': actions_batch, 
-            'obs' : obs_batch,
+            'obs': obs_batch,
         }
 
-        rnn_masks = None
-        if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
-            batch_dict['rnn_states'] = input_dict['rnn_states']
-            batch_dict['seq_length'] = self.seq_len
-            
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            rnn_masks = None
+            if self.is_rnn:
+                rnn_masks = input_dict['rnn_masks']
+                batch_dict['rnn_states'] = input_dict['rnn_states']
+                batch_dict['seq_length'] = self.seq_len
+
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['value']
@@ -133,11 +135,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.scaler.update()
 
         with torch.no_grad():
-            reduce_kl = not self.is_rnn
-            kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
-            if self.is_rnn:
-                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
-            kl_dist = kl_dist.item()
+            with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+                reduce_kl = not self.is_rnn
+                kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
+                if self.is_rnn:
+                    kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
+                kl_dist = kl_dist.item()
                     
         self.train_result = (a_loss.item(), c_loss.item(), entropy.item(), \
             kl_dist, self.last_lr, lr_mul, \
