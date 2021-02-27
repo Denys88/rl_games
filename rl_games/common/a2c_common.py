@@ -40,11 +40,13 @@ class A2CBase:
         self.config = config
         self.multi_gpu = config.get('multi_gpu', True)
         self.rank = 0
+        self.rank_size = 1
         if self.multi_gpu:
             from rl_games.distributed.hvd_wrapper import HorovodWrapper
             self.hvd = HorovodWrapper()
             self.config = self.hvd.update_algo_config(config)
-            self.rank = self.hvd
+            self.rank = self.hvd.rank
+            self.rank_size  = self.hvd.rank_size
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
@@ -140,8 +142,10 @@ class A2CBase:
         self.epoch_num = 0
         
         self.entropy_coef = self.config['entropy_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-
+        if self.rank == 0:
+            self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+        else:
+            self.writer = None
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
@@ -813,7 +817,7 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             if self.multi_gpu:
                 self.hvd.broadcast_stats(self)            
-            if True:
+            if self.rank == 0:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
 
@@ -1031,15 +1035,18 @@ class ContinuousA2CBase(A2CBase):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
-
+        if self.multi_gpu:
+            self.hvd.setup_algo(self)
         while True:
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            self.frame += self.curr_frames
+            self.frame += self.curr_frames * self.rank_size
             frame = self.frame
+            if self.multi_gpu:
+                self.hvd.broadcast_stats(self)
 
-            if True:
+            if self.rank == 0:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
                 if self.print_stats:

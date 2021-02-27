@@ -6,6 +6,8 @@ class HorovodWrapper:
     def __init__(self):
         hvd.init()
         self.rank = hvd.rank()
+        self.rank_size = hvd.size()
+        print('Starting horovod with rank: {0}, size: {1}'.format(self.rank, self.rank_size))
         self.device_name = 'cuda:'+ str(self.rank)
 
 
@@ -17,8 +19,10 @@ class HorovodWrapper:
 
     def setup_algo(self, algo):
         hvd.broadcast_parameters(algo.model.state_dict(), root_rank=0)
+        hvd.broadcast_optimizer_state(algo.optimizer, root_rank=0)
         algo.optimizer = hvd.DistributedOptimizer(algo.optimizer, named_parameters=algo.model.named_parameters())
         if algo.has_central_value:
+            hvd.broadcast_optimizer_state(algo.central_value_net.optimizer, root_rank=0)
             hvd.broadcast_parameters(algo.central_value_net.state_dict(), root_rank=0)
             algo.central_value_net.optimizer = hvd.DistributedOptimizer(algo.central_value_net.optimizer, named_parameters=algo.central_value_net.model.named_parameters())
         
