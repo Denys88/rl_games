@@ -6,7 +6,7 @@ class HorovodWrapper:
     def __init__(self):
         hvd.init()
         self.rank = hvd.rank()
-        self.device_name = 'cuda:0' #+ str(self.rank)
+        self.device_name = 'cuda:'+ str(self.rank)
 
 
     def update_algo_config(self, config):
