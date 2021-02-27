@@ -45,7 +45,7 @@ params:
 
       grad_norm: 0.5
       entropy_coef: 0.0
-      truncate_grads: False
+      truncate_grads: True
       env_name:  Pendulum-v0
       ppo: true
       e_clip: 0.2

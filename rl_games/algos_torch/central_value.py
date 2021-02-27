@@ -126,9 +126,9 @@ class CentralValueTrain(nn.Module):
 
         return value
 
-    def train_critic(self, input_dict, opt_step = True):
+    def train_critic(self, input_dict):
         self.train()
-        loss = self.calc_gradients(input_dict, opt_step)
+        loss = self.calc_gradients(input_dict)
 
         return loss.item()
 
@@ -161,7 +161,7 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         return avg_loss
 
-    def calc_gradients(self, batch, opt_step):
+    def calc_gradients(self, batch):
         obs_batch = self._preproc_obs(batch['obs']) 
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
@@ -179,11 +179,26 @@ class CentralValueTrain(nn.Module):
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
 
-        for param in self.model.parameters():
-            param.grad = None
+        if self.multi_gpu:
+            self.optimizer.zero_grad()
+        else:
+            for param in self.model.parameters():
+                param.grad = None
         loss.backward()
-        if self.truncate_grads:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        if opt_step:
+
+        #TODO: Refactor this ugliest code of they year
+        if self.config['truncate_grads']:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.optimizer.step()
+            else:
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.optimizer.step()    
+        else:
             self.optimizer.step()
+        
         return loss

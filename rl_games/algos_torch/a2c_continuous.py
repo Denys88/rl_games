@@ -69,7 +69,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
-    def calc_gradients(self, input_dict, opt_step):
+    def calc_gradients(self, input_dict):
         self.set_train()
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
@@ -129,10 +129,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
+        #TODO: Refactor this ugliest code of they year
         if self.config['truncate_grads']:
-            self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        if opt_step:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+            else:
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()    
+        else:
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
@@ -147,8 +158,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss.item())
 
-    def train_actor_critic(self, input_dict, opt_step=True):
-        self.calc_gradients(input_dict, opt_step)
+    def train_actor_critic(self, input_dict):
+        self.calc_gradients(input_dict)
         return self.train_result
 
     def bound_loss(self, mu):

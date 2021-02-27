@@ -402,7 +402,7 @@ class A2CBase:
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
 
-    def calc_gradients(self, opt_step):
+    def calc_gradients(self):
         pass
 
     def get_central_value(self, obs_dict):

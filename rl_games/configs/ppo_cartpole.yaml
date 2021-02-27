@@ -30,7 +30,7 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
-    learning_rate: 1e-4
+    learning_rate: 2e-4
     name: cartpole_vel_info
     score_to_win: 500
     grad_norm: 0.5

@@ -95,16 +95,16 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         res_dict['action_masks'] = action_masks
         return res_dict
 
-    def train_actor_critic(self, input_dict, opt_step = True):
+    def train_actor_critic(self, input_dict):
         self.set_train()
-        self.calc_gradients(input_dict, opt_step)
+        self.calc_gradients(input_dict)
 
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
 
         return self.train_result
 
-    def calc_gradients(self, input_dict, opt_step):
+    def calc_gradients(self, input_dict):
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
@@ -158,11 +158,22 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.scaler.scale(loss).backward()
         if self.config['truncate_grads']:
-            self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        if opt_step:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+            else:
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()    
+        else:
             self.scaler.step(self.optimizer)
             self.scaler.update()
+
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:
