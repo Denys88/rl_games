@@ -5,6 +5,7 @@ from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
+
 import numpy as np
 import collections
 import time
@@ -47,6 +48,7 @@ class A2CBase:
             self.config = self.hvd.update_algo_config(config)
             self.rank = self.hvd.rank
             self.rank_size  = self.hvd.rank_size
+
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
@@ -807,8 +809,10 @@ class DiscreteA2CBase(A2CBase):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
+
         if self.multi_gpu:
             self.hvd.setup_algo(self)
+
         while True:
             epoch_num = self.update_epoch()
             curr_frames = self.curr_frames * self.rank_size
