@@ -8,7 +8,7 @@ class HorovodWrapper:
         self.rank = hvd.rank()
         self.rank_size = hvd.size()
         print('Starting horovod with rank: {0}, size: {1}'.format(self.rank, self.rank_size))
-        self.device_name = 'cpu' #'cuda:'+ str(self.rank)
+        self.device_name = 'cuda:'+ str(self.rank)
 
 
     def update_algo_config(self, config):
