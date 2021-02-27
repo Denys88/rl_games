@@ -39,13 +39,13 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
-      name: test
+      learning_rate: 1e-3
+      name: pendulum
       score_to_win: 300
 
       grad_norm: 0.5
       entropy_coef: 0.0
-      truncate_grads: True
+      truncate_grads: False
       env_name:  Pendulum-v0
       ppo: true
       e_clip: 0.2
@@ -55,7 +55,7 @@ params:
       minibatch_size: 1024
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule:  adaptive
+      lr_schedule: adaptive
       lr_threshold: 0.008
 
       normalize_input: False

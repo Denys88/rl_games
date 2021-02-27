@@ -150,8 +150,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
             loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
-            for param in self.model.parameters():
-                param.grad = None
+            if self.multi_gpu:
+                self.optimizer.zero_grad()
+            else:
+                for param in self.model.parameters():
+                    param.grad = None
 
         self.scaler.scale(loss).backward()
         if self.config['truncate_grads']:

@@ -806,13 +806,14 @@ class DiscreteA2CBase(A2CBase):
         rep_count = 0
         self.frame = 0
         self.obs = self.env_reset()
+        self.curr_frames = self.batch_size_envs
         if self.multi_gpu:
             self.hvd.setup_algo(self)
         while True:
             epoch_num = self.update_epoch()
-            self.frame += self.batch_size_envs * self.rank_size
+            curr_frames = self.curr_frames * self.rank_size
+            self.frame += curr_frames
             frame = self.frame
-
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             
             if self.multi_gpu:
@@ -820,16 +821,16 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
         
             if self.rank == 0:
-                scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * play_time
+                scaled_time = sum_time #self.num_agents * sum_time
+                scaled_play_time = play_time #self.num_agents * play_time
 
                 if self.print_stats:
-                    fps_step = self.batch_size / scaled_play_time
-                    fps_total = self.batch_size / scaled_time
+                    fps_step = curr_frames / scaled_play_time
+                    fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
+                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
                 self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
@@ -1049,15 +1050,16 @@ class ContinuousA2CBase(A2CBase):
                 self.hvd.broadcast_stats(self)
 
             if self.rank == 0:
-                scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * play_time
+                scaled_time = sum_time #self.num_agents * sum_time
+                scaled_play_time = play_time #self.num_agents * play_time
+                curr_frames = self.curr_frames * self.rank_size
                 if self.print_stats:
-                    fps_step = self.curr_frames / scaled_play_time
-                    fps_total = self.curr_frames / scaled_time
+                    fps_step = curr_frames / scaled_play_time
+                    fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', self.curr_frames / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', self.curr_frames / scaled_play_time, frame)
+                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
                 self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
                 self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
