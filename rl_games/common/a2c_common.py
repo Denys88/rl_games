@@ -810,13 +810,15 @@ class DiscreteA2CBase(A2CBase):
             self.hvd.setup_algo(self)
         while True:
             epoch_num = self.update_epoch()
-            self.frame += self.batch_size_envs
+            self.frame += self.batch_size_envs * self.rank_size
             frame = self.frame
 
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
-            total_time += sum_time
+            
             if self.multi_gpu:
-                self.hvd.broadcast_stats(self)            
+                self.hvd.broadcast_stats(self)    
+            total_time += sum_time
+        
             if self.rank == 0:
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
