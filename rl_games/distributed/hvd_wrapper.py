@@ -31,14 +31,16 @@ class HorovodWrapper:
             algo.central_value_net.optimizer = hvd.DistributedOptimizer(algo.central_value_net.optimizer, named_parameters=algo.central_value_net.model.named_parameters())
 
     def broadcast_stats(self, algo):
-        hvd.broadcast_parameters(algo.get_stats_weights(), root_rank=0)
+        stats_dict = algo.get_stats_weights()
+        for k,v in stats_dict.items():
+            hvd.broadcast_parameters(v, root_rank=0)
 
     def is_root(self):
         return self.rank == 0
 
     def average_stats(self, stats_dict):
         res_dict = {}
-        for k,v in stats_dict:
+        for k,v in stats_dict.items():
             res_dict[k] = self.metric_average(v, k)
 
     def average_value(self, val, name):

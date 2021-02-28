@@ -39,7 +39,7 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
-        self.multi_gpu = config.get('multi_gpu', True)
+        self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
         if self.multi_gpu:
