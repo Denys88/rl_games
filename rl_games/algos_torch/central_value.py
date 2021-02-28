@@ -8,13 +8,14 @@ from rl_games.common import datasets
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
         self.value_size = value_size
+        self.multi_gpu = multi_gpu
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -190,12 +191,12 @@ class CentralValueTrain(nn.Module):
         if self.config['truncate_grads']:
             if self.multi_gpu:
                 self.optimizer.synchronize()
-                self.scaler.unscale_(self.optimizer)
+                #self.scaler.unscale_(self.optimizer)
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
                 with self.optimizer.skip_synchronize():
                     self.optimizer.step()
             else:
-                self.scaler.unscale_(self.optimizer)
+                #self.scaler.unscale_(self.optimizer)
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
                 self.optimizer.step()    
         else:

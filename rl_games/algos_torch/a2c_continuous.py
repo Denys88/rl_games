@@ -47,7 +47,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_len' : self.seq_len, 
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
-                'writter' : self.writer
+                'writter' : self.writer,
+                'multi_gpu' : self.multi_gpu
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
