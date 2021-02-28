@@ -78,6 +78,8 @@ def random_sample(obs_batch, prob):
     indices = permutation[start:end]
     return torch.index_select(obs_batch, 0, indices)
 
+def mean_list(val):
+    return torch.mean(torch.stack(val))
 
 def apply_masks(losses, mask=None):
     sum_mask = None

@@ -180,6 +180,5 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
             else:
                 kl_dist = kl_dist.mean()
-            kl_dist = kl_dist.item()
 
-        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), kl_dist,self.last_lr, lr_mul)
+        self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
