@@ -137,7 +137,6 @@ class Runner:
             self.run_train()
         elif args['play']:
             print('Started to play')
-
             player = self.create_player()
             player.restore(self.load_path)
             player.run()

@@ -23,17 +23,21 @@ class HorovodWrapper:
         hvd.broadcast_optimizer_state(algo.optimizer, root_rank=0)
         algo.optimizer = hvd.DistributedOptimizer(algo.optimizer, named_parameters=algo.model.named_parameters())
 
-        self.broadcast_stats(algo)
+        self.sync_stats(algo)
 
         if algo.has_central_value:
             hvd.broadcast_optimizer_state(algo.central_value_net.optimizer, root_rank=0)
             hvd.broadcast_parameters(algo.central_value_net.state_dict(), root_rank=0)
             algo.central_value_net.optimizer = hvd.DistributedOptimizer(algo.central_value_net.optimizer, named_parameters=algo.central_value_net.model.named_parameters())
 
-    def broadcast_stats(self, algo):
+    def sync_stats(self, algo):
         stats_dict = algo.get_stats_weights()
         for k,v in stats_dict.items():
-            hvd.broadcast_parameters(v, root_rank=0)
+            in_k, in_v in v.items()
+            in_v.data = hvd.allreduce(in_v, name=k + in_k)
+
+    def broadcast_value(self, val, name):
+        hvd.broadcast_parameters({name: val}, root_rank=0)
 
     def is_root(self):
         return self.rank == 0

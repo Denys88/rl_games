@@ -39,7 +39,7 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
-        self.multi_gpu = config.get('multi_gpu', False)
+        self.multi_gpu = config.get('multi_gpu', True)
         self.rank = 0
         self.rank_size = 1
         if self.multi_gpu:
@@ -179,6 +179,10 @@ class A2CBase:
             value = self.value_mean_std.train()
 
     def update_lr(self, lr):
+        if self.multi_gpu:
+            lr_tensor = torch.tensor([lr])
+            self.hvd.broadcast_value(lr_tensor, 'learning_rate')
+            lr = lr_tensor.item()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
@@ -740,12 +744,11 @@ class DiscreteA2CBase(A2CBase):
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
-                entropies.append(entropy)    
-            
+                entropies.append(entropy)   
+
+            av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
-                av_kls = self.hvd.average_value(torch_ext.mean_list(ep_kls), 'ep_kls')
-            else:
-                av_kls = torch_ext.mean_list(ep_kls)
+                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
@@ -825,7 +828,7 @@ class DiscreteA2CBase(A2CBase):
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             
             if self.multi_gpu:
-                self.hvd.broadcast_stats(self)    
+                self.hvd.sync_stats(self)    
             total_time += sum_time
         
             if self.rank == 0:
@@ -971,6 +974,7 @@ class ContinuousA2CBase(A2CBase):
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)   
+
                 if self.schedule_type == 'legacy':  
                     if self.multi_gpu:
                         kl = self.hvd.average_value(kl, 'ep_kls')
@@ -980,8 +984,8 @@ class ContinuousA2CBase(A2CBase):
             av_kls = torch_ext.mean_list(ep_kls)
             if self.schedule_type == 'standard':
                 if self.multi_gpu:
-                    av_kls = self.hvd.average_value(av_kls, 'ep_kls') 
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl.item())
+                    av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
                 self.update_lr(self.last_lr)
             kls.append(av_kls)
 
@@ -1060,7 +1064,7 @@ class ContinuousA2CBase(A2CBase):
             self.frame += self.curr_frames * self.rank_size
             frame = self.frame
             if self.multi_gpu:
-                self.hvd.broadcast_stats(self)
+                self.hvd.sync_stats(self)
 
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
