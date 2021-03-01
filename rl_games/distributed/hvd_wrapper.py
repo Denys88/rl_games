@@ -33,8 +33,8 @@ class HorovodWrapper:
     def sync_stats(self, algo):
         stats_dict = algo.get_stats_weights()
         for k,v in stats_dict.items():
-            in_k, in_v in v.items()
-            in_v.data = hvd.allreduce(in_v, name=k + in_k)
+            for in_k, in_v in v.items():
+                in_v.data = hvd.allreduce(in_v, name=k + in_k)
 
     def broadcast_value(self, val, name):
         hvd.broadcast_parameters({name: val}, root_rank=0)
