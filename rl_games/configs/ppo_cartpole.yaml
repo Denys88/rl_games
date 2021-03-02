@@ -1,6 +1,5 @@
 
-
-#Cartpole without velocities lstm test
+#Cartpole MLP
 
 params:  
   algo:
@@ -18,12 +17,13 @@ params:
     space: 
       discrete:
     mlp:
-      units: [32,32]
+      units: [32, 32]
       activation: relu
       initializer:
         name: default
       regularizer:
-        name: 'None'
+        name: None
+
   config:
     reward_shaper:
         scale_value: 0.1
@@ -33,14 +33,14 @@ params:
     learning_rate: 2e-4
     name: cartpole_vel_info
     score_to_win: 500
-    grad_norm: 0.5
+    grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  CartPole-v1
+    env_name: CartPole-v1
     ppo: true
     e_clip: 0.2
     clip_value: True
-    num_actors: 8
+    num_actors: 16
     steps_num: 32
     minibatch_size: 64
     mini_epochs: 4
