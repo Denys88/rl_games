@@ -59,7 +59,7 @@ class CentralValueTrain(nn.Module):
         if self.normalize_input:
             return self.running_mean_std.state_dict()
         else:
-            return None
+            return {}
 
     def set_stats_weights(self, weights): 
         self.running_mean_std.load_state_dict(weights)
