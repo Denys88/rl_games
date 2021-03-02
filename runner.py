@@ -2,6 +2,10 @@ import numpy as np
 import argparse
 import copy
 import yaml
+import ray, signal
+
+def exit_gracefully(signum, frame):
+    ray.shutdown()
 
 
 if __name__ == '__main__':
@@ -24,6 +28,9 @@ if __name__ == '__main__':
         else:
             from rl_games.torch_runner import Runner
 
+        ray.init(object_store_memory=1024*1024*1000)
+        signal.signal(signal.SIGINT, exit_gracefully)
+
         runner = Runner()
         try:
             runner.load(config)
@@ -32,4 +39,6 @@ if __name__ == '__main__':
     
     runner.reset()
     runner.run(args)
+
+    ray.shutdown()
         
