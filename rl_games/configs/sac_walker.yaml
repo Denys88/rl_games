@@ -1,0 +1,59 @@
+params:  
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: variance_scaling_initializer
+          scale: 0.02
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 128, 64]
+      activation: elu
+      initializer:
+        name: default
+        scale: 2         
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
+    log_std_bounds: [-5, 2]
+
+  load_checkpoint: False
+  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
+
+  config:
+      device: cuda:0
+      name: walker
+      score_to_win: 300
+      env_name:  BipedalWalker-v3
+      max_epochs: 1000000
+      save_best_after: 10
+      save_frequency: 100
+      discount: 0.99
+      init_temperature: 0.1
+      alpha_lr: 0.0001
+      alpha_betas: [0.9, 0.999]
+      actor_lr: 0.001
+      actor_betas: [0.9, 0.999]
+      actor_update_frequency: 1
+      critic_lr: 0.001
+      critic_betas: [0.9, 0.999]
+      critic_tau: 0.005
+      critic_target_update_frequency: 2
+      batch_size: 256
+      learnable_temperature: true
+      num_seed_steps: 8
+      replay_buffer_size: 50000
