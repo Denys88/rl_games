@@ -5,6 +5,9 @@ import torch
 import torch.nn.functional as F
 from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
+from torch import distributions as pyd
+
+
 class BaseModel():
     def __init__(self):
         pass
@@ -233,4 +236,85 @@ class ModelA2CContinuousLogStd(BaseModel):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
+
+class ModelSACContinuous(BaseModel):
+    class TanhTransform(pyd.transforms.Transform):
+        domain = pyd.constraints.real
+        codomain = pyd.constraints.interval(-1.0, 1.0)
+        bijective = True
+        sign = +1
+
+        def __init__(self, cache_size=1):
+            super().__init__(cache_size=cache_size)
+
+        @staticmethod
+        def atanh(x):
+            return 0.5 * (x.log1p() - (-x).log1p())
+
+        def __eq__(self, other):
+            return isinstance(other, TanhTransform)
+
+        def _call(self, x):
+            return x.tanh()
+
+        def _inverse(self, y):
+            # We do not clamp to the boundary here as it may degrade the performance of certain algorithms.
+            # one should use `cache_size=1` instead
+            return self.atanh(y)
+
+        def log_abs_det_jacobian(self, x, y):
+            # We use a formula that is more numerically stable, see details in the following link
+            # https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
+            return 2. * (math.log(2.) - x - F.softplus(-2. * x))
+
+
+    class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
+        def __init__(self, loc, scale):
+            self.loc = loc
+            self.scale = scale
+
+            self.base_dist = pyd.Normal(loc, scale)
+            transforms = [TanhTransform()]
+            super().__init__(self.base_dist, transforms)
+
+        @property
+        def mean(self):
+            mu = self.loc
+            for tr in self.transforms:
+                mu = tr(mu)
+            return mu
+
+    def __init__(self, network):
+        BaseModel.__init__(self)
+        self.network_builder = network
+
+    def build(self, config):
+        return ModelSACContinuous.Network(self.network_builder.build('sac', **config))
+
+    
+    
+    class Network(nn.Module):
+        def __init__(self, sac_network):
+            nn.Module.__init__(self)
+            self.sac_network = sac_network
+
+        def critic(self, obs, action):
+            return self.sac_network.critic(obs, action)
+
+        def critic_target(self, obs, action):
+            return self.sac_network.critic_target(obs, action)
+
+        def actor(self, obs):
+            return self.sac_network.actor(obs)
+        
+        def is_rnn(self):
+            return False
+
+        def forward(self, input_dict):
+            is_train = input_dict.pop('is_train', True)
+            mu, sigma = self.sac_network(input_dict)
+            dist = SquashedNormal(mu, sigma)
+            return dist
+
+
 

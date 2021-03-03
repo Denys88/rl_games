@@ -167,3 +167,47 @@ class PpoPlayerDiscrete(BasePlayer):
 
     def reset(self):
         self.init_rnn()
+
+class SACPlayer(BasePlayer):
+    def __init__(self, config):
+        BasePlayer.__init__(self, config)
+        self.network = config['network']
+        self.actions_num = self.action_space.shape[0] 
+        self.action_range = [
+            float(self.env_info['action_space'].low.min()),
+            float(self.env_info['action_space'].high.max())
+        ]
+
+        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
+        self.normalize_input = False
+        config = {
+            'obs_dim': self.env_info["observation_space"].shape[0],
+            'action_dim': self.env_info["action_space"].shape[0],
+            'actions_num' : self.actions_num,
+            'input_shape' : obs_shape
+        }  
+        self.model = self.network.build(config)
+        self.model.to(self.device)
+        self.model.eval()
+        self.is_rnn = self.model.is_rnn()
+        # if self.normalize_input:
+        #     self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
+        #     self.running_mean_std.eval()  
+
+    def restore(self, fn):
+        checkpoint = torch_ext.load_checkpoint(fn)
+        self.model.sac_network.actor.load_state_dict(checkpoint['actor'])
+        self.model.sac_network.critic.load_state_dict(checkpoint['critic'])
+        self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
+        if self.normalize_input:
+            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+
+    def get_action(self, obs, sample=False):
+        dist = self.model.actor(obs)
+        actions = dist.sample() if sample else dist.mean
+        actions = actions.clamp(*self.action_range).to(self.device)
+        assert actions.ndim == 2
+        return actions
+
+    def reset(self):
+        pass

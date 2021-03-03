@@ -2,6 +2,7 @@ import numpy as np
 import random
 
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
+import torch
 
 
 class ReplayBuffer(object):
@@ -193,4 +194,99 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
+
+
+class VectorizedReplayBuffer:
+    def __init__(self, obs_shape, action_shape, capacity, device):
+        """Create Vectorized Replay buffer.
+        Parameters
+        ----------
+        size: int
+            Max number of transitions to store in the buffer. When the buffer
+            overflows the old memories are dropped.
+        See Also
+        --------
+        ReplayBuffer.__init__
+        """
+        self.obses = np.empty((capacity, *obs_shape), dtype=np.float32)
+        self.next_obses = np.empty((capacity, *obs_shape), dtype=np.float32)
+        self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
+        self.rewards = np.empty((capacity, 1), dtype=np.float32)
+        self.dones = np.empty((capacity, 1), dtype=bool)
+        self.dones_no_max = np.empty((capacity, 1), dtype=bool)
+        # self.not_dones_no_max = np.empty((capacity, 1), dtype=np.float32)
+
+        self.capacity = capacity
+        self.idx = 0
+        self.full = False
+        self.device = device
+
+    def add(self, obs, action, reward, next_obs, done, done_no_max):
+
+        num_observations = obs.shape[0]
+        remaining_capacity = min(self.capacity - self.idx, num_observations)
+        overflow = num_observations - remaining_capacity
+        if remaining_capacity < num_observations:
+            # print("Overflow!")
+            np.copyto(self.obses[0: overflow], obs[-overflow:])
+            np.copyto(self.actions[0: overflow], action[-overflow:])
+            np.copyto(self.rewards[0: overflow], reward[-overflow:])
+            np.copyto(self.next_obses[0: overflow], next_obs[-overflow:])
+            np.copyto(self.dones[0: overflow], done[-overflow:])
+            np.copyto(self.dones_no_max[0: overflow], done_no_max[-overflow:])
+            self.full = True
+        np.copyto(self.obses[self.idx: self.idx + remaining_capacity], obs[:remaining_capacity])
+        np.copyto(self.actions[self.idx: self.idx + remaining_capacity], action[:remaining_capacity])
+        np.copyto(self.rewards[self.idx: self.idx + remaining_capacity], reward[:remaining_capacity])
+        np.copyto(self.next_obses[self.idx: self.idx + remaining_capacity], next_obs[:remaining_capacity])
+        np.copyto(self.dones[self.idx: self.idx + remaining_capacity], done[:remaining_capacity])
+        np.copyto(self.dones_no_max[self.idx: self.idx + remaining_capacity], done_no_max[:remaining_capacity])
+
+        self.idx = (self.idx + num_observations) % self.capacity
+        self.full = self.full or self.idx == 0
+
+    def sample(self, batch_size):
+        """Sample a batch of experiences.
+        compared to ReplayBuffer.sample
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
+        Returns
+        -------
+        obs_batch: np.array
+            batch of observations
+        act_batch: np.array
+            batch of actions executed given obs_batch
+        rew_batch: np.array
+            rewards received as results of executing act_batch
+        next_obs_batch: np.array
+            next set of observations seen after executing act_batch
+        done_mask: np.array
+            done_mask[i] = 1 if executing act_batch[i] resulted in
+            the end of an episode and 0 otherwise.
+        weights: np.array
+            Array of shape (batch_size,) and dtype np.float32
+            denoting importance weight of each sampled transition
+        idxes: np.array
+            Array of shape (batch_size,) and dtype np.int32
+            idexes in buffer of sampled experiences
+        """
+
+        idxs = np.random.randint(0,
+                                 self.capacity if self.full else self.idx,
+                                 size=batch_size)
+
+        obses = torch.as_tensor(self.obses[idxs], device=self.device).float()
+        actions = torch.as_tensor(self.actions[idxs], device=self.device)
+        rewards = torch.as_tensor(self.rewards[idxs], device=self.device)
+        next_obses = torch.as_tensor(self.next_obses[idxs],
+                                     device=self.device).float()
+        not_dones = torch.as_tensor(np.invert(self.dones[idxs]), device=self.device)
+        not_dones_no_max = torch.as_tensor(np.invert(self.dones_no_max[idxs]),
+                                           device=self.device)
+
+        return obses, actions, rewards, next_obses, not_dones, not_dones_no_max
+
+
 
