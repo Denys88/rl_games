@@ -185,6 +185,9 @@ class A2CBase:
             lr = lr_tensor.item()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
+        
+        if self.has_central_value:
+            self.central_value_net.update_lr(lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -982,12 +985,19 @@ class ContinuousA2CBase(A2CBase):
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
+
             if self.schedule_type == 'standard':
                 if self.multi_gpu:
                     av_kls = self.hvd.average_value(av_kls, 'ep_kls')
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
                 self.update_lr(self.last_lr)
             kls.append(av_kls)
+
+        if self.schedule_type == 'standard_epoch':
+            if self.multi_gpu:
+                av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
+            self.update_lr(self.last_lr)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
