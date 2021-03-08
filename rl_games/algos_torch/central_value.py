@@ -31,10 +31,10 @@ class CentralValueTrain(nn.Module):
         self.num_minibatches = self.num_steps * self.num_actors // self.mini_batch
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
-        self.normalize_value = config.get('normalize_value', False)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
+        self.weight_decay = config.get('weight_decay', 0.0)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
         self.frame = 0
         self.running_mean_std = None
         self.grad_norm = config.get('grad_norm', 1)
@@ -112,7 +112,6 @@ class CentralValueTrain(nn.Module):
 
         for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
             mb_s[:, rnn_indices, :] = s[:, state_indices, :]
-
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
@@ -189,7 +188,6 @@ class CentralValueTrain(nn.Module):
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
-
         if self.multi_gpu:
             self.optimizer.zero_grad()
         else:

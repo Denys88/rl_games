@@ -186,8 +186,8 @@ class A2CBase:
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
         
-        if self.has_central_value:
-            self.central_value_net.update_lr(lr)
+        #if self.has_central_value:
+        #    self.central_value_net.update_lr(lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -362,6 +362,7 @@ class A2CBase:
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
         lastgaelam = 0
         mb_advs = torch.zeros_like(mb_rewards)
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - fdones
@@ -370,7 +371,8 @@ class A2CBase:
                 nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
             nextnonterminal = nextnonterminal.unsqueeze(1)
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
+
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
 
@@ -546,8 +548,10 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
+
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
+
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,

@@ -7,7 +7,7 @@ class TestRNNEnv(gym.Env):
         gym.Env.__init__(self)
  
         self.obs_dict = {}
-        self.max_steps = kwargs.pop('max_steps', 61)
+        self.max_steps = kwargs.pop('max_steps', 21)
         self.show_time = kwargs.pop('show_time', 1)
         self.min_dist = kwargs.pop('min_dist', 2)
         self.max_dist = kwargs.pop('max_dist', 8)
@@ -92,7 +92,6 @@ class TestRNNEnv(gym.Env):
         elif self._curr_steps == self.max_steps:
             info = {'scores' : 0} 
             done = True
-            print(info)
 
         dist_coef = -0.1
         if self.apply_dist_reward:
@@ -109,15 +108,14 @@ class TestRNNEnv(gym.Env):
             state = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
             obses = {}
             obses["obs"] = obs.astype(np.float32)
-            obses["state"] = obs.astype(np.float32)
+            obses["state"] = state.astype(np.float32)
         else:
             obses = obs.astype(np.float32)
         if self.multi_head_value:
             pass
         else:
             reward = reward[0] + reward[1]
-        if done:
-            print('done: ', reward, dist, self._curr_steps, self.max_steps)
+        
         return obses, np.array(reward).astype(np.float32), done, info
     
     def has_action_mask(self):

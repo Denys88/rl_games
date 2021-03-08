@@ -30,7 +30,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
