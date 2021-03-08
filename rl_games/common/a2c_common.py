@@ -5,6 +5,7 @@ from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
+
 import numpy as np
 import collections
 import time
@@ -38,6 +39,16 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
+        self.multi_gpu = config.get('multi_gpu', True)
+        self.rank = 0
+        self.rank_size = 1
+        if self.multi_gpu:
+            from rl_games.distributed.hvd_wrapper import HorovodWrapper
+            self.hvd = HorovodWrapper()
+            self.config = self.hvd.update_algo_config(config)
+            self.rank = self.hvd.rank
+            self.rank_size  = self.hvd.rank_size
+
         self.env_config = config.get('env_config', {})
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
@@ -133,8 +144,10 @@ class A2CBase:
         self.epoch_num = 0
         
         self.entropy_coef = self.config['entropy_coef']
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-
+        if self.rank == 0:
+            self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+        else:
+            self.writer = None
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
@@ -166,8 +179,15 @@ class A2CBase:
             value = self.value_mean_std.train()
 
     def update_lr(self, lr):
+        if self.multi_gpu:
+            lr_tensor = torch.tensor([lr])
+            self.hvd.broadcast_value(lr_tensor, 'learning_rate')
+            lr = lr_tensor.item()
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
+        
+        #if self.has_central_value:
+        #    self.central_value_net.update_lr(lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -342,6 +362,7 @@ class A2CBase:
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
         lastgaelam = 0
         mb_advs = torch.zeros_like(mb_rewards)
+
         for t in reversed(range(self.steps_num)):
             if t == self.steps_num - 1:
                 nextnonterminal = 1.0 - fdones
@@ -350,7 +371,8 @@ class A2CBase:
                 nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
             nextnonterminal = nextnonterminal.unsqueeze(1)
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
+
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
         return mb_advs
 
@@ -391,7 +413,7 @@ class A2CBase:
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
 
-    def calc_gradients(self, opt_step):
+    def calc_gradients(self):
         pass
 
     def get_central_value(self, obs_dict):
@@ -404,8 +426,6 @@ class A2CBase:
         state = self.get_weights()
         state['epoch'] = self.epoch_num
         state['optimizer'] = self.optimizer.state_dict()      
-        if self.mixed_precision:
-            state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
         return state
@@ -413,19 +433,13 @@ class A2CBase:
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
         self.epoch_num = weights['epoch']
-        if self.mixed_precision and 'scaler' in weights:
-            self.scaler.load_state_dict(weights['scaler'])
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
 
     def get_weights(self):
-        state = {'model': self.model.state_dict()}
-
-        if self.normalize_input:
-            state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_value:
-            state['reward_mean_std'] = self.value_mean_std.state_dict()   
+        state = self.get_stats_weights()
+        state['model'] = self.model.state_dict()
         return state
 
     def get_stats_weights(self):
@@ -436,6 +450,8 @@ class A2CBase:
             state['reward_mean_std'] = self.value_mean_std.state_dict()
         if self.has_central_value:
             state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
+        if self.mixed_precision:
+            state['scaler'] = self.scaler.state_dict()
         return state
 
     def set_stats_weights(self, weights):
@@ -445,14 +461,13 @@ class A2CBase:
             self.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.has_central_value:
             self.central_value_net.set_stats_weights(state['assymetric_vf_mean_std'])
-  
+        if self.mixed_precision and 'scaler' in weights:
+            self.scaler.load_state_dict(weights['scaler'])
+
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value:
-            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
-
+        self.set_stats_weights(weights)
+        
     def _preproc_obs(self, obs_batch):
         if obs_batch.dtype == torch.uint8:
             obs_batch = obs_batch.float() / 255.0
@@ -533,8 +548,10 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
+
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
+
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
@@ -734,11 +751,14 @@ class DiscreteA2CBase(A2CBase):
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
-                entropies.append(entropy)    
-                
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
+                entropies.append(entropy)   
+
+            av_kls = torch_ext.mean_list(ep_kls)
+            if self.multi_gpu:
+                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
-            kls.append(np.mean(ep_kls))
+            kls.append(av_kls)
             
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -802,35 +822,42 @@ class DiscreteA2CBase(A2CBase):
         rep_count = 0
         self.frame = 0
         self.obs = self.env_reset()
+        self.curr_frames = self.batch_size_envs
+
+        if self.multi_gpu:
+            self.hvd.setup_algo(self)
 
         while True:
             epoch_num = self.update_epoch()
-            self.frame += self.batch_size_envs
+            curr_frames = self.curr_frames * self.rank_size
+            self.frame += curr_frames
             frame = self.frame
-
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+            
+            if self.multi_gpu:
+                self.hvd.sync_stats(self)    
             total_time += sum_time
-
-            if True:
-                scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * play_time
+        
+            if self.rank == 0:
+                scaled_time = sum_time #self.num_agents * sum_time
+                scaled_play_time = play_time #self.num_agents * play_time
 
                 if self.print_stats:
-                    fps_step = self.batch_size / scaled_play_time
-                    fps_total = self.batch_size / scaled_time
+                    fps_step = curr_frames / scaled_play_time
+                    fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', self.batch_size / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', self.batch_size / scaled_play_time, frame)
+                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
                 self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
-                self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
-                self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
-                self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
+                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
+                self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
+                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
-                self.writer.add_scalar('info/kl', np.mean(kls), frame)
+                self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
@@ -954,14 +981,27 @@ class ContinuousA2CBase(A2CBase):
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)   
+
                 if self.schedule_type == 'legacy':  
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+                    if self.multi_gpu:
+                        kl = self.hvd.average_value(kl, 'ep_kls')
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl.item())
                     self.update_lr(self.last_lr)
 
-            if self.schedule_type == 'standard': 
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl)
+            av_kls = torch_ext.mean_list(ep_kls)
+
+            if self.schedule_type == 'standard':
+                if self.multi_gpu:
+                    av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
                 self.update_lr(self.last_lr)
-            kls.append(np.mean(ep_kls))
+            kls.append(av_kls)
+
+        if self.schedule_type == 'standard_epoch':
+            if self.multi_gpu:
+                av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
+            self.update_lr(self.last_lr)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -1029,36 +1069,40 @@ class ContinuousA2CBase(A2CBase):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
-
+        if self.multi_gpu:
+            self.hvd.setup_algo(self)
         while True:
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            self.frame += self.curr_frames
+            self.frame += self.curr_frames * self.rank_size
             frame = self.frame
+            if self.multi_gpu:
+                self.hvd.sync_stats(self)
 
-            if True:
-                scaled_time = self.num_agents * sum_time
-                scaled_play_time = self.num_agents * play_time
+            if self.rank == 0:
+                scaled_time = sum_time #self.num_agents * sum_time
+                scaled_play_time = play_time #self.num_agents * play_time
+                curr_frames = self.curr_frames * self.rank_size
                 if self.print_stats:
-                    fps_step = self.curr_frames / scaled_play_time
-                    fps_total = self.curr_frames / scaled_time
+                    fps_step = curr_frames / scaled_play_time
+                    fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', self.curr_frames / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', self.curr_frames / scaled_play_time, frame)
+                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
+                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
                 self.writer.add_scalar('performance/update_time', update_time, frame)
                 self.writer.add_scalar('performance/play_time', play_time, frame)
-                self.writer.add_scalar('losses/a_loss', np.mean(a_losses), frame)
-                self.writer.add_scalar('losses/c_loss', np.mean(c_losses), frame)
+                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
+                self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
 
                 if len(b_losses) > 0:
-                    self.writer.add_scalar('losses/bounds_loss', np.mean(b_losses), frame)
-                self.writer.add_scalar('losses/entropy', np.mean(entropies), frame)
+                    self.writer.add_scalar('losses/bounds_loss', torch_ext.mean_list(b_losses).item(), frame)
+                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
                 self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
                 self.writer.add_scalar('info/lr_mul', lr_mul, frame)
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
-                self.writer.add_scalar('info/kl', np.mean(kls), frame)
+                self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)

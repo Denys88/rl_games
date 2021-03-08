@@ -443,7 +443,7 @@ class A2CAgent:
 
             total_time = update_time_end - start_time
 
-            if True:         
+            if self.rank == 0:         
                 scaled_time = sum_time # self.num_agents * 
                 scaled_play_time = play_time # self.num_agents * 
                 if self.print_stats:

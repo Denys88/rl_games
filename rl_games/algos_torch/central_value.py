@@ -8,13 +8,14 @@ from rl_games.common import datasets
 
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
         self.value_size = value_size
+        self.multi_gpu = multi_gpu
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -30,10 +31,10 @@ class CentralValueTrain(nn.Module):
         self.num_minibatches = self.num_steps * self.num_actors // self.mini_batch
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
-        self.normalize_value = config.get('normalize_value', False)
         self.writter = writter
         self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-07)
+        self.weight_decay = config.get('weight_decay', 0.0)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
         self.frame = 0
         self.running_mean_std = None
         self.grad_norm = config.get('grad_norm', 1)
@@ -54,11 +55,21 @@ class CentralValueTrain(nn.Module):
 
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
+    def update_lr(self, lr):
+        '''
+        if self.multi_gpu:
+            lr_tensor = torch.tensor([lr])
+            self.hvd.broadcast_value(lr_tensor, 'cv_learning_rate')
+            lr = lr_tensor.item()
+        '''
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+
     def get_stats_weights(self): 
         if self.normalize_input:
             return self.running_mean_std.state_dict()
         else:
-            return None
+            return {}
 
     def set_stats_weights(self, weights): 
         self.running_mean_std.load_state_dict(weights)
@@ -101,7 +112,6 @@ class CentralValueTrain(nn.Module):
 
         for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
             mb_s[:, rnn_indices, :] = s[:, state_indices, :]
-
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
@@ -126,9 +136,9 @@ class CentralValueTrain(nn.Module):
 
         return value
 
-    def train_critic(self, input_dict, opt_step = True):
+    def train_critic(self, input_dict):
         self.train()
-        loss = self.calc_gradients(input_dict, opt_step)
+        loss = self.calc_gradients(input_dict)
 
         return loss.item()
 
@@ -161,7 +171,7 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         return avg_loss
 
-    def calc_gradients(self, batch, opt_step):
+    def calc_gradients(self, batch):
         obs_batch = self._preproc_obs(batch['obs']) 
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
@@ -178,12 +188,26 @@ class CentralValueTrain(nn.Module):
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
-
-        for param in self.model.parameters():
-            param.grad = None
+        if self.multi_gpu:
+            self.optimizer.zero_grad()
+        else:
+            for param in self.model.parameters():
+                param.grad = None
         loss.backward()
-        if self.truncate_grads:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        if opt_step:
+
+        #TODO: Refactor this ugliest code of they year
+        if self.config['truncate_grads']:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                #self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.optimizer.step()
+            else:
+                #self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.optimizer.step()    
+        else:
             self.optimizer.step()
+        
         return loss
