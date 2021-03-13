@@ -58,7 +58,7 @@ params:
 
     env_config:
       name: TestRnnEnv-v0
-      hide_object: False
+      hide_object: True
       apply_dist_reward: False
       min_dist: 2
       max_dist: 8
@@ -68,7 +68,7 @@ params:
         games_num: 100
         is_determenistic: True
 
-    central_value_config: 
+    central_value_config1: 
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
