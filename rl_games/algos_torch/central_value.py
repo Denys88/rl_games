@@ -16,6 +16,7 @@ class CentralValueTrain(nn.Module):
         self.state_shape = state_shape
         self.value_size = value_size
         self.multi_gpu = multi_gpu
+
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -23,6 +24,7 @@ class CentralValueTrain(nn.Module):
             'num_agents' : num_agents,
             'num_seqs' : num_actors
         }
+
         self.config = config
         self.model = model.build('cvalue', **state_config)
         self.lr = config['lr']
@@ -112,6 +114,7 @@ class CentralValueTrain(nn.Module):
 
         for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
             mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
@@ -154,7 +157,7 @@ class CentralValueTrain(nn.Module):
             assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
             actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             actions = actions.contiguous().view(batch_size, self.num_agents)
-        
+
         if self.is_rnn:
             rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
             rnn_masks = rnn_masks.flatten(0)[:batch_size] 
@@ -167,7 +170,10 @@ class CentralValueTrain(nn.Module):
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
-        self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
+
+        if self.writter != None:
+            self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
+
         self.frame += self.batch_size
         return avg_loss
 

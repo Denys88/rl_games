@@ -51,6 +51,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'multi_gpu' : self.multi_gpu
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
+
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)

@@ -142,12 +142,13 @@ class A2CBase:
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-        
+
         self.entropy_coef = self.config['entropy_coef']
         if self.rank == 0:
             self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         else:
             self.writer = None
+
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
@@ -183,6 +184,7 @@ class A2CBase:
             lr_tensor = torch.tensor([lr])
             self.hvd.broadcast_value(lr_tensor, 'learning_rate')
             lr = lr_tensor.item()
+
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
         
@@ -1069,8 +1071,10 @@ class ContinuousA2CBase(A2CBase):
         self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
+
         if self.multi_gpu:
             self.hvd.setup_algo(self)
+
         while True:
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
