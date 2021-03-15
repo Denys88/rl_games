@@ -447,21 +447,25 @@ class A2CBuilder(NetworkBuilder):
             if not self.has_rnn:
                 return None
             num_layers = self.rnn_layers
+            if self.rnn_name == 'identity':
+                rnn_units = 1
+            else:
+                rnn_units = self.rnn_units
             if self.rnn_name == 'lstm':
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
             else:
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),)                
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),)                
 
         def load(self, params):
             self.separate = params.get('separate', False)

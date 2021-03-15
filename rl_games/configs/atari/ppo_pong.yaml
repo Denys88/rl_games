@@ -1,4 +1,5 @@
 params:  
+  seed: 322
   algo:
     name: a2c_discrete
 
