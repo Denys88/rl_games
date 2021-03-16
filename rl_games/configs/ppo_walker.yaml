@@ -30,8 +30,8 @@ params:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
     rnn_removed:
-      name: lstm
-      units: 128
+      name: identity
+      units: 64
       layers: 1
       before_mlp: False
       
