@@ -35,6 +35,7 @@ class HorovodWrapper:
         for k,v in stats_dict.items():
             for in_k, in_v in v.items():
                 in_v.data = hvd.allreduce(in_v, name=k + in_k)
+        algo.curr_frames = hvd.allreduce(torch.tensor(algo.curr_frames), average=False).item()
 
     def broadcast_value(self, val, name):
         hvd.broadcast_parameters({name: val}, root_rank=0)
