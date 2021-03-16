@@ -192,7 +192,7 @@ def get_mean(v):
     return mean
 
 
-class CategoricalMasked2(torch.distributions.Categorical):
+class CategoricalMaskedNaive(torch.distributions.Categorical):
     def __init__(self, probs=None, logits=None, validate_args=None, masks=None):
         self.masks = masks
         if self.masks is None:
@@ -254,3 +254,15 @@ class AverageMeter(nn.Module):
 
     def get_mean(self):
         return self.mean.squeeze(0).cpu().numpy()
+
+
+class IdentityRNN(nn.Module):
+    def __init__(self, in_shape, out_shape):
+        super(IdentityRNN, self).__init__()
+        assert(in_shape == out_shape)
+        self.identity = torch.nn.Identity()
+
+    def forward(self, x, h):
+        return self.identity(x), h
+
+ 

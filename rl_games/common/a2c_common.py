@@ -39,7 +39,7 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
-        self.multi_gpu = config.get('multi_gpu', True)
+        self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
         if self.multi_gpu:
@@ -259,7 +259,7 @@ class A2CBase:
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
-        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.ppo_device)
+        self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
         self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
 
         if self.has_central_value:
@@ -389,8 +389,9 @@ class A2CBase:
                 nextnonterminal = 1.0 - mb_fdones[t+1]
                 nextvalues = mb_extrinsic_values[t+1]
             nextnonterminal = nextnonterminal.unsqueeze(1)
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t]
-            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * mb_masks[t].unsqueeze(1)
+            masks_t = mb_masks[t].unsqueeze(1)
+            delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t])
+            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
         return mb_advs
 
     def clear_stats(self):
@@ -550,6 +551,7 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
+        self.tau = 1
 
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
@@ -661,11 +663,8 @@ class A2CBase:
         mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
         fdones[non_finished] = 1.0
         last_extrinsic_values[non_finished] = 0
-
         mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
-
         mb_returns = mb_advs + mb_extrinsic_values
-
         batch_dict = {
             'obs' : mb_obs,
             'returns' : mb_returns,
