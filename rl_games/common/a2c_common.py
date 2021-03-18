@@ -839,7 +839,8 @@ class DiscreteA2CBase(A2CBase):
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
                 curr_frames = self.curr_frames
-                self.frames += curr_frames
+                self.frame += curr_frames
+                frame = self.frame
                 if self.print_stats:
                     fps_step = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
