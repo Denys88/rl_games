@@ -153,7 +153,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             reduce_kl = not self.is_rnn
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
-                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
                     
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \

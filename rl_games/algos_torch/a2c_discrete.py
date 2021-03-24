@@ -177,7 +177,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if self.is_rnn:
-                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
 

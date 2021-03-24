@@ -568,7 +568,7 @@ class A2CBase:
             batch_dict['states'] = mb_vobs
 
         batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-
+        batch_dict['played_frames'] = self.batch_size
         return batch_dict
 
     def play_steps_rnn(self):
@@ -680,6 +680,7 @@ class A2CBase:
 
         batch_dict['rnn_states'] = mb_rnn_states
         batch_dict['rnn_masks'] = mb_rnn_masks
+        batch_dict['played_frames'] = n * self.num_actors * self.num_agents
 
         return batch_dict
 
@@ -731,7 +732,7 @@ class DiscreteA2CBase(A2CBase):
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
-
+        self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()
 
@@ -823,26 +824,23 @@ class DiscreteA2CBase(A2CBase):
         rep_count = 0
         self.frame = 0
         self.obs = self.env_reset()
-        self.curr_frames = self.batch_size_envs
 
         if self.multi_gpu:
             self.hvd.setup_algo(self)
 
         while True:
             epoch_num = self.update_epoch()
-            curr_frames = self.curr_frames * self.rank_size
-            self.frame += curr_frames
-            frame = self.frame
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
-        
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
-
+                curr_frames = self.curr_frames
+                self.frame += curr_frames
+                frame = self.frame
                 if self.print_stats:
                     fps_step = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
@@ -952,6 +950,7 @@ class ContinuousA2CBase(A2CBase):
 
         rnn_masks = batch_dict.get('rnn_masks', None)
 
+        self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()
 
@@ -967,7 +966,6 @@ class ContinuousA2CBase(A2CBase):
         if self.is_rnn:
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
-            self.curr_frames = int(self.batch_size_envs * frames_mask_ratio)
 
         for _ in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1078,7 +1076,6 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            self.frame += self.curr_frames * self.rank_size
             frame = self.frame
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
@@ -1086,7 +1083,8 @@ class ContinuousA2CBase(A2CBase):
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
-                curr_frames = self.curr_frames * self.rank_size
+                curr_frames = self.curr_frames
+                self.frame += curr_frames
                 if self.print_stats:
                     fps_step = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
