@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
-
+from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
 
 class ReplayBuffer(object):
     def __init__(self, size, ob_space):
@@ -194,3 +194,39 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
             self._max_priority = max(self._max_priority, priority)
 
+
+
+def ExperienceBuffer():
+    '''
+    More generalized than replay buffers.
+    Implemented for on-policy algos
+    '''
+    def __init__(self, env_info, algo_info, device):
+        self.env_info = env_info
+        self.env_steps = env_steps
+        self.algo_info = algo_info
+        self.device = device
+
+    def _create_rnn_states(self, num_seqs, default_state):
+        batch_size = self.num_agents * self.num_actors
+        states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.device) for s in default_state]
+        return states
+
+    def _create_tensor_from_space(self, base_shape, space):       
+        if type(space) is gym.spaces.Box:
+            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            return torch.tensor(base_shape + space.shape, dtype= dtype, device = self.device)
+        if type(space) is gym.spaces.Discrete:
+            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            return torch.tensor(base_shape, dtype= dtype, device = self.device)
+        if type(space) is gym.spaces.Tuple:
+            '''
+            assuming that tuple is only Discrete tuple
+            '''
+            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            tuple_len = len(space)
+            return torch.tensor(base_shape +(tuple_len,), dtype= dtype, device = self.device)
+        if type(space) is gym.spaces.Dict:
+            tensord_dict = {}
+            for k,v in space:
+                tensord_dict[k] = self._create_tensor_from_space(self, batch_size, v)

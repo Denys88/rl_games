@@ -5,6 +5,22 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 
+numpy_to_torch_dtype_dict = {
+    np.bool       : torch.bool,
+    np.uint8      : torch.uint8,
+    np.int8       : torch.int8,
+    np.int16      : torch.int16,
+    np.int32      : torch.int32,
+    np.int64      : torch.int64,
+    np.float16    : torch.float16,
+    np.float32    : torch.float32,
+    np.float64    : torch.float64,
+    np.complex64  : torch.complex64,
+    np.complex128 : torch.complex128
+}
+
+torch_to_numpy_dtype_dict = {value : key for (key, value) in numpy_to_torch_dtype_dict.items()}
+
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce=True):
     c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
     c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
