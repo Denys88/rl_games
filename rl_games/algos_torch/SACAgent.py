@@ -417,10 +417,9 @@ class SACAgent:
                 obs = obs['obs']
             if isinstance(next_obs, dict):    
                 next_obs = next_obs['obs']
-
-            # break
            
-            self.replay_buffer.add(self._to_2d_np_cpu(obs).T, self._to_2d_np_cpu(action).T, self._to_2d_np_cpu(rewards), self._to_2d_np_cpu(next_obs).T, self._to_2d_np_cpu(dones.bool()), self._to_2d_np_cpu(dones_no_max.bool()))
+            # self.replay_buffer.add(self._to_2d_np_cpu(obs).T, self._to_2d_np_cpu(action).T, self._to_2d_np_cpu(rewards), self._to_2d_np_cpu(next_obs).T, self._to_2d_np_cpu(dones.bool()), self._to_2d_np_cpu(dones_no_max.bool()))
+            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 0).T, next_obs, torch.unsqueeze(dones, 0).T, torch.unsqueeze(dones_no_max.bool(), 0).T)
 
             obs = next_obs
             self.step += 1
