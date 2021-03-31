@@ -2,8 +2,7 @@ import numpy as np
 import copy
 import torch
 import yaml
-import ray
-import signal
+
 from rl_games import envs
 from rl_games.common import object_factory
 from rl_games.common import env_configurations
@@ -18,9 +17,9 @@ from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import SACAgent
 
-
 def exit_gracefully(signum, frame):
     ray.shutdown()
+
 
 
 class Runner:
@@ -41,7 +40,7 @@ class Runner:
         self.network_builder = network_builder.NetworkBuilder()
 
         self.algo_observer = algo_observer
-        
+
         torch.backends.cudnn.benchmark = True
 
     def reset(self):
@@ -100,8 +99,6 @@ class Runner:
         if self.algo_observer is None:
             self.algo_observer = DefaultAlgoObserver()
 
-        ray.init(object_store_memory=1024*1024*1000)
-        signal.signal(signal.SIGINT, exit_gracefully)
         if self.exp_config:
             self.experiment = experiment.Experiment(self.default_config, self.exp_config)
             exp_num = 0
@@ -148,5 +145,3 @@ class Runner:
             player.run()
         else:
             self.run_train()
-        
-        ray.shutdown()

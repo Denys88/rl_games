@@ -78,12 +78,15 @@ def random_sample(obs_batch, prob):
     indices = permutation[start:end]
     return torch.index_select(obs_batch, 0, indices)
 
+def mean_list(val):
+    return torch.mean(torch.stack(val))
 
 def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.sum()
+        sum_mask = mask.numel()#
+        #sum_mask = mask.sum()
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
@@ -190,7 +193,7 @@ def get_mean(v):
     return mean
 
 
-class CategoricalMasked2(torch.distributions.Categorical):
+class CategoricalMaskedNaive(torch.distributions.Categorical):
     def __init__(self, probs=None, logits=None, validate_args=None, masks=None):
         self.masks = masks
         if self.masks is None:
@@ -252,3 +255,15 @@ class AverageMeter(nn.Module):
 
     def get_mean(self):
         return self.mean.squeeze(0).cpu().numpy()
+
+
+class IdentityRNN(nn.Module):
+    def __init__(self, in_shape, out_shape):
+        super(IdentityRNN, self).__init__()
+        assert(in_shape == out_shape)
+        self.identity = torch.nn.Identity()
+
+    def forward(self, x, h):
+        return self.identity(x), h
+
+ 
