@@ -66,7 +66,6 @@ class Runner:
 
         self.model = self.model_builder.load(params)
         self.config = copy.deepcopy(params['config'])
-        
         self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**self.config['reward_shaper'])
         self.config['network'] = self.model
         
@@ -133,8 +132,7 @@ class Runner:
 
     def run(self, args):
         if 'checkpoint' in args:
-            if len(args['checkpoint']) > 0:
-                self.load_path = args['checkpoint']
+            self.load_path = args['checkpoint']
 
         if args['train']:
             self.run_train()

@@ -1,7 +1,9 @@
-from rl_games.algos_torch.network_builder import NetworkBuilder
+import rl_games.algos_torch.network_builder as network_builder
 from torch import distributions as pyd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import math
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -49,7 +51,7 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         return mu
 
 
-class DiagGaussianActor(NetworkBuilder.BaseNetwork):
+class DiagGaussianActor(network_builder.NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of an diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
         super().__init__()
@@ -76,7 +78,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         # Modify to only return mu and std
         return dist
 
-class DoubleQCritic(NetworkBuilder.BaseNetwork):
+class DoubleQCritic(network_builder.NetworkBuilder.BaseNetwork):
     """Critic network, employes double Q-learning."""
     def __init__(self, output_dim, **mlp_args):
         super().__init__()

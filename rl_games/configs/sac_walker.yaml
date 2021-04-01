@@ -35,6 +35,9 @@ params:
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
 
   config:
+      reward_shaper:
+        min_val: -1
+        scale_value: 0.1
       device: cuda:0
       name: walker
       score_to_win: 300

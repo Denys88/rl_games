@@ -10,7 +10,6 @@ import torch.optim as optim
 import math
 import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
-from rl_games.algos_torch.sac_helper import DiagGaussianActor, DoubleQCritic, SquashedNormal
 
 
 def _create_initializer(func, **kwargs):
@@ -168,6 +167,8 @@ class NetworkBuilder:
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
             return nn.Sequential(*layers)
+
+from rl_games.algos_torch.sac_helper import DiagGaussianActor, DoubleQCritic, SquashedNormal
 
 
 class A2CBuilder(NetworkBuilder):
