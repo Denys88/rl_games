@@ -144,7 +144,8 @@ class SACAgent:
         self.epoch_num = 0
         
         # self.writer = SummaryWriter('ant_runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        self.writer = SummaryWriter('tested_new/' + 'ant')
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+
         # self.writer = SummaryWriter('walker/'+'fixed_buffer')
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
@@ -332,7 +333,7 @@ class SACAgent:
     def env_step(self, actions):
         obs, rewards, dones, infos = self.vec_env.step(actions)
         # print(type(obs), type(rewards), type(dones), infos)
-
+        
         obs = self.preproc_obs(obs)
 
         if self.is_tensor_obses:
@@ -386,7 +387,7 @@ class SACAgent:
             step_start = time.time()
             next_obs, rewards, dones, infos = self.env_step(action)
             step_end = time.time()
-
+            shaped_rewards = self.rewards_shaper(rewards)
             # update episode_step and calculate done_no_max
 
             self.episode_lengths += 1
@@ -419,7 +420,7 @@ class SACAgent:
                 next_obs = next_obs['obs']
            
             # self.replay_buffer.add(self._to_2d_np_cpu(obs).T, self._to_2d_np_cpu(action).T, self._to_2d_np_cpu(rewards), self._to_2d_np_cpu(next_obs).T, self._to_2d_np_cpu(dones.bool()), self._to_2d_np_cpu(dones_no_max.bool()))
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 0).T, next_obs, torch.unsqueeze(dones, 0).T, torch.unsqueeze(dones_no_max.bool(), 0).T)
+            self.replay_buffer.add(obs, action, torch.unsqueeze(shaped_rewards, 0).T, next_obs, torch.unsqueeze(dones, 0).T, torch.unsqueeze(dones_no_max.bool(), 0).T)
 
             obs = next_obs
             self.step += 1
