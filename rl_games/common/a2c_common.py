@@ -743,8 +743,10 @@ class DiscreteA2CBase(A2CBase):
         if self.has_central_value:
             self.train_central_value()
 
+        self.mask_ratio = 1
         if self.is_rnn:
-            print('non masked rnn obs ratio: ',rnn_masks.sum().item() / (rnn_masks.nelement()))
+            self.mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
+            print('non masked rnn obs ratio: ', self.mask_ratio)
 
         for _ in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -963,8 +965,8 @@ class ContinuousA2CBase(A2CBase):
         kls = []
         
         if self.is_rnn:
-            frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
-            print(frames_mask_ratio)
+            self.mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
+            print('non masked rnn obs ratio: ', self.mask_ratio)
 
         for _ in range(0, self.mini_epochs_num):
             ep_kls = []
