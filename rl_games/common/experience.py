@@ -211,7 +211,19 @@ def ExperienceBuffer():
         self.is_rnn = algo_info['is_rnn']
         self.has_central_value = algo_info['has_central_value']
         self.default_rnn_state = algo_info.get('default_rnn_state')
-        self.actions_num = algo_info['actions_num']
+        self.action_space = env_info['action_space']
+
+        if type(self.action_space) is gym.spaces.Discrete:
+            self.actions_shape = (self.steps_num, batch_size)
+            self.actions_num = self.action_space.n
+            self.is_multi_discrete = False
+        if type(action_space) is gym.spaces.Tuple:
+            self.actions_shape = (self.steps_num, batch_size, len(self.action_space)) 
+            self.actions_num = [action.n for action in self.action_space]
+        if type(action_space) is gym.spaces.Continuous:
+            self.actions_shape = (self.steps_num, batch_size, len(self.action_space)) 
+            self.actions_num = action_space.shape[0]
+            self.is_multi_discrete = True
         self.tensor_dict = {}
 
     def _init_from_env_info(self, env_info):
@@ -225,9 +237,20 @@ def ExperienceBuffer():
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(shape=(,), dtype=np.float), obs_base_shape)
         self.tensor_dict['dones'] = self._create_tensor_from_space(gym.spaces.Box(shape=(,), dtype=np.uint8), obs_base_shape)
+
+        action_space = gym.spaces.Box(shape=(self.total_actions,))
+
         if self.use_action_masks:
-            mask_space = gym.spaces.Box(shape=(self.actions_num,))
-            self.tensor_dict['action_masks'] = self._create_tensor_from_space(val_space, obs_base_shape)
+            self.tensor_dict['action_masks'] = self._create_tensor_from_space(action_space, obs_base_shape)
+        if self.is_discrete:
+            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.long), obs_base_shape)
+
+        if self.is_continuous:
+            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['sigmas'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
+
+
         '''
         if self.is_rnn:
             batch_size = self.num_agents * self.num_actors
