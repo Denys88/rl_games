@@ -518,6 +518,9 @@ class A2CBase:
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
+            if 'time_outs' in infos:
+                rewards += self.gamma * res_dict['value'] * infos['time_outs'].to(self.ppo_device)
+
             shaped_rewards = self.rewards_shaper(rewards)
             mb_rewards[n,:] = shaped_rewards
 
@@ -617,6 +620,9 @@ class A2CBase:
                 mb_vobs[indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
+
+            if 'time_outs' in infos:
+                rewards += self.gamma * res_dict['value'] * infos['time_outs'].to(self.ppo_device)
 
             shaped_rewards = self.rewards_shaper(rewards)
 
