@@ -5,7 +5,7 @@ from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
-
+from rl_games.common.experience import ExperienceBuffer
 import numpy as np
 import collections
 import time
@@ -170,14 +170,14 @@ class A2CBase:
         if self.normalize_input:
             self.running_mean_std.eval()
         if self.normalize_value:
-            value = self.value_mean_std.eval()
+            self.value_mean_std.eval()
 
     def set_train(self):
         self.model.train()
         if self.normalize_input:
             self.running_mean_std.train()
         if self.normalize_value:
-            value = self.value_mean_std.train()
+            self.value_mean_std.train()
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -249,27 +249,20 @@ class A2CBase:
         self.obs = self.env_reset()
 
     def init_tensors(self):
-        if self.observation_space.dtype == np.uint8:
-            torch_dtype = torch.uint8
-        else:
-            torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
- 
+        algo_info = {
+            'num_actors' : self.num_actors,
+            'env_steps' : self.env_steps,
+            'has_central_value' : self.has_central_value
+        }
+        self.experience_buffer = ExperienceBuffer(self.env_info, algo_info, self.ppo_device)
+        
         val_shape = (self.steps_num, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
-        self.mb_obs = torch.zeros((self.steps_num, batch_size) + self.obs_shape, dtype=torch_dtype, device=self.ppo_device)
-
-        if self.has_central_value:
-            self.mb_vobs = torch.zeros((self.steps_num, self.num_actors) + self.state_shape, dtype=torch_dtype, device=self.ppo_device)
-
-        self.mb_rewards = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
-        self.mb_values = torch.zeros(val_shape, dtype = torch.float32, device=self.ppo_device)
-        self.mb_dones = torch.zeros((self.steps_num, batch_size), dtype = torch.uint8, device=self.ppo_device)
-        self.mb_neglogpacs = torch.zeros((self.steps_num, batch_size), dtype = torch.float32, device=self.ppo_device)
-
+        
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
@@ -483,23 +476,8 @@ class A2CBase:
         return obs_batch
 
     def play_steps(self):
-        mb_rnn_states = []
         epinfos = []
-
-        mb_obs = self.mb_obs
-        mb_rewards = self.mb_rewards
-        mb_values = self.mb_values
-        mb_dones = self.mb_dones
-        
-        tensors_dict = self.tensors_dict
         update_list = self.update_list
-        update_dict = self.update_dict
-
-        if self.has_central_value:
-            mb_vobs = self.mb_vobs
-
-        batch_size = self.num_agents * self.num_actors
-        mb_rnn_masks = None
 
         for n in range(self.steps_num):
             if self.use_action_masks:
@@ -508,18 +486,20 @@ class A2CBase:
             else:
                 res_dict = self.get_action_values(self.obs)
 
-            mb_obs[n,:] = self.obs['obs']
-            mb_dones[n,:] = self.dones
+            self.experience_buffer.update_data('obs', n, self.obs['obs'])
+            self.experience_buffer.update_data('dones', n, self.dones)
+  
             for k in update_list:
-                tensors_dict[k][n,:] = res_dict[k]
+                self.experience_buffer.update_data(k, n, shaped_rewards)
+                #tensors_dict[k][n,:] = res_dict[k]
 
             if self.has_central_value:
-                mb_vobs[n,:] = self.obs['states']
+                self.experience_buffer.update_data('states', n, self.obs['states'])
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
             shaped_rewards = self.rewards_shaper(rewards)
-            mb_rewards[n,:] = shaped_rewards
+            self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -546,28 +526,15 @@ class A2CBase:
         else:
             last_values = self.get_values(self.obs)
 
-        mb_extrinsic_values = mb_values
-        last_extrinsic_values = last_values
-
         fdones = self.dones.float()
-        mb_fdones = mb_dones.float()
+        mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
         self.tau = 1
 
-        mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
-        mb_returns = mb_advs + mb_extrinsic_values
+        mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
+        mb_returns = mb_advs + mb_values
 
-        batch_dict = {
-            'obs' : mb_obs,
-            'returns' : mb_returns,
-            'dones' : mb_dones,
-        }
-        for k in update_list:
-            batch_dict[update_dict[k]] = tensors_dict[k]
-
-        if self.has_central_value:
-            batch_dict['states'] = mb_vobs
-
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
+        batch_dict = self.experience_buffer.get_transformed(swap_and_flatten01)
+        batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         return batch_dict
 
@@ -575,17 +542,11 @@ class A2CBase:
         mb_rnn_states = []
         epinfos = []
 
-        mb_obs = self.mb_obs
-        mb_values = self.mb_values.fill_(0)
-        mb_rewards = self.mb_rewards.fill_(0)
-        mb_dones = self.mb_dones.fill_(1)
+        self.experience_buffer.tensor_dict['values'].fill_(0)
+        self.experience_buffer.tensor_dict['rewards'].fill_(0)
+        self.experience_buffer.tensor_dict['dones'].fill_(1)
 
-        tensors_dict = self.tensors_dict
         update_list = self.update_list
-        update_dict = self.update_dict
-
-        if self.has_central_value:
-            mb_vobs = self.mb_vobs
 
         batch_size = self.num_agents * self.num_actors
         mb_rnn_masks = None
@@ -606,21 +567,19 @@ class A2CBase:
                 res_dict = self.get_action_values(self.obs)
                 
             self.rnn_states = res_dict['rnn_state']
-
-            mb_dones[indices, play_mask] = self.dones.byte()
-            mb_obs[indices,play_mask] = self.obs['obs']   
+            self.experience_buffer.update_data_rnn('obs', indices, play_mask, self.obs['obs'])
+            self.experience_buffer.update_data_rnn('dones', indices, play_mask, self.dones.byte())
 
             for k in update_list:
-                tensors_dict[k][indices,play_mask] = res_dict[k]
+                self.experience_buffer.update_data_rnn(k, indices, play_mask, self.obs[k])
 
             if self.has_central_value:
-                mb_vobs[indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents] = self.obs['states']
+                self.experience_buffer.update_data_rnn('states', indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents, self.obs['states'])
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
 
             shaped_rewards = self.rewards_shaper(rewards)
-
-            mb_rewards[indices, play_mask] = shaped_rewards
+            self.experience_buffer.update_data_rnn('rewards', indices, play_mask, shaped_rewards)
 
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -652,32 +611,22 @@ class A2CBase:
         else:
             last_values = self.get_values(self.obs)
 
-        mb_extrinsic_values = mb_values
-        last_extrinsic_values = last_values
         fdones = self.dones.float()
-        mb_fdones = mb_dones.float()
+        mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
+        mb_values = self.experience_buffer.tensor_dict['values']
 
         non_finished = (indices != self.steps_num).nonzero(as_tuple=False)
         ind_to_fill = indices[non_finished]
         mb_fdones[ind_to_fill,non_finished] = fdones[non_finished]
-        mb_extrinsic_values[ind_to_fill,non_finished] = last_extrinsic_values[non_finished]
+        mb_values[ind_to_fill,non_finished] = last_values[non_finished]
         fdones[non_finished] = 1.0
-        last_extrinsic_values[non_finished] = 0
-        mb_advs = self.discount_values_masks(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
-        mb_returns = mb_advs + mb_extrinsic_values
-        batch_dict = {
-            'obs' : mb_obs,
-            'returns' : mb_returns,
-            'dones' : mb_dones,
-        }
-        for k in update_list:
-            batch_dict[update_dict[k]] = tensors_dict[k]
+        last_values[non_finished] = 0
+        
+        mb_advs = self.discount_values_masks(fdones, last_values, mb_fdones, mb_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
+        mb_returns = mb_advs + mb_values
 
-        if self.has_central_value:
-            batch_dict['states'] = mb_vobs
-
-        batch_dict = {k: swap_and_flatten01(v) for k, v in batch_dict.items()}
-
+        batch_dict = self.experience_buffer.get_transformed(swap_and_flatten01)
+        batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['rnn_states'] = mb_rnn_states
         batch_dict['rnn_masks'] = mb_rnn_masks
         batch_dict['played_frames'] = n * self.num_actors * self.num_agents
@@ -701,25 +650,7 @@ class DiscreteA2CBase(A2CBase):
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
-        batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros(self.actions_shape, dtype = torch.long, device=self.ppo_device)
-
-        self.update_list = ['action', 'neglogp', 'value']
-        self.update_dict = {
-            'action' : 'actions',
-            'neglogp' : 'neglogpacs',
-            'value' : 'values',
-        }
-        self.tensors_dict = {
-            'action' : self.mb_actions,
-            'neglogp' : self.mb_neglogpacs,
-            'value' : self.mb_values,
-        }
-        if self.use_action_masks:
-            self.mb_action_masks = torch.zeros((self.steps_num, batch_size, np.sum(self.actions_num)), dtype = torch.bool, device=self.ppo_device)
-            self.update_list.append('action_masks')
-            self.update_dict['action_masks'] = 'action_masks'
-            self.tensors_dict['action_masks'] = self.mb_action_masks
+        self.update_list = ['actions', 'neglogpacs', 'values']
 
     def train_epoch(self):
         play_time_start = time.time()
@@ -917,26 +848,7 @@ class ContinuousA2CBase(A2CBase):
 
     def init_tensors(self):
         A2CBase.init_tensors(self)
-        batch_size = self.num_agents * self.num_actors
-        self.mb_actions = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
-        self.mb_mus = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
-        self.mb_sigmas = torch.zeros((self.steps_num, batch_size, self.actions_num), dtype = torch.float32, device=self.ppo_device)
-
-        self.update_list = ['action', 'neglogp', 'value', 'mu', 'sigma']
-        self.update_dict = {
-            'action' : 'actions',
-            'neglogp' : 'neglogpacs',
-            'value' : 'values',
-            'mu' : 'mus',
-            'sigma' : 'sigmas'
-        }
-        self.tensors_dict = {
-            'action' : self.mb_actions,
-            'neglogp' : self.mb_neglogpacs,
-            'value' : self.mb_values,
-            'mu' : self.mb_mus,
-            'sigma' : self.mb_sigmas,
-        }
+        self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
 
     def train_epoch(self):
         play_time_start = time.time()

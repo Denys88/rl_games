@@ -41,7 +41,11 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:
-                input_dict[k] = v[start:end]
+                if v is dict:
+                    v_dict = { kd:vd[start:end] for kd, vd in v.items() }
+                    input_dict[k] = v_dict
+                else:
+                    input_dict[k] = v[start:end]
         
         rnn_states = self.values_dict['rnn_states']
         input_dict['rnn_states'] = [s[:,gstart:gend,:] for s in rnn_states]
@@ -55,7 +59,11 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names and v is not None:
-                input_dict[k] = v[start:end]
+                if v is dict:
+                    v_dict = { kd:vd[start:end] for kd, vd in v.items() }
+                    input_dict[k] = v_dict
+                else:
+                    input_dict[k] = v[start:end]
                 
         return input_dict
 
