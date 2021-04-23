@@ -41,9 +41,9 @@ def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
     res = defaultdict(list)
     { res[key].append(sub[key]) for sub in dicts for key in sub }
     if add_batch_dim:
-        concat_func = np.concatenate
-    else:
         concat_func = np.stack
+    else:
+        concat_func = np.concatenate
     res = {k : concat_func(v)  for k,v in res}
     return res
 

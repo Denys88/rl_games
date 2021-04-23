@@ -1,5 +1,6 @@
 import ray
 from rl_games.common.env_configurations import configurations
+from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
 import gym
 
@@ -133,11 +134,11 @@ class RayVecEnv(IVecEnv):
 
         if self.use_global_obs:
             newobsdict = {}
-            newobsdict["obs"] = self.concat_func(newobs, axis=0)
+            newobsdict["obs"] = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
             newobsdict["states"] = np.asarray(newstates)
             ret_obs = newobsdict
         else:
-            ret_obs = self.concat_func(newobs, axis=0)
+            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
