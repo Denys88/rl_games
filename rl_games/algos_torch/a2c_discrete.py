@@ -32,7 +32,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
         
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
+            if self.observation_space is gym.Spaces.Dict:
+                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
+            else:
+                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
             cv_config = {

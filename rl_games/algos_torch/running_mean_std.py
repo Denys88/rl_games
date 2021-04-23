@@ -79,9 +79,10 @@ class RunningMeanStd(nn.Module):
 class RunningMeanStdObs(nn.Module):
     def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
         assert(insize is dict)
-        self.running_mean_std = {
+        super(RunningMeanStdObs, self).__init__()
+        self.running_mean_std = nn.ModuleDict({
             k : RunningMeanStd(v, epsilon, per_channel, norm_only) for k,v in insize.items 
-        }
+        })
     
     def forward(self, input, unnorm=False):
         res = {k : self.running_mean_std(v, unnorm) for k,v in input.items()}
