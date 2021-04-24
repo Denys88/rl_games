@@ -1,6 +1,7 @@
 import numpy as np
 import random
-
+import gym
+import torch
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
 
@@ -196,7 +197,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
 
 
-def ExperienceBuffer():
+class ExperienceBuffer:
     '''
     More generalized than replay buffers.
     Implemented for on-policy algos
@@ -206,72 +207,77 @@ def ExperienceBuffer():
         self.algo_info = algo_info
         self.device = device
 
-        self.num_agents = env_info['num_agents']
+        self.num_agents = env_info['agents']
         self.action_space = env_info['action_space']
         
         self.num_actors = algo_info['num_actors']
-        self.env_steps = algo_info['env_steps']
+        self.steps_num = algo_info['steps_num']
         self.has_central_value = algo_info['has_central_value']
+        self.use_action_masks = algo_info.get('use_action_masks', False)
+        batch_size = self.num_actors * self.num_agents
+        self.is_discrete = False
+        self.is_multi_discrete = False
+        self.is_continuous = False
 
         if type(self.action_space) is gym.spaces.Discrete:
             self.actions_shape = (self.steps_num, batch_size)
             self.actions_num = self.action_space.n
-            self.is_multi_discrete = False
-        if type(action_space) is gym.spaces.Tuple:
+            self.is_discrete = True
+        if type(self.action_space) is gym.spaces.Tuple:
             self.actions_shape = (self.steps_num, batch_size, len(self.action_space)) 
             self.actions_num = [action.n for action in self.action_space]
-        if type(action_space) is gym.spaces.Continuous:
-            self.actions_shape = (self.steps_num, batch_size, len(self.action_space)) 
-            self.actions_num = action_space.shape[0]
             self.is_multi_discrete = True
+        if type(self.action_space) is gym.spaces.Box:
+            self.actions_shape = (self.steps_num, batch_size, self.action_space.shape[0]) 
+            self.actions_num = self.action_space.shape[0]
+            self.is_continuous = True
         self.tensor_dict = {}
+        self._init_from_env_info(self.env_info)
 
     def _init_from_env_info(self, env_info):
-        obs_base_shape = (self.env_steps, self.num_agents * self.num_actors)
-        state_base_shape = (self.env_steps, self.num_actors)
-        self.tensor_dict['obses'] = self._create_tensor_from_space(env_info.env_space, obs_base_shape)
+        print('_init_from_env_info')
+        obs_base_shape = (self.steps_num, self.num_agents * self.num_actors)
+        state_base_shape = (self.steps_num, self.num_actors)
+
+        self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
         if self.has_central_value:
-            self.tensor_dict['states'] = self._create_tensor_from_space(env_info.env_space, state_base_shape)
+            self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
         
-        val_space = gym.spaces.Box(shape=(env_info.get('value_size',1),))
+        val_space = gym.spaces.Box(low=0, high=1,shape=(env_info.get('value_size',1),))
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
-        self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(shape=(,), dtype=np.float), obs_base_shape)
-        self.tensor_dict['dones'] = self._create_tensor_from_space(gym.spaces.Box(shape=(,), dtype=np.uint8), obs_base_shape)
-
-        action_space = gym.spaces.Box(shape=(self.total_actions,))
-
-        if self.use_action_masks:
-            self.tensor_dict['action_masks'] = self._create_tensor_from_space(action_space, obs_base_shape)
+        self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.float), obs_base_shape)
+        self.tensor_dict['dones'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.uint8), obs_base_shape)
         if self.is_discrete:
-            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.long), obs_base_shape)
-
+            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.long), obs_base_shape)
+        if self.use_action_masks:
+            self.tensor_dict['action_masks'] = self._create_tensor_from_space(self.actions_shape, obs_base_shape)
         if self.is_continuous:
-            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
-            self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
-            self.tensor_dict['sigmas'] = self._create_tensor_from_space(gym.spaces.Box(shape=action_space, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
+            self.tensor_dict['sigmas'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
 
-    def _create_tensor_from_space(self, base_shape, space):       
+    def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
-            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            dtype = numpy_to_torch_dtype_dict[space.dtype]
             return torch.tensor(base_shape + space.shape, dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Discrete:
-            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            dtype = numpy_to_torch_dtype_dict[space.dtype]
             return torch.tensor(base_shape, dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
             '''
-            dtype = numpy_to_torch_dtype_dict(space.dtype)
+            dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
             return torch.tensor(base_shape +(tuple_len,), dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Dict:
-            tensord_dict = {}
+            t_dict = {}
             for k,v in space.tems():
-                tensord_dict[k] = self._create_tensor_from_space(self, batch_size, v)
-
+                t_dict[k] = self._create_tensor_from_space(self, batch_size, v)
+            return t_dict
     def update_data(self, name, index, val):
-        if val is Dict:
+        if val is dict:
             for k,v in val.tems():
                 self.tensor_dict[name][k][index,:] = v
         if val is torch.Tensor:

@@ -30,7 +30,7 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn:
+    rnn1:
       name: identity
       units: 64
       layers: 1

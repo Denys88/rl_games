@@ -212,9 +212,9 @@ class A2CBase:
                     #'rnn_states' : self.rnn_states
                 }
                 value = self.get_central_value(input_dict)
-                res_dict['value'] = value
+                res_dict['values'] = value
         if self.normalize_value:
-            res_dict['value'] = self.value_mean_std(res_dict['value'], True)
+            res_dict['values'] = self.value_mean_std(res_dict['values'], True)
         return res_dict
 
     def get_values(self, obs):
@@ -239,7 +239,7 @@ class A2CBase:
                     'rnn_states' : self.rnn_states
                 }
                 result = self.model(input_dict)
-                value = result['value']
+                value = result['values']
 
             if self.normalize_value:
                 value = self.value_mean_std(value, True)
@@ -252,8 +252,9 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         algo_info = {
             'num_actors' : self.num_actors,
-            'env_steps' : self.env_steps,
-            'has_central_value' : self.has_central_value
+            'steps_num' : self.steps_num,
+            'has_central_value' : self.has_central_value,
+            'use_action_masks' : self.use_action_masks
         }
         self.experience_buffer = ExperienceBuffer(self.env_info, algo_info, self.ppo_device)
         
@@ -496,14 +497,11 @@ class A2CBase:
             self.experience_buffer.update_data('dones', n, self.dones)
   
             for k in update_list:
-                self.experience_buffer.update_data(k, n, shaped_rewards)
-                #tensors_dict[k][n,:] = res_dict[k]
+                self.experience_buffer.update_data(k, n, res_dict)
 
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
-
-            self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
-
+            self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
             shaped_rewards = self.rewards_shaper(rewards)
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
@@ -528,13 +526,14 @@ class A2CBase:
                 val_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 val_dict = self.get_action_values(self.obs)
-            last_values = val_dict['value']
+            last_values = val_dict['values']
         else:
             last_values = self.get_values(self.obs)
 
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
-        self.tau = 1
+        mb_values = self.experience_buffer.tensor_dict['values']
+        mb_rewards = self.experience_buffer.tensor_dict['rewards']
 
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
         mb_returns = mb_advs + mb_values
@@ -547,7 +546,7 @@ class A2CBase:
     def play_steps_rnn(self):
         mb_rnn_states = []
         epinfos = []
-
+        print(self.experience_buffer.tensor_dict.keys())
         self.experience_buffer.tensor_dict['values'].fill_(0)
         self.experience_buffer.tensor_dict['rewards'].fill_(0)
         self.experience_buffer.tensor_dict['dones'].fill_(1)
@@ -575,14 +574,14 @@ class A2CBase:
             self.rnn_states = res_dict['rnn_state']
             self.experience_buffer.update_data_rnn('obs', indices, play_mask, self.obs['obs'])
             self.experience_buffer.update_data_rnn('dones', indices, play_mask, self.dones.byte())
-
+     
             for k in update_list:
-                self.experience_buffer.update_data_rnn(k, indices, play_mask, self.obs[k])
+                self.experience_buffer.update_data_rnn(k, indices, play_mask, res_dict[k])
 
             if self.has_central_value:
                 self.experience_buffer.update_data_rnn('states', indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents, self.obs['states'])
 
-            self.obs, rewards, self.dones, infos = self.env_step(res_dict['action'])
+            self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
 
             shaped_rewards = self.rewards_shaper(rewards)
             self.experience_buffer.update_data_rnn('rewards', indices, play_mask, shaped_rewards)

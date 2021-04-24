@@ -45,7 +45,7 @@ class ModelA2C(BaseModel):
                 entropy = categorical.entropy()
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : entropy,
                     'rnn_state' : states
                 }
@@ -56,8 +56,8 @@ class ModelA2C(BaseModel):
                 neglogp = -categorical.log_prob(selected_action)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'value' : value,
-                    'action' : selected_action,
+                    'values' : value,
+                    'actions' : selected_action,
                     'logits' : categorical.logits,
                     'rnn_state' : states
                 }
@@ -99,7 +99,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : torch.squeeze(entropy),
                     'rnn_state' : states
                 }
@@ -209,11 +209,11 @@ class ModelA2CContinuousLogStd(BaseModel):
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : entropy,
                     'rnn_state' : states,
-                    'mu' : mu,
-                    'sigma' : sigma
+                    'mus' : mu,
+                    'sigmas' : sigma
                 }                
                 return result
             else:

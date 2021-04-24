@@ -104,7 +104,9 @@ class RayVecEnv(IVecEnv):
         env_info = ray.get(res)
 
         self.use_global_obs = env_info['use_global_observations']
-
+        
+        self.obs_type_dict = env_info.get('observation_space') is gym.spaces.Dict
+        self.state_type_dict = env_info.get('state_space') is gym.spaces.Dict
         if self.num_agents == 1:
             self.concat_func = np.stack
         else:
@@ -132,13 +134,20 @@ class RayVecEnv(IVecEnv):
             newdones.append(cdones)
             newinfos.append(cinfos)
 
+        if self.obs_type_dict:
+            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
+        else:
+            ret_obs = self.concat_func(newobs)
         if self.use_global_obs:
             newobsdict = {}
-            newobsdict["obs"] = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
-            newobsdict["states"] = np.asarray(newstates)
+            newobsdict["obs"] = res_obs
+            
+            if self.state_type_dict:
+                newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
+            else:
+                newobsdict["states"] = self.concat_func(newstates)            
             ret_obs = newobsdict
-        else:
-            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
+        
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
