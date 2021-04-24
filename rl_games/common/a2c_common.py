@@ -551,7 +551,6 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = mb_dones.float()
-        self.tau = 1
 
         mb_advs = self.discount_values(fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards)
         mb_returns = mb_advs + mb_extrinsic_values
