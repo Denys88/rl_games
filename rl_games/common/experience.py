@@ -245,7 +245,7 @@ class ExperienceBuffer:
         val_space = gym.spaces.Box(low=0, high=1,shape=(env_info.get('value_size',1),))
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
-        self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.float), obs_base_shape)
+        self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.float32), obs_base_shape)
         self.tensor_dict['dones'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.uint8), obs_base_shape)
         if self.is_discrete:
             self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.long), obs_base_shape)
@@ -278,17 +278,18 @@ class ExperienceBuffer:
 
     def update_data(self, name, index, val):
         if val is dict:
-            for k,v in val.tems():
+            for k,v in val.items():
                 self.tensor_dict[name][k][index,:] = v
-        if val is torch.Tensor:
-            self.tensor_dict[name][index,:] = v
+        else:
+            self.tensor_dict[name][index,:] = val
+
 
     def update_data_rnn(self, name, indices,play_mask, val):
         if val is dict:
             for k,v in val:
                 self.tensor_dict[name][k][indices,play_mask] = v
-        if val is torch.Tensor:
-            self.tensor_dict[name][indices,play_mask] = v
+        else:
+            self.tensor_dict[name][indices,play_mask] = val
 
     def get_transformed(self, transform_op):
         res_dict = {}

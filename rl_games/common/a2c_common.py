@@ -493,11 +493,11 @@ class A2CBase:
             else:
                 res_dict = self.get_action_values(self.obs)
 
-            self.experience_buffer.update_data('obs', n, self.obs['obs'])
+            self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
   
             for k in update_list:
-                self.experience_buffer.update_data(k, n, res_dict)
+                self.experience_buffer.update_data(k, n, res_dict[k])
 
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
@@ -540,12 +540,12 @@ class A2CBase:
         batch_dict = self.experience_buffer.get_transformed(swap_and_flatten01)
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
+
         return batch_dict
 
     def play_steps_rnn(self):
         mb_rnn_states = []
         epinfos = []
-        print(self.experience_buffer.tensor_dict.keys())
         self.experience_buffer.tensor_dict['values'].fill_(0)
         self.experience_buffer.tensor_dict['rewards'].fill_(0)
         self.experience_buffer.tensor_dict['dones'].fill_(1)
@@ -571,7 +571,7 @@ class A2CBase:
                 res_dict = self.get_action_values(self.obs)
                 
             self.rnn_states = res_dict['rnn_state']
-            self.experience_buffer.update_data_rnn('obs', indices, play_mask, self.obs['obs'])
+            self.experience_buffer.update_data_rnn('obses', indices, play_mask, self.obs['obs'])
             self.experience_buffer.update_data_rnn('dones', indices, play_mask, self.dones.byte())
      
             for k in update_list:
@@ -618,6 +618,7 @@ class A2CBase:
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
         mb_values = self.experience_buffer.tensor_dict['values']
+        mb_rewards = self.experience_buffer.tensor_dict['rewards']
 
         non_finished = (indices != self.steps_num).nonzero(as_tuple=False)
         ind_to_fill = indices[non_finished]
