@@ -90,7 +90,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     #'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
-                res_dict['value'] = value
+                res_dict['values'] = value
 
         if self.normalize_value:
             value = self.value_mean_std(value, True)

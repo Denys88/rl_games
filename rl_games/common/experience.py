@@ -220,22 +220,21 @@ class ExperienceBuffer:
         self.is_continuous = False
 
         if type(self.action_space) is gym.spaces.Discrete:
-            self.actions_shape = (self.steps_num, batch_size)
+            self.actions_shape = ()
             self.actions_num = self.action_space.n
             self.is_discrete = True
         if type(self.action_space) is gym.spaces.Tuple:
-            self.actions_shape = (self.steps_num, batch_size, len(self.action_space)) 
+            self.actions_shape = (len(self.action_space),) 
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
         if type(self.action_space) is gym.spaces.Box:
-            self.actions_shape = (self.steps_num, batch_size, self.action_space.shape[0]) 
+            self.actions_shape = (self.action_space.shape[0],) 
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
         self.tensor_dict = {}
         self._init_from_env_info(self.env_info)
 
     def _init_from_env_info(self, env_info):
-        print('_init_from_env_info')
         obs_base_shape = (self.steps_num, self.num_agents * self.num_actors)
         state_base_shape = (self.steps_num, self.num_actors)
 
@@ -260,22 +259,23 @@ class ExperienceBuffer:
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.tensor(base_shape + space.shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + space.shape, dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Discrete:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.tensor(base_shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape, dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
             '''
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            return torch.tensor(base_shape +(tuple_len,), dtype= dtype, device = self.device)
+            return torch.zeros(base_shape +(tuple_len,), dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Dict:
             t_dict = {}
             for k,v in space.tems():
                 t_dict[k] = self._create_tensor_from_space(self, batch_size, v)
             return t_dict
+
     def update_data(self, name, index, val):
         if val is dict:
             for k,v in val.tems():
@@ -293,11 +293,12 @@ class ExperienceBuffer:
     def get_transformed(self, transform_op):
         res_dict = {}
         for k, v in self.tensor_dict.items():
-            if v is Dict:
+            if v is dict:
                 transformed_dict = {}
                 for kd,vd in v.tems():
                     transformed_dict[kd] = transform_op(vd)
-        if v is torch.Tensor:
-            res_dict[key] = transform_op(v)
+                res_dict[k] = transformed_dict
+            else:
+                res_dict[k] = transform_op(v)
         
         return res_dict

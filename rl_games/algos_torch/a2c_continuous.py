@@ -106,10 +106,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
-            values = res_dict['value']
+            values = res_dict['values']
             entropy = res_dict['entropy']
-            mu = res_dict['mu']
-            sigma = res_dict['sigma']
+            mu = res_dict['mus']
+            sigma = res_dict['sigmas']
 
             a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 

@@ -534,7 +534,6 @@ class A2CBase:
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
         mb_values = self.experience_buffer.tensor_dict['values']
         mb_rewards = self.experience_buffer.tensor_dict['rewards']
-
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
         mb_returns = mb_advs + mb_values
 
@@ -707,7 +706,7 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-        obses = batch_dict['obs']
+        obses = batch_dict['obses']
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
@@ -927,7 +926,7 @@ class ContinuousA2CBase(A2CBase):
         return play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
 
     def prepare_dataset(self, batch_dict):
-        obses = batch_dict['obs']
+        obses = batch_dict['obses']
         returns = batch_dict['returns']
         dones = batch_dict['dones']
         values = batch_dict['values']
