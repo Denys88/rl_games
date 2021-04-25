@@ -26,22 +26,23 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 512
+    steps_num: 256
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
     normalize_input: False
-    normalize_value: True
+    normalize_value: False
     weight_decay: 0.0000
     max_epochs: 10000
     seq_length: 16
     save_best_after: 10
+    save_frequency: 20
     env_config:
       name: TestRnnEnv-v0
       hide_object: False
-      apply_dist_reward: True
+      apply_dist_reward: False
       min_dist: 2
       max_dist: 8
       use_central_value: False

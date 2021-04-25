@@ -57,6 +57,7 @@ params:
     max_epochs: 10000
     seq_length: 16
     save_best_after: 10
+    
     env_config:
       name: TestRnnEnv-v0
       hide_object: True

@@ -153,7 +153,6 @@ class RayVecEnv(IVecEnv):
             else:
                 newobsdict["states"] = np.stack(newstates)            
             ret_obs = newobsdict
-
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):

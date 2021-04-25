@@ -24,10 +24,10 @@ class TestNet(nn.Module):
 
     def is_rnn(self):
         return False
-
+        
     def forward(self, obs):
         obs = obs['obs']
-        obs = torch.cat(list(obs.values()), axis=1)
+        obs = torch.cat([obs['pos'], obs['info']], axis=1)
         x = F.relu(self.linear1(obs))
         x = F.relu(self.linear2(x))
         x = F.relu(self.linear3(x))
