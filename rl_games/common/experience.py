@@ -272,12 +272,12 @@ class ExperienceBuffer:
             return torch.zeros(base_shape +(tuple_len,), dtype= dtype, device = self.device)
         if type(space) is gym.spaces.Dict:
             t_dict = {}
-            for k,v in space.tems():
-                t_dict[k] = self._create_tensor_from_space(self, batch_size, v)
+            for k,v in space.spaces.items():
+                t_dict[k] = self._create_tensor_from_space(v, base_shape)
             return t_dict
 
     def update_data(self, name, index, val):
-        if val is dict:
+        if type(val) is dict:
             for k,v in val.items():
                 self.tensor_dict[name][k][index,:] = v
         else:
@@ -285,7 +285,7 @@ class ExperienceBuffer:
 
 
     def update_data_rnn(self, name, indices,play_mask, val):
-        if val is dict:
+        if type(val) is dict:
             for k,v in val:
                 self.tensor_dict[name][k][indices,play_mask] = v
         else:
@@ -294,9 +294,25 @@ class ExperienceBuffer:
     def get_transformed(self, transform_op):
         res_dict = {}
         for k, v in self.tensor_dict.items():
-            if v is dict:
+            if type(v) is dict:
                 transformed_dict = {}
-                for kd,vd in v.tems():
+                for kd,vd in v.items():
+                    transformed_dict[kd] = transform_op(vd)
+                res_dict[k] = transformed_dict
+            else:
+                res_dict[k] = transform_op(v)
+        
+        return res_dict
+
+    def get_transformed_list(self, transform_op, tensor_list):
+        res_dict = {}
+        for k in tensor_list:
+            v = self.tensor_dict.get(k)
+            if v is None:
+                continue
+            if type(v) is dict:
+                transformed_dict = {}
+                for kd,vd in v.items():
                     transformed_dict[kd] = transform_op(vd)
                 res_dict[k] = transformed_dict
             else:

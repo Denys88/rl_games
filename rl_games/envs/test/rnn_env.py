@@ -30,8 +30,8 @@ class TestRNNEnv(gym.Env):
         self.multi_obs_space = kwargs.pop('multi_obs_space', False)
         if self.multi_obs_space:
             spaces = {
-                'pos': gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32),
-                'info': gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32),
+                'pos': gym.spaces.Box(low=0, high=1, shape=(2, ), dtype=np.float32),
+                'info': gym.spaces.Box(low=0, high=1, shape=(4, ), dtype=np.float32),
             }
             self.observation_space = gym.spaces.Dict(spaces)
         else:
@@ -56,13 +56,13 @@ class TestRNNEnv(gym.Env):
         vobs = obs
         if self.multi_obs_space:
             obs = {
-                'pos': obs[:2]
+                'pos': obs[:2],
                 'info': obs[2:]
             }
         if self.use_central_value:
             obses = {}
             obses["obs"] = obs
-            obses["state"] = obs
+            obses["state"] = vobs
         else:
             obses = obs
         return obses
@@ -120,9 +120,10 @@ class TestRNNEnv(gym.Env):
             show_object = 1
             obs = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
         obs = obs.astype(np.float32)
+        #state = state.astype(np.float32)
         if self.multi_obs_space:
             obs = {
-                'pos': obs[:2]
+                'pos': obs[:2],
                 'info': obs[2:]
             }
         if self.use_central_value:

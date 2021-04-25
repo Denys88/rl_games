@@ -24,7 +24,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = self.state_shape
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,

@@ -39,8 +39,13 @@ class RayWorker:
             next_state = self.reset()
         if isinstance(next_state, dict):
             for k,v in next_state.items():
-                if v.dtype == np.float64:
-                    next_state[k] = v.astype(np.float32)
+                if isinstance(v, dict):
+                    for dk,dv in v.items():
+                        if dv.dtype == np.float64:
+                            v[dk] = dv.astype(np.float32)
+                else:
+                    if v.dtype == np.float64:
+                        next_state[k] = v.astype(np.float32)
         else: 
             if next_state.dtype == np.float64:
                 next_state = next_state.astype(np.float32)
@@ -69,8 +74,8 @@ class RayWorker:
         info = {}
         observation_space = self.env.observation_space
 
-        if isinstance(observation_space, gym.spaces.dict.Dict):
-            observation_space = observation_space['observations']
+        #if isinstance(observation_space, gym.spaces.dict.Dict):
+        #    observation_space = observation_space['observations']
 
         info['action_space'] = self.env.action_space
         info['observation_space'] = observation_space
@@ -105,13 +110,13 @@ class RayVecEnv(IVecEnv):
 
         self.use_global_obs = env_info['use_global_observations']
         
-        self.obs_type_dict = env_info.get('observation_space') is gym.spaces.Dict
-        self.state_type_dict = env_info.get('state_space') is gym.spaces.Dict
+        self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
+        self.state_type_dict = type(env_info.get('state_space')) is gym.spaces.Dict
         if self.num_agents == 1:
             self.concat_func = np.stack
         else:
             self.concat_func = np.concatenate
-
+    
     def step(self, actions):
         newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
         res_obs = []
@@ -138,16 +143,17 @@ class RayVecEnv(IVecEnv):
             ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
         else:
             ret_obs = self.concat_func(newobs)
+
         if self.use_global_obs:
             newobsdict = {}
-            newobsdict["obs"] = res_obs
+            newobsdict["obs"] = ret_obs
             
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
-                newobsdict["states"] = self.concat_func(newstates)            
+                newobsdict["states"] = np.stack(newstates)            
             ret_obs = newobsdict
-        
+
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
@@ -169,24 +175,30 @@ class RayVecEnv(IVecEnv):
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]
-        if self.use_global_obs:
-            newobs, newstates = [],[]
-            for res in res_obs:
-                cobs = ray.get(res)
-                if self.use_global_obs:
-                    newobs.append(cobs["obs"])
-                    newstates.append(cobs["state"])
-                else:
-                    newobs.append(cobs)
-            newobsdict = {}
-            newobsdict["obs"] = self.concat_func(newobs, axis=0)
-            newobsdict["states"] = np.asarray(newstates)
-            ret_obs = newobsdict
-        else:
-            ret_obs = ray.get(res_obs)
-            ret_obs = self.concat_func(ret_obs, axis=0)
-        return ret_obs
+        newobs, newstates = [],[]
+        for res in res_obs:
+            cobs = ray.get(res)
+            if self.use_global_obs:
+                newobs.append(cobs["obs"])
+                newstates.append(cobs["state"])
+            else:
+                newobs.append(cobs)
 
+        if self.obs_type_dict:
+            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
+        else:
+            ret_obs = self.concat_func(newobs)
+
+        if self.use_global_obs:
+            newobsdict = {}
+            newobsdict["obs"] = ret_obs
+            
+            if self.state_type_dict:
+                newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
+            else:
+                newobsdict["states"] = np.stack(newstates)            
+            ret_obs = newobsdict
+        return ret_obs
 # todo rename multi-agent
 class RayVecSMACEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):

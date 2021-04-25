@@ -40,8 +40,6 @@ class BasePlayer(object):
             obs_batch = obs_batch.float() / 255.0
         #if len(obs_batch.size()) == 3:
         #    obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch

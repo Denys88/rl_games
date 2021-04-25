@@ -188,6 +188,7 @@ class A2CBuilder(NetworkBuilder):
             self.critic_mlp = nn.Sequential()
             
             if self.has_cnn:
+                input_shape = torch_ext.shape_whc_to_cwh(input_shape)
                 cnn_args = {
                     'ctype' : self.cnn['type'], 
                     'input_shape' : input_shape, 
@@ -297,7 +298,8 @@ class A2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
-
+            if self.has_cnn:
+                obs = obs.permute((0, 3, 1, 2))
             if self.separate:
                 a_out = c_out = obs
                 a_out = self.actor_cnn(a_out)
@@ -595,6 +597,7 @@ class A2CResnetBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
+            input_shape = torch_ext.shape_whc_to_cwh(input_shape)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
@@ -671,6 +674,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
+            obs = obs.permute((0, 3, 1, 2))
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
             out = obs

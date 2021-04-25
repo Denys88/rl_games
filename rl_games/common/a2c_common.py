@@ -114,8 +114,14 @@ class A2CBase:
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
 
-        self.obs_shape = self.observation_space.shape
- 
+        
+        if isinstance(self.observation_space,gym.spaces.Dict):
+            self.obs_shape = {}
+            for k,v in self.observation_space.spaces.items():
+                self.obs_shape[k] = v.shape
+        else:
+            self.obs_shape = self.observation_space.shape
+        
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -327,9 +333,20 @@ class A2CBase:
         if isinstance(obs, dict):
             upd_obs = {}
             for key, value in obs.items():
-                upd_obs[key] = self.cast_obs(value)
+                upd_obs[key] = self._obs_to_tensors_internal(value, False)
         else:
-            upd_obs = {'obs' : self.cast_obs(obs)}
+            upd_obs = self.cast_obs(obs)
+        if not self.has_central_value:    
+            upd_obs = {'obs' : upd_obs}
+        return upd_obs
+
+    def _obs_to_tensors_internal(self, obs, cast_to_dict=True):
+        if isinstance(obs, dict):
+            upd_obs = {}
+            for key, value in obs.items():
+                upd_obs[key] = self._obs_to_tensors_internal(value, False)
+        else:
+            upd_obs = self.cast_obs(obs)
         return upd_obs
 
     def preprocess_actions(self, actions):
@@ -351,7 +368,7 @@ class A2CBase:
             return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device).float(), torch.from_numpy(dones).to(self.ppo_device), infos
 
     def env_reset(self):
-        obs = self.vec_env.reset() 
+        obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
         return obs
 
@@ -466,18 +483,12 @@ class A2CBase:
         self.set_stats_weights(weights)
         
     def _preproc_obs(self, obs_batch):
-        if obs_batch is dict:
+        if type(obs_batch) is dict:
             for k,v in obs_batch.items():
-                if obs_batch.dtype == torch.uint8:
-                    obs_batch[k] = v.float() / 255.0
-                if len(obs_batch.size()) == 4:
-                    obs_batch[k] = v.permute((0, 3, 1, 2))
+                obs_batch[k] = self._preproc_obs(v)
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
-            if len(obs_batch.size()) == 4:
-                obs_batch = obs_batch.permute((0, 3, 1, 2))
-
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
@@ -537,7 +548,7 @@ class A2CBase:
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
         mb_returns = mb_advs + mb_values
 
-        batch_dict = self.experience_buffer.get_transformed(swap_and_flatten01)
+        batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
 
@@ -630,7 +641,7 @@ class A2CBase:
         mb_advs = self.discount_values_masks(fdones, last_values, mb_fdones, mb_values, mb_rewards, mb_rnn_masks.view(-1,self.steps_num).transpose(0,1))
         mb_returns = mb_advs + mb_values
 
-        batch_dict = self.experience_buffer.get_transformed(swap_and_flatten01)
+        batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['rnn_states'] = mb_rnn_states
         batch_dict['rnn_masks'] = mb_rnn_masks
@@ -656,7 +667,7 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values']
-
+        self.tensor_list = self.update_list + ['obses', 'states', 'dones']
     def train_epoch(self):
         play_time_start = time.time()
         with torch.no_grad():
@@ -664,7 +675,7 @@ class DiscreteA2CBase(A2CBase):
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
-
+        print(batch_dict)
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
@@ -854,7 +865,7 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
-
+        self.tensor_list = self.update_list + ['obses', 'states', 'dones']
     def train_epoch(self):
         play_time_start = time.time()
         with torch.no_grad():

@@ -10,11 +10,12 @@ from torch import optim
 import torch 
 from torch import nn
 import numpy as np
+import gym
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
         a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
-        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape) 
+        obs_shape = self.obs_shape
 
         config = {
             'actions_num' : self.actions_num,
@@ -30,16 +31,16 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
-        
+
         if self.normalize_input:
-            if self.observation_space is gym.Spaces.Dict:
+            if isinstance(self.observation_space, gym.spaces.Dict):
                 self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
             else:
                 self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
             cv_config = {
-                'state_shape' : torch_ext.shape_whc_to_cwh(self.state_shape), 
+                'state_shape' : self.state_shape, 
                 'value_size' : self.value_size,
                 'ppo_device' : self.ppo_device, 
                 'num_agents' : self.num_agents, 
