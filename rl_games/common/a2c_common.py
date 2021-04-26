@@ -333,18 +333,18 @@ class A2CBase:
         if isinstance(obs, dict):
             upd_obs = {}
             for key, value in obs.items():
-                upd_obs[key] = self._obs_to_tensors_internal(value, False)
+                upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
         if not self.has_central_value:    
             upd_obs = {'obs' : upd_obs}
         return upd_obs
 
-    def _obs_to_tensors_internal(self, obs, cast_to_dict=True):
+    def _obs_to_tensors_internal(self, obs):
         if isinstance(obs, dict):
             upd_obs = {}
             for key, value in obs.items():
-                upd_obs[key] = self._obs_to_tensors_internal(value, False)
+                upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
         return upd_obs

@@ -24,7 +24,7 @@ class TestNet(nn.Module):
 
     def is_rnn(self):
         return False
-        
+
     def forward(self, obs):
         obs = obs['obs']
         obs = torch.cat([obs['pos'], obs['info']], axis=1)

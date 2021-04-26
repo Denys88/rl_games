@@ -95,8 +95,12 @@ class CentralValueTrain(nn.Module):
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == torch.uint8:
-            obs_batch = obs_batch.float() / 255.0
+        if type(obs_batch) is dict:
+            for k,v in obs_batch.items():
+                obs_batch[k] = self._preproc_obs(v)
+        else:
+            if obs_batch.dtype == torch.uint8:
+                obs_batch = obs_batch.float() / 255.0
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
