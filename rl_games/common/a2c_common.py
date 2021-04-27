@@ -330,13 +330,14 @@ class A2CBase:
         return obs
 
     def obs_to_tensors(self, obs):
-        if isinstance(obs, dict):
+        obs_is_dict = isinstance(obs, dict)
+        if obs_is_dict:
             upd_obs = {}
             for key, value in obs.items():
                 upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
-        if not self.has_central_value:    
+        if not obs_is_dict or 'obs' not in obs:    
             upd_obs = {'obs' : upd_obs}
         return upd_obs
 
