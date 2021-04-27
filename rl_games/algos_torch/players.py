@@ -39,7 +39,7 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std.eval()   
 
     def get_action(self, obs, is_determenistic = False):
-        if len(obs.size()) == len(self.state_shape):
+        if self.no_batch_dimmension:
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         input_dict = {
@@ -51,8 +51,8 @@ class PpoPlayerContinuous(BasePlayer):
         with torch.no_grad():
             res_dict = self.model(input_dict)
         mu = res_dict['mu']
-        action = res_dict['action']
-        self.states = res_dict['rnn_state']
+        action = res_dict['actions']
+        self.states = res_dict['rnn_states']
         if is_determenistic:
             current_action = mu
         else:
@@ -117,22 +117,22 @@ class PpoPlayerDiscrete(BasePlayer):
         with torch.no_grad():
             neglogp, value, action, logits, self.states = self.model(input_dict)
         logits = res_dict['logits']
-        action = res_dict['action']
+        action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
             if is_determenistic:
-                action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
+                action = [torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits]
                 return torch.stack(action,dim=-1)
             else:    
                 return action.squeeze().detach()
         else:
             if is_determenistic:
-                return torch.argmax(logits.detach(), axis=1).squeeze()
+                return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
 
     def get_action(self, obs, is_determenistic = False):
-        if len(obs.size()) == len(self.state_shape):
+        if self.no_batch_dimmension:
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         self.model.eval()
@@ -145,8 +145,8 @@ class PpoPlayerDiscrete(BasePlayer):
         with torch.no_grad():
             res_dict = self.model(input_dict)
         logits = res_dict['logits']
-        action = res_dict['action']
-        self.states = res_dict['rnn_state']
+        action = res_dict['actions']
+        self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
             if is_determenistic:
                 action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
@@ -155,7 +155,7 @@ class PpoPlayerDiscrete(BasePlayer):
                 return action.squeeze().detach()
         else:
             if is_determenistic:
-                return torch.argmax(logits.detach(), axis=1).squeeze()
+                return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
 

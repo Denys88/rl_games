@@ -581,7 +581,7 @@ class A2CBase:
             else:
                 res_dict = self.get_action_values(self.obs)
                 
-            self.rnn_states = res_dict['rnn_state']
+            self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data_rnn('obses', indices, play_mask, self.obs['obs'])
             self.experience_buffer.update_data_rnn('dones', indices, play_mask, self.dones.byte())
      

@@ -30,7 +30,8 @@ class BasePlayer(object):
         self.player_config = self.config.get('player', {})
         self.use_cuda = True
         self.batch_size = 1
-
+        self.no_batch_dimmension = False
+        self.has_central_value = self.config.get('central_value_config') is not None
         self.device_name = self.player_config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
@@ -56,9 +57,8 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-        if isinstance(obs, dict):
-            obs = obs['obs']
-        if obs.dtype == np.float64:
+
+        if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
             rewards = rewards[0]
@@ -68,17 +68,17 @@ class BasePlayer(object):
             if np.isscalar(dones):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(obs).to(self.device), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return self.obs_to_torch(obs), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def obs_to_torch(self, obs):
+        if self.has_central_value:
+            upd_obs = upd_obs['obs']
         if isinstance(obs, dict):
             upd_obs = {}
             for key, value in obs.items():
                 upd_obs[key] = self._obs_to_tensors_internal(value, False)
         else:
             upd_obs = self.cast_obs(obs)
-        if not self.has_central_value:
-            upd_obs = {'obs': upd_obs}
         return upd_obs
 
     def _obs_to_tensors_internal(self, obs, cast_to_dict=True):
@@ -251,11 +251,12 @@ class BasePlayer(object):
         if type(self.obs_shape) is dict:
             keys_view = self.obs_shape.keys()
             keys_iterator = iter(keys_view)
-            first_key = next(key_iterator)
+            first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
-            obs = obses[first_key]
+            obses = obses[first_key]
 
-        if len(obses.size()) > len(self.obs_shape):
+        if len(obses.size()) > len(obs_shape):
             batch_size = obses.size()[0]
+            self.has_batch_dimmension = True
         self.batch_size = batch_size
         return batch_size
