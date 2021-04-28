@@ -72,8 +72,11 @@ class A2CBase:
 
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
-            self.state_shape = None
-            if self.state_space.shape != None:
+            if isinstance(self.state_space,gym.spaces.Dict):
+                self.state_shape = {}
+                for k,v in self.state_space.spaces.items():
+                    self.state_shape[k] = v.shape
+            else:
                 self.state_shape = self.state_space.shape
 
         self.self_play_config = self.config.get('self_play_config', None)

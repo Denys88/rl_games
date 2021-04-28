@@ -45,23 +45,23 @@ params:
       apply_dist_reward: False
       min_dist: 2
       max_dist: 8
-      use_central_value: False
+      use_central_value: True
       multi_obs_space: True
       multi_head_value: False
     player:
         games_num: 100
         determenistic: True
 
-    central_value_config1:
+    central_value_config:
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
       clip_value: False
-      normalize_input: True
+      normalize_input: False
       truncate_grads: True
       grad_norm: 10
       network:
-        name: actor_critic
+        name: testnet
         central_value: True
         mlp:
           units: [64,32]

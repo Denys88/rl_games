@@ -71,9 +71,9 @@ class BasePlayer(object):
             return self.obs_to_torch(obs), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def obs_to_torch(self, obs):
-        if self.has_central_value:
-            upd_obs = upd_obs['obs']
         if isinstance(obs, dict):
+            if 'obs' in obs:
+                obs = obs['obs']
             upd_obs = {}
             for key, value in obs.items():
                 upd_obs[key] = self._obs_to_tensors_internal(value, False)
@@ -249,6 +249,8 @@ class BasePlayer(object):
     def get_batch_size(self, obses, batch_size):
         obs_shape = self.obs_shape
         if type(self.obs_shape) is dict:
+            if 'obs' in obses:
+                obses = obses['obs']
             keys_view = self.obs_shape.keys()
             keys_iterator = iter(keys_view)
             first_key = next(keys_iterator)

@@ -4,17 +4,17 @@ import torch.nn.functional as F
 
  
 class TestNet(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, params, **kwargs):
         nn.Module.__init__(self)
         actions_num = kwargs.pop('actions_num')
         input_shape = kwargs.pop('input_shape')
         num_inputs = 0
-        if type(input_shape) is dict:
-            for k,v in input_shape.items():
-                num_inputs +=v[0]
-        else:
-            assert(False)
 
+        assert(type(input_shape) is dict)
+        for k,v in input_shape.items():
+            num_inputs +=v[0]
+
+        self.central_value = params.get('central_value', False)
         self.value_size = kwargs.pop('value_size', 1)
         self.linear1 = nn.Linear(num_inputs, 256)
         self.linear2 = nn.Linear(256, 128)
@@ -33,6 +33,8 @@ class TestNet(nn.Module):
         x = F.relu(self.linear3(x))
         action = self.mean_linear(x)
         value = self.value_linear(x)
+        if self.central_value:
+            return value, None
         return action, value, None
 
 
@@ -46,7 +48,7 @@ class TestNetBuilder(NetworkBuilder):
         self.params = params
 
     def build(self, name, **kwargs):
-        return TestNet(**kwargs)
+        return TestNet(self.params, **kwargs)
 
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)

@@ -37,7 +37,7 @@ class TestRNNEnv(gym.Env):
         else:
             self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
 
-        self.state_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
+        self.state_space = self.observation_space
         if self.apply_exploration_reward:
             pass
         self.reset()
@@ -53,7 +53,6 @@ class TestRNNEnv(gym.Env):
         self._goal_pos = rand_dir * np.random.randint(self.min_dist, self.max_dist+1, (2,))
         obs = np.concatenate([self._current_pos, self._goal_pos, [1, 0]], axis=None)
         obs = obs.astype(np.float32)
-        vobs = obs
         if self.multi_obs_space:
             obs = {
                 'pos': obs[:2],
@@ -62,7 +61,7 @@ class TestRNNEnv(gym.Env):
         if self.use_central_value:
             obses = {}
             obses["obs"] = obs
-            obses["state"] = vobs
+            obses["state"] = obs
         else:
             obses = obs
         return obses
@@ -130,7 +129,13 @@ class TestRNNEnv(gym.Env):
             state = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
             obses = {}
             obses["obs"] = obs
-            obses["state"] = state.astype(np.float32)
+            if self.multi_obs_space:
+                obses["state"] = {
+                    'pos': state[:2],
+                    'info': state[2:]
+                }
+            else:
+                obses["state"] = state.astype(np.float32)
         else:
             obses = obs
         if self.multi_head_value:
