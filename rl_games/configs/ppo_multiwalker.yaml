@@ -56,12 +56,12 @@ params:
       mini_epochs: 4
       critic_coef: 1
       schedule_type: 'standard'
-      lr_schedule: adaptive
+      lr_schedule: None
       lr_threshold: 0.008
       normalize_input: True
-      bounds_loss_coef: 0.00
-      max_epochs: 1000
-      weight_decay: 0.0001
+      bounds_loss_coef: 0.0001
+      max_epochs: 3000
+      weight_decay: 0.0000
 
       player:
         render: True
