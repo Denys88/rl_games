@@ -74,9 +74,12 @@ class BasePlayer(object):
         if isinstance(obs, dict):
             if 'obs' in obs:
                 obs = obs['obs']
-            upd_obs = {}
-            for key, value in obs.items():
-                upd_obs[key] = self._obs_to_tensors_internal(value, False)
+            if isinstance(obs, dict):
+                upd_obs = {}
+                for key, value in obs.items():
+                    upd_obs[key] = self._obs_to_tensors_internal(value, False)
+            else:
+                upd_obs = self.cast_obs(obs)
         else:
             upd_obs = self.cast_obs(obs)
         return upd_obs
@@ -256,7 +259,7 @@ class BasePlayer(object):
             first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
             obses = obses[first_key]
-
+        print(obses, obs_shape)
         if len(obses.size()) > len(obs_shape):
             batch_size = obses.size()[0]
             self.has_batch_dimmension = True

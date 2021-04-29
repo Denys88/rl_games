@@ -24,7 +24,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        obs_shape = self.state_shape
+        obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
@@ -50,7 +50,7 @@ class PpoPlayerContinuous(BasePlayer):
         }
         with torch.no_grad():
             res_dict = self.model(input_dict)
-        mu = res_dict['mu']
+        mu = res_dict['mus']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if is_determenistic:
