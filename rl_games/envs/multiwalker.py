@@ -14,7 +14,9 @@ class MultiWalker(gym.Env):
         self.env = multiwalker_v6.parallel_env()
         self.use_central_value = kwargs.pop('central_value', False)
         self.use_prev_actions = kwargs.pop('use_prev_actions', False)
+        self.add_timeouts = kwargs.pop('add_timeouts', False)
         self.action_space = self.env.action_spaces['walker_0']
+        self.steps_count = 0
         obs_len = self.env.observation_spaces['walker_0'].shape[0]
         if self.use_prev_actions:
             obs_len += self.action_space.shape[0]
@@ -23,6 +25,7 @@ class MultiWalker(gym.Env):
             self.state_space = gym.spaces.Box(-1, 1, shape =(obs_len*3,))
 
     def step(self, action):
+        self.steps_count += 1
         actions = {'walker_0' : action[0], 'walker_1' : action[1], 'walker_2' : action[2],}
         obs, reward, done, info = self.env.step(actions)
         if self.use_prev_actions:
@@ -42,6 +45,7 @@ class MultiWalker(gym.Env):
 
     def reset(self):
         obs = self.env.reset()
+        self.steps_count = 0
         if self.use_prev_actions:
             zero_actions = np.zeros(self.action_space.shape[0])
             obs = {

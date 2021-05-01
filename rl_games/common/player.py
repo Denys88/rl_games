@@ -259,7 +259,6 @@ class BasePlayer(object):
             first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
             obses = obses[first_key]
-        print(obses, obs_shape)
         if len(obses.size()) > len(obs_shape):
             batch_size = obses.size()[0]
             self.has_batch_dimmension = True

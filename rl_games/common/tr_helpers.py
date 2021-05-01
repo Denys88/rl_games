@@ -44,6 +44,7 @@ def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
         concat_func = np.stack
     else:
         concat_func = np.concatenate
+    print(res, dicts)
     res = {k : concat_func(v)  for k,v in res.items()}
     return res
 
