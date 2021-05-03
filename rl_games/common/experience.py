@@ -207,7 +207,7 @@ class ExperienceBuffer:
         self.algo_info = algo_info
         self.device = device
 
-        self.num_agents = env_info['agents']
+        self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
         
         self.num_actors = algo_info['num_actors']
