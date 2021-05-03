@@ -42,6 +42,8 @@ class CentralValueTrain(nn.Module):
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
+        self.truncate_grad = self.config.get('truncate_grads', False)
+        
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(state_shape)
 
@@ -201,7 +203,7 @@ class CentralValueTrain(nn.Module):
         loss.backward()
 
         #TODO: Refactor this ugliest code of they year
-        if self.config['truncate_grads']:
+        if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
                 #self.scaler.unscale_(self.optimizer)

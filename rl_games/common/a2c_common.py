@@ -116,6 +116,7 @@ class A2CBase:
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
+        self.truncate_grads = self.config.get('truncate_grads', False)
 
         
         if isinstance(self.observation_space,gym.spaces.Dict):
@@ -671,7 +672,10 @@ class DiscreteA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values']
+        if self.use_action_masks:
+            self.update_list += ['action_masks']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
+
     def train_epoch(self):
         play_time_start = time.time()
         with torch.no_grad():
