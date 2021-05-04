@@ -39,7 +39,7 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std.eval()   
 
     def get_action(self, obs, is_determenistic = False):
-        if self.no_batch_dimmension:
+        if self.has_batch_dimension == False:
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         input_dict = {
@@ -101,7 +101,7 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = True):
-        if len(obs.size()) == len(self.state_shape):
+        if self.has_batch_dimension == False:
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         action_masks = torch.Tensor(action_masks).to(self.device)
@@ -132,7 +132,7 @@ class PpoPlayerDiscrete(BasePlayer):
                 return action.squeeze().detach()
 
     def get_action(self, obs, is_determenistic = False):
-        if self.no_batch_dimmension:
+        if self.has_batch_dimension == False:
             obs = obs.unsqueeze(0)
         obs = self._preproc_obs(obs)
         self.model.eval()

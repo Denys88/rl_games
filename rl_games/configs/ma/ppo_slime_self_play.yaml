@@ -49,9 +49,9 @@ params:
     games_to_track: 500
 
     self_play_config:
-      update_score: 0.1
+      update_score: 1
       games_to_check: 200
-      check_scores : True
+      check_scores : False
 
     env_config:
       name: SlimeVolleyDiscrete-v0
