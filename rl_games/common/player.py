@@ -30,7 +30,7 @@ class BasePlayer(object):
         self.player_config = self.config.get('player', {})
         self.use_cuda = True
         self.batch_size = 1
-        self.no_batch_dimmension = False
+        self.has_batch_dimension = False
         self.has_central_value = self.config.get('central_value_config') is not None
         self.device_name = self.player_config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
@@ -261,6 +261,6 @@ class BasePlayer(object):
             obses = obses[first_key]
         if len(obses.size()) > len(obs_shape):
             batch_size = obses.size()[0]
-            self.has_batch_dimmension = True
+            self.has_batch_dimension = True
         self.batch_size = batch_size
         return batch_size

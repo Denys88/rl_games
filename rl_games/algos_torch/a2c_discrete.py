@@ -161,7 +161,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
-        if self.config['truncate_grads']:
+        if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
                 self.scaler.unscale_(self.optimizer)

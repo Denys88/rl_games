@@ -44,9 +44,16 @@ def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
         concat_func = np.stack
     else:
         concat_func = np.concatenate
-    print(res, dicts)
     res = {k : concat_func(v)  for k,v in res.items()}
     return res
+
+def unsqueeze_obs(obs):
+    if type(obs) is dict:
+        for k,v in obs.items():
+            obs[k] = unsqueeze_obs(v)
+    else:
+        obs = obs.unsqueeze(0)
+    return obs
 
 def flatten_first_two_dims(arr):
     if arr.ndim > 2:

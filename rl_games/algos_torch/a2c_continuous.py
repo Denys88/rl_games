@@ -135,7 +135,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         #TODO: Refactor this ugliest code of they year
-        if self.config['truncate_grads']:
+        if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
                 self.scaler.unscale_(self.optimizer)

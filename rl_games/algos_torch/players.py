@@ -1,6 +1,7 @@
 from rl_games.common.player import BasePlayer
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.common.tr_helpers import unsqueeze_obs
 import gym
 import torch 
 from torch import nn
@@ -39,8 +40,8 @@ class PpoPlayerContinuous(BasePlayer):
             self.running_mean_std.eval()   
 
     def get_action(self, obs, is_determenistic = False):
-        if self.no_batch_dimmension:
-            obs = obs.unsqueeze(0)
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
         input_dict = {
             'is_train': False,
@@ -101,8 +102,8 @@ class PpoPlayerDiscrete(BasePlayer):
             self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = True):
-        if len(obs.size()) == len(self.state_shape):
-            obs = obs.unsqueeze(0)
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
         action_masks = torch.Tensor(action_masks).to(self.device)
         input_dict = {
@@ -132,8 +133,8 @@ class PpoPlayerDiscrete(BasePlayer):
                 return action.squeeze().detach()
 
     def get_action(self, obs, is_determenistic = False):
-        if self.no_batch_dimmension:
-            obs = obs.unsqueeze(0)
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
         self.model.eval()
         input_dict = {
