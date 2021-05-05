@@ -508,18 +508,16 @@ class A2CBase:
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
-
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
-  
             for k in update_list:
-                self.experience_buffer.update_data(k, n, res_dict[k])
-
+                self.experience_buffer.update_data(k, n, res_dict[k]) 
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
             shaped_rewards = self.rewards_shaper(rewards)
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
+            
 
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -528,14 +526,13 @@ class A2CBase:
   
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
-
             self.algo_observer.process_infos(infos, done_indices)
 
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
-        
+
         if self.has_central_value and self.central_value_net.use_joint_obs_actions:
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -545,7 +542,7 @@ class A2CBase:
             last_values = val_dict['values']
         else:
             last_values = self.get_values(self.obs)
-
+        
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
         mb_values = self.experience_buffer.tensor_dict['values']
@@ -556,7 +553,6 @@ class A2CBase:
         batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
-
         return batch_dict
 
     def play_steps_rnn(self):
