@@ -57,7 +57,7 @@ params:
       lr_schedule: adaptive
       lr_threshold: 0.008
       normalize_input: True
-      bounds_loss_coef: 0.00
+      bounds_loss_coef: 0.001
       max_epochs: 10000
       normalize_value: True
       #weight_decay: 0.0001
