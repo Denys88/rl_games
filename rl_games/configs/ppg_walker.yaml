@@ -51,7 +51,7 @@ params:
       num_actors: 16
       steps_num: 256
       minibatch_size: 1024
-      mini_epochs: 1
+      mini_epochs: 3
       critic_coef: 2
       schedule_type: 'standard'
       lr_schedule: adaptive
@@ -61,7 +61,7 @@ params:
       max_epochs: 10000
       normalize_value: True
       #weight_decay: 0.0001
-      phased_policy_gradients:
+      phasic_policy_gradients:
         learning_rate: 5e-4
         minibatch_size: 1024
         mini_epochs: 6

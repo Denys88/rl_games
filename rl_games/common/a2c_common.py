@@ -858,7 +858,7 @@ class ContinuousA2CBase(A2CBase):
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
-        self.has_phased_policy_gradients = False
+        self.has_phasic_policy_gradients = False
             
     def preprocess_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
@@ -935,7 +935,7 @@ class ContinuousA2CBase(A2CBase):
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
             self.update_lr(self.last_lr)
 
-        if self.has_phased_policy_gradients:
+        if self.has_phasic_policy_gradients:
             self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
