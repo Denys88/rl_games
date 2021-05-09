@@ -63,10 +63,9 @@ class PPGAux:
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            kl_loss = torch_ext.policy_kl(mu, sigma, old_mu_batch, old_sigma_batch, False)
+            kl_loss = (mu - old_mu_batch)**2  #torch_ext.policy_kl(mu, sigma, old_mu_batch, old_sigma_batch, False)
             c_loss = common_losses.critic_loss(value_preds_batch, values, algo.e_clip, return_batch, algo.clip_value)
-
-            losses, sum_mask = torch_ext.apply_masks([c_loss.unsqueeze(1), kl_loss.unsqueeze(1)], rnn_masks)
+            losses, sum_mask = torch_ext.apply_masks([c_loss, kl_loss.unsqueeze(1)], rnn_masks)
             c_loss, kl_loss = losses[0], losses[1]
             loss = c_loss + kl_loss * self.kl_coef
 

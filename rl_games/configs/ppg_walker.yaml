@@ -38,7 +38,7 @@ params:
       normalize_advantage: True
       gamma: 0.995
       tau: 0.95
-      learning_rate: 3e-4
+      learning_rate: 5e-4
       name: walker_ppg
       score_to_win: 300
       grad_norm: 0.5
@@ -57,7 +57,7 @@ params:
       lr_schedule: adaptive
       lr_threshold: 0.008
       normalize_input: True
-      bounds_loss_coef: 0.001
+      bounds_loss_coef: 0.000
       max_epochs: 10000
       normalize_value: True
       #weight_decay: 0.0001
