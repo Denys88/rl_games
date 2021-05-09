@@ -5,6 +5,7 @@ from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
+from rl_games.algos_torch import ppg_aux
 from rl_games.common.experience import ExperienceBuffer
 import numpy as np
 import collections
@@ -172,6 +173,10 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
+        self.has_phased_policy_gradients = False
+        if 'phased_policy_gradients' in self.config:
+            self.has_phased_policy_gradients = True
+            self.ppg_aux_loss = PPGAux()
         # features
         self.algo_observer = config['features']['observer']
 

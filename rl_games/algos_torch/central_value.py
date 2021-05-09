@@ -202,7 +202,6 @@ class CentralValueTrain(nn.Module):
                 param.grad = None
         loss.backward()
 
-        #TODO: Refactor this ugliest code of they year
         if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
