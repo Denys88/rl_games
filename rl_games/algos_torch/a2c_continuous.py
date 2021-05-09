@@ -5,6 +5,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
+from rl_games.algos_torch import ppg_aux
 
 from torch import optim
 import torch 
@@ -57,8 +58,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+        
+        if 'phased_policy_gradients' in self.config:
+            self.has_phased_policy_gradients = True
+            self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phased_policy_gradients'])
+        self.has_value_loss = not (self.has_central_value \
+                                or self.use_experimental_cv) \
+                                and not self.has_phased_policy_gradients 
         self.algo_observer.after_init(self)
-
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -113,13 +120,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-            if self.use_experimental_cv:
+            if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
-                if self.has_central_value:
-                    c_loss = torch.zeros(1, device=self.ppo_device)
-                else:
-                    c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                c_loss = torch.zeros(1, device=self.ppo_device)
 
             b_loss = self.bound_loss(mu)
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)

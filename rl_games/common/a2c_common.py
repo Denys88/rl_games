@@ -5,7 +5,6 @@ from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import  SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
-from rl_games.algos_torch import ppg_aux
 from rl_games.common.experience import ExperienceBuffer
 import numpy as np
 import collections
@@ -173,13 +172,9 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
-        self.has_phased_policy_gradients = False
-        if 'phased_policy_gradients' in self.config:
-            self.has_phased_policy_gradients = True
-            self.ppg_aux_loss = PPGAux()
         # features
         self.algo_observer = config['features']['observer']
-
+        
     def set_eval(self):
         self.model.eval()
         if self.normalize_input:
@@ -863,7 +858,8 @@ class ContinuousA2CBase(A2CBase):
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
-
+        self.has_phased_policy_gradients = False
+            
     def preprocess_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
@@ -938,6 +934,9 @@ class ContinuousA2CBase(A2CBase):
                 av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
             self.update_lr(self.last_lr)
+
+        if self.has_phased_policy_gradients:
+            self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
