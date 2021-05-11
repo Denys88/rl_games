@@ -28,7 +28,6 @@ class BasePlayer(object):
         self.device_name = self.player_config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
-        self.render_env = self.player_config.get('render', False)
         self.is_determenistic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)

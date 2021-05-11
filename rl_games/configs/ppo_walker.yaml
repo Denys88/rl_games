@@ -1,4 +1,5 @@
 params:  
+  seed: 8
   algo:
     name: a2c_continuous
 
@@ -29,9 +30,9 @@ params:
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
-    rnn_removed:
-      name: lstm
-      units: 128
+    rnn:
+      name: identity
+      units: 64
       layers: 1
       before_mlp: False
       

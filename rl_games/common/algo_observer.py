@@ -50,7 +50,7 @@ class DefaultAlgoObserver(AlgoObserver):
         self.game_scores.clear()
 
     def after_print_stats(self, frame, epoch_num, total_time):
-        if self.game_scores.current_size > 0:
+        if self.game_scores.current_size > 0 and self.writer is not None:
             mean_scores = self.game_scores.get_mean()
             self.writer.add_scalar('scores/mean', mean_scores, frame)
             self.writer.add_scalar('scores/iter', mean_scores, epoch_num)

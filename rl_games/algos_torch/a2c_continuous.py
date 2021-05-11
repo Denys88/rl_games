@@ -30,7 +30,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-07, weight_decay=self.weight_decay)
+        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
@@ -47,9 +47,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_len' : self.seq_len, 
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
-                'writter' : self.writer
+                'writter' : self.writer,
+                'multi_gpu' : self.multi_gpu
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
+
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         self.algo_observer.after_init(self)
@@ -69,7 +71,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         assert False
 
-    def calc_gradients(self, input_dict, opt_step):
+    def calc_gradients(self, input_dict):
         self.set_train()
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
@@ -97,23 +99,20 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
+            
+        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            res_dict = self.model(batch_dict)
+            action_log_probs = res_dict['prev_neglogp']
+            values = res_dict['value']
+            entropy = res_dict['entropy']
+            mu = res_dict['mu']
+            sigma = res_dict['sigma']
 
-        res_dict = self.model(batch_dict)
-        action_log_probs = res_dict['prev_neglogp']
-        values = res_dict['value']
-        entropy = res_dict['entropy']
-        mu = res_dict['mu']
-        sigma = res_dict['sigma']
+            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-        if self.use_experimental_cv:
-            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-        else:
-            if self.has_central_value:
-                c_loss = torch.zeros(1, device=self.ppo_device)
-            else:
+            if self.use_experimental_cv:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+<<<<<<< HEAD
 
         b_loss = self.bound_loss(mu)
 
@@ -140,20 +139,63 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
         if opt_step:
             self.optimizer.step()
+=======
+            else:
+                if self.has_central_value:
+                    c_loss = torch.zeros(1, device=self.ppo_device)
+                else:
+                    c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+
+            b_loss = self.bound_loss(mu)
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
+            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            
+            if self.multi_gpu:
+                self.optimizer.zero_grad()
+            else:
+                for param in self.model.parameters():
+                    param.grad = None
+
+        self.scaler.scale(loss).backward()
+        #TODO: Refactor this ugliest code of they year
+        if self.truncate_grads:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+            else:
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()    
+        else:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+>>>>>>> master
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
-                kl_dist = (kl_dist * rnn_masks).sum() / sum_mask
-            kl_dist = kl_dist.item()
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
                     
+<<<<<<< HEAD
         self.train_result = (a_loss.item(), c_loss.item(), entropy.item(), \
             aug_loss.item(), kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss.item())
+=======
+        self.train_result = (a_loss, c_loss, entropy, \
+            kl_dist, self.last_lr, lr_mul, \
+            mu.detach(), sigma.detach(), b_loss)
+>>>>>>> master
 
-    def train_actor_critic(self, input_dict, opt_step=True):
-        self.calc_gradients(input_dict, opt_step)
+    def train_actor_critic(self, input_dict):
+        self.calc_gradients(input_dict)
         return self.train_result
 
     def bound_loss(self, mu):

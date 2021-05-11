@@ -1,4 +1,5 @@
 params:  
+  seed: 322
   algo:
     name: a2c_discrete
 
@@ -49,7 +50,11 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
+<<<<<<< HEAD
     learning_rate: 2e-4
+=======
+    learning_rate: 3e-4
+>>>>>>> master
     name: PongNoFrameskip
     score_to_win: 20
     grad_norm: 10
