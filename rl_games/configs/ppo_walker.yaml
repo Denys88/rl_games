@@ -62,6 +62,6 @@ params:
       normalize_value: True
       #weight_decay: 0.0001
       player:
-        render: False
+        render: True
         determenistic: True
         games_num: 200

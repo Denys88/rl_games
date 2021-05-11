@@ -21,6 +21,7 @@ class PPGAux:
         self.is_continuous = True
         self.last_lr = config['learning_rate']
         self.optimizer = optim.Adam(algo.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=algo.weight_decay)
+
     def train_net(self, algo):
         dataset = algo.dataset
         loss = 0
@@ -41,7 +42,7 @@ class PPGAux:
         obs_batch = input_dict['obs']
         actions_batch = input_dict['actions']
         obs_batch = algo._preproc_obs(obs_batch)
-        lr = self.last_lr
+
         batch_dict = {
             'is_train': True,
             'prev_actions': actions_batch, 
@@ -57,13 +58,13 @@ class PPGAux:
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = algo.model(batch_dict)
-            action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
-            entropy = res_dict['entropy']
+
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            kl_loss = (mu - old_mu_batch)**2  #torch_ext.policy_kl(mu, sigma, old_mu_batch, old_sigma_batch, False)
+            #kl_loss = torch_ext.policy_kl(mu, sigma.detach(), old_mu_batch, old_sigma_batch, False)
+            kl_loss = torch.abs(mu - old_mu_batch)
             c_loss = common_losses.critic_loss(value_preds_batch, values, algo.e_clip, return_batch, algo.clip_value)
             losses, sum_mask = torch_ext.apply_masks([c_loss, kl_loss.unsqueeze(1)], rnn_masks)
             c_loss, kl_loss = losses[0], losses[1]

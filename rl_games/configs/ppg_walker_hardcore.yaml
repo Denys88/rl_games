@@ -39,18 +39,18 @@ params:
       gamma: 0.995
       tau: 0.95
       learning_rate: 5e-4
-      name: walker_ppg
+      name: walker_hc_ppg
       score_to_win: 290
       grad_norm: 0.5
       entropy_coef: 0 #-0.005
       truncate_grads: False
-      env_name:  BipedalWalker-v3
+      env_name:  BipedalWalkerHardcore-v3
       ppo: True
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 256
-      minibatch_size: 1024
+      steps_num: 4096
+      minibatch_size: 8192
       mini_epochs: 1
       critic_coef: 2
       schedule_type: 'standard'
