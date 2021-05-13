@@ -178,7 +178,7 @@ class A2CBase:
         self.soft_aug = config['features'].get('soft_augmentation', None)
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
-        assert !self.has_soft_aug
+        assert not self.has_soft_aug
 
 
     def set_eval(self):
