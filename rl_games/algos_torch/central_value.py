@@ -16,7 +16,7 @@ class CentralValueTrain(nn.Module):
         self.state_shape = state_shape
         self.value_size = value_size
         self.multi_gpu = multi_gpu
-
+        self.truncate_grads = config.get('truncate_grads', False)
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -202,6 +202,7 @@ class CentralValueTrain(nn.Module):
                 param.grad = None
         loss.backward()
 
+        #TODO: Refactor this ugliest code of they year
         if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()

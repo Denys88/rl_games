@@ -69,7 +69,7 @@ class A2CBase:
 
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
-
+        self.truncate_grads = self.config.get('truncate_grads', False)
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             if isinstance(self.state_space,gym.spaces.Dict):
