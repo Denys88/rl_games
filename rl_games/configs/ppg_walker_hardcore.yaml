@@ -24,11 +24,10 @@ params:
       d2rl: False
       activation: relu
       initializer:
-        name: default
-        scale: 2         
+        name: default       
       
   load_checkpoint: False
-  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
+  load_path: './nn/walker_hc_ppg.pth'
 
   config:
       reward_shaper:
