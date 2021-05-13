@@ -1,7 +1,8 @@
-from rl_games.common import env_configurations
+import time
+import gym
 import numpy as np
 import torch
-import time
+from rl_games.common import env_configurations
 
 
 class BasePlayer(object):
@@ -14,17 +15,23 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
-        self.value_size = self.env_info.get('value_size',1)
+        self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
         self.observation_space = self.env_info['observation_space']
-        self.state_shape = list(self.observation_space.shape)
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            self.obs_shape = {}
+            for k, v in self.observation_space.spaces.items():
+                self.obs_shape[k] = v.shape
+        else:
+            self.obs_shape = self.observation_space.shape
         self.is_tensor_obses = False
         self.states = None
         self.player_config = self.config.get('player', {})
         self.use_cuda = True
         self.batch_size = 1
-
+        self.has_batch_dimension = False
+        self.has_central_value = self.config.get('central_value_config') is not None
         self.device_name = self.player_config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
@@ -36,12 +43,12 @@ class BasePlayer(object):
         self.device = torch.device(self.device_name)
 
     def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == torch.uint8:
-            obs_batch = obs_batch.float() / 255.0
-        #if len(obs_batch.size()) == 3:
-        #    obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if type(obs_batch) is dict:
+            for k, v in obs_batch.items():
+                obs_batch[k] = self._preproc_obs(v)
+        else:
+            if obs_batch.dtype == torch.uint8:
+                obs_batch = obs_batch.float() / 255.0
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
@@ -50,9 +57,8 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-        if isinstance(obs, dict):
-            obs = obs['obs']
-        if obs.dtype == np.float64:
+
+        if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
             rewards = rewards[0]
@@ -62,19 +68,46 @@ class BasePlayer(object):
             if np.isscalar(dones):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
                 dones = np.expand_dims(np.asarray(dones), 0)
-            return torch.from_numpy(obs).to(self.device), torch.from_numpy(rewards), torch.from_numpy(dones), infos
+            return self.obs_to_torch(obs), torch.from_numpy(rewards), torch.from_numpy(dones), infos
 
     def obs_to_torch(self, obs):
         if isinstance(obs, dict):
-            obs = obs['obs']
+            if 'obs' in obs:
+                obs = obs['obs']
+            if isinstance(obs, dict):
+                upd_obs = {}
+                for key, value in obs.items():
+                    upd_obs[key] = self._obs_to_tensors_internal(value, False)
+            else:
+                upd_obs = self.cast_obs(obs)
+        else:
+            upd_obs = self.cast_obs(obs)
+        return upd_obs
+
+    def _obs_to_tensors_internal(self, obs, cast_to_dict=True):
+        if isinstance(obs, dict):
+            upd_obs = {}
+            for key, value in obs.items():
+                upd_obs[key] = self._obs_to_tensors_internal(value, False)
+        else:
+            upd_obs = self.cast_obs(obs)
+        return upd_obs
+
+    def cast_obs(self, obs):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
-        else:
+        elif isinstance(obs, np.ndarray):
+            assert(self.observation_space.dtype != np.int8)
             if self.observation_space.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self.device)
             else:
                 obs = torch.FloatTensor(obs).to(self.device)
         return obs
+
+    def preprocess_actions(self, actions):
+        if not self.is_tensor_obses:
+            actions = actions.cpu().numpy()
+        return actions
 
     def env_reset(self, env):
         obs = env.reset()
@@ -98,11 +131,11 @@ class BasePlayer(object):
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_determenistic=False):
         raise NotImplementedError('step')
-    
-    def get_masked_action(self, obs, mask, is_determenistic = False):
-        raise NotImplementedError('step') 
+
+    def get_masked_action(self, obs, mask, is_determenistic=False):
+        raise NotImplementedError('step')
 
     def reset(self):
         raise NotImplementedError('raise')
@@ -110,7 +143,8 @@ class BasePlayer(object):
     def init_rnn(self):
         if self.is_rnn:
             rnn_states = self.model.get_default_rnn_state()
-            self.states = [torch.zeros((s.size()[0], self.batch_size, s.size()[2]), dtype = torch.float32).to(self.device) for s in rnn_states]
+            self.states = [torch.zeros((s.size()[0], self.batch_size, s.size(
+            )[2]), dtype=torch.float32).to(self.device) for s in rnn_states]
 
     def run(self):
         n_games = self.games_num
@@ -129,8 +163,8 @@ class BasePlayer(object):
         if op_agent:
             agent_inited = True
             #print('setting agent weights for selfplay')
-            #self.env.create_agent(self.env.config)
-            #self.env.set_weights(range(8),self.get_weights())
+            # self.env.create_agent(self.env.config)
+            # self.env.set_weights(range(8),self.get_weights())
 
         if has_masks_func:
             has_masks = self.env.has_action_mask()
@@ -142,9 +176,7 @@ class BasePlayer(object):
 
             obses = self.env_reset(self.env)
             batch_size = 1
-            if len(obses.size()) > len(self.state_shape):
-                batch_size = obses.size()[0]
-            self.batch_size = batch_size
+            batch_size = self.get_batch_size(obses, batch_size)
 
             if need_init_rnn:
                 self.init_rnn()
@@ -158,15 +190,16 @@ class BasePlayer(object):
             for n in range(self.max_steps):
                 if has_masks:
                     masks = self.env.get_action_mask()
-                    action = self.get_masked_action(obses, masks, is_determenistic)
+                    action = self.get_masked_action(
+                        obses, masks, is_determenistic)
                 else:
                     action = self.get_action(obses, is_determenistic)
-                obses, r, done, info =  self.env_step(self.env, action)
+                obses, r, done, info = self.env_step(self.env, action)
                 cr += r
                 steps += 1
-  
+
                 if render:
-                    self.env.render(mode = 'human')
+                    self.env.render(mode='human')
                     time.sleep(self.render_sleep)
 
                 all_done_indices = done.nonzero(as_tuple=False)
@@ -177,7 +210,8 @@ class BasePlayer(object):
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
-                            s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+                            s[:, all_done_indices, :] = s[:,
+                                                          all_done_indices, :] * 0.0
 
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()
@@ -197,9 +231,11 @@ class BasePlayer(object):
                             game_res = info.get('scores', 0.5)
                     if self.print_stats:
                         if print_game_res:
-                            print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count, 'w:', game_res)
+                            print('reward:', cur_rewards/done_count,
+                                  'steps:', cur_steps/done_count, 'w:', game_res)
                         else:
-                            print('reward:', cur_rewards/done_count, 'steps:', cur_steps/done_count)
+                            print('reward:', cur_rewards/done_count,
+                                  'steps:', cur_steps/done_count)
 
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
@@ -207,6 +243,24 @@ class BasePlayer(object):
 
         print(sum_rewards)
         if print_game_res:
-            print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
+            print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps /
+                  games_played * n_game_life, 'winrate:', sum_game_res / games_played * n_game_life)
         else:
-            print('av reward:', sum_rewards / games_played * n_game_life, 'av steps:', sum_steps / games_played * n_game_life)
+            print('av reward:', sum_rewards / games_played * n_game_life,
+                  'av steps:', sum_steps / games_played * n_game_life)
+
+    def get_batch_size(self, obses, batch_size):
+        obs_shape = self.obs_shape
+        if type(self.obs_shape) is dict:
+            if 'obs' in obses:
+                obses = obses['obs']
+            keys_view = self.obs_shape.keys()
+            keys_iterator = iter(keys_view)
+            first_key = next(keys_iterator)
+            obs_shape = self.obs_shape[first_key]
+            obses = obses[first_key]
+        if len(obses.size()) > len(obs_shape):
+            batch_size = obses.size()[0]
+            self.has_batch_dimension = True
+        self.batch_size = batch_size
+        return batch_size

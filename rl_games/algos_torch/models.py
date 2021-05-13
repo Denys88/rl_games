@@ -45,9 +45,9 @@ class ModelA2C(BaseModel):
                 entropy = categorical.entropy()
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : entropy,
-                    'rnn_state' : states
+                    'rnn_states' : states
                 }
                 return result
             else:
@@ -55,11 +55,11 @@ class ModelA2C(BaseModel):
                 selected_action = categorical.sample().long()
                 neglogp = -categorical.log_prob(selected_action)
                 result = {
-                    'neglogp' : torch.squeeze(neglogp),
-                    'value' : value,
-                    'action' : selected_action,
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : value,
+                    'actions' : selected_action,
                     'logits' : categorical.logits,
-                    'rnn_state' : states
+                    'rnn_states' : states
                 }
                 return  result
 
@@ -99,9 +99,9 @@ class ModelA2CMultiDiscrete(BaseModel):
                 entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : torch.squeeze(entropy),
-                    'rnn_state' : states
+                    'rnn_states' : states
                 }
                 return result
             else:
@@ -115,11 +115,11 @@ class ModelA2CMultiDiscrete(BaseModel):
                 selected_action = torch.stack(selected_action, dim=-1)
                 neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
                 result = {
-                    'neglogp' : torch.squeeze(neglogp),
-                    'value' : value,
-                    'action' : selected_action,
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : value,
+                    'actions' : selected_action,
                     'logits' : logits,
-                    'rnn_state' : states
+                    'rnn_states' : states
                 }
                 return  result
 
@@ -156,22 +156,22 @@ class ModelA2CContinuous(BaseModel):
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'value' : value,
                     'entropy' : entropy,
-                    'rnn_state' : states,
-                    'mu' : mu,
-                    'sigma' : sigma
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
                 }
                 return result
             else:
                 selected_action = distr.sample().squeeze()
                 neglogp = -distr.log_prob(selected_action).sum(dim=-1)
                 result = {
-                    'neglogp' : torch.squeeze(neglogp),
-                    'value' : torch.squeeze(value),
-                    'action' : selected_action,
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : torch.squeeze(value),
+                    'actions' : selected_action,
                     'entropy' : entropy,
-                    'rnn_state' : states,
-                    'mu' : mu,
-                    'sigma' : sigma
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
                 }
                 return  result          
 
@@ -209,23 +209,23 @@ class ModelA2CContinuousLogStd(BaseModel):
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'value' : value,
+                    'values' : value,
                     'entropy' : entropy,
-                    'rnn_state' : states,
-                    'mu' : mu,
-                    'sigma' : sigma
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
                 }                
                 return result
             else:
                 selected_action = distr.sample()
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
                 result = {
-                    'neglogp' : torch.squeeze(neglogp),
-                    'value' : value,
-                    'action' : selected_action,
-                    'rnn_state' : states,
-                    'mu' : mu,
-                    'sigma' : sigma
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : value,
+                    'actions' : selected_action,
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
                 }
                 return result
 

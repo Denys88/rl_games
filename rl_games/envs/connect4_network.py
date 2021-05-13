@@ -73,6 +73,7 @@ class ConnectNet(nn.Module):
         return False
 
     def forward(self,s):
+        s = s.permute((0, 3, 1, 2))
         s = self.conv(s)
         for block in range(self.blocks):
             s = getattr(self, "res_%i" % block)(s)
