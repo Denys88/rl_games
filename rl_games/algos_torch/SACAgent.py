@@ -7,7 +7,7 @@ from rl_games.common import vecenv
 from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
-from rl_games.common import experience
+from rl_games.common import sac_experience
 
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
