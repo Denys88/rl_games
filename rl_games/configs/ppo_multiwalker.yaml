@@ -7,14 +7,13 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
         mu_init:
           name: default
-          scale: 0.02 
         sigma_init:
           name: const_initializer
           val: 0
@@ -24,10 +23,8 @@ params:
       d2rl: False
       activation: relu
       initializer:
-        name: default         
-      regularizer:
-        name:  'None' #'l2_regularizer'
-        #scale: 0.001
+        name: default  
+
   load_checkpoint: False
   load_path: './nn/multiwalker.pth'
 
@@ -60,7 +57,7 @@ params:
       lr_threshold: 0.008
       normalize_input: True
       bounds_loss_coef: 0.0001
-      max_epochs: 3000
+      max_epochs: 10000
       weight_decay: 0.0000
 
       player:
@@ -70,6 +67,8 @@ params:
       env_config:
         central_value: True
         use_prev_actions: True
+        apply_agent_ids: True
+
       central_value_config:
         minibatch_size: 512
         mini_epochs: 4

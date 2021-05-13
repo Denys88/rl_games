@@ -98,7 +98,7 @@ class A2CAgent:
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
         if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['max_epochs'], end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['max_epochs'], end_learning_rate=0.001, power=config.get('decay_power', 1.0))
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, self.epoch_num,config['max_epochs'],  decay_rate = config['decay_rate'])
         if self.normalize_input:

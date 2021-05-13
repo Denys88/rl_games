@@ -238,8 +238,6 @@ class FrameStack(gym.Wrapper):
         self.flat = flat
         self.frames = deque([], maxlen=k)
         observation_space = env.observation_space
-        if isinstance(observation_space, gym.spaces.dict.Dict):
-            observation_space = observation_space['observations']
         self.shp = shp = observation_space.shape
         #TODO: remove consts -1 and 1
         if flat:

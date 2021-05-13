@@ -1,2 +1,0 @@
-params:
-  devices: ['cuda:0','cuda:0', 'cuda:0']

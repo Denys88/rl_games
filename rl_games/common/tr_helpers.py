@@ -1,4 +1,5 @@
 import numpy as np
+from collections import defaultdict
 
 class LinearValueProcessor:
     def __init__(self, start_eps, end_eps, end_eps_frames):
@@ -33,17 +34,32 @@ class DefaultRewardsShaper:
         return reward
 
 
+def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
+    dicts_len = len(dicts)
+    if(dicts_len <= 1):
+        return dicts
+    res = defaultdict(list)
+    { res[key].append(sub[key]) for sub in dicts for key in sub }
+    if add_batch_dim:
+        concat_func = np.stack
+    else:
+        concat_func = np.concatenate
+    res = {k : concat_func(v)  for k,v in res.items()}
+    return res
+
+def unsqueeze_obs(obs):
+    if type(obs) is dict:
+        for k,v in obs.items():
+            obs[k] = unsqueeze_obs(v)
+    else:
+        obs = obs.unsqueeze(0)
+    return obs
+
 def flatten_first_two_dims(arr):
     if arr.ndim > 2:
         return arr.reshape(-1, *arr.shape[-(arr.ndim-2):])
     else:
         return arr.reshape(-1)
-
-def get_or_default(config, name, def_val):
-    if name in config:
-        return config[name]
-    else:
-        return def_val
 
 def free_mem():
     import ctypes
