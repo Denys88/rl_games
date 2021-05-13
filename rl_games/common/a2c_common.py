@@ -755,19 +755,12 @@ class DiscreteA2CBase(A2CBase):
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
-<<<<<<< HEAD
-                aug_losses.append(aug_loss)
-                entropies.append(entropy)    
-                
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, np.mean(ep_kls))
-=======
                 entropies.append(entropy)   
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
                 av_kls = self.hvd.average_value(av_kls, 'ep_kls')
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
->>>>>>> master
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             
@@ -839,17 +832,10 @@ class DiscreteA2CBase(A2CBase):
 
         while True:
             epoch_num = self.update_epoch()
-<<<<<<< HEAD
-            self.frame += self.batch_size_envs
-            frame = self.frame
-
-            play_time, update_time, sum_time, a_losses, c_losses, entropies, aug_losses, kls, last_lr, lr_mul = self.train_epoch()
-=======
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
->>>>>>> master
             total_time += sum_time
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time

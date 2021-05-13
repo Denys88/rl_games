@@ -131,45 +131,14 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
 
-<<<<<<< HEAD
-        res_dict = self.model(batch_dict.copy())
-        action_log_probs = res_dict['prev_neglogp']
-        values = res_dict['value']
-        entropy = res_dict['entropy']
-        a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-=======
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['value']
             entropy = res_dict['entropy']
             a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
->>>>>>> master
-
             if self.use_experimental_cv:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-<<<<<<< HEAD
-
-        loss_list = [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)]
-
-        if self.has_soft_aug:
-            aug_loss = self.soft_aug.get_loss(res_dict, self.model, batch_dict)
-            loss_list.append(aug_loss.unsqueeze(1))
-        else:
-            aug_loss = torch.zeros(1, device=self.ppo_device)
-        losses, sum_mask = torch_ext.apply_masks(loss_list, rnn_masks)
-
-        a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-
-
-        loss = a_loss + c_loss * 0.5 * self.critic_coef - entropy * self.entropy_coef
-        if self.has_soft_aug:
-            aug_loss = losses[3]
-            loss = loss + aug_loss * self.soft_aug.get_coef()
-            
-        for param in self.model.parameters():
-            param.grad = None
-=======
             else:
                 if self.has_central_value:
                     c_loss = torch.zeros(1, device=self.ppo_device)
@@ -203,7 +172,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         else:
             self.scaler.step(self.optimizer)
             self.scaler.update()
->>>>>>> master
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
@@ -212,8 +180,4 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             else:
                 kl_dist = kl_dist.mean()
 
-<<<<<<< HEAD
-        self.train_result =  (a_loss.item(), c_loss.item(), entropy.item(), aug_loss.item(), kl_dist,self.last_lr, lr_mul)
-=======
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
->>>>>>> master

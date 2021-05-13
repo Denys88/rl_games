@@ -112,34 +112,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             if self.use_experimental_cv:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-<<<<<<< HEAD
-
-        b_loss = self.bound_loss(mu)
-
-        loss_list = [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)]
-
-        if self.has_soft_aug:
-            aug_loss = self.soft_aug.get_loss(res_dict, self.model, batch_dict)
-            loss_list.append(aug_loss.unsqueeze(1))
-        else:
-            aug_loss = torch.zeros(1, device=self.ppo_device)
-
-        losses, sum_mask = torch_ext.apply_masks(loss_list, rnn_masks)
-        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-
-        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
-        if self.has_soft_aug:
-            aug_loss = losses[4]
-            loss = loss + aug_loss * self.soft_aug.get_coef()
-        for param in self.model.parameters():
-            param.grad = None
-        loss.backward()
-
-        if self.config['truncate_grads']:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        if opt_step:
-            self.optimizer.step()
-=======
             else:
                 if self.has_central_value:
                     c_loss = torch.zeros(1, device=self.ppo_device)
@@ -176,7 +148,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             self.scaler.step(self.optimizer)
             self.scaler.update()
->>>>>>> master
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
@@ -184,15 +155,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
                     
-<<<<<<< HEAD
-        self.train_result = (a_loss.item(), c_loss.item(), entropy.item(), \
-            aug_loss.item(), kl_dist, self.last_lr, lr_mul, \
-            mu.detach(), sigma.detach(), b_loss.item())
-=======
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss)
->>>>>>> master
 
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
