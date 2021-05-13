@@ -15,7 +15,7 @@ def d_kl_discrete(p, q):
 def d_kl_discrete_list(p, q):
     d_kl = 0
     for pi, qi in zip(p,q):
-        d_kl = d_kl_discrete(pi, qi)
+        d_kl += d_kl_discrete(pi, qi)
     return d_kl
 
 def d_kl_normal(p, q):
