@@ -10,11 +10,12 @@ from torch import optim
 import torch 
 from torch import nn
 import numpy as np
+import gym
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
         a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
-        obs_shape = torch_ext.shape_whc_to_cwh(self.obs_shape) 
+        obs_shape = self.obs_shape
 
         config = {
             'actions_num' : self.actions_num,
@@ -30,13 +31,16 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
-        
+
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
+            if isinstance(self.observation_space, gym.spaces.Dict):
+                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
+            else:
+                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
             cv_config = {
-                'state_shape' : torch_ext.shape_whc_to_cwh(self.state_shape), 
+                'state_shape' : self.state_shape, 
                 'value_size' : self.value_size,
                 'ppo_device' : self.ppo_device, 
                 'num_agents' : self.num_agents, 
@@ -87,7 +91,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     #'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
-                res_dict['value'] = value
+                res_dict['values'] = value
 
         if self.normalize_value:
             value = self.value_mean_std(value, True)
@@ -134,7 +138,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
-            values = res_dict['value']
+            values = res_dict['values']
             entropy = res_dict['entropy']
             a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
@@ -157,7 +161,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
-        if self.config['truncate_grads']:
+        if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
                 self.scaler.unscale_(self.optimizer)

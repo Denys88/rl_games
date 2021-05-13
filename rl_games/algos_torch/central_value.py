@@ -16,7 +16,7 @@ class CentralValueTrain(nn.Module):
         self.state_shape = state_shape
         self.value_size = value_size
         self.multi_gpu = multi_gpu
-
+        self.truncate_grads = config.get('truncate_grads', False)
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -42,6 +42,8 @@ class CentralValueTrain(nn.Module):
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
+        self.truncate_grad = self.config.get('truncate_grads', False)
+        
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(state_shape)
 
@@ -95,12 +97,12 @@ class CentralValueTrain(nn.Module):
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
-        if obs_batch.dtype == torch.uint8:
-            obs_batch = obs_batch.float() / 255.0
-        #if len(obs_batch.size()) == 3:
-        #    obs_batch = obs_batch.permute((0, 2, 1))
-        if len(obs_batch.size()) == 4:
-            obs_batch = obs_batch.permute((0, 3, 1, 2))
+        if type(obs_batch) is dict:
+            for k,v in obs_batch.items():
+                obs_batch[k] = self._preproc_obs(v)
+        else:
+            if obs_batch.dtype == torch.uint8:
+                obs_batch = obs_batch.float() / 255.0
         if self.normalize_input:
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
@@ -127,7 +129,6 @@ class CentralValueTrain(nn.Module):
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
-        
         actions = input_dict.get('actions', None)
 
         obs_batch = self._preproc_obs(obs_batch)
@@ -202,7 +203,7 @@ class CentralValueTrain(nn.Module):
         loss.backward()
 
         #TODO: Refactor this ugliest code of they year
-        if self.config['truncate_grads']:
+        if self.truncate_grads:
             if self.multi_gpu:
                 self.optimizer.synchronize()
                 #self.scaler.unscale_(self.optimizer)

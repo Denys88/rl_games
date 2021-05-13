@@ -426,11 +426,13 @@ def get_env_info(env):
     result_shapes['value_size'] = 1
     if hasattr(env, "get_number_of_agents"):
         result_shapes['agents'] = env.get_number_of_agents()
+    '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
+    '''
     if hasattr(env, "value_size"):    
         result_shapes['value_size'] = env.value_size
     print(result_shapes)

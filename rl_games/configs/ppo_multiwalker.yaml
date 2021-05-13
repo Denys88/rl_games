@@ -7,29 +7,26 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
         mu_init:
           name: default
-          scale: 0.02 
         sigma_init:
           name: const_initializer
           val: 0
         fixed_sigma: True
     mlp:
       units: [256,128, 64]
-      d2rl: True
+      d2rl: False
       activation: relu
       initializer:
-        name: default         
-      regularizer:
-        name:  'None' #'l2_regularizer'
-        #scale: 0.001
+        name: default  
+
   load_checkpoint: False
-  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
+  load_path: './nn/multiwalker.pth'
 
   config:
       reward_shaper:
@@ -48,6 +45,7 @@ params:
       env_name:  multiwalker_env
       ppo: True
       e_clip: 0.2
+      use_experimental_cv: False
       clip_value: False
       num_actors: 16
       steps_num: 256
@@ -55,13 +53,34 @@ params:
       mini_epochs: 4
       critic_coef: 1
       schedule_type: 'standard'
-      lr_schedule: adaptive
+      lr_schedule: None
       lr_threshold: 0.008
-      normalize_input: False
-      bounds_loss_coef: 0.00
+      normalize_input: True
+      bounds_loss_coef: 0.0001
       max_epochs: 10000
-      #weight_decay: 0.0001
+      weight_decay: 0.0000
 
       player:
         render: True
         games_num: 200
+
+      env_config:
+        central_value: True
+        use_prev_actions: True
+        apply_agent_ids: True
+
+      central_value_config:
+        minibatch_size: 512
+        mini_epochs: 4
+        lr: 3e-4
+        clip_value: False
+        normalize_input: True
+        truncate_grads: False
+        network:
+          name: actor_critic
+          central_value: True
+          mlp:
+            units: [512, 256, 128]
+            activation: elu
+            initializer:
+              name: default
