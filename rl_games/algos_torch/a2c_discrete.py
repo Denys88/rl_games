@@ -5,6 +5,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
+from rl_games.algos_torch import ppg_aux
 
 from torch import optim
 import torch 
@@ -57,6 +58,14 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', False)        
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+
+        if 'phasic_policy_gradients' in self.config:
+            self.has_phasic_policy_gradients = True
+            self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
+
+        self.has_value_loss =  (self.has_central_value \
+                                and self.use_experimental_cv) \
+                                or not self.has_phasic_policy_gradients
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -142,14 +151,12 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             entropy = res_dict['entropy']
             a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-            if self.use_experimental_cv:
+            if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
-                if self.has_central_value:
-                    c_loss = torch.zeros(1, device=self.ppo_device)
-                else:
-                    c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                c_loss = torch.zeros(1, device=self.ppo_device)
 
+            
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
             loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
@@ -184,5 +191,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
-
+        if self.has_phasic_policy_gradients:
+            c_loss = self.ppg_aux_loss.train_value(self,input_dict)
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
