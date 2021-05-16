@@ -44,9 +44,9 @@ class ModelA2C(BaseModel):
             return divergence.d_kl_discrete(p, q)
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            action_masks = input_dict.pop('action_masks', None)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)
+            prev_actions = input_dict.get('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
@@ -98,9 +98,9 @@ class ModelA2CMultiDiscrete(BaseModel):
             return divergence.d_kl_discrete_list(p, q)
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            action_masks = input_dict.pop('action_masks', None)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)
+            prev_actions = input_dict.get('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
                 if action_masks is None:
@@ -165,8 +165,8 @@ class ModelA2CContinuous(BaseModel):
             return divergence.d_kl_normal(p, q)
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
             mu, sigma, value, states = self.a2c_network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
 
@@ -220,8 +220,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             return self.a2c_network.get_default_rnn_state()
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)

@@ -20,7 +20,7 @@ params:
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
+        gain: 1
       regularizer:
         name: 'None'
       convs:    
@@ -42,16 +42,16 @@ params:
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
+        gain: 1
   config:
     reward_shaper:
       min_val: -1
       max_val: 1
     normalize_advantage: True
-    gamma: 0.99
+    gamma: 0.995
     tau: 0.9
-    learning_rate: 3e-4
-    name: PongNoFrameskip
+    learning_rate: 5e-4
+    name: pong_ppg
     score_to_win: 20.5
     grad_norm: 10
     entropy_coef: 0.01
@@ -63,7 +63,7 @@ params:
     num_actors: 24
     steps_num: 128
     minibatch_size: 1536
-    mini_epochs: 4
+    mini_epochs: 1
     critic_coef: 1
     lr_schedule:  none
     #lr_threshold: 0.008
@@ -71,6 +71,12 @@ params:
     normalize_value: False 
     normalize_input: False
     max_epochs: 1500
+    phasic_policy_gradients:
+        learning_rate: 5e-4
+        minibatch_size: 1536
+        mini_epochs: 6
+        n_aux: 16
+        kl_coef: 1.0
     player:
       render: True
       games_num: 100

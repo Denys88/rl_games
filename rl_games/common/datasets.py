@@ -1,10 +1,9 @@
 import torch
+import functools
 from torch.utils.data import Dataset
 
 class PPODataset(Dataset):
-
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_len):
-
         self.is_rnn = is_rnn
         self.seq_len = seq_len
         self.batch_size = batch_size
@@ -73,3 +72,24 @@ class PPODataset(Dataset):
         else:
             sample = self._get_item(idx)
         return sample
+
+
+
+class DatasetList(Dataset):
+    def __init__(self):
+        self.dataset_list = []
+
+    def __len__(self):
+        return self.dataset_list[0].length * len(self.dataset_list)
+
+    def add_dataset(self, dataset):
+        self.dataset_list.append(dataset)
+
+    def clear(self):
+        self.dataset_list = []
+
+    def __getitem__(self, idx):
+        ds_len = len(self.dataset_list)
+        ds_idx = idx // ds_len
+        in_idx = idx % ds_len
+        return self.dataset_list[ds_idx]._getitem__(in_idx)
