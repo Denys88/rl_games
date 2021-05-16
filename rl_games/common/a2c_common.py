@@ -117,7 +117,7 @@ class A2CBase:
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
-
+        self.has_phasic_policy_gradients = False
         
         if isinstance(self.observation_space,gym.spaces.Dict):
             self.obs_shape = {}
@@ -174,7 +174,13 @@ class A2CBase:
         
         # features
         self.algo_observer = config['features']['observer']
-        
+
+        self.soft_aug = config['features'].get('soft_augmentation', None)
+        self.has_soft_aug = self.soft_aug is not None
+        # soft augmentation not yet supported
+        assert not self.has_soft_aug
+
+
     def set_eval(self):
         self.model.eval()
         if self.normalize_input:
@@ -691,6 +697,7 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
+
         if self.has_central_value:
             self.train_central_value()
 
@@ -712,7 +719,11 @@ class DiscreteA2CBase(A2CBase):
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
-            
+
+
+        if self.has_phasic_policy_gradients:
+            self.ppg_aux_loss.train_net(self)
+
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -809,7 +820,8 @@ class DiscreteA2CBase(A2CBase):
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
-
+                if self.has_soft_aug:
+                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
                 if self.game_rewards.current_size > 0:
@@ -858,7 +870,7 @@ class ContinuousA2CBase(A2CBase):
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
-        self.has_phasic_policy_gradients = False
+
             
     def preprocess_actions(self, actions):
         clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
@@ -895,7 +907,7 @@ class ContinuousA2CBase(A2CBase):
         b_losses = []
         entropies = []
         kls = []
-        
+
         if self.is_rnn:
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
@@ -908,7 +920,6 @@ class ContinuousA2CBase(A2CBase):
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
-                
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
@@ -1041,7 +1052,8 @@ class ContinuousA2CBase(A2CBase):
                 self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
                 self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
                 self.writer.add_scalar('info/epochs', epoch_num, frame)
-
+                if self.has_soft_aug:
+                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
                 
                 if self.game_rewards.current_size > 0:

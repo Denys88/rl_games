@@ -3,14 +3,17 @@ import numpy as np
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+import rl_games.common.divergence as divergence
 from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
+
 class BaseModel():
     def __init__(self):
         pass
+
     def is_rnn(self):
         return False
-    
+
     def is_separate_critic(self):
         return False
 
@@ -32,12 +35,18 @@ class ModelA2C(BaseModel):
             return self.a2c_network.is_rnn()
         
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.a2c_network.get_default_rnn_state()            
+
+
+        def kl(self, p_dict, q_dict):
+            p = p_dict['logits']
+            q = q_dict['logits']
+            return divergence.d_kl_discrete(p, q)
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            action_masks = input_dict.pop('action_masks', None)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)
+            prev_actions = input_dict.get('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
@@ -45,6 +54,7 @@ class ModelA2C(BaseModel):
                 entropy = categorical.entropy()
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'logits' : categorical.logits,
                     'values' : value,
                     'entropy' : entropy,
                     'rnn_states' : states
@@ -82,10 +92,15 @@ class ModelA2CMultiDiscrete(BaseModel):
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
+        def kl(self, p_dict, q_dict):
+            p = p_dict['logits']
+            q = q_dict['logits']
+            return divergence.d_kl_discrete_list(p, q)
+
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            action_masks = input_dict.pop('action_masks', None)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)
+            prev_actions = input_dict.get('prev_actions', None)
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
                 if action_masks is None:
@@ -99,6 +114,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'logits' : [c.logits for c in categorical],
                     'values' : value,
                     'entropy' : torch.squeeze(entropy),
                     'rnn_states' : states
@@ -118,7 +134,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     'neglogpacs' : torch.squeeze(neglogp),
                     'values' : value,
                     'actions' : selected_action,
-                    'logits' : logits,
+                    'logits' : [c.logits for c in categorical],
                     'rnn_states' : states
                 }
                 return  result
@@ -143,9 +159,14 @@ class ModelA2CContinuous(BaseModel):
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
+        def kl(self, p_dict, q_dict):
+            p = p_dict['mu'], p_dict['sigma']
+            q = q_dict['mu'], q_dict['sigma']
+            return divergence.d_kl_normal(p, q)
+
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
             mu, sigma, value, states = self.a2c_network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
 
@@ -199,8 +220,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             return self.a2c_network.get_default_rnn_state()
 
         def forward(self, input_dict):
-            is_train = input_dict.pop('is_train', True)
-            prev_actions = input_dict.pop('prev_actions', None)
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
