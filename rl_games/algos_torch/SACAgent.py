@@ -424,6 +424,8 @@ class SACAgent:
                 obs = obs['obs']
             if isinstance(next_obs, dict):    
                 next_obs = next_obs['obs']
+
+            rewards = self.rewards_shaper(rewards)
            
             self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 0).T, next_obs, torch.unsqueeze(dones, 0).T, torch.unsqueeze(dones_no_max.bool(), 0).T)
             obs = next_obs
