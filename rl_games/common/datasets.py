@@ -1,5 +1,5 @@
 import torch
-import functools
+import copy
 from torch.utils.data import Dataset
 
 class PPODataset(Dataset):
@@ -83,7 +83,7 @@ class DatasetList(Dataset):
         return self.dataset_list[0].length * len(self.dataset_list)
 
     def add_dataset(self, dataset):
-        self.dataset_list.append(dataset)
+        self.dataset_list.append(copy.deepcopy(dataset))
 
     def clear(self):
         self.dataset_list = []
