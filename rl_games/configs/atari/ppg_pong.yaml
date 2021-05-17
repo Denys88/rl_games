@@ -68,7 +68,7 @@ params:
     lr_schedule:  none
     #lr_threshold: 0.008
     #schedule_entropy : True
-    normalize_value: True 
+    normalize_value: False 
     normalize_input: False
     max_epochs: 1500
     phasic_policy_gradients:
