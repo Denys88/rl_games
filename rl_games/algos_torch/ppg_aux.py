@@ -25,7 +25,7 @@ class PPGAux:
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
         self._freeze_grads(algo.model)
-        self.value_optimizer = optim.Adam(filter(lambda p: p.requires_grad, algo.model.parameters()), eps=1e-08, weight_decay=algo.weight_decay)
+        self.value_optimizer = optim.Adam(filter(lambda p: p.requires_grad, algo.model.parameters()), float(self.last_lr), eps=1e-08, weight_decay=algo.weight_decay)
         self.value_scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
         self._unfreeze_grads(algo.model)
         self.dataset_list = DatasetList()
@@ -97,18 +97,18 @@ class PPGAux:
         self.dataset_list.add_dataset(algo.dataset)
 
     def train_net(self, algo):
+        self.update(algo)
         if algo.epoch_num % self.n_aux != 0:
-            self.update(algo)
             return
         self.old_model = copy.deepcopy(algo.model)
         self.old_model.eval()
-        dataset = algo.dataset
-        loss = 0
+        dataset = self.dataset_list
+
         for _ in range(self.mini_epoch):
             for idx in range(len(dataset)):
                 loss_c, loss_kl = self.calc_gradients(algo, dataset[idx])
-        avg_loss_c = loss_c / (self.mini_epoch * algo.num_minibatches)
-        avg_loss_kl = loss_kl / (self.mini_epoch * algo.num_minibatches)
+        avg_loss_c = loss_c / len(dataset)
+        avg_loss_kl = loss_kl / len(dataset)
         if self.writer != None:
             self.writer.add_scalar('losses/pgg_loss_c', avg_loss_c, algo.frame)
             self.writer.add_scalar('losses/pgg_loss_kl', avg_loss_kl, algo.frame)

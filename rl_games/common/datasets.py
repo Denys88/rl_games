@@ -90,6 +90,6 @@ class DatasetList(Dataset):
 
     def __getitem__(self, idx):
         ds_len = len(self.dataset_list)
-        ds_idx = idx // ds_len
-        in_idx = idx % ds_len
-        return self.dataset_list[ds_idx]._getitem__(in_idx)
+        ds_idx = idx % ds_len
+        in_idx = idx // ds_len
+        return self.dataset_list[ds_idx].__getitem__(in_idx)

@@ -679,13 +679,14 @@ class DiscreteA2CBase(A2CBase):
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
+        self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
-
+        self.set_train()
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
@@ -883,7 +884,9 @@ class ContinuousA2CBase(A2CBase):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
+
     def train_epoch(self):
+        self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
             if self.is_rnn:
@@ -892,9 +895,9 @@ class ContinuousA2CBase(A2CBase):
                 batch_dict = self.play_steps() 
         play_time_end = time.time()
         update_time_start = time.time()
-
         rnn_masks = batch_dict.get('rnn_masks', None)
-
+        
+        self.set_train()
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()

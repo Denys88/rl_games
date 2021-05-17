@@ -82,7 +82,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         assert False
 
     def calc_gradients(self, input_dict):
-        self.set_train()
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
