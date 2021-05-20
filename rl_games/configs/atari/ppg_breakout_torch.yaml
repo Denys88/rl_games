@@ -62,7 +62,7 @@ params:
     num_actors: 24
     steps_num: 128
     minibatch_size: 512
-    mini_epochs: 4
+    mini_epochs: 1
     critic_coef: 1
     lr_schedule:  adaptive
     lr_threshold: 0.008
