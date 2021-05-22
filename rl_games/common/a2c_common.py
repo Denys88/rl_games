@@ -660,7 +660,7 @@ class DiscreteA2CBase(A2CBase):
     def __init__(self, base_name, config):
         A2CBase.__init__(self, base_name, config)
         batch_size = self.num_agents * self.num_actors
-        action_space = self.env_info['action_space'] 
+        action_space = self.env_info['action_space']
         if type(action_space) is gym.spaces.Discrete:
             self.actions_shape = (self.steps_num, batch_size)
             self.actions_num = action_space.n
