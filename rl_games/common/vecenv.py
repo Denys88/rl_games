@@ -19,13 +19,15 @@ class IVecEnv(object):
     def get_number_of_agents(self):
         return 1
 
+    def seed(self, seed):
+        raise NotImplementedError
+
     def get_env_info(self):
         pass
 
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
-        #self.obs = self.env.reset()
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
@@ -45,6 +47,10 @@ class RayWorker:
                 next_state = next_state.astype(np.float32)
         return next_state, reward, is_done, info
 
+    def seed(self, seed):
+        if hasattr(self.env, 'seed'):
+            self.env.seed(seed)
+            
     def render(self):
         self.env.render()
 
@@ -92,10 +98,13 @@ class RayVecEnv(IVecEnv):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
-        
+        self.seed = kwargs.pop('seed', 0)
+        self.seeds = range(self.seed, self.seed + self.num_actors)
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
-
+        seed_set = []
+        for (seed, worker) in zip(self.seeds, self.workers):	        
+            seed_set.append(worker.seed.remote(seed))
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
 
