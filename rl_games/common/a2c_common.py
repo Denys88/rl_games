@@ -1075,7 +1075,7 @@ class ContinuousA2CBase(A2CBase):
                         self.self_play_manager.update(self)
 
                     if self.save_freq > 0:
-                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
+                        if (epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
                             self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
