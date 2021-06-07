@@ -25,8 +25,8 @@ class DQNAgent:
         self.is_exp_decay_lr = config['lr_schedule'] == 'exp_decay'
         self.lr_multiplier = tf.constant(1, shape=(), dtype=tf.float32)
         self.learning_rate_ph = tf.placeholder('float32', (), name = 'lr_ph')
-        self.games_to_track = tr_helpers.get_or_default(config, 'games_to_track', 100)
-        self.max_epochs = tr_helpers.get_or_default(self.config, 'max_epochs', 1e6)
+        self.games_to_track = config.get('games_to_track', 100)
+        self.max_epochs = config.get('max_epochs', 1e6)
 
         self.game_rewards = deque([], maxlen=self.games_to_track)
         self.game_lengths = deque([], maxlen=self.games_to_track)
@@ -38,7 +38,7 @@ class DQNAgent:
         if self.is_adaptive_lr:
             self.lr_threshold = config['lr_threshold']
         if self.is_polynom_decay_lr:
-            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs, end_learning_rate=0.001, power=tr_helpers.get_or_default(config, 'decay_power', 1.0))
+            self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs, end_learning_rate=0.001, power=config.get(config, 'decay_power', 1.0))
         if self.is_exp_decay_lr:
             self.lr_multiplier = tf.train.exponential_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs,  decay_rate = config['decay_rate'])
 

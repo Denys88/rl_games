@@ -259,6 +259,11 @@ def create_multiwalker_env(**kwargs):
 
     return env
 
+def create_diambra_env(**kwargs):
+    from rl_games.envs.diambra.diambra import DiambraEnv
+    env = DiambraEnv(**kwargs)
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -416,6 +421,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'diambra': {
+        'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
+        'vecenv_type': 'RAY'
+    },
 }
 
 def get_env_info(env):
@@ -426,11 +435,13 @@ def get_env_info(env):
     result_shapes['value_size'] = 1
     if hasattr(env, "get_number_of_agents"):
         result_shapes['agents'] = env.get_number_of_agents()
+    '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
+    '''
     if hasattr(env, "value_size"):    
         result_shapes['value_size'] = env.value_size
     print(result_shapes)

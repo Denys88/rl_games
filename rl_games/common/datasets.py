@@ -1,10 +1,9 @@
 import torch
+import copy
 from torch.utils.data import Dataset
 
 class PPODataset(Dataset):
-
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_len):
-
         self.is_rnn = is_rnn
         self.seq_len = seq_len
         self.batch_size = batch_size
@@ -41,7 +40,11 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:
-                input_dict[k] = v[start:end]
+                if v is dict:
+                    v_dict = { kd:vd[start:end] for kd, vd in v.items() }
+                    input_dict[k] = v_dict
+                else:
+                    input_dict[k] = v[start:end]
         
         rnn_states = self.values_dict['rnn_states']
         input_dict['rnn_states'] = [s[:,gstart:gend,:] for s in rnn_states]
@@ -55,7 +58,11 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names and v is not None:
-                input_dict[k] = v[start:end]
+                if type(v) is dict:
+                    v_dict = { kd:vd[start:end] for kd, vd in v.items() }
+                    input_dict[k] = v_dict
+                else:
+                    input_dict[k] = v[start:end]
                 
         return input_dict
 
@@ -65,3 +72,24 @@ class PPODataset(Dataset):
         else:
             sample = self._get_item(idx)
         return sample
+
+
+
+class DatasetList(Dataset):
+    def __init__(self):
+        self.dataset_list = []
+
+    def __len__(self):
+        return self.dataset_list[0].length * len(self.dataset_list)
+
+    def add_dataset(self, dataset):
+        self.dataset_list.append(copy.deepcopy(dataset))
+
+    def clear(self):
+        self.dataset_list = []
+
+    def __getitem__(self, idx):
+        ds_len = len(self.dataset_list)
+        ds_idx = idx % ds_len
+        in_idx = idx // ds_len
+        return self.dataset_list[ds_idx].__getitem__(in_idx)

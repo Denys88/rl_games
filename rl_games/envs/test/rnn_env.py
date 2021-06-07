@@ -26,8 +26,18 @@ class TestRNNEnv(gym.Env):
             self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2),gym.spaces.Discrete(3)])
         else:
             self.action_space = gym.spaces.Discrete(4)
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
-        self.state_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
+
+        self.multi_obs_space = kwargs.pop('multi_obs_space', False)
+        if self.multi_obs_space:
+            spaces = {
+                'pos': gym.spaces.Box(low=0, high=1, shape=(2, ), dtype=np.float32),
+                'info': gym.spaces.Box(low=0, high=1, shape=(4, ), dtype=np.float32),
+            }
+            self.observation_space = gym.spaces.Dict(spaces)
+        else:
+            self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
+
+        self.state_space = self.observation_space
         if self.apply_exploration_reward:
             pass
         self.reset()
@@ -42,13 +52,18 @@ class TestRNNEnv(gym.Env):
         rand_dir = - 2 * np.random.randint(0, 2, (2,)) + 1
         self._goal_pos = rand_dir * np.random.randint(self.min_dist, self.max_dist+1, (2,))
         obs = np.concatenate([self._current_pos, self._goal_pos, [1, 0]], axis=None)
-
+        obs = obs.astype(np.float32)
+        if self.multi_obs_space:
+            obs = {
+                'pos': obs[:2],
+                'info': obs[2:]
+            }
         if self.use_central_value:
             obses = {}
-            obses["obs"] = obs.astype(np.float32)
-            obses["state"] = obs.astype(np.float32)
+            obses["obs"] = obs
+            obses["state"] = obs
         else:
-            obses = obs.astype(np.float32)
+            obses = obs
         return obses
 
     def step_categorical(self, action):
@@ -103,14 +118,26 @@ class TestRNNEnv(gym.Env):
         else:
             show_object = 1
             obs = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
-
+        obs = obs.astype(np.float32)
+        #state = state.astype(np.float32)
+        if self.multi_obs_space:
+            obs = {
+                'pos': obs[:2],
+                'info': obs[2:]
+            }
         if self.use_central_value:
             state = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
             obses = {}
-            obses["obs"] = obs.astype(np.float32)
-            obses["state"] = state.astype(np.float32)
+            obses["obs"] = obs
+            if self.multi_obs_space:
+                obses["state"] = {
+                    'pos': state[:2],
+                    'info': state[2:]
+                }
+            else:
+                obses["state"] = state.astype(np.float32)
         else:
-            obses = obs.astype(np.float32)
+            obses = obs
         if self.multi_head_value:
             pass
         else:
