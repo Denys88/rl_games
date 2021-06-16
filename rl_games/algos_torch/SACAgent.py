@@ -2,7 +2,6 @@ from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
-# from rl_games.algos_torch import central_value, rnd_curiosity
 from rl_games.common import vecenv
 from rl_games.common import common_losses
 from rl_games.common import datasets
@@ -10,7 +9,6 @@ from rl_games.common import schedulers
 from rl_games.common import experience
 from rl_games.common.algo_observer import AlgoObserver
 
-# from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 
@@ -55,7 +53,6 @@ class RLGPUAlgoObserver(AlgoObserver):
 class SACAgent:
     def __init__(self, base_name, config):
         print(config)
-        # TODO: Get obs shape and self.network
         self.base_init(base_name, config)
         self.num_seed_steps = config["num_seed_steps"]
         self.discount = config["discount"]
@@ -73,7 +70,7 @@ class SACAgent:
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
-        self.log_alpha = torch.tensor(np.log(self.init_temperature)).to(self.sac_device)
+        self.log_alpha = torch.tensor(np.log(self.init_temperature)).float().to(self.sac_device)
         self.log_alpha.requires_grad = True
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
@@ -111,19 +108,13 @@ class SACAgent:
         self.env_info['action_space'].shape, 
         self.replay_buffer_size, 
         self.sac_device)
-        self.target_entropy = -self.env_info['action_space'].shape[0]
+        self.target_entropy = 0.5 * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
         self.step = 0
         self.algo_observer = RLGPUAlgoObserver()
         self.algo_observer.after_init(self)
-        # self.max_obs = torch.zeros(self.obs_shape, device=self.sac_device)
-        # self.min_obs = torch.ones(self.obs_shape, device=self.sac_device) * 1000000000
-        # print("Max Obs Norm", torch.linalg.norm(self.max_obs))
-        # print("Min Obs Norm", torch.linalg.norm(self.min_obs))
 
-        # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.sac_device)
 
@@ -156,9 +147,7 @@ class SACAgent:
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
 
-        self.c_loss = nn.SmoothL1Loss()
-        # self.c2_loss = nn.SmoothL1Loss()
-        
+        self.c_loss = nn.MSELoss()        
 
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
@@ -188,7 +177,7 @@ class SACAgent:
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.sac_device)
         self.obs = None
 
-        self.min_alpha = torch.tensor(np.log(0.1)).to(self.sac_device)
+        self.min_alpha = torch.tensor(np.log(0.1)).float().to(self.sac_device)
         
 
         self.frame = 0
@@ -197,11 +186,7 @@ class SACAgent:
         self.play_time = 0
         self.epoch_num = 0
         
-        # self.writer = SummaryWriter('ant_runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        wandb.init(project="trifinger_manip", sync_tensorboard=True, group=f"sunday_{config['name']}", name=f"{os.environ['SLURM_JOB_ID']}_{datetime.now().strftime('%d-%H-%M-%S')}", config=config)
-
-        self.writer = SummaryWriter('wandb/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        # self.writer = SummaryWriter('walker/'+'fixed_buffer')
+        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         
         self.is_tensor_obses = None
@@ -259,7 +244,6 @@ class SACAgent:
 
     def save(self, fn):
         state = self.get_full_state_weights()
-        # torch_ext.save_scheckpoint(fn, state)
 
     def set_weights(self, weights):
         self.model.sac_network.actor.load_state_dict(weights['actor'])
@@ -317,7 +301,6 @@ class SACAgent:
         critic1_loss = self.c_loss(current_Q1, target_Q)
         critic2_loss = self.c_loss(current_Q2, target_Q)
         critic_loss = critic1_loss + critic2_loss 
-
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -329,8 +312,8 @@ class SACAgent:
         dist = self.model.actor(obs)
         action = dist.rsample()
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        with torch.no_grad():
-            actor_Q1, actor_Q2 = self.model.critic(obs, action) #self.critic
+        
+        actor_Q1, actor_Q2 = self.model.critic(obs, action) #self.critic
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q)
@@ -341,19 +324,18 @@ class SACAgent:
         self.actor_optimizer.zero_grad()
 
         actor_loss.backward()
-
         self.actor_optimizer.step()
 
         if self.learnable_temperature:
-            self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha *
                           (-log_prob - self.target_entropy).detach()).mean()
-            
+            self.log_alpha_optimizer.zero_grad()
             alpha_loss.backward()
             self.log_alpha_optimizer.step()
+            alpha_loss = alpha_loss.detach()
         else:
             alpha_loss = None
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss 
     
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
@@ -361,39 +343,27 @@ class SACAgent:
                                     (1 - tau) * target_param.data)
 
     def update(self, step):
-        sample_start = time.time()
         obs, action, reward, next_obs, not_done, not_done_no_max = self.replay_buffer.sample(self.batch_size)
-        
-        sample_time = time.time() - sample_start
-
-        critic_start = time.time()
+        obs = self.preproc_obs(obs)
+        next_obs = self.preproc_obs(next_obs)
 
         critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done_no_max, step)
 
-        critic_time = time.time() - critic_start
-
-        actor_alpha_start = time.time()
 
         if step % self.actor_update_frequency == 0:
             actor_loss_info = self.update_actor_and_alpha(obs, step)
         else:
             actor_loss_info = None
 
-        actor_alpha_time = time.time() - actor_alpha_start
-
-        soft_param_start = time.time()
-
         if step % self.critic_target_update_frequency == 0:
             self.soft_update_params(self.model.sac_network.critic, self.model.sac_network.critic_target,
                                      self.critic_tau)
         
-        soft_param_time = time.time() - soft_param_start
-
         return actor_loss_info, critic1_loss, critic2_loss
 
     def preproc_obs(self, obs):
         if isinstance(obs, dict):
-                obs = obs['obs']
+            obs = obs['obs']
         if self.normalize_input:
             obs = self.running_mean_std(obs)
         return obs
@@ -401,9 +371,6 @@ class SACAgent:
     def env_step(self, actions):
         obs, rewards, dones, infos = self.vec_env.step(actions)
         self.step += self.num_actors
- 
-        obs = self.preproc_obs(obs)
-
         if self.is_tensor_obses:
             return obs, rewards, dones, infos
         else:
@@ -411,8 +378,7 @@ class SACAgent:
     
     def env_reset(self):
         obs = self.vec_env.reset() 
-        obs = self.preproc_obs(obs)
-
+        
         if self.is_tensor_obses is None:
             self.is_tensor_obses = torch.is_tensor(obs)
             print("Observations are tensors:", self.is_tensor_obses)
@@ -424,6 +390,7 @@ class SACAgent:
 
 
     def act(self, obs, action_dim, sample=False):
+        obs = self.preproc_obs(obs)
         dist = self.model.actor(obs)
         actions = dist.sample() if sample else dist.mean
         actions = actions.clamp(*self.action_range)
@@ -492,13 +459,13 @@ class SACAgent:
                 next_obs = next_obs['obs']
 
             rewards = self.rewards_shaper(rewards)
-            
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1), torch.unsqueeze(dones, 1)) #_no_max.bool()
+            if obs.max() > 50.0 or obs.min() < -50:
+                print('atata')
+            else:
+                self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1), torch.unsqueeze(dones, 1)) #_no_max.bool()
 
-            
             obs = next_obs.clone()
 
-            
             if not random_exploration: 
                 update_time_start = time.time()
                 actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
@@ -539,12 +506,10 @@ class SACAgent:
         self.set_train()
         self.last_mean_rewards = -100500
         total_time = 0
-        # rep_count = 0
         self.frame = 0
         while True:
             self.epoch_num += 1
             play_time, update_time, epoch_total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.train_epoch()
-            # print(play_time, update_time, epoch_total_time, actor_losses, entropies, alphas, alpha_losses, critic_losses)
 
             total_time += epoch_total_time
 
@@ -552,24 +517,13 @@ class SACAgent:
             scaled_play_time = play_time
             curr_frames = self.num_frames_per_epoch
             self.frame += curr_frames
-            frame = self.frame #TODO: Fix frame
-            # print(frame)
+            frame = self.frame 
 
             if self.print_stats:
                 fps_step = curr_frames / scaled_play_time
                 fps_total = curr_frames / scaled_time
                 print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
-            
-            # if self.epoch_num % 10 == 0:
-                # print("MAX SO FAR")
-                # print(self.max_obs)
-                # print("MIN SO FAR")
-                # print(self.min_obs)
-                # print("Obs Mean")
-                # print(self.running_mean_std.running_mean)
-                # print("Obs Std")
-                # print(torch.sqrt(self.running_mean_std.running_var))
-            
+
         
             self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
             self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
@@ -582,26 +536,19 @@ class SACAgent:
                 self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
                 if alpha_losses[0] is not None:
                     self.writer.add_scalar('losses/alpha_loss', torch_ext.mean_list(alpha_losses).item(), frame)
-                # print("Entropy:", torch_ext.mean_list(entropies).item())
                 self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), frame)
-            # print(torch.cuda.get_device_properties(0).total_memory, torch.cuda.memory_reserved(0), torch.cuda.memory_allocated(0))
             self.algo_observer.after_print_stats(frame, self.epoch_num, total_time)
                 
             self.writer.add_scalar('info/epochs', self.epoch_num, frame)
-                # print(self.epoch_num)
 
 
             if self.game_rewards.current_size > 0:
                 mean_rewards = self.game_rewards.get_mean()
                 mean_lengths = self.game_lengths.get_mean()
-                # if self.step % 50 == 0:
-                #     print(f"Step {self.step}| Reward {mean_rewards} | Time {total_time}")
 
                 self.writer.add_scalar('rewards/frame', mean_rewards, frame)
-                # self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                 self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                 self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
-                # self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                 self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:

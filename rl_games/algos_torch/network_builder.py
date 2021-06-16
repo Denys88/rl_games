@@ -818,24 +818,13 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
 
         self.trunk = self._build_mlp(**mlp_args)
         last_layer = list(self.trunk.children())[-2].out_features
-        self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim//2))
+        self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
         print("Actor:", self.trunk)
-        self.log_std = nn.Parameter(torch.zeros(output_dim//2, requires_grad=True, dtype=torch.float32), requires_grad=True)
 
     def forward(self, obs):
-        # mu, log_std = self.trunk(obs).chunk(2, dim=-1)
-        mu = self.trunk(obs)
-
-        # constrain log_std inside [log_std_min, log_std_max]
-        # log_std = torch.tanh(log_std)
-        # log_std_min, log_std_max = self.log_std_bounds
-        # log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std +
-                                                                    #  1)
-        # log_std = torch.clamp(log_std, log_std_min, log_std_max)                                                                    
-
-        # std = log_std.exp()
-        dist = SquashedNormal(mu, self.log_std.exp())
-        # Modify to only return mu and std
+        mu, log_std = self.trunk(obs).chunk(2, dim=-1)                                                            
+        std = log_std.exp()
+        dist = SquashedNormal(mu, std)
         return dist
 
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
