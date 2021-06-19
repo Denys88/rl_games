@@ -37,7 +37,7 @@ params:
   load_path: nn/Ant.pth
 
   config:
-    name: 'Ant_brax'
+    name: 'Humanoid_brax'
     env_name: brax
     multi_gpu: False
     ppo: True
@@ -68,4 +68,4 @@ params:
     bounds_loss_coef: 0.0004
 
     env_config:
-      env_name: 'ant'
+      env_name: 'humanoid'
