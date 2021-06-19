@@ -1,5 +1,5 @@
 import ray
-from rl_games.envs.brax import BraxEnv
+from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
@@ -7,22 +7,6 @@ import gym
 
 from time import sleep
 
-
-class IVecEnv(object):
-    def step(self, actions):
-        raise NotImplementedError 
-
-    def reset(self):
-        raise NotImplementedError    
-
-    def has_action_masks(self):
-        return False
-
-    def get_number_of_agents(self):
-        return 1
-
-    def get_env_info(self):
-        pass
 
 class RayWorker:
     def __init__(self, config_name, config):
@@ -293,4 +277,6 @@ def create_vec_env(config_name, num_actors, **kwargs):
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
+
+from rl_games.envs.brax import BraxEnv
 register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))

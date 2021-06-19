@@ -426,9 +426,10 @@ configurations = {
         'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
         'vecenv_type': 'RAY'
     },
-    'Brax' : {
-    'env_creator': lambda **kwargs: create_brax_env(**kwargs),
-    'vecenv_type': 'BRAX' },
+    'brax' : {
+        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'vecenv_type': 'BRAX' 
+    },
 }
 
 def get_env_info(env):
