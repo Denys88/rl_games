@@ -6,9 +6,11 @@ import gym
 class BraxEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import brax
-        from brax import envs
+        from brax import envs    
+        import jax
+        import jax.numpy as jnp
+
         self.batch_size = num_actors
-        print('num_actors ', num_actors)
         env_fn = envs.create_fn(env_name=kwargs.pop('env_name', 'ant'))
         self.env = env_fn(
             action_repeat=1,
@@ -20,23 +22,28 @@ class BraxEnv(IVecEnv):
         action_high = np.ones(self.env.action_size)
         self.action_space = gym.spaces.Box(-action_high, action_high, dtype=np.float32)
 
-        def step(state, action):
+        def step(first_state, state, action):
+            def test_done(a, b):
+                if a is first_state.done or a is first_state.metrics or a is first_state.reward:
+                    return b
+                test_shape = [a.shape[0],] + [1 for _ in range(len(a.shape) - 1)]
+                return jnp.where(jnp.reshape(state.done, test_shape), a, b)
             state = self.env.step(state, action)
+            state = jax.tree_multimap(test_done, first_state, state)
             return state, state.obs, state.reward, state.done, {}
 
         def reset(key):
             state = self.env.reset(key)
             return state, state.obs
 
-        import jax
         self._reset = jax.jit(reset, backend='gpu')
         self._step = jax.jit(step, backend='gpu')
 
     def step(self, action):
-        self.state, next_obs, reward, is_done, info = self._step(self.state, action)
+        self.state, next_obs, reward, is_done, info = self._step(self.first_state, self.state, action)
         next_obs = np.asarray(next_obs).astype(np.float32)
         reward = np.asarray(reward).astype(np.float32)
-        is_done = np.asarray(is_done).astype(np.float32)
+        is_done = np.asarray(is_done).astype(np.long)
         return next_obs, reward, is_done, info
 
     def reset(self):
@@ -44,9 +51,9 @@ class BraxEnv(IVecEnv):
         import jax.numpy as jnp
         rng = jax.random.PRNGKey(seed=0)
         rng = jax.random.split(rng, self.batch_size)
+        self.first_state, _ = self._reset(rng)
         self.state, obs = self._reset(rng)
         obs = np.asarray(obs).astype(np.float32)
-        print(np.shape(obs))
         return obs
 
     def get_number_of_agents(self):
