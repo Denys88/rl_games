@@ -36,7 +36,7 @@ if __name__ == '__main__':
             from rl_games.torch_runner import Runner
 
         ray.init(object_store_memory=1024*1024*1000)
-        signal.signal(signal.SIGINT, exit_gracefully)
+        #signal.signal(signal.SIGINT, exit_gracefully)
 
         runner = Runner()
         try:
