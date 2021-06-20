@@ -36,10 +36,10 @@ class BasePlayer(object):
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator']()
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         raise NotImplementedError('step')
     
-    def get_masked_action(self, obs, mask, is_determenistic = False):
+    def get_masked_action(self, obs, mask, is_deterministic = False):
         raise NotImplementedError('step') 
 
     def reset(self):
@@ -57,7 +57,7 @@ class BasePlayer(object):
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
         if has_masks_func:
             has_masks = self.env.has_action_mask()
-        is_determenistic = True
+        is_deterministic = True
         
         for _ in range(n_games):
             cr = 0
@@ -67,9 +67,9 @@ class BasePlayer(object):
             for _ in range(5000):
                 if has_masks:
                     masks = self.env.get_action_mask()
-                    action = self.get_masked_action(s, masks, is_determenistic)
+                    action = self.get_masked_action(s, masks, is_deterministic)
                 else:
-                    action = self.get_action(s, is_determenistic)
+                    action = self.get_action(s, is_deterministic)
                 s, r, done, info =  self.env.step(action)
                 cr += r
                 steps += 1
@@ -136,8 +136,8 @@ class PpoPlayerContinuous(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = True):
-        if is_determenistic:
+    def get_action(self, obs, is_deterministic = True):
+        if is_deterministic:
             ret_action = self.mu
         else:
             ret_action = self.action
@@ -203,7 +203,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.saver = tf.train.Saver()
         self.sess.run(tf.global_variables_initializer())
 
-    def get_action(self, obs, is_determenistic = True):
+    def get_action(self, obs, is_deterministic = True):
         ret_action = self.action
 
         if self.network.is_rnn():
@@ -211,20 +211,20 @@ class PpoPlayerDiscrete(BasePlayer):
         else:
             action, logits = self.sess.run([ret_action, self.logits], {self.obs_ph : obs})
 
-        if is_determenistic:
+        if is_deterministic:
             return np.argmax(logits, axis = -1).astype(np.int32)
         else:
             return int(np.squeeze(action))
 
-    def get_masked_action(self, obs, mask, is_determenistic = False):
-        #if is_determenistic:
+    def get_masked_action(self, obs, mask, is_deterministic = False):
+        #if is_deterministic:
         ret_action = self.action
 
         if self.network.is_rnn():
             action, self.last_state, logits = self.sess.run([ret_action, self.lstm_state, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs, self.states_ph : self.last_state, self.masks_ph : self.mask})
         else:
             action, logits = self.sess.run([ret_action, self.logits], {self.action_mask_ph : mask, self.obs_ph : obs})
-        if is_determenistic:
+        if is_deterministic:
             logits = np.array(logits)
             return np.argmax(logits, axis = -1).astype(np.int32)
         else:
@@ -243,7 +243,7 @@ class DQNPlayer(BasePlayer):
         BasePlayer.__init__(self, sess, config)
         self.dqn = dqnagent.DQNAgent(sess, 'player', self.obs_space, self.action_space, config)  
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         return self.dqn.get_action(np.squeeze(obs), 0.0)
 
     def restore(self, fn):

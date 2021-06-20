@@ -219,6 +219,7 @@ class A2CBase:
 
         with torch.no_grad():
             res_dict = self.model(input_dict)
+            #print("Res dict:", res_dict)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -524,7 +525,6 @@ class A2CBase:
             shaped_rewards = self.rewards_shaper(rewards)
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
             
-
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
