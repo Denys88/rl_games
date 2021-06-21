@@ -57,7 +57,7 @@ params:
     save_best_after: 100
     save_frequency: 50
     grad_norm: 1.0
-    entropy_coef: 0.00
+    entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
     steps_num: 8
@@ -66,7 +66,7 @@ params:
     mini_epochs: 4
     critic_coef: 2
     clip_value: False
-    bounds_loss_coef: 0.0004
+    bounds_loss_coef: 0.0001
 
     env_config:
       env_name: 'ant'
