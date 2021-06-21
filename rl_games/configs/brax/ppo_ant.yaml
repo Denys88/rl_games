@@ -37,14 +37,15 @@ params:
   load_path: nn/Ant_brax.pth
 
   config:
-    name: 'Ant_brax_001'
+    name: 'Ant_brax'
     env_name: brax
     multi_gpu: False
     ppo: True
+    mixed_precision: True
     normalize_input: True
     normalize_value: True
     reward_shaper:
-      scale_value: 0.01
+      scale_value: 1.0
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
