@@ -27,7 +27,7 @@ class DiambraEnv(gym.Env):
         env_kwargs["player"] = "Random"
 
         env_kwargs["difficulty"] = 3
-        env_kwargs["characters"]  = [["Random", "Random"], ["Random", "Random"]]
+        env_kwargs["characters"]  = [["Raidou", "Random"], ["Raidou", "Random"]]
         env_kwargs["charOutfits"] = [2, 2]
 
         gym_kwargs = {}
