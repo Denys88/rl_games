@@ -2,6 +2,8 @@ import numpy as np
 import argparse, copy, os, yaml
 import ray, signal
 
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 
 def exit_gracefully(signum, frame):
     ray.shutdown()
@@ -36,7 +38,7 @@ if __name__ == '__main__':
             from rl_games.torch_runner import Runner
 
         ray.init(object_store_memory=1024*1024*1000)
-        signal.signal(signal.SIGINT, exit_gracefully)
+        #signal.signal(signal.SIGINT, exit_gracefully)
 
         runner = Runner()
         try:
