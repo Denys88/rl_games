@@ -237,6 +237,12 @@ class CategoricalMasked(torch.distributions.Categorical):
             logits = torch.where(self.masks, logits, torch.tensor(-1e+8).to(self.device))
             super(CategoricalMasked, self).__init__(probs, logits, validate_args)
     
+    def rsample(self):
+        u = torch.distributions.Uniform(low=torch.zeros_like(self.logits, device = self.logits.device), high=torch.ones_like(self.logits, device = self.logits.device)).sample()
+        #print(u.size(), self.logits.size())
+        rand_logits = self.logits -(-u.log()).log()
+        return torch.max(rand_logits, axis=-1)[1]
+
     def entropy(self):
         if self.masks is None:
             return super(CategoricalMasked, self).entropy()

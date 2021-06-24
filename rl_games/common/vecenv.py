@@ -280,3 +280,4 @@ register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(con
 
 from rl_games.envs.brax import BraxEnv
 register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
+
