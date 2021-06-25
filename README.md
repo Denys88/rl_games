@@ -1,4 +1,4 @@
-# Basic RL Algorithms Implementations
+# RL Games: High performance RL library  
 
 [Starcraft 2 Multi Agents](docs/SMAC.md)  
 [Isaac Gym](docs/ISAAC_GYM.md)  

@@ -32,14 +32,14 @@
 FPS in these plots is calculated on per env basis except MMM2 (it was scaled by number of agents which is 10), to get a win rate per number of environmental steps info, the same as used in plots in QMIX, MAVEN, QTRAN or Deep Coordination Graphs (https://arxiv.org/pdf/1910.00091.pdf) papers FPS numbers under the horizontal axis should be devided by number of agents in player's team.
 
 * 2m_vs_1z:
-![2m_vs_1z](docs/pictures/smac/2m_vs_1z.png)
+![2m_vs_1z](pictures/smac/2m_vs_1z.png)
 * 3s5z_vs_3s6z:
-![3s5z_vs_3s6z](docs/pictures/smac/3s5z_vs_3s6z.png)
+![3s5z_vs_3s6z](pictures/smac/3s5z_vs_3s6z.png)
 * 3s_vs_5z:
-![3s_vs_5z](docs/pictures/smac/3s_vs_5z.png)
+![3s_vs_5z](pictures/smac/3s_vs_5z.png)
 * corridor:
-![corridor](docs/pictures/smac/corridor.png)
+![corridor](pictures/smac/corridor.png)
 * 5m_vs_6m:
-![5m_vs_6m](docs/pictures/smac/5m_vs_6m.png)
+![5m_vs_6m](pictures/smac/5m_vs_6m.png)
 * MMM2:
-![MMM2](docs/pictures/smac/MMM2.png)
+![MMM2](pictures/smac/MMM2.png)
