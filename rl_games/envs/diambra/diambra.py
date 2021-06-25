@@ -12,6 +12,8 @@ class DiambraEnv(gym.Env):
 
         self.difficulty = kwargs.pop('difficulty', 3)
         self.env_path = kwargs.pop('env_path', "/home/trrrrr/Documents/github/ml/diambra/DIAMBRAenvironment-main")
+        self.character = kwargs.pop('character', 'Raidou')
+        self.attacks_buttons = kwargs.pop('attacks_buttons', False)
         self._game_num = 0
         self.n_agents = 1
         self.rank = random.randint(0, 100500)
@@ -29,7 +31,7 @@ class DiambraEnv(gym.Env):
         env_kwargs["player"] = "Random"
 
         env_kwargs["difficulty"] = self.difficulty
-        env_kwargs["characters"]  = [["Raidou", "Random"], ["Raidou", "Random"]]
+        env_kwargs["characters"]  = [[self.character, "Random"], [self.character, "Random"]]
         env_kwargs["charOutfits"] = [2, 2]
 
         gym_kwargs = {}
@@ -38,8 +40,8 @@ class DiambraEnv(gym.Env):
         gym_kwargs["show_final"]            = False
         gym_kwargs["gamePads"]              = [None, None]
         gym_kwargs["actionSpace"]           = ["discrete", "multiDiscrete"]
-        gym_kwargs["attackButCombinations"] = [False, False]
-        #gym_kwargs["attackButCombinations"] = [True, True]
+        #gym_kwargs["attackButCombinations"] = [False, False]
+        gym_kwargs["attackButCombinations"] = [self.attacks_buttons, self.attacks_buttons]
         gym_kwargs["actBufLen"]             = 12
         wrapper_kwargs = {}
         wrapper_kwargs["hwc_obs_resize"]    = [128, 128, 1]

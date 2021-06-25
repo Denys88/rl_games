@@ -1,5 +1,6 @@
 # RL Games: High performance RL library  
 
+## Some results on interest
 [Starcraft 2 Multi Agents](docs/SMAC.md)  
 [Isaac Gym](docs/ISAAC_GYM.md)  
 [BRAX](docs/BRAX.md)  
@@ -10,9 +11,8 @@ Implemented in Pytorch:
 * Asymmetric PPO
 * Only GPU pipeline
 * Masked actions supported
-* Multidiscrete 
 
- Implemented in Tensorflow 1.x (not supported now):
+ Implemented in Tensorflow 1.x (not updates now):
 * Rainbow DQN
 * A2C
 * PPO
