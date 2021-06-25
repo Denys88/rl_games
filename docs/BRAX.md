@@ -11,5 +11,5 @@
 * **Humanoid** fps step: 1244450.3 fps total: 661064.5
 
 ## Results:  
-![Humanoid](pictures/brax/brax_humanoid.png)  
-![Ant](pictures/brax/brax_ant.png)  
+![Humanoid](docs/pictures/brax/brax_humanoid.png)  
+![Ant](docs/pictures/brax/brax_ant.png)  
