@@ -15,11 +15,11 @@
 
 # How to run configs:
 # Pytorch
-* python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
+* ```python runner.py --train --file rl_games/configs/smac/3m_torch.yaml```
+* ```python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'```
 # Tensorflow
-* python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
+* ```python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml```
+* ```python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'```
 * tensorboard --logdir runs
 # Results on some environments:
 * 2m_vs_1z took near 2 minutes to achive 100% WR
