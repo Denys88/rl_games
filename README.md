@@ -8,16 +8,15 @@
 ## Some results on interesting environments  
 
 [Starcraft 2 Multi Agents](docs/SMAC.md)  
-[Isaac Gym](docs/ISAAC_GYM.md)  
+[NVIDIA Isaac Gym](docs/ISAAC_GYM.md)  
 [BRAX](docs/BRAX.md)  
 [Old TF1.x results](docs/BRAX.md)  
 
 Implemented in Pytorch:
 
-* PPO
-* Asymmetric PPO
-* Only GPU pipeline
-* Masked actions supported
+* PPO with the support of asymmetric actor-critic variant
+* Support of end-to-end GPU training pipeline
+* Masked actions support
 
  Implemented in Tensorflow 1.x (not updates now):
 
@@ -25,6 +24,10 @@ Implemented in Pytorch:
 * A2C
 * PPO
 
+# Installation
+TODO
+
+# Training
 How to run and play simple atari pong:
 ```python runner.py --train --file 'rl_games/configs/atari/ppo_pong.yaml' ```
 ```python runner.py --play --file 'rl_games/configs/atari/ppo_pong.yaml' --checkpoint 'nn/PongNoFrameskip.pth'```  
