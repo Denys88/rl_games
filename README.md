@@ -27,7 +27,7 @@ Implemented in Pytorch:
 TODO
 
 # Training
-How to run and play simple atari pong:
+How to run and play simple atari pong:  
 ```python runner.py --train --file 'rl_games/configs/atari/ppo_pong.yaml' ```
 ```python runner.py --play --file 'rl_games/configs/atari/ppo_pong.yaml' --checkpoint 'nn/PongNoFrameskip.pth'```  
 
