@@ -2,15 +2,14 @@
 
 ## Papers and related links
 
-* <https://s2r2-ig.github.io/>
 * <https://arxiv.org/abs/2011.09533>
 
 ## Some results on interesting environments  
 
-[Starcraft 2 Multi Agents](docs/SMAC.md)  
-[NVIDIA Isaac Gym](docs/ISAAC_GYM.md)  
-[BRAX](docs/BRAX.md)  
-[Old TF1.x results](docs/BRAX.md)  
+* [Starcraft 2 Multi Agents](docs/SMAC.md)  
+* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)  
+* [BRAX](docs/BRAX.md)  
+* [Old TF1.x results](docs/BRAX.md)  
 
 Implemented in Pytorch:
 
