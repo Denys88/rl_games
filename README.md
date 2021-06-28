@@ -34,31 +34,29 @@ Or:
 
 # Training
 How to run and play simple atari pong:  
-```python runner.py --train --file 'rl_games/configs/atari/ppo_pong.yaml' ```
-```python runner.py --play --file 'rl_games/configs/atari/ppo_pong.yaml' --checkpoint 'nn/PongNoFrameskip.pth'```  
+```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```  
+```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```  
 
-Brax Ant env:
-```python runner.py --train --file 'rl_games/configs/brax/ppo_ant.yaml' ```
-```python runner.py --play --file 'rl_games/configs/atari/ppo_ant.yaml' --checkpoint 'nn/Ant_brax.pth'``` 
+Brax Ant env:  
+```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```  
+```python runner.py --play --file rl_games/configs/atari/ppo_ant.yaml --checkpoint nn/Ant_brax.pth``` 
 
 NVIDIA Isaac Gym
 
-After loading and installation from https://developer.nvidia.com/isaac-gym run from 'python/rlgpu' directory:
+Download and follow the installation instructions from https://developer.nvidia.com/isaac-gym  
+Run from ```python/rlgpu``` directory:
 
-Ant:
+Ant:  
+```python rlg_train.py --task Ant --headless```  
+```python rlg_train.py --task Ant --play --checkpoint nn/Ant.pth --num_envs 100``` 
 
-```python rlg_train.py --task Ant --headless```
-```python rlg_train.py --task Ant --play --checkpoint 'nn/Ant.pth' --num_envs 100``` 
+Humanoid:  
+```python rlg_train.py --task Humanoid --headless```  
+```python rlg_train.py --task Humanoid --play --checkpoint nn/Humanoid.pth --num_envs 100``` 
 
-Humanoid:
-
-```python rlg_train.py --task Humanoid --headless```
-```python rlg_train.py --task Humanoid --play --checkpoint 'nn/Humanoid.pth' --num_envs 100``` 
-
-Shadow Hand block orientation task:
-
-```python rlg_train.py --task ShadowHand --headless```
-```python rlg_train.py --task ShadowHand --play --checkpoint 'nn/ShadowHand.pth' --num_envs 100``` 
+Shadow Hand block orientation task:  
+```python rlg_train.py --task ShadowHand --headless```  
+```python rlg_train.py --task ShadowHand --play --checkpoint nn/ShadowHand.pth --num_envs 100``` 
 
 # Troubleshouting
 
