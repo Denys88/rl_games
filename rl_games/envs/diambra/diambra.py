@@ -13,6 +13,7 @@ class DiambraEnv(gym.Env):
         self.difficulty = kwargs.pop('difficulty', 3)
         self.env_path = kwargs.pop('env_path', "/home/trrrrr/Documents/github/ml/diambra/DIAMBRAenvironment-main")
         self.character = kwargs.pop('character', 'Raidou')
+        self.frame_stack = kwargs.pop('frame_stack', 3)
         self.attacks_buttons = kwargs.pop('attacks_buttons', False)
         self._game_num = 0
         self.n_agents = 1
@@ -47,7 +48,7 @@ class DiambraEnv(gym.Env):
         wrapper_kwargs["hwc_obs_resize"]    = [128, 128, 1]
         wrapper_kwargs["normalize_rewards"] = True
         wrapper_kwargs["clip_rewards"]      = False
-        wrapper_kwargs["frame_stack"]       = 3
+        wrapper_kwargs["frame_stack"]       = self.frame_stack
         wrapper_kwargs["dilation"]          = 1
         wrapper_kwargs["scale"]             = True
         wrapper_kwargs["scale_mod"]         = 0
@@ -86,4 +87,3 @@ class DiambraEnv(gym.Env):
     
     def has_action_mask(self):
         return False
-
