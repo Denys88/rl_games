@@ -11,6 +11,10 @@
 * [BRAX](docs/BRAX.md)  
 * [Old TF1.x results](docs/BRAX.md)  
 
+## Config file  
+
+* [Configuration](docs/CONFIG_PARAMS.md)  
+
 Implemented in Pytorch:
 
 * PPO with the support of asymmetric actor-critic variant
