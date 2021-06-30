@@ -154,6 +154,8 @@ class A2CBase:
         self.epoch_num = 0
 
         self.entropy_coef = self.config['entropy_coef']
+
+        self.value_bootstrap = self.config.get('value_bootstrap')
         if self.rank == 0:
             self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         else:
@@ -522,14 +524,17 @@ class A2CBase:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
             shaped_rewards = self.rewards_shaper(rewards)
-            self.experience_buffer.update_data('rewards', n, shaped_rewards)
-            
 
+            if self.value_bootstrap and 'time_outs' in infos:
+                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+            
+            self.experience_buffer.update_data('rewards', n, shaped_rewards)
+    
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
-  
+            
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
             self.algo_observer.process_infos(infos, done_indices)
@@ -599,8 +604,11 @@ class A2CBase:
                 self.experience_buffer.update_data_rnn('states', indices[::self.num_agents] ,play_mask[::self.num_agents]//self.num_agents, self.obs['states'])
 
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
-
             shaped_rewards = self.rewards_shaper(rewards)
+
+            if self.value_bootstrap and 'time_outs' in infos:
+                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()          
+            
             self.experience_buffer.update_data_rnn('rewards', indices, play_mask, shaped_rewards)
 
             self.current_rewards += rewards

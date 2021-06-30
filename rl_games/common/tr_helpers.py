@@ -35,15 +35,28 @@ class DefaultRewardsShaper:
 
 
 def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
+    def stack(v):
+        if len(np.shape(v)) == 1:
+            return np.array(v)
+        else: 
+            return np.stack(v)
+
+    def concatenate(v):
+        if len(np.shape(v)) == 1:
+            return np.array(v)
+        else: 
+            return np.concatenate(v)
+
     dicts_len = len(dicts)
     if(dicts_len <= 1):
         return dicts
     res = defaultdict(list)
     { res[key].append(sub[key]) for sub in dicts for key in sub }
     if add_batch_dim:
-        concat_func = np.stack
+        concat_func = stack
     else:
-        concat_func = np.concatenate
+        concat_func = concatenate
+
     res = {k : concat_func(v)  for k,v in res.items()}
     return res
 
