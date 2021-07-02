@@ -1,3 +1,5 @@
+import os
+
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
@@ -154,8 +156,20 @@ class A2CBase:
         self.epoch_num = 0
 
         self.entropy_coef = self.config['entropy_coef']
+
+        self.train_dir = config['train_dir']
+        self.experiment_name = config['name'] + datetime.now().strftime("_%d-%H-%M-%S")
+        self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
+        self.nn_dir = os.path.join(self.experiment_dir, 'nn')
+        self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
+
+        os.makedirs(self.train_dir, exist_ok=True)
+        os.makedirs(self.experiment_dir, exist_ok=True)
+        os.makedirs(self.nn_dir, exist_ok=True)
+        os.makedirs(self.summaries_dir, exist_ok=True)
+
         if self.rank == 0:
-            self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+            self.writer = SummaryWriter(self.summaries_dir)
         else:
             self.writer = None
 
@@ -840,21 +854,23 @@ class DiscreteA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
+                    checkpoint_name = self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)
+
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
-                            self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
-                        self.save("./nn/" + self.config['name'])
+                        self.save(os.path.join(self.nn_dir, self.config['name']))
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
-                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num                               
                 update_time = 0
@@ -1074,21 +1090,23 @@ class ContinuousA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
+                    checkpoint_name = self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)
+
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
-                            self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
-                        self.save("./nn/" + self.config['name'])
+                        self.save(os.path.join(self.nn_dir, self.config['name']))
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            self.save("./nn/" + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
-                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num
 
