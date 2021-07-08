@@ -38,6 +38,23 @@ def rescale_actions(low, high, action):
     return scaled_action
 
 
+class IntervalSummaryWriter:
+    def __init__(self, summary_writer, summary_interval_sec=60):
+        self.writer = summary_writer
+        self.summary_interval_sec = summary_interval_sec
+        self.last_write_for_tag = dict()
+
+    def add_scalar(self, tag, *args, **kwargs):
+        last_write = self.last_write_for_tag.get(tag, 0)
+        seconds_since_last_write = time.time() - last_write
+        if seconds_since_last_write >= self.summary_interval_sec:
+            self.writer.add_scalar(tag, *args, **kwargs)
+            self.last_write_for_tag[tag] = time.time()
+
+    def __getattr__(self, attr):
+        return getattr(self.writer, attr)
+
+
 class A2CBase:
     def __init__(self, base_name, config):
         self.config = config
@@ -169,7 +186,8 @@ class A2CBase:
         os.makedirs(self.summaries_dir, exist_ok=True)
 
         if self.rank == 0:
-            self.writer = SummaryWriter(self.summaries_dir)
+            writer = SummaryWriter(self.summaries_dir)
+            self.writer = IntervalSummaryWriter(writer)
         else:
             self.writer = None
 
