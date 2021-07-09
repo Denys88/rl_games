@@ -39,15 +39,35 @@ def rescale_actions(low, high, action):
 
 
 class IntervalSummaryWriter:
-    def __init__(self, summary_writer, summary_interval_sec=60):
+    def __init__(self, summary_writer):
+        self.experiment_start = time.time()
+
+        self.interval_sec_min = 2
+        self.interval_sec_max = 60
+        self.last_interval = self.interval_sec_min
+        self.summaries_relative_step = 1.0 / 200
+
         self.writer = summary_writer
-        self.summary_interval_sec = summary_interval_sec
         self.last_write_for_tag = dict()
+
+    def _calc_interval(self):
+        """Write summaries more often in the beginning of the run."""
+        if self.last_interval >= self.interval_sec_max:
+            return self.last_interval
+
+        seconds_since_start = time.time() - self.experiment_start
+        interval = seconds_since_start * self.summaries_relative_step
+        interval = min(interval, self.interval_sec_max)
+        interval = max(interval, self.interval_sec_min)
+        self.last_interval = interval
+
+        return interval
 
     def add_scalar(self, tag, *args, **kwargs):
         last_write = self.last_write_for_tag.get(tag, 0)
         seconds_since_last_write = time.time() - last_write
-        if seconds_since_last_write >= self.summary_interval_sec:
+        interval = self._calc_interval()
+        if seconds_since_last_write >= interval:
             self.writer.add_scalar(tag, *args, **kwargs)
             self.last_write_for_tag[tag] = time.time()
 
