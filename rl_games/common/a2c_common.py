@@ -795,6 +795,9 @@ class DiscreteA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             
+            # cleaning memory to optimize space
+            self.dataset.update_values_dict(None)
+
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
@@ -1028,6 +1031,9 @@ class ContinuousA2CBase(A2CBase):
             play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
             frame = self.frame
+
+            # cleaning memory to optimize space
+            self.dataset.update_values_dict(None)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
 
