@@ -11,7 +11,7 @@
 * Miniepoch num was set to 1, higher numbers didn't work
 * Simple MLP networks didnot work good on hard envs
 
-[![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
+[![Watch the video](pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
 
 # How to run configs:
 # Pytorch
