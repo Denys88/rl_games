@@ -183,6 +183,22 @@ class A2CBase:
         # soft augmentation not yet supported
         assert not self.has_soft_aug
 
+    def write_stats(self, total_time, epoch_num, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
+        self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
+        self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
+        self.writer.add_scalar('performance/update_time', update_time, frame)
+        self.writer.add_scalar('performance/play_time', play_time, frame)
+        self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
+        self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
+
+                
+        self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
+        self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+        self.writer.add_scalar('info/lr_mul', lr_mul, frame)
+        self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
+        self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
+        self.writer.add_scalar('info/epochs', epoch_num, frame)
+        self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
     def set_eval(self):
         self.model.eval()
@@ -815,18 +831,8 @@ class DiscreteA2CBase(A2CBase):
                     fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
-                self.writer.add_scalar('performance/update_time', update_time, frame)
-                self.writer.add_scalar('performance/play_time', play_time, frame)
-                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
-                self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
-                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
-                self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
-                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
-                self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
-                self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
-                self.writer.add_scalar('info/epochs', epoch_num, frame)
+                self.write_stats(total_time, epoch_num, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
+
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
@@ -1050,24 +1056,12 @@ class ContinuousA2CBase(A2CBase):
                     fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-                self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
-                self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
-                self.writer.add_scalar('performance/update_time', update_time, frame)
-                self.writer.add_scalar('performance/play_time', play_time, frame)
-                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
-                self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
-
+                self.write_stats(total_time, epoch_num, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
                 if len(b_losses) > 0:
                     self.writer.add_scalar('losses/bounds_loss', torch_ext.mean_list(b_losses).item(), frame)
-                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
-                self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
-                self.writer.add_scalar('info/lr_mul', lr_mul, frame)
-                self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
-                self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
-                self.writer.add_scalar('info/epochs', epoch_num, frame)
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
-                self.algo_observer.after_print_stats(frame, epoch_num, total_time)
+                
                 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
@@ -1104,3 +1098,4 @@ class ContinuousA2CBase(A2CBase):
                     return self.last_mean_rewards, epoch_num
 
                 update_time = 0
+
