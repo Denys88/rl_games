@@ -50,13 +50,13 @@ params:
       clip_value: False
       num_actors: 16
       steps_num: 256
-      minibatch_size: 1024
+      minibatch_size: 256
       mini_epochs: 4
       critic_coef: 2
       schedule_type: 'standard'
       lr_schedule: adaptive
-      lr_threshold: 0.008
-      normalize_input: False
+      lr_threshold: 0.005
+      normalize_input: True
       bounds_loss_coef: 0.00
       max_epochs: 10000
       normalize_value: True

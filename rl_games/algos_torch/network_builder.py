@@ -302,7 +302,12 @@ class A2CBuilder(NetworkBuilder):
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
             if self.has_cnn:
-                obs = obs.permute((0, 3, 1, 2))
+                # for obs shape 4
+                # input expected shape (B, W, H, C)
+                # convert to (B, C, W, H)
+                if len(obs.shape) == 4:
+                    obs = obs.permute((0, 3, 1, 2))
+
             if self.separate:
                 a_out = c_out = obs
                 a_out = self.actor_cnn(a_out)

@@ -17,7 +17,7 @@ setup(name='rl_games',
             # this setup is only for pytorch
             # 
             'gym>=0.17.2',
-            'torch>=1.7.1',
+            'torch>=1.7.0',
             'numpy>=1.16.0',
             'ray>=1.1.0',
             'tensorboard>=1.14.0',

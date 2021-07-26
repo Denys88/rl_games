@@ -108,18 +108,22 @@ class Runner:
                 print('Starting experiment number: ' + str(exp_num))
                 self.reset()
                 self.load_config(exp)
-                self.config['features'] = {
-                        'observer' : self.algo_observer
-                    }
+                if 'features' not in self.config:
+                    self.config['features'] = {}
+                self.config['features']['observer'] = self.algo_observer
+                #if 'soft_augmentation' in self.config['features']:
+                #    self.config['features']['soft_augmentation'] = SoftAugmentation(**self.config['features']['soft_augmentation'])
                 agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
                 self.experiment.set_results(*agent.train())
                 exp = self.experiment.get_next_config()
         else:
             self.reset()
             self.load_config(self.default_config)
-            self.config['features'] = {
-                'observer' : self.algo_observer
-            }
+            if 'features' not in self.config:
+                self.config['features'] = {}
+            self.config['features']['observer'] = self.algo_observer
+            #if 'soft_augmentation' in self.config['features']:
+            #    self.config['features']['soft_augmentation'] = SoftAugmentation(**self.config['features']['soft_augmentation'])
             agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
             if self.load_check_point and (self.load_path is not None):
                 agent.restore(self.load_path)

@@ -47,7 +47,6 @@ class BasePlayer(object):
 
     def run(self, n_games=1000, n_game_life = 1, render= False):
         self.env = self.create_env()
-        import cv2
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
