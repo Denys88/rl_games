@@ -1,6 +1,7 @@
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
+from rl_games.envs.brax import create_brax_env
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
@@ -259,6 +260,11 @@ def create_multiwalker_env(**kwargs):
 
     return env
 
+def create_diambra_env(**kwargs):
+    from rl_games.envs.diambra.diambra import DiambraEnv
+    env = DiambraEnv(**kwargs)
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -415,6 +421,14 @@ configurations = {
     'multiwalker_env' : {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
         'vecenv_type' : 'RAY'
+    },
+    'diambra': {
+        'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
+        'vecenv_type': 'RAY'
+    },
+    'brax' : {
+        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'vecenv_type': 'BRAX' 
     },
 }
 

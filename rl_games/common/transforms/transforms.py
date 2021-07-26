@@ -9,8 +9,8 @@ class DatasetTransform(nn.Module):
         return dataset
 
 
-class AtariDatasetTransform(DatasetTransform):
-    def __init__(self):
+class ImageDatasetTransform(DatasetTransform):
+    def __init__(self, **kwargs):
         super().__init__()
         import kornia
         self.transform = torch.nn.Sequential(

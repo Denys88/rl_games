@@ -62,9 +62,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if 'phasic_policy_gradients' in self.config:
             self.has_phasic_policy_gradients = True
             self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
-        self.has_value_loss =  (self.has_central_value \
+        self.has_value_loss = (self.has_central_value \
                                 and self.use_experimental_cv) \
-                                and not self.has_phasic_policy_gradients 
+                                or not self.has_phasic_policy_gradients 
         self.algo_observer.after_init(self)
     def update_epoch(self):
         self.epoch_num += 1
@@ -82,7 +82,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         assert False
 
     def calc_gradients(self, input_dict):
-        self.set_train()
         value_preds_batch = input_dict['old_values']
         old_action_log_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
