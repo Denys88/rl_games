@@ -1,0 +1,69 @@
+params:  
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: glorot_uniform_initializer
+          gain: 1
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+
+    mlp:
+      units: [400, 200, 100]
+      activation: relu
+      
+      initializer:
+        name: glorot_uniform_initializer
+        gain: 1
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
+    log_std_bounds: [-20, 20]
+
+  load_checkpoint: False
+  load_path: nn/Humanoid.pth
+
+  config:
+    name: 'Humanoid_brax'
+    env_name : brax
+    normalize_input: True
+    reward_shaper:
+      scale_value: 0.1
+    score_to_win: 20000
+    max_epochs: 10000
+    save_best_after: 10
+    save_frequency: 10
+    discount: 0.99
+    init_temperature: 1
+    num_steps_per_episode: 1000
+    alpha_lr: 0.0003
+    alpha_betas: [0.9, 0.999]
+    alpha_threshold: 0.0005
+    actor_lr: 0.0006
+    actor_betas: [0.9, 0.999]
+    actor_update_frequency: 1
+    critic_lr: 0.0006
+    critic_betas: [0.9, 0.999]
+    critic_tau: 0.005 
+    critic_target_update_frequency: 5
+    batch_size: 32768
+    learnable_temperature: true
+    num_seed_steps: 5
+    replay_buffer_size: 1048576
+    num_actors: 4096
+
+    env_config:
+      env_name: 'humanoid'
