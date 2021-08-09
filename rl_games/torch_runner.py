@@ -136,7 +136,7 @@ class Runner:
         return self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
 
     def run(self, args):
-        if 'checkpoint' in args:
+        if 'checkpoint' in args and args['checkpoint'] is not None:
             if len(args['checkpoint']) > 0:
                 self.load_path = args['checkpoint']
 

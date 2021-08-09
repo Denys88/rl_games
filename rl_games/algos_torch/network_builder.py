@@ -10,7 +10,7 @@ import torch.optim as optim
 import math
 import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
-from rl_games.algos_torch.sac_helper import DiagGaussianActor, DoubleQCritic, SquashedNormal
+from rl_games.algos_torch.sac_helper import  SquashedNormal
 
 
 def _create_initializer(func, **kwargs):
@@ -777,6 +777,57 @@ class A2CResnetBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         net = A2CResnetBuilder.Network(self.params, **kwargs)
         return net
+
+class DiagGaussianActor(NetworkBuilder.BaseNetwork):
+    """torch.distributions implementation of an diagonal Gaussian policy."""
+    def __init__(self, output_dim, log_std_bounds, **mlp_args):
+        super().__init__()
+
+        self.log_std_bounds = log_std_bounds
+
+        self.trunk = self._build_mlp(**mlp_args)
+        last_layer = list(self.trunk.children())[-2].out_features
+        self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
+
+    def forward(self, obs):
+        mu, log_std = self.trunk(obs).chunk(2, dim=-1)
+
+        # constrain log_std inside [log_std_min, log_std_max]
+        log_std = torch.tanh(log_std)
+        log_std_min, log_std_max = self.log_std_bounds
+        log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std +
+                                                                     1)
+
+        std = log_std.exp()
+
+        # TODO: Refactor
+        dist = SquashedNormal(mu, std)
+        # Modify to only return mu and std
+        return dist
+
+class DoubleQCritic(NetworkBuilder.BaseNetwork):
+    """Critic network, employes double Q-learning."""
+    def __init__(self, output_dim, **mlp_args):
+        super().__init__()
+
+        self.Q1 = self._build_mlp(**mlp_args)
+        last_layer = list(self.Q1.children())[-2].out_features
+        self.Q1 = nn.Sequential(*list(self.Q1.children()), nn.Linear(last_layer, output_dim))
+
+        self.Q2 = self._build_mlp(**mlp_args)
+        last_layer = list(self.Q2.children())[-2].out_features
+        self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
+
+
+    def forward(self, obs, action):
+        assert obs.size(0) == action.size(0)
+
+        obs_action = torch.cat([obs, action], dim=-1)
+        q1 = self.Q1(obs_action)
+        q2 = self.Q2(obs_action)
+
+        return q1, q2
+
 
 class SACBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
