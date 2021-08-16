@@ -52,6 +52,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
+                'max_epochs' : self.max_epochs,
                 'multi_gpu' : self.multi_gpu
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)

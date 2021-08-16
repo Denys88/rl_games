@@ -899,7 +899,8 @@ class ContinuousA2CBase(A2CBase):
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
             else:
-                batch_dict = self.play_steps() 
+                batch_dict = self.play_steps()
+
         play_time_end = time.time()
         update_time_start = time.time()
         rnn_masks = batch_dict.get('rnn_masks', None)
