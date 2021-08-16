@@ -28,10 +28,10 @@ class CentralValueTrain(nn.Module):
 
         self.config = config
         self.model = model.build('cvalue', **state_config)
-        self.lr = config['lr']
+        self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
         if self.linear_lr:
-            self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
+            self.scheduler = schedulers.LinearScheduler(self.lr, 
                 max_steps=self.max_epochs, 
                 apply_to_entropy=False,
                 start_entropy_coef=0)
