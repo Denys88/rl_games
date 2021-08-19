@@ -199,7 +199,7 @@ class A2CBase:
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
 
@@ -496,7 +496,7 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -530,6 +530,10 @@ class A2CBase:
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
         state['frame'] = self.frame
+
+        # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
+        # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
+        state['last_mean_rewards'] = self.last_mean_rewards
         return state
 
     def set_full_state_weights(self, weights):
@@ -539,6 +543,7 @@ class A2CBase:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
         self.frame = weights.get('frame', 0)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -859,7 +864,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
         rep_count = 0
@@ -906,6 +911,8 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    self.mean_rewards = mean_rewards
+
                     for i in range(self.value_size):
                         self.writer.add_scalar('rewards{0}/frame'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar('rewards{0}/iter'.format(i), mean_rewards[i], epoch_num)
