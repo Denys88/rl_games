@@ -182,14 +182,13 @@ class CentralValueTrain(nn.Module):
                 loss += self.train_critic(self.dataset[idx])
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
-        if self.writter != None:
-            self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-        
         self.epoch_num += 1
         self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
         self.update_lr(self.lr)
-        
         self.frame += self.batch_size
+        if self.writter != None:
+            self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
         return avg_loss
 
     def calc_gradients(self, batch):
