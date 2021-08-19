@@ -43,7 +43,7 @@ class IntervalSummaryWriter:
         self.experiment_start = time.time()
 
         self.interval_sec_min = 2
-        self.interval_sec_max = 60
+        self.interval_sec_max = 300
         self.last_interval = self.interval_sec_min
         self.summaries_relative_step = 1.0 / 200
 
@@ -63,12 +63,17 @@ class IntervalSummaryWriter:
 
         return interval
 
-    def add_scalar(self, tag, *args, **kwargs):
+    def add_scalar(self, tag, value, step, *args, **kwargs):
+        if step == 0:
+            # removes faulty summaries that appear after the experiment restart
+            # print('Skip summaries with step=0')
+            return
+
         last_write = self.last_write_for_tag.get(tag, 0)
         seconds_since_last_write = time.time() - last_write
         interval = self._calc_interval()
         if seconds_since_last_write >= interval:
-            self.writer.add_scalar(tag, *args, **kwargs)
+            self.writer.add_scalar(tag, value, step, *args, **kwargs)
             self.last_write_for_tag[tag] = time.time()
 
     def __getattr__(self, attr):
@@ -195,7 +200,18 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
 
         self.train_dir = config['train_dir']
-        self.experiment_name = config['name'] + datetime.now().strftime("_%d-%H-%M-%S")
+
+        pbt_str = ''
+        if config['pbt']:
+            pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
+
+        force_experiment_name = config.get('force_experiment_name', '')
+        if force_experiment_name:
+            print(f'Exact experiment name requested from command line: {force_experiment_name}')
+            self.experiment_name = force_experiment_name
+        else:
+            self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
+
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
@@ -231,7 +247,6 @@ class A2CBase:
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
         assert not self.has_soft_aug
-
 
     def set_eval(self):
         self.model.eval()
@@ -502,9 +517,10 @@ class A2CBase:
     def get_full_state_weights(self):
         state = self.get_weights()
         state['epoch'] = self.epoch_num
-        state['optimizer'] = self.optimizer.state_dict()      
+        state['optimizer'] = self.optimizer.state_dict()
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+        state['frame'] = self.frame
         return state
 
     def set_full_state_weights(self, weights):
@@ -513,6 +529,7 @@ class A2CBase:
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
+        self.frame = weights.get('frame', 0)
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -837,7 +854,7 @@ class DiscreteA2CBase(A2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        self.frame = 0
+        # self.frame = 0  # loading from checkpoint
         self.obs = self.env_reset()
 
         if self.multi_gpu:
@@ -1069,7 +1086,6 @@ class ContinuousA2CBase(A2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
