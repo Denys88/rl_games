@@ -39,13 +39,15 @@ def rescale_actions(low, high, action):
 
 
 class IntervalSummaryWriter:
-    def __init__(self, summary_writer):
+    def __init__(self, summary_writer, defer_summaries_sec=5):
         self.experiment_start = time.time()
 
         self.interval_sec_min = 2
         self.interval_sec_max = 300
         self.last_interval = self.interval_sec_min
         self.summaries_relative_step = 1.0 / 200
+
+        self.defer_summaries_sec = defer_summaries_sec
 
         self.writer = summary_writer
         self.last_write_for_tag = dict()
@@ -67,6 +69,10 @@ class IntervalSummaryWriter:
         if step == 0:
             # removes faulty summaries that appear after the experiment restart
             # print('Skip summaries with step=0')
+            return
+
+        seconds_since_start = time.time() - self.experiment_start
+        if seconds_since_start < self.defer_summaries_sec:
             return
 
         last_write = self.last_write_for_tag.get(tag, 0)
@@ -222,8 +228,11 @@ class A2CBase:
         os.makedirs(self.summaries_dir, exist_ok=True)
 
         if self.rank == 0:
+            # prevents noisy summaries when experiments are restarted
+            defer_summaries_sec = 60 if config['pbt'] else 5
+
             writer = SummaryWriter(self.summaries_dir)
-            self.writer = IntervalSummaryWriter(writer)
+            self.writer = IntervalSummaryWriter(writer, defer_summaries_sec=defer_summaries_sec)
         else:
             self.writer = None
 
