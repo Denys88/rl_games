@@ -1,0 +1,65 @@
+params:  
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: variance_scaling_initializer
+          scale: 0.02
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 128, 64]
+      activation: elu
+      
+      initializer:
+        name: default
+        scale: 2
+      regularizer:
+        name:  'None' #'l2_regularizer'
+    log_std_bounds: [-5, 2]
+
+  load_checkpoint: False
+  load_path: nn/Ant.pth
+
+  config:
+    name: 'Ant_brax'
+    env_name : brax
+    normalize_input: True
+    reward_shaper:
+      scale_value: 0.01
+    device: cuda
+    max_epochs: 2000000
+    num_steps_per_episode: 1000
+    save_best_after: 100
+    save_frequency: 10000
+    discount: 0.99
+    init_temperature: 1
+    alpha_lr: 0.001
+    alpha_betas: [0.9, 0.999]
+    alpha_threshold: 0.0005
+    actor_lr: 0.001
+    actor_betas: [0.9, 0.999]
+    critic_lr: 0.001
+    critic_betas: [0.9, 0.999]
+    critic_tau: 0.005
+    batch_size: 8196
+    learnable_temperature: true
+    num_seed_steps: 5
+    replay_buffer_size: 1000000
+    num_actors: 512
+
+    env_config:
+      env_name: 'ant'

@@ -17,12 +17,15 @@ class ModelBuilder:
         self.model_factory.register_builder('multi_discrete_a2c', lambda network, **kwargs : models.ModelA2CMultiDiscrete(network))
         self.model_factory.register_builder('continuous_a2c', lambda network, **kwargs : models.ModelA2CContinuous(network))
         self.model_factory.register_builder('continuous_a2c_logstd', lambda network, **kwargs : models.ModelA2CContinuousLogStd(network))
+        self.model_factory.register_builder('soft_actor_critic', lambda network, **kwargs : models.ModelSACContinuous(network))
         #self.model_factory.register_builder('dqn', lambda network, **kwargs : models.AtariDQN(network))
 
         self.network_factory = object_factory.ObjectFactory()
         self.network_factory.set_builders(NETWORK_REGISTRY)
         self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
         self.network_factory.register_builder('resnet_actor_critic', lambda **kwargs : network_builder.A2CResnetBuilder())
+        self.network_factory.register_builder('rnd_curiosity', lambda **kwargs : network_builder.RNDCuriosityBuilder())
+        self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
 
     def load(self, params):
         self.model_name = params['model']['name']

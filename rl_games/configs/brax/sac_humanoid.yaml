@@ -1,0 +1,62 @@
+params:  
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: False
+    mlp:
+      units: [512, 256]
+      activation: relu
+      initializer:
+        name: default
+      regularizer:
+        name:  'None' #'l2_regularizer'
+    log_std_bounds: [-5, 2]
+
+  load_checkpoint: False
+  load_path: nn/Ant.pth
+
+  config:
+    name: 'humanoid_brax_sac'
+    env_name : brax
+    normalize_input: True
+    reward_shaper:
+      scale_value: 1
+    device: cuda
+    max_epochs: 2000000
+    num_steps_per_episode: 128
+    save_best_after: 100
+    save_frequency: 10000
+    gamma: 0.99
+    init_temperature: 1
+    alpha_lr: 0.0003
+    alpha_betas: [0.9, 0.999]
+    alpha_threshold: 0.0005
+    actor_lr: 0.0005
+    actor_betas: [0.9, 0.999]
+    critic_lr: 0.0005
+    critic_betas: [0.9, 0.999]
+    critic_tau: 0.005
+    batch_size: 2048
+    learnable_temperature: true
+    num_seed_steps: 2 # total steps: num_actors * num_steps_per_episode * num_seed_steps
+    replay_buffer_size: 1000000
+    num_actors: 64
+
+    env_config:
+      env_name: 'humanoid'
