@@ -274,7 +274,7 @@ class VectorizedReplayBuffer:
         actions = self.actions[idxs]
         rewards = self.rewards[idxs]
         next_obses = self.next_obses[idxs]
-        not_dones = ~self.dones[idxs]
+        not_dones = self.dones[idxs]
 
         return obses, actions, rewards, next_obses, not_dones
 
