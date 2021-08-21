@@ -41,6 +41,7 @@ params:
     actor_lr: 0.0001
     actor_betas: [0.9, 0.999]
     critic_lr: 0.0001
+
     critic_betas: [0.9, 0.999]
     critic_tau: 0.005
     batch_size: 2048
