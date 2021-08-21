@@ -55,6 +55,12 @@ class RayWorker:
     def set_weights(self, weights):
         self.env.update_weights(weights)
 
+    def can_concat_infos(self):
+        if hasattr(self.env, 'concat_infos'):
+            return self.env.concat_infos
+        else:
+            return False
+
     def get_env_info(self):
         info = {}
         observation_space = self.env.observation_space
@@ -74,7 +80,6 @@ class RayWorker:
             info['value_size'] = self.env.value_size
         if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
-
         return info
 
 
@@ -92,9 +97,10 @@ class RayVecEnv(IVecEnv):
 
         res = self.workers[0].get_env_info.remote()
         env_info = ray.get(res)
-
+        res = self.workers[0].can_concat_infos.remote()
+        can_concat_infos = ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
-        self.concat_infos = False
+        self.concat_infos = can_concat_infos
         self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
         self.state_type_dict = type(env_info.get('state_space')) is gym.spaces.Dict
         if self.num_agents == 1:
