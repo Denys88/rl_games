@@ -4,11 +4,6 @@ import ray, signal
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-
-def exit_gracefully(signum, frame):
-    ray.shutdown()
-
-
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-tf", "--tf", required=False, help="run tensorflow runner", action='store_true')
