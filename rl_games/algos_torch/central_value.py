@@ -5,16 +5,17 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common  import common_losses
 from rl_games.common import datasets
-
+from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
         self.num_actions = num_actions
         self.state_shape = state_shape
         self.value_size = value_size
+        self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
         self.truncate_grads = config.get('truncate_grads', False)
         state_config = {
@@ -27,7 +28,16 @@ class CentralValueTrain(nn.Module):
 
         self.config = config
         self.model = model.build('cvalue', **state_config)
-        self.lr = config['lr']
+        self.lr = float(config['learning_rate'])
+        self.linear_lr = config.get('lr_schedule') == 'linear'
+        if self.linear_lr:
+            self.scheduler = schedulers.LinearScheduler(self.lr, 
+                max_steps=self.max_epochs, 
+                apply_to_entropy=False,
+                start_entropy_coef=0)
+        else:
+            self.scheduler = schedulers.IdentityScheduler()
+        
         self.mini_epoch = config['mini_epochs']
         self.mini_batch = config['minibatch_size']
         self.num_minibatches = self.num_steps * self.num_actors // self.mini_batch
@@ -38,6 +48,7 @@ class CentralValueTrain(nn.Module):
         self.weight_decay = config.get('weight_decay', 0.0)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
         self.frame = 0
+        self.epoch_num = 0
         self.running_mean_std = None
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
@@ -60,12 +71,12 @@ class CentralValueTrain(nn.Module):
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_lr(self, lr):
-        '''
+
         if self.multi_gpu:
             lr_tensor = torch.tensor([lr])
             self.hvd.broadcast_value(lr_tensor, 'cv_learning_rate')
             lr = lr_tensor.item()
-        '''
+
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
@@ -143,7 +154,6 @@ class CentralValueTrain(nn.Module):
     def train_critic(self, input_dict):
         self.train()
         loss = self.calc_gradients(input_dict)
-
         return loss.item()
 
     def update_multiagent_tensors(self, value_preds, returns, actions, rnn_masks):
@@ -172,10 +182,13 @@ class CentralValueTrain(nn.Module):
                 loss += self.train_critic(self.dataset[idx])
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
+        self.epoch_num += 1
+        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
+        self.update_lr(self.lr)
+        self.frame += self.batch_size
         if self.writter != None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-
-        self.frame += self.batch_size
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
         return avg_loss
 
     def calc_gradients(self, batch):
