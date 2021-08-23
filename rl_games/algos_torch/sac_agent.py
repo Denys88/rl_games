@@ -63,15 +63,15 @@ class SACAgent:
 
         self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
                                                 lr=self.config['actor_lr'],
-                                                betas=self.config["actor_betas"])
+                                                betas=self.config.get("actor_betas", [0.9, 0.999]))
 
         self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
                                                  lr=self.config["critic_lr"],
-                                                 betas=self.config["critic_betas"])
+                                                 betas=self.config.get("critic_betas", [0.9, 0.999]))
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
                                                     lr=self.config["alpha_lr"],
-                                                    betas=self.config["alpha_betas"])
+                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]))
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape, 
         self.env_info['action_space'].shape, 

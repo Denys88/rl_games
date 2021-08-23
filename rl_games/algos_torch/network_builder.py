@@ -793,10 +793,11 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
         # constrain log_std inside [log_std_min, log_std_max]
-        log_std = torch.tanh(log_std)
+        #log_std = torch.tanh(log_std)
         log_std_min, log_std_max = self.log_std_bounds
-        log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std +
-                                                                     1)
+        log_std = torch.clamp(log_std, log_std_min, log_std_max)
+        #log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std +
+                                                                     #1)
 
         std = log_std.exp()
 
@@ -890,8 +891,8 @@ class SACBuilder(NetworkBuilder):
                         torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
-                    if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)    
+                    #if getattr(m, "bias", None) is not None:
+                    #    torch.nn.init.zeros_(m.bias)    
 
 
         def _build_critic(self, output_dim, **mlp_args):
