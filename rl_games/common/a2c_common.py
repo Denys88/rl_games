@@ -229,7 +229,7 @@ class A2CBase:
 
         if self.rank == 0:
             # prevents noisy summaries when experiments are restarted
-            defer_summaries_sec = 60 if config['pbt'] else 5
+            defer_summaries_sec = 20 if config['pbt'] else 5
 
             writer = SummaryWriter(self.summaries_dir)
             self.writer = IntervalSummaryWriter(writer, defer_summaries_sec=defer_summaries_sec)
@@ -509,7 +509,7 @@ class A2CBase:
         pass
 
     def train_epoch(self):
-        pass
+        self.vec_env.set_train_info(self.frame)
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
@@ -534,6 +534,10 @@ class A2CBase:
         # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
         state['last_mean_rewards'] = self.last_mean_rewards
+
+        env_state = self.vec_env.get_env_state()
+        state['env_state'] = env_state
+
         return state
 
     def set_full_state_weights(self, weights):
@@ -544,6 +548,9 @@ class A2CBase:
         self.optimizer.load_state_dict(weights['optimizer'])
         self.frame = weights.get('frame', 0)
         self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
+
+        env_state = weights.get('env_state', None)
+        self.vec_env.set_env_state(env_state)
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -762,8 +769,11 @@ class DiscreteA2CBase(A2CBase):
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
+        super().train_epoch()
+
         self.set_eval()
         play_time_start = time.time()
+
         with torch.no_grad():
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
@@ -881,11 +891,14 @@ class DiscreteA2CBase(A2CBase):
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
+
+            self.frame += curr_frames
+
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
                 curr_frames = self.curr_frames
-                self.frame += curr_frames
+
                 frame = self.frame
                 if self.print_stats:
                     fps_step = curr_frames / scaled_play_time
@@ -973,6 +986,8 @@ class ContinuousA2CBase(A2CBase):
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
+        super().train_epoch()
+
         self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
