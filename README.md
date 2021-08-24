@@ -2,7 +2,8 @@
 
 ## Papers and related links
 
-* <https://arxiv.org/abs/2011.09533>
+* Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
+* Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 
 ## Some results on interesting environments  
 
