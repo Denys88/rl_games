@@ -88,7 +88,21 @@ class IntervalSummaryWriter:
 
 class A2CBase:
     def __init__(self, base_name, config):
+        pbt_str = ''
+        if config['pbt']:
+            pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
+        force_experiment_name = config.get('force_experiment_name', '')
+        if force_experiment_name:
+            print(f'Exact experiment name requested from command line: {force_experiment_name}')
+            self.experiment_name = force_experiment_name
+        else:
+            self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
+
         self.config = config
+
+        self.algo_observer = config['features']['observer']
+        self.algo_observer.before_init(base_name, config, self.experiment_name)
+
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
@@ -207,17 +221,6 @@ class A2CBase:
 
         self.train_dir = config['train_dir']
 
-        pbt_str = ''
-        if config['pbt']:
-            pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
-
-        force_experiment_name = config.get('force_experiment_name', '')
-        if force_experiment_name:
-            print(f'Exact experiment name requested from command line: {force_experiment_name}')
-            self.experiment_name = force_experiment_name
-        else:
-            self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
-
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
@@ -249,9 +252,6 @@ class A2CBase:
             print('Initializing SelfPlay Manager')
             self.self_play_manager = SelfPlayManager(self.self_play_config, self.writer)
         
-        # features
-        self.algo_observer = config['features']['observer']
-
         self.soft_aug = config['features'].get('soft_augmentation', None)
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
