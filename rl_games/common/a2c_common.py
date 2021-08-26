@@ -42,7 +42,7 @@ class IntervalSummaryWriter:
     def __init__(self, summary_writer, defer_summaries_sec=5):
         self.experiment_start = time.time()
 
-        self.interval_sec_min = 2
+        self.interval_sec_min = 20
         self.interval_sec_max = 300
         self.last_interval = self.interval_sec_min
         self.summaries_relative_step = 1.0 / 200
