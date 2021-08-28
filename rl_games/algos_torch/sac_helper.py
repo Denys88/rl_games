@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
+import numpy as np
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -49,3 +50,9 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         for tr in self.transforms:
             mu = tr(mu)
         return mu
+
+    def entropy(self):
+        return self.base_dist.entropy()
+
+
+

@@ -27,7 +27,7 @@ class SACAgent:
         self.gamma = config["gamma"]
         self.critic_tau = config["critic_tau"]
         self.batch_size = config["batch_size"]
-        self.init_temperature = config["init_temperature"]
+        self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
         self.replay_buffer_size = config["replay_buffer_size"]
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
@@ -39,7 +39,7 @@ class SACAgent:
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
-        self.log_alpha = torch.tensor(np.log(self.init_temperature)).float().to(self.sac_device)
+        self.log_alpha = torch.tensor(np.log(self.init_alpha)).float().to(self.sac_device)
         self.log_alpha.requires_grad = True
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
@@ -77,8 +77,8 @@ class SACAgent:
         self.env_info['action_space'].shape, 
         self.replay_buffer_size, 
         self.sac_device)
-
-        self.target_entropy = 0.5 * -self.env_info['action_space'].shape[0]
+        self.target_entropy_coef = config.get("target_entropy_coef", 0.5)
+        self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
         self.step = 0
         self.algo_observer = config['features']['observer']
@@ -134,7 +134,7 @@ class SACAgent:
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.sac_device)
         self.obs = None
 
-        self.min_alpha = torch.tensor(np.log(0.1)).float().to(self.sac_device)
+        self.min_alpha = torch.tensor(np.log(1)).float().to(self.sac_device)
         
         self.frame = 0
         self.update_time = 0
@@ -230,7 +230,7 @@ class SACAgent:
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
-            target_V = torch.min(target_Q1, target_Q2) - self.alpha.detach() * log_prob
+            target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
 
             target_Q = reward + (not_done * self.gamma * target_V)
             target_Q = target_Q.detach()
@@ -248,24 +248,25 @@ class SACAgent:
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
     def update_actor_and_alpha(self, obs, step):
-        v_params = self.model.sac_network.critic.parameters()
-        #for p in v_params:
-        #    p.requires_grad = False
+        for p in self.model.sac_network.critic.parameters():
+            p.requires_grad = False
 
         dist = self.model.actor(obs)
         action = dist.rsample()
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        
-        actor_Q1, actor_Q2 = self.model.critic(obs, action) #self.critic
+        entropy = dist.entropy().sum(-1, keepdim=True).mean()
+        actor_Q1, actor_Q2 = self.model.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
-
-        actor_loss = (self.alpha.detach() * log_prob - actor_Q)
+        
+        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
-        entropy = -log_prob.mean()
         
         self.actor_optimizer.zero_grad(set_to_none=True)
         actor_loss.backward()
         self.actor_optimizer.step()
+
+        for p in self.model.sac_network.critic.parameters():
+            p.requires_grad = True
 
         if self.learnable_temperature:
             alpha_loss = (self.alpha *
@@ -276,7 +277,7 @@ class SACAgent:
         else:
             alpha_loss = None
 
-        return actor_loss, entropy, self.alpha, alpha_loss # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
 
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
@@ -293,7 +294,7 @@ class SACAgent:
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
 
-        actor_loss_info = actor_loss.detach(), entropy.detach(), alpha.detach(), alpha_loss.detach()
+        actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         self.soft_update_params(self.model.sac_network.critic, self.model.sac_network.critic_target,
                                      self.critic_tau)
         return actor_loss_info, critic1_loss, critic2_loss
@@ -355,7 +356,7 @@ class SACAgent:
 
         obs = self.obs
         for _ in range(self.num_steps_per_episode):
-            self.set_train()
+            self.set_eval()
             if random_exploration:
                 action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self.sac_device) * 2 - 1
             else:
@@ -392,7 +393,9 @@ class SACAgent:
                 next_obs = next_obs['obs']
 
             rewards = self.rewards_shaper(rewards)
-
+            #if torch.min(obs) < -150 or torch.max(obs) > 150:
+            #    print('ATATATA')
+            #else:
             self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1))
 
             self.obs = obs = next_obs.clone()

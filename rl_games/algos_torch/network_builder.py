@@ -796,12 +796,12 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         #log_std = torch.tanh(log_std)
         log_std_min, log_std_max = self.log_std_bounds
         log_std = torch.clamp(log_std, log_std_min, log_std_max)
-        #log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std +
-                                                                     #1)
+        #log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
         std = log_std.exp()
 
         # TODO: Refactor
+
         dist = SquashedNormal(mu, std)
         # Modify to only return mu and std
         return dist
@@ -891,8 +891,8 @@ class SACBuilder(NetworkBuilder):
                         torch.nn.init.zeros_(m.bias)
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
-                    #if getattr(m, "bias", None) is not None:
-                    #    torch.nn.init.zeros_(m.bias)    
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)    
 
 
         def _build_critic(self, output_dim, **mlp_args):
@@ -912,7 +912,7 @@ class SACBuilder(NetworkBuilder):
             return self.separate
 
         def load(self, params):
-            self.separate = params.get('separate', False)
+            self.separate = params.get('separate', True)
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']

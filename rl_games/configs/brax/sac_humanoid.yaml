@@ -34,15 +34,10 @@ params:
     save_best_after: 100
     save_frequency: 10000
     gamma: 0.99
-    init_temperature: 1
+    init_alpha: 1
     alpha_lr: 0.0002
-    alpha_betas: [0.9, 0.999]
-    alpha_threshold: 0.0005
-    actor_lr: 0.0001
-    actor_betas: [0.9, 0.999]
-    critic_lr: 0.0001
-
-    critic_betas: [0.9, 0.999]
+    actor_lr: 0.0003
+    critic_lr: 0.0003
     critic_tau: 0.005
     batch_size: 2048
     learnable_temperature: true
