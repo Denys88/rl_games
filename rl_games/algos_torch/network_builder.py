@@ -206,14 +206,6 @@ class A2CBuilder(NetworkBuilder):
 
             mlp_input_shape = self._calc_input_size(input_shape, self.actor_cnn)
 
-            if self.use_joint_obs_actions:
-                use_embedding = self.joint_obs_actions_config['embedding'] 
-                emb_size = self.joint_obs_actions_config['embedding_scale'] 
-                num_agents = kwargs.pop('num_agents')
-                mlp_out = mlp_input_shape // self.joint_obs_actions_config['mlp_scale']
-                self.joint_actions = torch_ext.DiscreteActionsEncoder(actions_num, mlp_out, emb_size, num_agents, use_embedding)
-                mlp_input_shape = mlp_input_shape + mlp_out
-
             in_mlp_shape = mlp_input_shape
             if len(self.units) == 0:
                 out_size = mlp_input_shape
@@ -388,14 +380,7 @@ class A2CBuilder(NetworkBuilder):
             else:
                 out = obs
                 out = self.actor_cnn(out)
-                out = out.flatten(1)
-
-                if self.use_joint_obs_actions:
-                    actions = obs_dict['actions']
-                    actions_out = self.joint_actions(actions)
-                    out = torch.cat([out, actions_out], dim=-1)
-
-                
+                out = out.flatten(1)                
 
                 if self.has_rnn:
                     out_in = out
@@ -490,7 +475,6 @@ class A2CBuilder(NetworkBuilder):
             self.has_space = 'space' in params
             self.central_value = params.get('central_value', False)
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
-            self.use_joint_obs_actions = self.joint_obs_actions_config is not None
 
             if self.has_space:
                 self.is_multi_discrete = 'multi_discrete'in params['space']
@@ -924,7 +908,6 @@ class SACBuilder(NetworkBuilder):
             self.value_shape = params.get('value_shape', 1)
             self.central_value = params.get('central_value', False)
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
-            self.use_joint_obs_actions = self.joint_obs_actions_config is not None
             self.log_std_bounds = params.get('log_std_bounds', None)
 
             if self.has_space:

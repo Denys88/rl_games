@@ -44,7 +44,6 @@ class CentralValueTrain(nn.Module):
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
         self.writter = writter
-        self.use_joint_obs_actions = config.get('use_joint_obs_actions', False)
         self.weight_decay = config.get('weight_decay', 0.0)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
         self.frame = 0
@@ -163,11 +162,6 @@ class CentralValueTrain(nn.Module):
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-
-        if self.use_joint_obs_actions:
-            assert(len(actions.size()) == 2, 'use_joint_obs_actions not yet supported in continuous environment for central value')
-            actions = actions.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-            actions = actions.contiguous().view(batch_size, self.num_agents)
 
         if self.is_rnn:
             rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
