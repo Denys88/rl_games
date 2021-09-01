@@ -61,7 +61,6 @@ params:
       is_determenistic: True
 
     central_value_config:
-      #use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
       lr: 1e-4

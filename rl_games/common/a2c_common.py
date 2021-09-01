@@ -563,15 +563,8 @@ class A2CBase:
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
 
-        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                val_dict = self.get_masked_action_values(self.obs, masks)
-            else:
-                val_dict = self.get_action_values(self.obs)
-            last_values = val_dict['values']
-        else:
-            last_values = self.get_values(self.obs)
+
+        last_values = self.get_values(self.obs)
         
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
@@ -649,17 +642,8 @@ class A2CBase:
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
 
-        if self.has_central_value and self.central_value_net.use_joint_obs_actions:
-            if self.use_action_masks:
-                masks = self.vec_env.get_action_masks()
-                val_dict = self.get_masked_action_values(self.obs, masks)
-            else:
-                val_dict = self.get_action_values(self.obs)
-            
-            last_values = val_dict['value']
-        else:
-            last_values = self.get_values(self.obs)
 
+        last_values = self.get_values(self.obs)
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
         mb_values = self.experience_buffer.tensor_dict['values']
