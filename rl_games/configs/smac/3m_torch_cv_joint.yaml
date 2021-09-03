@@ -59,7 +59,6 @@ params:
       state_last_action: True
 
     central_value_config:
-      use_joint_obs_actions: True
       minibatch_size: 512
       mini_epochs: 4
       lr: 5e-4
