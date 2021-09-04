@@ -282,6 +282,10 @@ class A2CBase:
                 value = self.value_mean_std(value, True)
             return value
 
+    @property
+    def device(self):
+        return self.ppo_device
+
     def reset_envs(self):
         self.obs = self.env_reset()
 
