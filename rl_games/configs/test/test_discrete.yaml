@@ -45,7 +45,7 @@ params:
     critic_coef: 1
     lr_schedule:  None
     lr_threshold: 0.008
-    normalize_input: False
+    normalize_input: True
     weight_decay: 0.0000
     max_epochs: 10000
 
@@ -55,7 +55,7 @@ params:
       apply_dist_reward: True
       min_dist: 2
       max_dist: 8
-      use_central_value: False
+      use_central_value: True
       multi_discrete_space: False
       multi_head_value: False
     player:

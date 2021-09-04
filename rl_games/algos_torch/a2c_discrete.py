@@ -1,7 +1,7 @@
 from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
@@ -17,7 +17,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def __init__(self, base_name, config):
         a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
         obs_shape = self.obs_shape
-
+        
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
