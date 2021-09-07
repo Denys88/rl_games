@@ -60,7 +60,7 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 64
+    horizon_length: 64
     minibatch_size: 2560
     mini_epochs: 1
     critic_coef: 2

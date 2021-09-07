@@ -48,7 +48,7 @@ params:
       use_experimental_cv: False
       clip_value: False
       num_actors: 16
-      steps_num: 512
+      horizon_length: 512
       minibatch_size: 3072 #768 #3072 #1536
       mini_epochs: 4
       critic_coef: 1

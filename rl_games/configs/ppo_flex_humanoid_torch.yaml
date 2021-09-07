@@ -61,7 +61,7 @@ params:
     ppo : True
     e_clip : 0.2
     num_actors : 256
-    steps_num : 32
+    horizon_length : 32
     minibatch_size : 4096
     mini_epochs : 4
     critic_coef : 1

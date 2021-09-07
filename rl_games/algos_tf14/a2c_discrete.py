@@ -48,7 +48,7 @@ class A2CAgent:
         self.env_config = self.config.get('env_config', {})
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
-        self.steps_num = config['steps_num']
+        self.horizon_length = config['horizon_length']
         self.seq_len = self.config['seq_length']
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
@@ -224,7 +224,7 @@ class A2CAgent:
         epinfos = []
 
         # for n in range number of steps
-        for _ in range(self.steps_num):
+        for _ in range(self.horizon_length):
             if self.network.is_rnn():
                 mb_states.append(self.states)
 
@@ -281,8 +281,8 @@ class A2CAgent:
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
 
-        for t in reversed(range(self.steps_num)):
-            if t == self.steps_num - 1:
+        for t in reversed(range(self.horizon_length)):
+            if t == self.horizon_length - 1:
                 nextnonterminal = 1.0 - self.dones
                 nextvalues = last_values
             else:
@@ -307,8 +307,8 @@ class A2CAgent:
 
     def train(self):
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors * self.num_agents
-        batch_size_envs = self.steps_num * self.num_actors
+        batch_size = self.horizon_length * self.num_actors * self.num_agents
+        batch_size_envs = self.horizon_length * self.num_actors
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size

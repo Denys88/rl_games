@@ -26,7 +26,7 @@ def rescale_actions(low, high, action):
     scaled_action = action * d + m
     return scaled_action
 
-#(steps_num, actions_num)
+#(horizon_length, actions_num)
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma):
     c1 = np.log(p0_sigma/p1_sigma + 1e-5)
     c2 = (np.square(p0_sigma) + np.square(p1_mu - p0_mu))/(2.0 *(np.square(p1_sigma) + 1e-5))
@@ -64,7 +64,7 @@ class A2CAgent:
         self.env_config = config.get('env_config', {})
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
-        self.steps_num = config['steps_num']
+        self.horizon_length = config['horizon_length']
         self.normalize_advantage = config['normalize_advantage']
         self.config = config
         self.state_shape = observation_space.shape
@@ -225,7 +225,7 @@ class A2CAgent:
         mb_states = []
         epinfos = []
         # For n in range number of steps
-        for _ in range(self.steps_num):
+        for _ in range(self.horizon_length):
             if self.network.is_rnn():
                 mb_states.append(self.states)
             actions, values, neglogpacs, mu, sigma, self.states = self.get_action_values(self.obs)
@@ -274,8 +274,8 @@ class A2CAgent:
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
 
-        for t in reversed(range(self.steps_num)):
-            if t == self.steps_num - 1:
+        for t in reversed(range(self.horizon_length)):
+            if t == self.horizon_length - 1:
                 nextnonterminal = 1.0 - self.dones
                 nextvalues = last_values
             else:
@@ -302,7 +302,7 @@ class A2CAgent:
     def train(self):
         max_epochs = self.config.get('max_epochs', 1e6)
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors * self.num_agents
+        batch_size = self.horizon_length * self.num_actors * self.num_agents
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size
