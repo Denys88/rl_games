@@ -51,7 +51,7 @@ params:
     tau: 0.95
     learning_rate: 3e-4
     lr_schedule: adaptive
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     score_to_win: 20000
     max_epochs: 1000
     save_best_after: 100

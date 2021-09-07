@@ -59,7 +59,7 @@ params:
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  none
-    lr_threshold: 0.01
+    kl_threshold: 0.01
     normalize_input: False
     seq_length: 4
     max_epochs: 200000

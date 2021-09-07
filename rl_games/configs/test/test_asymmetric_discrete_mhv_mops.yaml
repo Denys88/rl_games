@@ -31,7 +31,7 @@ params:
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     normalize_input: False
     normalize_value: False
     weight_decay: 0.0000

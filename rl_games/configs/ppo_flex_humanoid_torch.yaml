@@ -67,7 +67,7 @@ params:
     critic_coef : 1
     clip_value : False
     lr_schedule : adaptive
-    lr_threshold : 0.01
+    kl_threshold : 0.01
     normalize_input : False
     normalize_value : True
     bounds_loss_coef: 0.000

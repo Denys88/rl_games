@@ -54,7 +54,7 @@ params:
       critic_coef: 1
       schedule_type: 'standard'
       lr_schedule: None
-      lr_threshold: 0.008
+      kl_threshold: 0.008
       normalize_input: True
       normalize_value: True
       bounds_loss_coef: 0.0001

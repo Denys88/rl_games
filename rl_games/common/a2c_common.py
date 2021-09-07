@@ -98,9 +98,10 @@ class A2CBase:
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
         self.schedule_type = config.get('schedule_type', 'legacy')
+
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
-            self.scheduler = schedulers.AdaptiveScheduler(self.lr_threshold)
+            self.kl_threshold = config['kl_threshold']
+            self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
         elif self.linear_lr:
             self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
                 max_steps=self.max_epochs, 

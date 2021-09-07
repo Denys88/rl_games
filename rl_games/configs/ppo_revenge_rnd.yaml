@@ -66,11 +66,11 @@ params:
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     normalize_input: True
     seq_length: 8
     #lr_schedule:  adaptive
-    # lr_threshold: 0.008
+    # kl_threshold: 0.008
     # bounds_loss_coef: 0.5
     # max_epochs: 5000
     env_config:

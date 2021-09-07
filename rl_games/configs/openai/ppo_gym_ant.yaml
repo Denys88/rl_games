@@ -54,7 +54,7 @@ params:
       mini_epochs: 12
       critic_coef: 2
       lr_schedule:  adaptive
-      lr_threshold: 0.008
+      kl_threshold: 0.008
       normalize_input: False
       seq_length: 4
       bounds_loss_coef: 0.0001

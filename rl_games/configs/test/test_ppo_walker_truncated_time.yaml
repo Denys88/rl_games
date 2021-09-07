@@ -55,7 +55,7 @@ params:
       critic_coef: 2
       schedule_type: 'standard'
       lr_schedule: adaptive
-      lr_threshold: 0.005
+      kl_threshold: 0.005
       normalize_input: True
       bounds_loss_coef: 0.00
       max_epochs: 10000

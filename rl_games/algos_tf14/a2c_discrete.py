@@ -96,7 +96,7 @@ class A2CAgent:
             self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
+            self.kl_threshold = config['kl_threshold']
         if self.is_polynom_decay_lr:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['max_epochs'], end_learning_rate=0.001, power=config.get('decay_power', 1.0))
         if self.is_exp_decay_lr:
@@ -170,8 +170,8 @@ class A2CAgent:
 
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
         if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+            self.current_lr = tf.where(self.kl_approx > (2.0 * self.kl_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
+            self.current_lr = tf.where(self.kl_approx < (0.5 * self.kl_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.reg_loss = tf.losses.get_regularization_loss()

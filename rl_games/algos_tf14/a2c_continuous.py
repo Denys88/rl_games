@@ -102,7 +102,7 @@ class A2CAgent:
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
+            self.kl_threshold = config['kl_threshold']
         if self.is_polynom_decay_lr:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=config['max_epochs'], end_learning_rate=0.001, power=config.get('decay_power', 1.0))
         if self.is_exp_decay_lr:
@@ -189,8 +189,8 @@ class A2CAgent:
     def _calc_kl_dist(self):
         self.kl_dist = policy_kl_tf(self.mu, self.sigma, self.old_mu_ph, self.old_sigma_ph)
         if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_dist > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_dist < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+            self.current_lr = tf.where(self.kl_dist > (2.0 * self.kl_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
+            self.current_lr = tf.where(self.kl_dist < (0.5 * self.kl_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
 
     def _apply_bound_loss(self):
         if self.bounds_loss_coef:

@@ -36,7 +36,7 @@ class DQNAgent:
         self.current_lr = self.learning_rate_ph
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
+            self.kl_threshold = config['kl_threshold']
         if self.is_polynom_decay_lr:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs, end_learning_rate=0.001, power=config.get(config, 'decay_power', 1.0))
         if self.is_exp_decay_lr:

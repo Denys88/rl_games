@@ -65,7 +65,7 @@ params:
     mini_epochs: 1
     critic_coef: 1
     lr_schedule:  adaptive
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
     normalize_value: True

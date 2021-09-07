@@ -48,7 +48,7 @@ params:
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
     normalize_value: False
     use_action_masks: True

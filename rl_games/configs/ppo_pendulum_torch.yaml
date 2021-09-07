@@ -57,7 +57,7 @@ params:
       critic_coef: 1
       lr_schedule: adaptive
       schedule_type: legacy
-      lr_threshold: 0.016
+      kl_threshold: 0.016
 
       normalize_input: False
       bounds_loss_coef: 0
