@@ -87,6 +87,7 @@ Shadow Hand block orientation task
 # Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
-* Starting from rl-games 1.1.0 old yaml configs will required and update and to change steps_num to horizon_length amd lr_threshold to kl_threshold
+* Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
+    * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
 
 

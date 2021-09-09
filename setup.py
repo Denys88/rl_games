@@ -39,11 +39,11 @@ setup(name='rl-games',
             'ray>=1.1.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
-            'opencv-python>=4.1.0.25',
             'setproctitle',
             'psutil',
             'pyyaml'
             # Optional dependencies
+            # 'opencv-python>=4.1.0.25',
             # 'tensorflow-gpu==1.14.0',
             # 'gym-super-mario-bros==7.1.6',
             # 'pybullet>=2.5.0',
