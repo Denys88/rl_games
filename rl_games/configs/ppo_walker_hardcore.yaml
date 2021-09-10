@@ -48,13 +48,13 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 4096
+      horizon_length: 4096
       minibatch_size: 8192
       mini_epochs: 4
       critic_coef: 1
       schedule_type: 'standard'
       lr_schedule: 'adaptive' #None #
-      lr_threshold: 0.008
+      kl_threshold: 0.008
       normalize_input: True
       seq_length: 4
       bounds_loss_coef: 0.00

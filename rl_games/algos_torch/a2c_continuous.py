@@ -45,7 +45,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'value_size' : self.value_size,
                 'ppo_device' : self.ppo_device, 
                 'num_agents' : self.num_agents, 
-                'num_steps' : self.steps_num, 
+                'num_steps' : self.horizon_length, 
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len, 

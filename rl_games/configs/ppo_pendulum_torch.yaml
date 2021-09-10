@@ -51,13 +51,13 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      steps_num: 128
+      horizon_length: 128
       minibatch_size: 1024
       mini_epochs: 4
       critic_coef: 1
       lr_schedule: adaptive
       schedule_type: legacy
-      lr_threshold: 0.016
+      kl_threshold: 0.016
 
       normalize_input: False
       bounds_loss_coef: 0

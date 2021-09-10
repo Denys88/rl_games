@@ -439,7 +439,7 @@ class SACAgent:
 
         while True:
             self.epoch_num += 1
-            play_time, update_time, epoch_total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.train_epoch()
+            step_time, play_time, update_time, epoch_total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.train_epoch()
 
             total_time += epoch_total_time
 
@@ -455,10 +455,13 @@ class SACAgent:
                 fps_total = curr_frames / scaled_time
                 print(f'fps step: {fps_step:.1f} fps total: {fps_total:.1f}')
 
-            self.writer.add_scalar('performance/total_fps', curr_frames / scaled_time, frame)
-            self.writer.add_scalar('performance/step_fps', curr_frames / scaled_play_time, frame)
-            self.writer.add_scalar('performance/update_time', update_time, frame)
-            self.writer.add_scalar('performance/play_time', play_time, frame)
+            self.writer.add_scalar('performance/step_inference_rl_update_fps', curr_frames / scaled_time, frame)
+            self.writer.add_scalar('performance/step_inference_fps', curr_frames / scaled_play_time, frame)
+            self.writer.add_scalar('performance/step_fps', curr_frames / step_time, frame)
+            self.writer.add_scalar('performance/rl_update_time', update_time, frame)
+            self.writer.add_scalar('performance/step_inference_time', play_time, frame)
+            self.writer.add_scalar('performance/step_time', step_time, frame)
+
             if self.epoch_num >= self.num_seed_steps:
                 self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), frame)
                 self.writer.add_scalar('losses/c1_loss', torch_ext.mean_list(critic1_losses).item(), frame)
@@ -467,6 +470,7 @@ class SACAgent:
                 if alpha_losses[0] is not None:
                     self.writer.add_scalar('losses/alpha_loss', torch_ext.mean_list(alpha_losses).item(), frame)
                 self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), frame)
+
             self.writer.add_scalar('info/epochs', self.epoch_num, frame)
             self.algo_observer.after_print_stats(frame, self.epoch_num, total_time)
 
@@ -474,10 +478,10 @@ class SACAgent:
                 mean_rewards = self.game_rewards.get_mean()
                 mean_lengths = self.game_lengths.get_mean()
 
-                self.writer.add_scalar('rewards/frame', mean_rewards, frame)
+                self.writer.add_scalar('rewards/step', mean_rewards, frame)
                 # self.writer.add_scalar('rewards/iter', mean_rewards, epoch_num)
                 self.writer.add_scalar('rewards/time', mean_rewards, total_time)
-                self.writer.add_scalar('episode_lengths/frame', mean_lengths, frame)
+                self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                 # self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                 self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
 

@@ -2,6 +2,7 @@
 
 ## Papers and related links
 
+* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
 * Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
 * Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 
@@ -38,11 +39,16 @@ Implemented in Pytorch:
 * PPO
 
 # Installation
-Clone repo and run:
-```pip install -e .```
 
-Or:
-```pip install git+https://github.com/Denys88/rl_games.git```
+For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1 is highly recommended:
+
+```conda install pytorch torchvision cudatoolkit=11.1 -c pytorch -c nvidia``` or:
+```pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.htm```
+
+Then:
+
+```pip install rl-games```
+
 
 # Training
 **NVIDIA Isaac Gym**
@@ -72,6 +78,19 @@ Shadow Hand block orientation task
 ```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```  
 ```python runner.py --play --file rl_games/configs/atari/ppo_ant.yaml --checkpoint nn/Ant_brax.pth``` 
 
+
+# Release Notes
+
+1.1.0
+
+* Added to pypi: ```pip install rl-games```
+* Added reporting env (sim) step fps, without policy inference. Improved naming.
+* Renames in yaml config for better readability: steps_num to horizon_length amd lr_threshold to kl_threshold
+
 # Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
+* Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
+    * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
+
+

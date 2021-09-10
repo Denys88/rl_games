@@ -61,13 +61,13 @@ params:
     ppo : True
     e_clip : 0.2
     num_actors : 256
-    steps_num : 32
+    horizon_length : 32
     minibatch_size : 4096
     mini_epochs : 4
     critic_coef : 1
     clip_value : False
     lr_schedule : adaptive
-    lr_threshold : 0.01
+    kl_threshold : 0.01
     normalize_input : False
     normalize_value : True
     bounds_loss_coef: 0.000
