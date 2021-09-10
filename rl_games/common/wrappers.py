@@ -569,6 +569,7 @@ class TimeLimit(gym.Wrapper):
         self._elapsed_steps = 0
         return self.env.reset(**kwargs)
 
+
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
     Gym environment observation wrapper used to mask velocity terms in

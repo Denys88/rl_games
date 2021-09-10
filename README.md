@@ -40,13 +40,15 @@ Implemented in Pytorch:
 
 # Installation
 
+For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1 is highly recommended:
+
+```conda install pytorch torchvision cudatoolkit=11.1 -c pytorch -c nvidia``` or:
+```pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.htm```
+
+Then:
+
 ```pip install rl-games```
 
-Or clone repo and run:
-```pip install -e .```
-
-Or:
-```pip install git+https://github.com/Denys88/rl_games.git```
 
 # Training
 **NVIDIA Isaac Gym**
