@@ -74,7 +74,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def save(self, fn):
         state = self.get_full_state_weights()
-        torch_ext.save_scheckpoint(fn, state)
+        torch_ext.save_checkpoint(fn, state)
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
