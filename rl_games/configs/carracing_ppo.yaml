@@ -68,16 +68,16 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1024
     mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     normalize_input: False
     normalize_value: True
     #lr_schedule:  adaptive
-    # lr_threshold: 0.008
+    # kl_threshold: 0.008
     bounds_loss_coef: 0.001
     # max_epochs: 5000
 

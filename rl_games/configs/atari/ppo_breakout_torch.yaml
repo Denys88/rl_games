@@ -50,7 +50,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 3e-4
-    name: breakout_ppg
+    name: breakout_ppo
     score_to_win: 900
     grad_norm: 10
     entropy_coef: 0.01
@@ -60,17 +60,17 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 24
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 512
-    mini_epochs: 1
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  adaptive
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
     normalize_value: True
     normalize_input: False
-    max_epochs: 20000
+    max_epochs: 3000
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'

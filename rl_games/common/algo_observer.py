@@ -35,8 +35,10 @@ class DefaultAlgoObserver(AlgoObserver):
     def process_infos(self, infos, done_indices):
         if not infos:
             return
-        if len(infos) > 0 and isinstance(infos[0], dict):
+        if not isinstance(infos, dict) and len(infos) > 0 and isinstance(infos[0], dict):
+            done_indices = done_indices.cpu()
             for ind in done_indices:
+                ind = ind.item()
                 if len(infos) <= ind//self.algo.num_agents:
                     continue
                 info = infos[ind//self.algo.num_agents]

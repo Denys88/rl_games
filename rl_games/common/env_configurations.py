@@ -1,6 +1,7 @@
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
+from rl_games.envs.brax import create_brax_env
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
@@ -173,31 +174,6 @@ def create_roboschool_env(name):
     import roboschool
     return gym.make(name)
 
-def create_multiflex(path, num_instances=1):
-    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env_muli_env
-    from autolab_core import YamlConfig
-    import gym
-
-    set_flex_bin_path(FLEX_PATH + '/bin')
-
-    cfg_env = YamlConfig(path)
-    env = make_flex_vec_env_muli_env([cfg_env] * num_instances)
-
-    return env
-
-def create_flex(path):
-    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env
-    from autolab_core import YamlConfig
-    import gym
-
-    set_flex_bin_path(FLEX_PATH + '/bin')
-
-    cfg_env = YamlConfig(path)
-    cfg_env['gym']['rank'] = 0
-    env = make_flex_vec_env(cfg_env)
-
-    return env
-
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
@@ -257,6 +233,18 @@ def create_multiwalker_env(**kwargs):
     from rl_games.envs.multiwalker import MultiWalker
     env = MultiWalker('', **kwargs) 
 
+    return env
+
+def create_diambra_env(**kwargs):
+    from rl_games.envs.diambra.diambra import DiambraEnv
+    env = DiambraEnv(**kwargs)
+    return env
+
+def create_env(name, **kwargs):
+    steps_limit = kwargs.pop('steps_limit', None)
+    env = gym.make(name, **kwargs)
+    if steps_limit is not None:
+        env = wrappers.TimeLimit(env, steps_limit)
     return env
 
 configurations = {
@@ -337,7 +325,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v3' : {
-        'env_creator' : lambda **kwargs  : gym.make('BipedalWalker-v3'),
+        'env_creator' : lambda **kwargs  : create_env('BipedalWalker-v3', **kwargs),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerCnn-v3' : {
@@ -415,6 +403,14 @@ configurations = {
     'multiwalker_env' : {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
         'vecenv_type' : 'RAY'
+    },
+    'diambra': {
+        'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
+        'vecenv_type': 'RAY'
+    },
+    'brax' : {
+        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'vecenv_type': 'BRAX' 
     },
 }
 

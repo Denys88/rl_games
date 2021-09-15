@@ -1,4 +1,5 @@
 import ray
+from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
@@ -7,7 +8,7 @@ import gym
 from time import sleep
 
 
-class IVecEnv(object):
+class IVecEnv:
     def step(self, actions):
         raise NotImplementedError 
 
@@ -40,6 +41,7 @@ class IVecEnv(object):
 
     def set_env_state(self, env_state):
         pass
+
 
 class RayWorker:
     def __init__(self, config_name, config):
@@ -88,6 +90,12 @@ class RayWorker:
     def set_weights(self, weights):
         self.env.update_weights(weights)
 
+    def can_concat_infos(self):
+        if hasattr(self.env, 'concat_infos'):
+            return self.env.concat_infos
+        else:
+            return False
+
     def get_env_info(self):
         info = {}
         observation_space = self.env.observation_space
@@ -107,7 +115,6 @@ class RayWorker:
             info['value_size'] = self.env.value_size
         if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
-
         return info
 
 
@@ -125,9 +132,10 @@ class RayVecEnv(IVecEnv):
 
         res = self.workers[0].get_env_info.remote()
         env_info = ray.get(res)
-
+        res = self.workers[0].can_concat_infos.remote()
+        can_concat_infos = ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
-        self.concat_infos = False
+        self.concat_infos = can_concat_infos
         self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
         self.state_type_dict = type(env_info.get('state_space')) is gym.spaces.Dict
         if self.num_agents == 1:
@@ -310,4 +318,7 @@ def create_vec_env(config_name, num_actors, **kwargs):
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
-register('ISAAC', lambda config_name, num_actors, **kwargs: IsaacEnv(config_name, num_actors, **kwargs))
+
+from rl_games.envs.brax import BraxEnv
+register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
+

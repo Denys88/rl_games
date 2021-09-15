@@ -59,12 +59,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 64
+    horizon_length: 64
     minibatch_size: 512
     mini_epochs: 4
     critic_coef: 2
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: False
     seq_length: 4
     use_action_masks: True

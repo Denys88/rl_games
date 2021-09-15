@@ -2,11 +2,9 @@ import numpy as np
 import argparse, copy, os, yaml
 import ray, signal
 
-
-def exit_gracefully(signum, frame):
-    ray.shutdown()
-
-
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+#import warnings
+#warnings.filterwarnings("error")
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-tf", "--tf", required=False, help="run tensorflow runner", action='store_true')
@@ -36,7 +34,7 @@ if __name__ == '__main__':
             from rl_games.torch_runner import Runner
 
         ray.init(object_store_memory=1024*1024*1000)
-        signal.signal(signal.SIGINT, exit_gracefully)
+        #signal.signal(signal.SIGINT, exit_gracefully)
 
         runner = Runner()
         try:

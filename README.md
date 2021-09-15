@@ -1,102 +1,96 @@
-# Basic RL Algorithms Implementations
-* Starcraft 2 Multiple Agents Results with PPO (https://github.com/oxwhirl/smac)
-* Every agent was controlled independently and has restricted information
-* All the environments were trained with a default difficulty level 7
-* No curriculum, just baseline PPO
-* Full state information wasn't used for critic, actor and critic recieved the same agent observations
-* Most results are significantly better by win rate and were trained on a single PC much faster than QMIX (https://arxiv.org/pdf/1902.04043.pdf), MAVEN (https://arxiv.org/pdf/1910.07483.pdf) or QTRAN
-* No hyperparameter search
-* 4 frames + conv1d actor-critic network
-* Miniepoch num was set to 1, higher numbers didn't work
-* Simple MLP networks didnot work good on hard envs
+# RL Games: High performance RL library  
 
-[![Watch the video](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/mmm2.gif)](https://www.youtube.com/watch?v=F_IfFz-s-iQ)
+## Papers and related links
 
-# How to run configs:
-# Pytorch
-* python runner.py --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-# Tensorflow
-* python runner.py --tf --train --file rl_games/configs/smac/3m_torch.yaml
-* python runner.py --tf --play --file rl_games/configs/smac/3m_torch.yaml --checkpoint 'nn/3m_cnn'
-* tensorboard --logdir runs
-# Results on some environments:
-* 2m_vs_1z took near 2 minutes to achive 100% WR
-* corridor took near 2 hours for 95+% WR
-* MMM2 4 hours for 90+% WR
-* 6h_vs_8z got 82% WR after 8 hours of training
-* 5m_vs_6m got 72% WR after 8 hours of training
+* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
+* Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
+* Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 
-# Plots:
-FPS in these plots is calculated on per env basis except MMM2 (it was scaled by number of agents which is 10), to get a win rate per number of environmental steps info, the same as used in plots in QMIX, MAVEN, QTRAN or Deep Coordination Graphs (https://arxiv.org/pdf/1910.00091.pdf) papers FPS numbers under the horizontal axis should be devided by number of agents in player's team.
+## Some results on interesting environments  
 
-* 2m_vs_1z:
-![2m_vs_1z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/2m_vs_1z.png)
-* 3s5z_vs_3s6z:
-![3s5z_vs_3s6z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s5z_vs_3s6z.png)
-* 3s_vs_5z:
-![3s_vs_5z](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/3s_vs_5z.png)
-* corridor:
-![corridor](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/corridor.png)
-* 5m_vs_6m:
-![5m_vs_6m](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/5m_vs_6m.png)
-* MMM2:
-![MMM2](https://github.com/Denys88/dqn_atari/blob/master/pictures/smac/MMM2.png)
+* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
 
+![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
+![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
 
-[Link to the continuous results](https://github.com/Denys88/rl_games/blob/master/CONTINUOUS_RESULTS.md)
+![Allegro_Hand_400](https://user-images.githubusercontent.com/463063/125261559-38373700-e2b6-11eb-80eb-b250a0693f0b.gif)
+![Shadow_Hand_OpenAI](https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif)
 
-Currently Implemented:
-* DQN
-* Double DQN
-* Dueling DQN
-* Noisy DQN
-* N-Step DQN
-* Categorical
+* [Starcraft 2 Multi Agents](docs/SMAC.md)  
+* [BRAX](docs/BRAX.md)  
+* [Old TF1.x results](docs/BRAX.md)  
+
+## Config file  
+
+* [Configuration](docs/CONFIG_PARAMS.md)  
+
+Implemented in Pytorch:
+
+* PPO with the support of asymmetric actor-critic variant
+* Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
+* Masked actions support
+* Multi-agent training, decentralized and centralized critic variants
+* Self-play 
+
+ Implemented in Tensorflow 1.x (not updates now):
+
 * Rainbow DQN
 * A2C
 * PPO
 
-Tensorflow implementations of the DQN atari.
+# Installation
 
-* Double dueling DQN vs DQN with the same parameters
+For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1 is highly recommended:
 
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/dqn_vs_dddqn.png)
-Near 90 minutes to learn with this setup.
+```conda install pytorch torchvision cudatoolkit=11.1 -c pytorch -c nvidia``` or:
+```pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.htm```
 
-* Different DQN Configurations tests
+Then:
 
-Light grey is noisy 1-step dddqn.
-Noisy 3-step dddqn was even faster.
-Best network (configuration 5) needs near 20 minutes to learn, on NVIDIA 1080.
-Currently the best setup for pong is noisy 3-step double dueling network.
-In pong_runs.py different experiments could be found.
-Less then 200k frames to take score > 18.
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/pong_dqn.png)
-DQN has more optimistic Q value estimations.
-
-# Other Games Results
-This results are not stable. Just best games, for good average results you need to train network more then 10 million steps.
-Some games need 50m steps.
-
-* 5 million frames two step noisy double dueling dqn:
-
-[![Watch the video](https://j.gifs.com/K1OL6r.gif)](https://youtu.be/Lu9Cm9K_6ms)
-
-* Random lucky game in Space Invaders after less then one hour learning:
-
-[![Watch the video](https://j.gifs.com/D1RQE5.gif)](https://www.youtube.com/watch?v=LO0RL437rh4)
+```pip install rl-games```
 
 
-# A2C and PPO Results
-* More than 2 hours for Pong to achieve 20 score with one actor playing. 
-* 8 Hours for Supermario lvl1
+# Training
+**NVIDIA Isaac Gym**
 
-[![Watch the video](https://j.gifs.com/nxOYyp.gif)](https://www.youtube.com/watch?v=T9ujS3HIvMY)
+Download and follow the installation instructions from https://developer.nvidia.com/isaac-gym  
+Run from ```python/rlgpu``` directory:
 
-* PPO with LSTM layers
+Ant  
+```python rlg_train.py --task Ant --headless```  
+```python rlg_train.py --task Ant --play --checkpoint nn/Ant.pth --num_envs 100``` 
 
-[![Watch the video](https://j.gifs.com/YWV9W0.gif)](https://www.youtube.com/watch?v=fjY4AWbmhHg)
+Humanoid  
+```python rlg_train.py --task Humanoid --headless```  
+```python rlg_train.py --task Humanoid --play --checkpoint nn/Humanoid.pth --num_envs 100``` 
+
+Shadow Hand block orientation task  
+```python rlg_train.py --task ShadowHand --headless```  
+```python rlg_train.py --task ShadowHand --play --checkpoint nn/ShadowHand.pth --num_envs 100``` 
 
 
-![alt text](https://github.com/Denys88/dqn_atari/blob/master/pictures/mario_random_stages.png)
+**Atari Pong**    
+```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```  
+```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```  
+
+
+**Brax Ant**  
+```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```  
+```python runner.py --play --file rl_games/configs/atari/ppo_ant.yaml --checkpoint nn/Ant_brax.pth``` 
+
+
+# Release Notes
+
+1.1.0
+
+* Added to pypi: ```pip install rl-games```
+* Added reporting env (sim) step fps, without policy inference. Improved naming.
+* Renames in yaml config for better readability: steps_num to horizon_length amd lr_threshold to kl_threshold
+
+# Troubleshouting
+
+* Some of the supported envs are not installed with setup.py, you need to manually install them
+* Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
+    * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
+
+

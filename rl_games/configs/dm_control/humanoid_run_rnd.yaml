@@ -51,12 +51,12 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 1024
+      horizon_length: 1024
       minibatch_size: 4096
       mini_epochs: 15
       critic_coef: 1
       lr_schedule:  adaptive
-      lr_threshold: 0.008
+      kl_threshold: 0.008
 
       normalize_input: True
       seq_length: 8

@@ -63,7 +63,7 @@ class BasePlayer(object):
         if self.value_size > 1:
             rewards = rewards[0]
         if self.is_tensor_obses:
-            return obs, rewards.cpu(), dones.cpu(), infos
+            return self.obs_to_torch(obs), rewards.cpu(), dones.cpu(), infos
         else:
             if np.isscalar(dones):
                 rewards = np.expand_dims(np.asarray(rewards), 0)
@@ -259,8 +259,11 @@ class BasePlayer(object):
             first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
             obses = obses[first_key]
+
         if len(obses.size()) > len(obs_shape):
             batch_size = obses.size()[0]
             self.has_batch_dimension = True
+
         self.batch_size = batch_size
+
         return batch_size

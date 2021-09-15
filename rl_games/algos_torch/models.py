@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import rl_games.common.divergence as divergence
 from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
+from rl_games.algos_torch.sac_helper import SquashedNormal
+
 
 class BaseModel():
     def __init__(self):
@@ -254,4 +256,38 @@ class ModelA2CContinuousLogStd(BaseModel):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
+
+class ModelSACContinuous(BaseModel):
+
+    def __init__(self, network):
+        BaseModel.__init__(self)
+        self.network_builder = network
+
+    def build(self, config):
+        return ModelSACContinuous.Network(self.network_builder.build('sac', **config))
+    
+    class Network(nn.Module):
+        def __init__(self, sac_network):
+            nn.Module.__init__(self)
+            self.sac_network = sac_network
+
+        def critic(self, obs, action):
+            return self.sac_network.critic(obs, action)
+
+        def critic_target(self, obs, action):
+            return self.sac_network.critic_target(obs, action)
+
+        def actor(self, obs):
+            return self.sac_network.actor(obs)
+        
+        def is_rnn(self):
+            return False
+
+        def forward(self, input_dict):
+            is_train = input_dict.pop('is_train', True)
+            mu, sigma = self.sac_network(input_dict)
+            dist = SquashedNormal(mu, sigma)
+            return dist
+
+
 
