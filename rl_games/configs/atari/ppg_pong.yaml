@@ -61,12 +61,12 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 24
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 256
     mini_epochs: 1
     critic_coef: 1
     lr_schedule:  none
-    #lr_threshold: 0.008
+    #kl_threshold: 0.008
     #schedule_entropy : True
     normalize_value: False 
     normalize_input: False

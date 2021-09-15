@@ -48,7 +48,7 @@ class A2CAgent:
         self.env_config = self.config.get('env_config', {})
         self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
         self.num_agents = self.vec_env.get_number_of_agents()
-        self.steps_num = config['steps_num']
+        self.horizon_length = config['horizon_length']
         self.seq_len = self.config['seq_length']
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_input = self.config['normalize_input']
@@ -96,7 +96,7 @@ class A2CAgent:
             self.input_target_obs = tf.to_float(self.input_target_obs) / 255.0
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
+            self.kl_threshold = config['kl_threshold']
         if self.is_polynom_decay_lr:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, self.epoch_num, config['max_epochs'], end_learning_rate=0.001, power=config.get('decay_power', 1.0))
         if self.is_exp_decay_lr:
@@ -170,8 +170,8 @@ class A2CAgent:
 
         self.kl_approx = 0.5 * tf.stop_gradient(tf.reduce_mean((self.old_logp_actions_ph - self.logp_actions)**2))
         if self.is_adaptive_lr:
-            self.current_lr = tf.where(self.kl_approx > (2.0 * self.lr_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
-            self.current_lr = tf.where(self.kl_approx < (0.5 * self.lr_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
+            self.current_lr = tf.where(self.kl_approx > (2.0 * self.kl_threshold), tf.maximum(self.current_lr / 1.5, 1e-6), self.current_lr)
+            self.current_lr = tf.where(self.kl_approx < (0.5 * self.kl_threshold), tf.minimum(self.current_lr * 1.5, 1e-2), self.current_lr)
 
         self.loss = self.actor_loss + 0.5 * self.critic_coef * self.critic_loss - self.config['entropy_coef'] * self.entropy
         self.reg_loss = tf.losses.get_regularization_loss()
@@ -224,7 +224,7 @@ class A2CAgent:
         epinfos = []
 
         # for n in range number of steps
-        for _ in range(self.steps_num):
+        for _ in range(self.horizon_length):
             if self.network.is_rnn():
                 mb_states.append(self.states)
 
@@ -281,8 +281,8 @@ class A2CAgent:
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0
 
-        for t in reversed(range(self.steps_num)):
-            if t == self.steps_num - 1:
+        for t in reversed(range(self.horizon_length)):
+            if t == self.horizon_length - 1:
                 nextnonterminal = 1.0 - self.dones
                 nextvalues = last_values
             else:
@@ -307,8 +307,8 @@ class A2CAgent:
 
     def train(self):
         self.obs = self.vec_env.reset()
-        batch_size = self.steps_num * self.num_actors * self.num_agents
-        batch_size_envs = self.steps_num * self.num_actors
+        batch_size = self.horizon_length * self.num_actors * self.num_agents
+        batch_size_envs = self.horizon_length * self.num_actors
         minibatch_size = self.config['minibatch_size']
         mini_epochs_num = self.config['mini_epochs']
         num_minibatches = batch_size // minibatch_size

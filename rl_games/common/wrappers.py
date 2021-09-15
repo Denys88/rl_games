@@ -7,24 +7,6 @@ import gym
 from gym import spaces
 from copy import copy
 
-
-
-class LimitStepsWrapper(gym.Wrapper):
-    def __init__(self, env, limit=200):
-        gym.RewardWrapper.__init__(self, env)
-        
-        self.limit = limit
-        self.steps = 0
-    def reset(self, **kwargs):
-        self.steps = 0
-        return self.env.reset(**kwargs)
-
-    def step(self, action):
-        observation, reward, done, info = self.env.step(action)
-        if done and reward == 0:
-            reward = -0.1
-        return observation, reward, done, info
-
 class InfoWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -560,6 +542,32 @@ class MontezumaInfoWrapper(gym.Wrapper):
 
     def reset(self):
         return self.env.reset()
+
+
+class TimeLimit(gym.Wrapper):
+    """
+    A little bit changed original  openai's TimeLimit env.
+    Main difference is that we always send true or false in infos['time_outs']
+    """
+    def __init__(self, env, max_episode_steps=None):
+        super(TimeLimit, self).__init__(env)
+        self.concat_infos = True
+        self._max_episode_steps = max_episode_steps
+        self._elapsed_steps = None
+
+    def step(self, action):
+        assert self._elapsed_steps is not None, "Cannot call env.step() before calling reset()"
+        observation, reward, done, info = self.env.step(action)
+        self._elapsed_steps += 1
+        info['time_outs'] = False
+        if self._elapsed_steps >= self._max_episode_steps:
+            info['time_outs'] = True
+            done = True
+        return observation, reward, done, info
+
+    def reset(self, **kwargs):
+        self._elapsed_steps = 0
+        return self.env.reset(**kwargs)
 
 
 class MaskVelocityWrapper(gym.ObservationWrapper):

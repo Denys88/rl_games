@@ -36,7 +36,7 @@ class DQNAgent:
         self.current_lr = self.learning_rate_ph
 
         if self.is_adaptive_lr:
-            self.lr_threshold = config['lr_threshold']
+            self.kl_threshold = config['kl_threshold']
         if self.is_polynom_decay_lr:
             self.lr_multiplier = tf.train.polynomial_decay(1.0, global_step=self.epoch_num, decay_steps=self.max_epochs, end_learning_rate=0.001, power=config.get(config, 'decay_power', 1.0))
         if self.is_exp_decay_lr:
@@ -54,8 +54,8 @@ class DQNAgent:
         if self.env_name:
             self.env = env_configurations.configurations[self.env_name]['env_creator']()
         self.sess = sess
-        self.steps_num = self.config['steps_num']
-        self.states = deque([], maxlen=self.steps_num)
+        self.horizon_length = self.config['horizon_length']
+        self.states = deque([], maxlen=self.horizon_length)
         self.is_prioritized = config['replay_buffer_type'] != 'normal'
         self.atoms_num = self.config['atoms_num']
         self.is_categorical = self.atoms_num > 1
@@ -82,7 +82,7 @@ class DQNAgent:
         self.name = base_name
         
         self.gamma = self.config['gamma']
-        self.gamma_step = self.gamma**self.steps_num
+        self.gamma_step = self.gamma**self.horizon_length
         self.input_obs = self.obs_ph
         self.input_next_obs = self.next_obs_ph
  
@@ -322,7 +322,7 @@ class DQNAgent:
         total_time = 0
         self.load_weigths_into_target_network()
         for _ in range(0, self.config['num_steps_fill_buffer']):
-            self.play_steps(self.steps_num, self.epsilon)
+            self.play_steps(self.horizon_length, self.epsilon)
         steps_per_epoch = self.config['steps_per_epoch']
         num_epochs_to_copy = self.config['num_epochs_to_copy']
         batch_size = self.config['batch_size']
@@ -343,7 +343,7 @@ class DQNAgent:
             self.beta = self.beta_processor(frame)
 
             for _ in range(0, steps_per_epoch):
-                reward, shaped_reward, step = self.play_steps(self.steps_num, self.epsilon)
+                reward, shaped_reward, step = self.play_steps(self.horizon_length, self.epsilon)
                 if reward != None:
                     self.game_lengths.append(step)
                     self.game_rewards.append(reward)
@@ -360,14 +360,14 @@ class DQNAgent:
                 if self.is_prioritized:
                     batch, idxes = self.sample_prioritized_batch(self.exp_buffer, batch_size=batch_size, beta = self.beta)
                     next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
-                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)                    
+                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.horizon_length)                    
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, errors_update, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.abs_errors, self.lr_multiplier], batch)
                     self.exp_buffer.update_priorities(idxes, errors_update)
                 else:
                     batch = self.sample_batch(self.exp_buffer, batch_size=batch_size)
                     next_state_vals = self.sess.run([self.next_state_values_target], batch)[0]
-                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.steps_num)
+                    projected = self.categorical.distr_projection(next_state_vals, batch[self.rewards_ph], batch[self.is_done_ph], self.gamma ** self.horizon_length)
                     batch[self.proj_dir_ph] = projected
                     _, loss_t, lr_mul = self.sess.run([self.train_step, self.td_loss_mean, self.lr_multiplier], batch)                
             else:

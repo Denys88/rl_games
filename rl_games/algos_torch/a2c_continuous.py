@@ -45,13 +45,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'value_size' : self.value_size,
                 'ppo_device' : self.ppo_device, 
                 'num_agents' : self.num_agents, 
-                'num_steps' : self.steps_num, 
+                'num_steps' : self.horizon_length, 
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len, 
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
+                'max_epochs' : self.max_epochs,
                 'multi_gpu' : self.multi_gpu
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)

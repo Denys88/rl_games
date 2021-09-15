@@ -63,7 +63,7 @@ params:
     priority_alpha : 0.6
     beta_decay_frames : 1000000
     max_beta : 1
-    steps_num : 3
+    horizon_length : 3
     episodes_to_log : 100
     lives_reward : 5
     atoms_num : 51
