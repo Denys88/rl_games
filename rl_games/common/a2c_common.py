@@ -39,9 +39,24 @@ def rescale_actions(low, high, action):
 
 
 class IntervalSummaryWriter:
+    """
+    Summary writer wrapper designed to reduce the size of tf.events files.
+    It will prevent the learner from writing the summaries more often than a specified interval, i.e. if the
+    current interval is 20 seconds and we wrote our last summary for a particular summary key at 01:00, all summaries
+    until 01:20 for that key will be ignored.
+
+    The interval is adaptive: it will approach 1/200th of the total training time, but no less than interval_sec_min
+    and no greater than interval_sec_max.
+
+    This was created to facilitate really big training runs, such as with Population-Based training, where summary
+    folders reached tens of gigabytes.
+    """
+
     def __init__(self, summary_writer, defer_summaries_sec=5):
         self.experiment_start = time.time()
 
+        # perhaps these should be configurable parameters, i.e. for very short experiments do we want
+        # smaller interval_sec_min?
         self.interval_sec_min = 20
         self.interval_sec_max = 300
         self.last_interval = self.interval_sec_min
@@ -90,7 +105,11 @@ class A2CBase:
     def __init__(self, base_name, config):
         pbt_str = ''
         if config['pbt']:
+            # in PBT, make sure experiment name contains a unique id of the policy within a population
             pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
+
+        # This helps in PBT when we need to restart an experiment with the exact same name, rather than
+        # generating a new name with the timestamp every time.
         force_experiment_name = config.get('force_experiment_name', '')
         if force_experiment_name:
             print(f'Exact experiment name requested from command line: {force_experiment_name}')
@@ -222,7 +241,6 @@ class A2CBase:
         self.epoch_num = 0
 
         self.train_dir = config['train_dir']
-        self.experiment_name = config['name'] + datetime.now().strftime("_%d-%H-%M-%S")
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
@@ -233,17 +251,6 @@ class A2CBase:
         os.makedirs(self.summaries_dir, exist_ok=True)
 
         self.entropy_coef = self.config['entropy_coef']
-
-        self.train_dir = config['train_dir']
-
-        self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
-        self.nn_dir = os.path.join(self.experiment_dir, 'nn')
-        self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
-
-        os.makedirs(self.train_dir, exist_ok=True)
-        os.makedirs(self.experiment_dir, exist_ok=True)
-        os.makedirs(self.nn_dir, exist_ok=True)
-        os.makedirs(self.summaries_dir, exist_ok=True)
 
         if self.rank == 0:
             # prevents noisy summaries when experiments are restarted
