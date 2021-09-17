@@ -240,8 +240,13 @@ class A2CBase:
         self.play_time = 0
         self.epoch_num = 0
 
-        self.train_dir = config['train_dir']
+        # allows us to specify a folder where all experiments will reside
+        self.train_dir = config.get('train_dir', default='train_dir')
+
+        # a folder inside of train_dir containing everything related to a particular experiment
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
+
+        # folders inside <train_dir>/<experiment_dir> for a specific purpose
         self.nn_dir = os.path.join(self.experiment_dir, 'nn')
         self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
 
