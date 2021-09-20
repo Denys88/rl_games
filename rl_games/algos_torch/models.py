@@ -7,7 +7,7 @@ import rl_games.common.divergence as divergence
 from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
 from rl_games.algos_torch.sac_helper import SquashedNormal
-
+import math
 
 class BaseModel():
     def __init__(self):
@@ -45,6 +45,14 @@ class ModelA2C(BaseModel):
             q = q_dict['logits']
             return divergence.d_kl_discrete(p, q)
 
+        def symmetric_kl_with_uniform_prior(self, probs, log_probs):
+            num_categories = log_probs.shape[-1]
+            uniform_prob = 1 / num_categories
+            log_uniform_prob = math.log(uniform_prob)
+            return 0.5 * ((probs * (log_probs - log_uniform_prob)).sum(dim=-1)
+                      + (uniform_prob * (log_uniform_prob - log_probs)).sum(dim=-1)
+                      )
+
         def forward(self, input_dict):
             is_train = input_dict.get('is_train', True)
             action_masks = input_dict.get('action_masks', None)
@@ -54,6 +62,8 @@ class ModelA2C(BaseModel):
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
                 prev_neglogp = -categorical.log_prob(prev_actions)
                 entropy = categorical.entropy()
+                #print(entropy_old.mean())
+                #entropy = -self.symmetric_kl_with_uniform_prior(categorical.probs, categorical.logits)
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'logits' : categorical.logits,

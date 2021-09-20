@@ -53,7 +53,7 @@ params:
     name: breakout_ppo
     score_to_win: 900
     grad_norm: 10
-    entropy_coef: 0.01
+    entropy_coef: 0.02
     truncate_grads: True
     env_name: atari_gym
     ppo: true
@@ -70,7 +70,7 @@ params:
     #schedule_entropy: True
     normalize_value: True
     normalize_input: False
-    max_epochs: 3000
+    max_epochs: 6000
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'
@@ -80,4 +80,4 @@ params:
       render: True
       games_num: 200
       n_game_life: 5
-      is_determenistic: True
+      determenistic: False
