@@ -67,7 +67,7 @@ params:
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: True
       normalize_input: True
       network:

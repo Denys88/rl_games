@@ -74,7 +74,7 @@ params:
         gamma: 0.99
         mini_epochs: 2
         minibatch_size: 1024
-        lr: 5e-4
+        learning_rate: 5e-4
         network:
           name: rnd_curiosity
           mlp:

@@ -84,4 +84,4 @@ params:
         render: True
         games_num: 10
         n_game_life: 3
-        is_determenistic: True
+        determenistic: True

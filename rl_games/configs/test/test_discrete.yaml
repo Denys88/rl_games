@@ -60,5 +60,5 @@ params:
       multi_head_value: False
     player:
         games_num: 100
-        is_determenistic: True
+        determenistic: True
 

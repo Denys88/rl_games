@@ -67,12 +67,12 @@ params:
       multi_discrete_space: True
     player:
         games_num: 100
-        is_determenistic: True
+        determenistic: True
 
     central_value_config1: 
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: False
       truncate_grads: True
