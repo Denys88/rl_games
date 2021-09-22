@@ -4,10 +4,11 @@ from rl_games.common import tr_helpers
 from rl_games.common import vecenv
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.moving_mean_std import MovingMeanStd
-from rl_games.algos_torch.self_play_manager import  SelfPlayManager
+from rl_games.algos_torch.self_play_manager import SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
+from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 import numpy as np
 import collections
 import time
@@ -38,82 +39,19 @@ def rescale_actions(low, high, action):
     return scaled_action
 
 
-class IntervalSummaryWriter:
-    """
-    Summary writer wrapper designed to reduce the size of tf.events files.
-    It will prevent the learner from writing the summaries more often than a specified interval, i.e. if the
-    current interval is 20 seconds and we wrote our last summary for a particular summary key at 01:00, all summaries
-    until 01:20 for that key will be ignored.
-
-    The interval is adaptive: it will approach 1/200th of the total training time, but no less than interval_sec_min
-    and no greater than interval_sec_max.
-
-    This was created to facilitate really big training runs, such as with Population-Based training, where summary
-    folders reached tens of gigabytes.
-    """
-
-    def __init__(self, summary_writer, defer_summaries_sec=5):
-        self.experiment_start = time.time()
-
-        # perhaps these should be configurable parameters, i.e. for very short experiments do we want
-        # smaller interval_sec_min?
-        self.interval_sec_min = 20
-        self.interval_sec_max = 300
-        self.last_interval = self.interval_sec_min
-        self.summaries_relative_step = 1.0 / 200
-
-        self.defer_summaries_sec = defer_summaries_sec
-
-        self.writer = summary_writer
-        self.last_write_for_tag = dict()
-
-    def _calc_interval(self):
-        """Write summaries more often in the beginning of the run."""
-        if self.last_interval >= self.interval_sec_max:
-            return self.last_interval
-
-        seconds_since_start = time.time() - self.experiment_start
-        interval = seconds_since_start * self.summaries_relative_step
-        interval = min(interval, self.interval_sec_max)
-        interval = max(interval, self.interval_sec_min)
-        self.last_interval = interval
-
-        return interval
-
-    def add_scalar(self, tag, value, step, *args, **kwargs):
-        if step == 0:
-            # removes faulty summaries that appear after the experiment restart
-            # print('Skip summaries with step=0')
-            return
-
-        seconds_since_start = time.time() - self.experiment_start
-        if seconds_since_start < self.defer_summaries_sec:
-            return
-
-        last_write = self.last_write_for_tag.get(tag, 0)
-        seconds_since_last_write = time.time() - last_write
-        interval = self._calc_interval()
-        if seconds_since_last_write >= interval:
-            self.writer.add_scalar(tag, value, step, *args, **kwargs)
-            self.last_write_for_tag[tag] = time.time()
-
-    def __getattr__(self, attr):
-        return getattr(self.writer, attr)
-
-
 class A2CBase:
     def __init__(self, base_name, config):
         pbt_str = ''
-        if config['pbt']:
+        if config['population_based_training']:
             # in PBT, make sure experiment name contains a unique id of the policy within a population
             pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
 
         # This helps in PBT when we need to restart an experiment with the exact same name, rather than
         # generating a new name with the timestamp every time.
-        force_experiment_name = config.get('force_experiment_name', '')
-        if force_experiment_name:
-            print(f'Exact experiment name requested from command line: {force_experiment_name}')
-            self.experiment_name = force_experiment_name
+        full_experiment_name = config.get('full_experiment_name', '')
+        if full_experiment_name:
+            print(f'Exact experiment name requested from command line: {full_experiment_name}')
+            self.experiment_name = full_experiment_name
         else:
             self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
 
@@ -241,7 +179,7 @@ class A2CBase:
         self.epoch_num = 0
 
         # allows us to specify a folder where all experiments will reside
-        self.train_dir = config.get('train_dir', default='train_dir')
+        self.train_dir = config.get('train_dir', 'train_dir')
 
         # a folder inside of train_dir containing everything related to a particular experiment
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
@@ -258,11 +196,8 @@ class A2CBase:
         self.entropy_coef = self.config['entropy_coef']
 
         if self.rank == 0:
-            # prevents noisy summaries when experiments are restarted
-            defer_summaries_sec = 20 if config['pbt'] else 5
-
             writer = SummaryWriter(self.summaries_dir)
-            self.writer = IntervalSummaryWriter(writer, defer_summaries_sec=defer_summaries_sec)
+            self.writer = IntervalSummaryWriter(writer, self.config)
         else:
             self.writer = None
 
@@ -1003,7 +938,8 @@ class DiscreteA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
-                    checkpoint_name = self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)
+                    # removed equal signs (i.e. "rew=") from the checkpoint name since it messes with hydra CLI parsing
+                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
 
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
@@ -1235,7 +1171,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
-                    checkpoint_name = self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)
+                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
 
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
@@ -1251,7 +1187,7 @@ class ContinuousA2CBase(A2CBase):
                             return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards)))
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num
 
