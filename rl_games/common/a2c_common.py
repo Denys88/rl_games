@@ -42,13 +42,13 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         pbt_str = ''
-        if config['population_based_training']:
+        if config.get('population_based_training', False):
             # in PBT, make sure experiment name contains a unique id of the policy within a population
             pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
 
         # This helps in PBT when we need to restart an experiment with the exact same name, rather than
         # generating a new name with the timestamp every time.
-        full_experiment_name = config.get('full_experiment_name', '')
+        full_experiment_name = config.get('full_experiment_name', None)
         if full_experiment_name:
             print(f'Exact experiment name requested from command line: {full_experiment_name}')
             self.experiment_name = full_experiment_name
