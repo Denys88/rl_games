@@ -923,7 +923,7 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
-                    self.mean_rewards = mean_rewards
+                    self.mean_rewards = mean_rewards[0]
 
                     for i in range(self.value_size):
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
@@ -1157,6 +1157,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    self.mean_rewards = mean_rewards[0]
 
                     for i in range(self.value_size):
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
