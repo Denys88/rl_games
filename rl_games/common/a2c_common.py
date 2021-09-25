@@ -179,7 +179,7 @@ class A2CBase:
         self.epoch_num = 0
 
         # allows us to specify a folder where all experiments will reside
-        self.train_dir = config.get('train_dir', 'train_dir')
+        self.train_dir = config.get('train_dir', 'runs')
 
         # a folder inside of train_dir containing everything related to a particular experiment
         self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
@@ -897,14 +897,14 @@ class DiscreteA2CBase(A2CBase):
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
-
+            curr_frames = self.curr_frames
             self.frame += curr_frames
             total_time += sum_time
 
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
-                curr_frames = self.curr_frames
+                
 
                 frame = self.frame
 
