@@ -43,14 +43,36 @@ def shape_whc_to_cwh(shape):
     
     return shape
 
-def save_scheckpoint(filename, state):
-    print("=> saving checkpoint '{}'".format(filename + '.pth'))
+def safe_filesystem_op(func, *args, **kwargs):
+    """
+    This is to prevent spurious crashes related to saving checkpoints or restoring from checkpoints in a Network
+    Filesystem environment (i.e. NGC cloud or SLURM)
+    """
+    num_attempts = 5
+    for attempt in range(num_attempts):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            print(f'Exception {exc} when trying to execute {func} with args:{args} and kwargs:{kwargs}...')
+            wait_sec = 2 ** attempt
+            print(f'Waiting {wait_sec} before trying again...')
+            time.sleep(wait_sec)
 
-    torch.save(state, filename + '.pth')
+    raise RuntimeError(f'Could not execute {func}, give up after {num_attempts} attempts...')
+
+def safe_save(state, filename):
+    return safe_filesystem_op(torch.save, state, filename)
+
+def safe_load(filename):
+    return safe_filesystem_op(torch.load, filename)
+
+def save_checkpoint(filename, state):
+    print("=> saving checkpoint '{}'".format(filename + '.pth'))
+    safe_save(state, filename + '.pth')
 
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
-    state = torch.load(filename)
+    state = safe_load(filename)
     return state
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):

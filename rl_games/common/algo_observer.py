@@ -3,8 +3,11 @@ import torch
 import numpy as np
 
 
-class AlgoObserver():
+class AlgoObserver:
     def __init__(self):
+        pass
+
+    def before_init(self, base_name, config, experiment_name):
         pass
 
     def after_init(self, algo):
@@ -16,7 +19,7 @@ class AlgoObserver():
     def after_steps(self):
         pass
 
-    def after_print_stats(self):
+    def after_print_stats(self, frame, epoch_num, total_time):
         pass
 
 

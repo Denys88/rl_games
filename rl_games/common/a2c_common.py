@@ -1,11 +1,14 @@
+import os
+
 from rl_games.common import tr_helpers
 from rl_games.common import vecenv
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.algos_torch.moving_mean_std import MovingMeanStd
-from rl_games.algos_torch.self_play_manager import  SelfPlayManager
+from rl_games.algos_torch.self_play_manager import SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
+from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 import numpy as np
 import collections
 import time
@@ -38,7 +41,25 @@ def rescale_actions(low, high, action):
 
 class A2CBase:
     def __init__(self, base_name, config):
+        pbt_str = ''
+        if config.get('population_based_training', False):
+            # in PBT, make sure experiment name contains a unique id of the policy within a population
+            pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
+
+        # This helps in PBT when we need to restart an experiment with the exact same name, rather than
+        # generating a new name with the timestamp every time.
+        full_experiment_name = config.get('full_experiment_name', None)
+        if full_experiment_name:
+            print(f'Exact experiment name requested from command line: {full_experiment_name}')
+            self.experiment_name = full_experiment_name
+        else:
+            self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
+
         self.config = config
+
+        self.algo_observer = config['features']['observer']
+        self.algo_observer.before_init(base_name, config, self.experiment_name)
+
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
@@ -153,17 +174,34 @@ class A2CBase:
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
 
+        # allows us to specify a folder where all experiments will reside
+        self.train_dir = config.get('train_dir', 'train_dir')
+
+        # a folder inside of train_dir containing everything related to a particular experiment
+        self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
+
+        # folders inside <train_dir>/<experiment_dir> for a specific purpose
+        self.nn_dir = os.path.join(self.experiment_dir, 'nn')
+        self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
+
+        os.makedirs(self.train_dir, exist_ok=True)
+        os.makedirs(self.experiment_dir, exist_ok=True)
+        os.makedirs(self.nn_dir, exist_ok=True)
+        os.makedirs(self.summaries_dir, exist_ok=True)
+
         self.entropy_coef = self.config['entropy_coef']
 
-        self.value_bootstrap = self.config.get('value_bootstrap')
         if self.rank == 0:
-            self.writer = SummaryWriter(self.log_path + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+            writer = SummaryWriter(self.summaries_dir)
+            self.writer = IntervalSummaryWriter(writer, self.config)
         else:
             self.writer = None
+
+        self.value_bootstrap = self.config.get('value_bootstrap')
 
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
@@ -448,7 +486,7 @@ class A2CBase:
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -461,7 +499,7 @@ class A2CBase:
         pass
 
     def train_epoch(self):
-        pass
+        self.vec_env.set_train_info(self.frame)
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
@@ -478,9 +516,18 @@ class A2CBase:
     def get_full_state_weights(self):
         state = self.get_weights()
         state['epoch'] = self.epoch_num
-        state['optimizer'] = self.optimizer.state_dict()      
+        state['optimizer'] = self.optimizer.state_dict()
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+        state['frame'] = self.frame
+
+        # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
+        # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
+        state['last_mean_rewards'] = self.last_mean_rewards
+
+        env_state = self.vec_env.get_env_state()
+        state['env_state'] = env_state
+
         return state
 
     def set_full_state_weights(self, weights):
@@ -489,6 +536,11 @@ class A2CBase:
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
+        self.frame = weights.get('frame', 0)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
+
+        env_state = weights.get('env_state', None)
+        self.vec_env.set_env_state(env_state)
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -717,8 +769,11 @@ class DiscreteA2CBase(A2CBase):
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
+        super().train_epoch()
+
         self.set_eval()
         play_time_start = time.time()
+
         with torch.no_grad():
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
@@ -822,11 +877,11 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -100500
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        self.frame = 0
+        # self.frame = 0  # loading from checkpoint
         self.obs = self.env_reset()
 
         if self.multi_gpu:
@@ -841,13 +896,16 @@ class DiscreteA2CBase(A2CBase):
 
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
-            total_time += sum_time\
+            total_time += sum_time
+
+            self.frame += curr_frames
+            total_time += sum_time
 
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
                 curr_frames = self.curr_frames
-                self.frame += curr_frames
+
                 frame = self.frame
 
                 if self.print_stats:
@@ -865,6 +923,8 @@ class DiscreteA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    self.mean_rewards = mean_rewards[0]
+
                     for i in range(self.value_size):
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
@@ -878,22 +938,24 @@ class DiscreteA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
+                    # removed equal signs (i.e. "rew=") from the checkpoint name since it messes with hydra CLI parsing
+                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
+
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
-                            self.save(self.network_path + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
-                        self.save(self.network_path + self.config['name'])
-
+                        self.save(os.path.join(self.nn_dir, self.config['name']))
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            self.save(self.network_path + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
-                    self.save(self.network_path + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num                           
                 update_time = 0
@@ -924,6 +986,8 @@ class ContinuousA2CBase(A2CBase):
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
+        super().train_epoch()
+
         self.set_eval()
         play_time_start = time.time()
         with torch.no_grad():
@@ -1054,7 +1118,6 @@ class ContinuousA2CBase(A2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        self.frame = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
@@ -1094,6 +1157,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
+                    self.mean_rewards = mean_rewards[0]
 
                     for i in range(self.value_size):
                         rewards_name = 'rewards' if i == 0 else 'rewards{0}'.format(i)
@@ -1108,23 +1172,24 @@ class ContinuousA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
+                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
+
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
-                            self.save(self.network_path + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
-                        self.save(self.network_path + self.config['name'])
+                        self.save(os.path.join(self.nn_dir, self.config['name']))
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
-                            self.save(self.network_path + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                            self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
 
                 if epoch_num > self.max_epochs:
-                    self.save(self.network_path + 'last_' + self.config['name'] + 'ep=' + str(epoch_num) + 'rew=' + str(mean_rewards))
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, epoch_num
 
                 update_time = 0
-
