@@ -59,7 +59,7 @@ params:
     name: minigrid_env_rnn
     score_to_win: 100
     grad_norm: 10
-    entropy_coef: 0.03
+    entropy_coef: 0.02
     truncate_grads: True
     env_name:  minigrid_env
     ppo: true
@@ -73,21 +73,21 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 8
+    seq_length: 16
     weight_decay: 0.0000
     save_frequency: 100
     env_config:
       #action_bonus: True
       #state_bonus : False
-      #fully_obs: False
+      fully_obs: False
       name: MiniGrid-MemoryS7-v0
-      global_state: True
+      #global_state: True
     player:
       games_num: 100
       render: True
       determenistic: False
 
-    central_value_config: 
+    central_value_config1: 
       minibatch_size: 256
       mini_epochs: 4
       learning_rate: 5e-4

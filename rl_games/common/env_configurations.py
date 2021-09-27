@@ -281,6 +281,8 @@ def create_minigrid_env(name, **kwargs):
         else:
             env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env) # Get pixel observations
             env = gym_minigrid.wrappers.ImgObsWrapper(env)
+            #env = wrappers.WarpFrame(env, width=56, height=56)
+            #env = wrappers.FrameStack(env,4)
     
     print('minigird_env observation space shape:', env.observation_space)
     return env
