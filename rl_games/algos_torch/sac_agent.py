@@ -347,6 +347,7 @@ class SACAgent:
         total_time_start = time.time()
         total_update_time = 0
         total_time = 0
+        step_time = 0.0
         actor_losses = []
         entropies = []
         alphas = []
@@ -368,10 +369,14 @@ class SACAgent:
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
             step_end = time.time()
+
             self.current_rewards += rewards
             self.current_lengths += 1
 
             total_time += step_end - step_start
+
+            step_time += (step_end - step_start)
+
             all_done_indices = dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
             self.game_rewards.update(self.current_rewards[done_indices])
@@ -383,7 +388,7 @@ class SACAgent:
 
             no_timeouts = self.current_lengths != self.max_env_steps
             dones = dones * no_timeouts
-            
+
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
 
@@ -418,15 +423,15 @@ class SACAgent:
         total_time_end = time.time()
         total_time = total_time_end - total_time_start
         play_time = total_time - total_update_time
-        return play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
+        return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train_epoch(self):
         if self.epoch_num < self.num_seed_steps:
-            play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.play_steps(random_exploration=True)
+            step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.play_steps(random_exploration=True)
         else:
-            play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.play_steps(random_exploration=False)
+            step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses = self.play_steps(random_exploration=False)
 
-        return play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
+        return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train(self):
         self.init_tensors()
