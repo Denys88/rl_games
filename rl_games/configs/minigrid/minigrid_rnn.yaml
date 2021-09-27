@@ -23,17 +23,20 @@ params:
       regularizer:
         name: 'None'
       convs:    
-        - filters: 16
+        - filters: 8
           kernel_size: 8
           strides: 4
           padding: 0
-        - filters: 32
+        - filters: 16
           kernel_size: 4
           strides: 2
           padding: 0
-      
+        - filters: 32
+          kernel_size: 3
+          strides: 1
+          padding: 0      
     mlp:
-      units: [128]
+      units: []
       activation: relu
       regularizer:
         name: 'None'
@@ -44,7 +47,8 @@ params:
       name: 'lstm'
       units: 128
       layers: 1
-      before_mlp: True
+      before_mlp: False
+      #layer_norm: True
   config:
     reward_shaper:
         scale_value: 1
@@ -53,9 +57,9 @@ params:
     tau: 0.9
     learning_rate: 5e-4
     name: minigrid_env_rnn
-    score_to_win: 1000
-    grad_norm: 0.5
-    entropy_coef: 0.01
+    score_to_win: 100
+    grad_norm: 10
+    entropy_coef: 0.03
     truncate_grads: True
     env_name:  minigrid_env
     ppo: true
@@ -64,21 +68,68 @@ params:
     num_actors: 16
     horizon_length: 256
     minibatch_size: 2048
-    mini_epochs: 4
+    mini_epochs: 2
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
+    seq_length: 8
     weight_decay: 0.0000
-
+    save_frequency: 100
     env_config:
       #action_bonus: True
-      #state_bonus : True
+      #state_bonus : False
+      #fully_obs: False
       name: MiniGrid-MemoryS7-v0
-      fully_obs: False
+      global_state: True
     player:
       games_num: 100
       render: True
       determenistic: False
-      
+
+    central_value_config: 
+      minibatch_size: 256
+      mini_epochs: 4
+      learning_rate: 5e-4
+      clip_value: False
+      normalize_input: False
+      truncate_grads: True
+      grad_norm: 10
+      network:
+        name: actor_critic
+        central_value: True
+        cnn:
+          type: conv2d
+          activation: relu
+          initializer:
+            name: glorot_normal_initializer
+            gain: 1.4142 
+          regularizer:
+            name: 'None'
+          convs:    
+            - filters: 8
+              kernel_size: 8
+              strides: 4
+              padding: 0
+            - filters: 16
+              kernel_size: 4
+              strides: 2
+              padding: 0
+            - filters: 32
+              kernel_size: 3
+              strides: 1
+              padding: 0      
+        mlp:
+          units: []
+          activation: relu
+          regularizer:
+            name: 'None'
+          initializer:
+            name: glorot_normal_initializer
+            gain: 1.4142 
+        rnn:
+          name: 'lstm'
+          units: 128
+          layers: 1
+          before_mlp: False
+          #layer_norm: True
