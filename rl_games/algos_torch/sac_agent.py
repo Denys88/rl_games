@@ -260,7 +260,7 @@ class SACAgent:
         
         actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
-        
+
         self.actor_optimizer.zero_grad(set_to_none=True)
         actor_loss.backward()
         self.actor_optimizer.step()
@@ -292,6 +292,7 @@ class SACAgent:
         next_obs = self.preproc_obs(next_obs)
 
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
+
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
 
         actor_loss_info = actor_loss, entropy, alpha, alpha_loss
@@ -308,6 +309,7 @@ class SACAgent:
 
     def env_step(self, actions):
         obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
+
         self.step += self.num_actors
         if self.is_tensor_obses:
             return obs, rewards, dones, infos
@@ -315,7 +317,8 @@ class SACAgent:
             return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
     
     def env_reset(self):
-        obs = self.vec_env.reset() 
+        with torch.no_grad():
+            obs = self.vec_env.reset()
 
         if self.is_tensor_obses is None:
             self.is_tensor_obses = torch.is_tensor(obs)
@@ -423,6 +426,7 @@ class SACAgent:
         total_time_end = time.time()
         total_time = total_time_end - total_time_start
         play_time = total_time - total_update_time
+
         return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train_epoch(self):
