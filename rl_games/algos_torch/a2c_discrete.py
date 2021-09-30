@@ -85,7 +85,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             traced = torch.jit.trace(adapter, adapter.flattened_inputs,check_trace=True)
             flattened_outputs = traced(*adapter.flattened_inputs)
             print(flattened_outputs)
-
+            flattened_outputs = traced(*adapter.flattened_inputs)
+            print(flattened_outputs)
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
 
