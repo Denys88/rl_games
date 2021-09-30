@@ -49,6 +49,8 @@ Then:
 
 ```pip install rl-games```
 
+To run Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
+
 
 # Training
 **NVIDIA Isaac Gym**

@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 
+import time
+
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
     np.dtype('uint8')      : torch.uint8,

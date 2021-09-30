@@ -939,7 +939,7 @@ class DiscreteA2CBase(A2CBase):
                         self.self_play_manager.update(self)
 
                     # removed equal signs (i.e. "rew=") from the checkpoint name since it messes with hydra CLI parsing
-                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
+                    checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
@@ -1172,7 +1172,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.has_self_play_config:
                         self.self_play_manager.update(self)
 
-                    checkpoint_name = self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)
+                    checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
                         if (epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
