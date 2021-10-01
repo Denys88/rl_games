@@ -95,4 +95,9 @@ Shadow Hand block orientation task
 * Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
     * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
 
+# Known issues
+
+* Running a single environment with Isaac Gym can cause crash, if it happens switch to at least 2 environments simulated in parallel
+    
+
 
