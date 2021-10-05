@@ -3,7 +3,7 @@ from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
 import gym
-
+import random
 from time import sleep
 
 
@@ -55,6 +55,8 @@ class RayWorker:
 
     def seed(self, seed):
         if hasattr(self.env, 'seed'):
+            np.random.seed(seed)
+            random.seed(seed)
             self.env.seed(seed)
             
     def render(self):
@@ -104,13 +106,17 @@ class RayVecEnv(IVecEnv):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
-        self.seed = kwargs.pop('seed', 0)
-        self.seeds = range(self.seed, self.seed + self.num_actors)
+
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
-        seed_set = []
-        for (seed, worker) in zip(self.seeds, self.workers):	        
-            seed_set.append(worker.seed.remote(seed))
+        self.seed = kwargs.pop('seed', None)
+        if self.seed is not None:
+            seeds = range(self.seed, self.seed + self.num_actors)
+            seed_set = []
+            for (seed, worker) in zip(seeds, self.workers):	        
+                seed_set.append(worker.seed.remote(seed))
+            ray.get(seed_set)
+
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
 

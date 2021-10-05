@@ -52,12 +52,12 @@ params:
     env_config:
       name: TestRnnEnv-v0
       hide_object: False
-      apply_dist_reward: True
+      apply_dist_reward: False
       min_dist: 2
       max_dist: 8
       use_central_value: False
       multi_discrete_space: True
-      multi_head_value: True
+      multi_head_value: False
     player:
         games_num: 100
         is_determenistic: True

@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import copy
 import torch
 import yaml
@@ -35,7 +36,7 @@ class Runner:
         self.algo_observer = algo_observer
 
         torch.backends.cudnn.benchmark = True
-
+        #torch.backends.cudnn.deterministic = True
     def reset(self):
         pass
 
@@ -51,6 +52,7 @@ class Runner:
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
+            random.seed(self.seed)
 
         if self.load_check_point:
             self.load_path = params['load_path']
