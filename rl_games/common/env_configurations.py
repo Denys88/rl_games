@@ -264,25 +264,15 @@ def create_minigrid_env(name, **kwargs):
     flat_obs = kwargs.pop('flat_obs', False)
     global_state = kwargs.pop('global_state', False)
     env = gym.make(name, **kwargs)
-
+    env = gym_minigrid.wrappers.ViewSizeWrapper(env,3)
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
     if action_bonus:
         env = gym_minigrid.wrappers.ActionBonus(env)
 
-    if global_state:
-        env = GlobalStateWrapper(env)
-    elif flat_obs:
-        env = gym_minigrid.wrappers.FlatObsWrapper(env)
-    else:
-        if fully_obs:
-            env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
-            env = gym_minigrid.wrappers.ImgObsWrapper(env)
-        else:
-            env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env) # Get pixel observations
-            env = gym_minigrid.wrappers.ImgObsWrapper(env)
-            #env = wrappers.WarpFrame(env, width=56, height=56)
-            #env = wrappers.FrameStack(env,4)
+
+    env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=28) # Get pixel observations
+    env = gym_minigrid.wrappers.ImgObsWrapper(env)
     
     print('minigird_env observation space shape:', env.observation_space)
     return env

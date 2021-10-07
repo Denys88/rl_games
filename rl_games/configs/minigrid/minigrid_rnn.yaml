@@ -27,7 +27,7 @@ params:
           kernel_size: 8
           strides: 4
           padding: 0
-        - filters: 32
+        - filters: 64
           kernel_size: 4
           strides: 2
           padding: 0
@@ -45,7 +45,7 @@ params:
         gain: 1.4142 
     rnn:
       name: 'lstm'
-      units: 256
+      units: 512
       layers: 1
       before_mlp: False
       #layer_norm: True
@@ -58,7 +58,7 @@ params:
     learning_rate: 2e-4
     name: minigrid_env_rnn
     score_to_win: 100
-    grad_norm: 1
+    grad_norm: 2
     entropy_coef: 0.01
     truncate_grads: True
     env_name:  minigrid_env
@@ -80,7 +80,7 @@ params:
       #action_bonus: True
       #state_bonus : False
       fully_obs: False
-      name: MiniGrid-MemoryS7-v0
+      name: MiniGrid-MemoryS13Random-v0
       #global_state: True
     player:
       games_num: 100
