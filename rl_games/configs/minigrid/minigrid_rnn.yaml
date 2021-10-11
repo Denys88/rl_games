@@ -58,7 +58,8 @@ params:
     learning_rate: 2e-4
     name: minigrid_env_rnn
     score_to_win: 100
-    grad_norm: 0.5
+    grad_norm: 1
+
     entropy_coef: 0.01
     truncate_grads: True
     env_name:  minigrid_env
