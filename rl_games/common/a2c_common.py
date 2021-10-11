@@ -513,6 +513,9 @@ class A2CBase:
     def train_central_value(self):
         return self.central_value_net.train_net()
 
+    def add_custom_data_to_dataset(self, dict, batch_dict):
+        return dict
+
     def get_full_state_weights(self):
         state = self.get_weights()
         state['epoch'] = self.epoch_num
@@ -851,6 +854,8 @@ class DiscreteA2CBase(A2CBase):
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         dataset_dict = {}
+        dataset_dict = self.add_custom_data_to_dataset(dataset_dict, batch_dict)
+
         dataset_dict['old_values'] = values
         dataset_dict['old_logp_actions'] = neglogpacs
         dataset_dict['advantages'] = advantages
@@ -862,6 +867,7 @@ class DiscreteA2CBase(A2CBase):
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
+
 
         self.dataset.update_values_dict(dataset_dict)
 
@@ -1029,7 +1035,8 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset.update_mu_sigma(cmu, csigma)   
+                if self.is_adaptive_lr:
+                    self.dataset.update_mu_sigma(cmu, csigma)   
 
                 if self.schedule_type == 'legacy':  
                     if self.multi_gpu:
