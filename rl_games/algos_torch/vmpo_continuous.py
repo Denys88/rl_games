@@ -189,8 +189,8 @@ class VMPOAgent(a2c_common.ContinuousA2CBase):
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
 
         with torch.no_grad():
-            self.eta.copy_(torch.clamp(self.eta,min=1e-8))
-            self.alpha.copy_(torch.clamp(self.alpha,min=1e-8))                    
+            self.eta.copy_(torch.clamp(self.eta,min=1e-5))
+            self.alpha.copy_(torch.clamp(self.alpha,min=1e-5))                    
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss)

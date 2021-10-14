@@ -36,8 +36,8 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
         self.alpha = torch.tensor(1.0).float().to(self.device)
         self.eta.requires_grad = True
         self.alpha.requires_grad = True
-        self.eps_eta = config.get('eps_eta', 0.02)
-        self.eps_alpha = config.get('eps_alpha', 0.1)
+        self.eps_eta = config.get('eps_eta', 0.1)
+        self.eps_alpha = config.get('eps_alpha', 0.01)
         params = [
                 {'params': self.model.parameters()},
                 {'params': self.eta},
@@ -141,7 +141,7 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             L_alpha = torch.mean(self.alpha*(self.eps_alpha-KL.detach())+self.alpha.detach()*KL)
             
             a_loss = L_pi + L_eta + L_alpha
-            print(torch.mean(KL).item())
+            print(self.eta.detach().item(), self.alpha.detach().item())
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
@@ -178,8 +178,8 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             self.scaler.update()
 
         with torch.no_grad():
-            self.eta.copy_(torch.clamp(self.eta,min=1e-8))
-            self.alpha.copy_(torch.clamp(self.alpha,min=1e-8)) 
+            self.eta.copy_(torch.clamp(self.eta,min=1e-5))
+            self.alpha.copy_(torch.clamp(self.alpha,min=1e-5)) 
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)

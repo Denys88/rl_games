@@ -63,5 +63,5 @@ params:
       #weight_decay: 0.0001
       player:
         render: True
-        determenistic: True
+        determenistic: False
         games_num: 200

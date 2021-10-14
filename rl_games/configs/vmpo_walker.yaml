@@ -8,7 +8,7 @@ params:
 
   network:
     name: actor_critic
-    separate: False
+    separate: True
     space:
       continuous:
         mu_activation: None
@@ -59,7 +59,7 @@ params:
       normalize_input: True
       bounds_loss_coef: 0.00
       max_epochs: 10000
-      normalize_value: True
+      normalize_value: False
       #weight_decay: 0.0001
       player:
         render: True
