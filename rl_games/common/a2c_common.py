@@ -974,7 +974,8 @@ class ContinuousA2CBase(A2CBase):
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
    
     def preprocess_actions(self, actions):
-        clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
+        #clamped_actions = torch.clamp(actions, -1.0, 1.0)
+        clamped_actions = actions
         rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
         if not self.is_tensor_obses:
             rescaled_actions = rescaled_actions.cpu().numpy()
