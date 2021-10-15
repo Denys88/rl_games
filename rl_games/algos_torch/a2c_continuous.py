@@ -13,6 +13,7 @@ from torch import nn
 import numpy as np
 import gym
 
+
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, config):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
@@ -21,7 +22,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1)
+            'value_size': self.env_info.get('value_size', 1)
         }
 
         self.model = self.network.build(config)
@@ -66,6 +67,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                             or (not self.has_phasic_policy_gradients and not self.has_central_value) 
         self.algo_observer.after_init(self)
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num

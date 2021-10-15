@@ -1,3 +1,4 @@
+from tensorflow.python.ops.gen_io_ops import restore
 from rl_games.common import tr_helpers, vecenv
 from rl_games.algos_tf14 import networks
 from rl_games.algos_tf14.tensorflow_utils import TensorFlowVariables

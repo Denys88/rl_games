@@ -42,6 +42,20 @@ class BasePlayer(object):
         self.max_steps = 108000 // 4
         self.device = torch.device(self.device_name)
 
+        self.wsteps = 0
+        self.steps_between_load = 500
+
+        self.weights = {'nn/last_Humanoid_ep_400_rew_7692.353.pth', \
+                'nn/last_Humanoid_ep_500_rew_8256.191.pth', \
+                'nn/last_Humanoid_ep_600_rew_9273.486.pth', \
+                'nn/last_Humanoid_ep_700_rew_9772.181.pth', \
+                'nn/last_Humanoid_ep_800_rew_10122.609.pth', \
+                'nn/last_Humanoid_ep_900_rew_9854.391.pth', \
+                'nn/Humanoid.pth'}
+
+        self.num_weights = len(self.weights)
+        self.wi = 0
+
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
             for k, v in obs_batch.items():
@@ -173,6 +187,12 @@ class BasePlayer(object):
         for _ in range(n_games):
             if games_played >= n_games:
                 break
+
+            # if (self.wsteps % self.steps_between_load == 0) and (self.wi < self.num_weights):
+            #     self.restore(self.weights[self.wi])
+            #     self.wi += 1
+
+            self.wsteps +=1
 
             obses = self.env_reset(self.env)
             batch_size = 1

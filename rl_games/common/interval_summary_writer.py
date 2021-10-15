@@ -19,9 +19,9 @@ class IntervalSummaryWriter:
         self.experiment_start = time.time()
 
         # prevents noisy summaries when experiments are restarted
-        self.defer_summaries_sec = cfg.get('defer_summaries_sec', 5)
+        self.defer_summaries_sec = cfg.get('defer_summaries_sec', 1)
 
-        self.interval_sec_min = cfg.get('summaries_interval_sec_min', 5)
+        self.interval_sec_min = cfg.get('summaries_interval_sec_min', 1)
         self.interval_sec_max = cfg.get('summaries_interval_sec_max', 300)
         self.last_interval = self.interval_sec_min
 
