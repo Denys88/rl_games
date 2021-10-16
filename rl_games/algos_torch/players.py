@@ -60,7 +60,9 @@ class PpoPlayerContinuous(BasePlayer):
             current_action = action
         if self.has_batch_dimension == False:
             current_action = torch.squeeze(current_action.detach())
-        return  rescale_actions(self.actions_low, self.actions_high, torch.clamp(current_action, -1.0, 1.0))
+
+        #return rescale_actions(self.actions_low, self.actions_high, torch.clamp(current_action, -1.0, 1.0))
+        return current_action
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)

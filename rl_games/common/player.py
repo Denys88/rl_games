@@ -229,6 +229,7 @@ class BasePlayer(object):
                         if 'scores' in info:
                             print_game_res = True
                             game_res = info.get('scores', 0.5)
+
                     if self.print_stats:
                         if print_game_res:
                             print('reward:', cur_rewards/done_count,
