@@ -38,8 +38,8 @@ class VMPOAgent(a2c_common.ContinuousA2CBase):
         self.alpha = torch.tensor(1.0).float().to(self.device)
         self.eta.requires_grad = True
         self.alpha.requires_grad = True
-        self.eps_eta = config.get('eps_eta', 0.02)
-        self.eps_alpha = config.get('eps_alpha', 0.1)
+        self.eps_eta = config.get('eps_eta', 0.01)
+        self.eps_alpha = config.get('eps_alpha', 1)
         params = [
                 {'params': self.model.parameters()},
                 {'params': self.eta},

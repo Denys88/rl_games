@@ -46,8 +46,9 @@ params:
         gain: 1.4142 
   config:
     reward_shaper:
-      min_val: -1
-      max_val: 1
+      #min_val: -1
+      #max_val: 1
+      scale_value: 1
         
     normalize_advantage: True
     gamma: 0.99
@@ -64,12 +65,13 @@ params:
     clip_value: True
     num_actors: 24
     horizon_length: 128
-    minibatch_size: 1536
+    minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
+    normalize_value: True
     seq_length: 8
     #lr_schedule:  adaptive
     # kl_threshold: 0.008
@@ -77,11 +79,12 @@ params:
     # max_epochs: 5000
 
     env_config:
-      skip: 3
+      skip: 4
       name: 'SpaceInvadersNoFrameskip-v4'
 
     player:
         render: True
         games_num: 10
         n_game_life: 3
-        determenistic: True
+        render_sleep: 0.05
+        determenistic: False
