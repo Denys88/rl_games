@@ -27,7 +27,7 @@ params:
       gamma: 0.99
       tau: 0.95
 
-      learning_rate: 1e-3
+      learning_rate: 5e-4
       name: vmpo_lunar_discrete
       score_to_win: 300
 
@@ -47,6 +47,7 @@ params:
       kl_threshold: 0.008
       schedule_type: standard
       normalize_input: False
+      normalize_value: True
       seq_length: 4
       bounds_loss_coef: 0
 

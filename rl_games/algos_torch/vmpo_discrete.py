@@ -5,7 +5,6 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-from rl_games.algos_torch import ppg_aux
 
 from torch import optim
 import torch 
@@ -36,8 +35,10 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
         self.alpha = torch.tensor(1.0).float().to(self.device)
         self.eta.requires_grad = True
         self.alpha.requires_grad = True
-        self.eps_eta = config.get('eps_eta', 1)
-        self.eps_alpha = config.get('eps_alpha', 0.01)
+        self.eps_eta = config.get('eps_eta', 0.02)
+        self.eps_alpha = config.get('eps_alpha', [0.005, 0.01])
+        self.eps_alpha = [torch.tensor(self.eps_alpha[0]).float().to(self.device).log() \
+                            ,torch.tensor(self.eps_alpha[1]).float().to(self.device).log()]
         params = [
                 {'params': self.model.parameters()},
                 {'params': self.eta},
@@ -135,22 +136,15 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
                 aug_adv_max = (good_advantages / self.eta).max()
                 aug_adv = (good_advantages / self.eta.detach() - aug_adv_max).exp()
                 norm_aug_adv = aug_adv / aug_adv.sum()
-            L_pi = (norm_aug_adv * good_logprobs).sum()
+            pi_loss = (norm_aug_adv * good_logprobs).sum()
             # loss_eta (dual func.)
-            L_eta = self.eta * self.eps_eta + aug_adv_max + self.eta * (good_advantages / self.eta - aug_adv_max).exp().mean().log()
+            eta_loss = self.eta * self.eps_eta + aug_adv_max + self.eta * (good_advantages / self.eta - aug_adv_max).exp().mean().log()
             
-            #KL = self.model.kl({'logits' : input_dict['old_logits']}, res_dict)
+            kl = self.model.kl({'logits' : input_dict['old_logits']}, res_dict)
+            coef_alpha  = torch.distributions.Uniform(self.eps_alpha[0], self.eps_alpha[1]).sample().exp()
+            alpha_loss = torch.mean(self.alpha*(coef_alpha-kl.detach())+self.alpha.detach()*kl)
             
-            prob_a_old = input_dict['old_logits'].exp()
-            logp_a_old = input_dict['old_logits']
-            logp_a = res_dict['logits']
-            prob_a = res_dict['logits'].exp()
-            #KL = prob_a_old * (logp_a_old - logp_a) - prob_a_old + prob_a 
-            KL = torch.nn.functional.kl_div(logp_a_old.detach(), logp_a, reduction='batchmean',log_target=True)
-  
-            L_alpha = torch.mean(self.alpha*(self.eps_alpha-KL.detach())+self.alpha.detach()*KL)
-            
-            a_loss = L_pi + L_eta + L_alpha
+            a_loss = pi_loss + eta_loss + alpha_loss
             
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)

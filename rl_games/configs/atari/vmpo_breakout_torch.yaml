@@ -46,14 +46,14 @@ params:
       #max_val: 1
       scale_value: 1
         
-    normalize_advantage: False
-    gamma: 0.99
-    tau: 0.9
-    learning_rate: 3e-4
+    normalize_advantage: True
+    gamma: 0.997
+    tau: 0.95
+    learning_rate: 1e-4
     name: breakout_vmpo
     score_to_win: 900
     grad_norm: 10
-    entropy_coef: 0.00
+    entropy_coef: 0.0
     truncate_grads: True
     env_name: atari_gym
     ppo: true
@@ -68,11 +68,9 @@ params:
     kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
-    normalize_value: False
+    normalize_value: True
     normalize_input: False
     max_epochs: 10000
-    eps_alpha: 0.01
-    eps_eta: 1.0
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'
