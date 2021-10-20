@@ -11,7 +11,7 @@ class BasePlayer(object):
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
-        self.clip_actions = config.get('clip_actions', False)
+        self.clip_actions = config.get('clip_actions', True)
 
         if self.env_info is None:
             self.env = self.create_env()
