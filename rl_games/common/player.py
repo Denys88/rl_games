@@ -11,13 +11,16 @@ class BasePlayer(object):
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
+        self.clip_actions = config.get('clip_actions', False)
 
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
+
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
+
         self.observation_space = self.env_info['observation_space']
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
@@ -26,6 +29,7 @@ class BasePlayer(object):
         else:
             self.obs_shape = self.observation_space.shape
         self.is_tensor_obses = False
+
         self.states = None
         self.player_config = self.config.get('player', {})
         self.use_cuda = True

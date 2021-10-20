@@ -42,7 +42,9 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         pbt_str = ''
-        if config.get('population_based_training', False):
+
+        self.population_based_training = config.get('population_based_training', False)
+        if self.population_based_training:
             # in PBT, make sure experiment name contains a unique id of the policy within a population
             pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
 
@@ -197,7 +199,12 @@ class A2CBase:
 
         if self.rank == 0:
             writer = SummaryWriter(self.summaries_dir)
-            self.writer = IntervalSummaryWriter(writer, self.config)
+
+            if self.population_based_training:
+                self.writer = IntervalSummaryWriter(writer, self.config)
+            else:
+                self.writer = writer
+
         else:
             self.writer = None
 
@@ -969,16 +976,22 @@ class ContinuousA2CBase(A2CBase):
         self.actions_num = action_space.shape[0]
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
+        self.clip_actions = config.get('clip_actions', False)
+
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
    
     def preprocess_actions(self, actions):
-        #clamped_actions = torch.clamp(actions, -1.0, 1.0)
-        clamped_actions = actions
-        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        if self.clip_actions:
+            clamped_actions = torch.clamp(actions, -1.0, 1.0)
+            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        else:
+            rescaled_actions = actions
+
         if not self.is_tensor_obses:
             rescaled_actions = rescaled_actions.cpu().numpy()
+
         return rescaled_actions
 
     def init_tensors(self):
