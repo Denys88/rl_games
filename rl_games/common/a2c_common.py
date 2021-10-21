@@ -139,6 +139,7 @@ class A2CBase:
         self.horizon_length = config['horizon_length']
         self.seq_len = self.config.get('seq_length', 4)
         self.normalize_advantage = config['normalize_advantage']
+        self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -206,6 +207,10 @@ class A2CBase:
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
 
+
+        if self.normalize_advantage and self.normalize_rms_advantage:
+            self.advantage_mean_std = MovingMeanStd((1,)).to(self.ppo_device)
+
         self.is_tensor_obses = False
 
         self.last_rnn_indices = None
@@ -257,6 +262,9 @@ class A2CBase:
             self.running_mean_std.train()
         if self.normalize_value:
             self.value_mean_std.train()
+        if self.normalize_rms_advantage:
+            self.advantage_mean_std.train()
+            
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -321,7 +329,7 @@ class A2CBase:
                 value = result['values']
 
             if self.normalize_value:
-                value = self.value_mean_std(value, True)
+                value = self.value_mean_std(value, unnorm=True)
             return value
 
     @property
@@ -846,9 +854,15 @@ class DiscreteA2CBase(A2CBase):
  
         if self.normalize_advantage:
             if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
+                else:
+                    advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages)
+                else:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -893,7 +907,7 @@ class DiscreteA2CBase(A2CBase):
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
-
+            #print(self.advantage_mean_std.moving_mean, self.advantage_mean_std.moving_var)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
