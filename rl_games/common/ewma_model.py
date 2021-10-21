@@ -27,5 +27,12 @@ class EwmaModel():
         self.update(decay=0)
 
 
-def update_adam(lr, betas, c):
-    lr = lr/np.sqrt(c)
+class AdamEwmaUpdate():
+    def __init__(self, c):
+        self.c = c
+
+def __call__(self, adam):
+    c = self.c
+    for g in adam.param_groups:
+        g['lr'] = g['lr'] / np.sqrt(c)
+        g['betas'] = (g['betas'][0]**(1/c), g['betas'][1]**(1/c))
