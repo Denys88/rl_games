@@ -104,3 +104,6 @@ Shadow Hand block orientation task
 * Fixed crash when running single Isaac Gym environment in a play (test) mode.
 * Added config parameter ```clip_actions``` for switching off internal action clipping and rescaling
 
+1.1.4
+* Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
+
