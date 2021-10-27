@@ -36,7 +36,7 @@ class BasePlayer(object):
         self.batch_size = 1
         self.has_batch_dimension = False
         self.has_central_value = self.config.get('central_value_config') is not None
-        self.device_name = self.player_config.get('device_name', 'cuda')
+        self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
         self.is_determenistic = self.player_config.get('determenistic', True)
