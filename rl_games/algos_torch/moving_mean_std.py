@@ -35,6 +35,7 @@ class MovingMeanStd(nn.Module):
             else:
                 mean = input.mean(self.axis) # along channel axis
                 var = input.var(self.axis)
+            
             self.moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
             self.moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
 
