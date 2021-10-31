@@ -71,7 +71,7 @@ class A2CBase:
             self.rank = self.hvd.rank
             self.rank_size  = self.hvd.rank_size
 
-        self.use_diagnostics = config.get('use_diagnostics', True)
+        self.use_diagnostics = config.get('use_diagnostics', False)
 
         if self.use_diagnostics and self.rank == 0:
             self.diagnostics = PpoDiagnostics()
@@ -147,7 +147,7 @@ class A2CBase:
         self.horizon_length = config['horizon_length']
         self.seq_len = self.config.get('seq_length', 4)
         self.normalize_advantage = config['normalize_advantage']
-        self.normalize_rms_advantage = config.get('normalize_rms_advantage', True)
+        self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -217,7 +217,7 @@ class A2CBase:
 
 
         if self.normalize_advantage and self.normalize_rms_advantage:
-            momentum = self.config.get('adv_rms_momentum', 0.25)
+            momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
             self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
@@ -859,7 +859,7 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-
+        
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       
