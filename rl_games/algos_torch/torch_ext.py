@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
-
+import math
 import time
 
 numpy_to_torch_dtype_dict = {
@@ -149,6 +149,35 @@ def get_mean_var_with_masks(values, masks):
 
     return values_mean, values_var
 
+def explained_variance(y_pred,y, masks=None):
+    """
+    Computes fraction of variance that ypred explains about y.
+    Returns 1 - Var[y-ypred] / Var[y]
+    interpretation:
+        ev=0  =>  might as well have predicted zero
+        ev=1  =>  perfect prediction
+        ev<0  =>  worse than just predicting zero
+    """
+    if masks is not None:
+        _, var_y = get_mean_var_with_masks(y_pred,masks)
+        _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
+    else:
+        var_y = torch.var(y)
+        var_dy = torch.var(y-y_pred)
+    return 1.0 - var_dy/var_y
+
+def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
+    logratio = old_neglogp - new_neglogp
+    clip_frac = torch.logical_or(
+                logratio < math.log(1.0 - clip_param),
+                logratio > math.log(1.0 + clip_param),
+            ).float()
+    if masks is not None:
+        clip_frac = clip_frac * masks/masks.sum()
+    else:
+        clip_frac = clip_frac.mean()
+    return clip_frac
+    
 class CoordConv2d(nn.Conv2d):
     pool = {}
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,

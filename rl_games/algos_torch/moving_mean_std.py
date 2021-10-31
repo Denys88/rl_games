@@ -6,7 +6,7 @@ import rl_games.algos_torch.torch_ext as torch_ext
 updates moving statistics with momentum
 '''
 class MovingMeanStd(nn.Module):
-    def __init__(self, insize, momentum = 0.99, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, momentum = 0.25, epsilon=1e-05, per_channel=False, norm_only=False):
         super(MovingMeanStd, self).__init__()
         self.insize = insize
         self.epsilon = epsilon
