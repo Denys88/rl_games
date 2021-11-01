@@ -6,7 +6,7 @@ class DefaultDiagnostics(object):
         pass
     def send_info(self, writter):
         pass    
-    def epoch(self, agent, epoch):
+    def epoch(self, agent, current_epoch):
         pass
     def mini_epoch(self, agent, miniepoch):
         pass
