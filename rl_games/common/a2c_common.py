@@ -166,6 +166,7 @@ class A2CBase:
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
+        print(self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
@@ -186,7 +187,7 @@ class A2CBase:
         self.mean_rewards = self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-
+        self.curr_frames = 0
         # allows us to specify a folder where all experiments will reside
         self.train_dir = config.get('train_dir', 'runs')
 
@@ -982,12 +983,13 @@ class DiscreteA2CBase(A2CBase):
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
-
-                if epoch_num > self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
-                    print('MAX EPOCHS NUM!')
-                    return self.last_mean_rewards, epoch_num                           
                 update_time = 0
+            if epoch_num > self.max_epochs:
+                if self.rank == 0:
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
+                print('MAX EPOCHS NUM!')
+                return self.last_mean_rewards, epoch_num                        
+                
 
 
 class ContinuousA2CBase(A2CBase):
@@ -1223,10 +1225,11 @@ class ContinuousA2CBase(A2CBase):
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
                             return self.last_mean_rewards, epoch_num
-
-                if epoch_num > self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
-                    print('MAX EPOCHS NUM!')
-                    return self.last_mean_rewards, epoch_num
-
                 update_time = 0
+            if epoch_num > self.max_epochs:
+                if self.rank == 0:
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
+                print('MAX EPOCHS NUM!')
+                return self.last_mean_rewards, epoch_num
+
+                
