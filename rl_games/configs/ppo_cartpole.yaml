@@ -49,4 +49,4 @@ params:
     kl_threshold: 0.008
     normalize_input: False
     device: 'cpu'
-    multi_gpu: True
+    multi_gpu: False
