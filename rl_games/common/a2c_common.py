@@ -66,6 +66,7 @@ class A2CBase:
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
+        self.curr_frames = 0
         if self.multi_gpu:
             from rl_games.distributed.hvd_wrapper import HorovodWrapper
             self.hvd = HorovodWrapper()
@@ -936,7 +937,7 @@ class DiscreteA2CBase(A2CBase):
             curr_frames = self.curr_frames
             self.frame += curr_frames
             total_time += sum_time
-
+            should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 scaled_time = sum_time #self.num_agents * sum_time
@@ -989,14 +990,19 @@ class DiscreteA2CBase(A2CBase):
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            return self.last_mean_rewards, epoch_num
+                            should_exit = True
+
+                if epoch_num > self.max_epochs:
+                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
+                    print('MAX EPOCHS NUM!')
+                    should_exit = True                              
                 update_time = 0
-            if epoch_num > self.max_epochs:
-                if self.rank == 0:
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
-                print('MAX EPOCHS NUM!')
-                return self.last_mean_rewards, epoch_num                        
-                
+            if self.multi_gpu:
+                    should_exit_t = torch.tensor(should_exit).float()
+                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
+                    should_exit = should_exit_t.bool().item()
+            if should_exit:
+                return self.last_mean_rewards, epoch_num
 
 
 class ContinuousA2CBase(A2CBase):
@@ -1186,7 +1192,7 @@ class ContinuousA2CBase(A2CBase):
             self.dataset.update_values_dict(None)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
-
+            should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
@@ -1207,6 +1213,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
+                
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
@@ -1238,12 +1245,19 @@ class ContinuousA2CBase(A2CBase):
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            return self.last_mean_rewards, epoch_num
-                update_time = 0
-            if epoch_num > self.max_epochs:
-                if self.rank == 0:
+                            should_exit = True
+                            
+
+                if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
-                print('MAX EPOCHS NUM!')
+                    print('MAX EPOCHS NUM!')
+                    should_exit = True
+
+                update_time = 0
+            if self.multi_gpu:
+                    should_exit_t = torch.tensor(should_exit).float()
+                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
+                    should_exit = should_exit_t.float().item()
+            if should_exit:
                 return self.last_mean_rewards, epoch_num
 
-                

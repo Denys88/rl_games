@@ -106,4 +106,4 @@ Shadow Hand block orientation task
 
 1.1.4
 * Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
-
+* Fixed variuos multi gpu errors
