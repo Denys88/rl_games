@@ -89,6 +89,15 @@ Shadow Hand block orientation task
 * Added reporting env (sim) step fps, without policy inference. Improved naming.
 * Renames in yaml config for better readability: steps_num to horizon_length amd lr_threshold to kl_threshold
 
+1.1.3
+
+* Fixed crash when running single Isaac Gym environment in a play (test) mode.
+* Added config parameter ```clip_actions``` for switching off internal action clipping and rescaling
+
+1.1.4
+* Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
+* Fixed variuos multi gpu errors
+
 # Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
@@ -99,11 +108,4 @@ Shadow Hand block orientation task
 
 * Running a single environment with Isaac Gym can cause crash, if it happens switch to at least 2 environments simulated in parallel
     
-1.1.3
 
-* Fixed crash when running single Isaac Gym environment in a play (test) mode.
-* Added config parameter ```clip_actions``` for switching off internal action clipping and rescaling
-
-1.1.4
-* Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
-* Fixed variuos multi gpu errors
