@@ -212,7 +212,7 @@ class A2CBase:
         self.value_bootstrap = self.config.get('value_bootstrap')
 
         if self.normalize_value:
-            self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
+            self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
