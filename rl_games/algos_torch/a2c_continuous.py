@@ -117,7 +117,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            if self.ewma_ppo:
+                ewma_dict = self.ewma_model(batch_dict)
+                behavior_neglogp = ewma_dict['prev_neglogp']
+                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, behavior_neglogp, advantage, curr_e_clip)
+            else:
+                a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -160,7 +165,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
-                    
+                
+        if self.ewma_ppo:
+            self.ewma_model.update()                    
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss)

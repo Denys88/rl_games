@@ -10,9 +10,7 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 import numpy as np
-import collections
 import time
-from collections import deque, OrderedDict
 import gym
 
 from datetime import datetime
@@ -93,7 +91,8 @@ class A2CBase:
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
-
+        self.ewma_ppo = config.get('ewma_ppo', True)
+        self.ewma_model = None
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -508,6 +507,8 @@ class A2CBase:
 
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame)
+        if self.ewma_ppo:
+            self.ewma_model.reset()
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
@@ -593,7 +594,6 @@ class A2CBase:
         return obs_batch
 
     def play_steps(self):
-        epinfos = []
         update_list = self.update_list
 
         step_time = 0.0

@@ -6,6 +6,7 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.algos_torch import ppg_aux
+from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch 
@@ -27,7 +28,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
-
+        if self.ewma_ppo:
+            self.ewma_model = EwmaModel(self.model,ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
@@ -126,8 +128,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
-        lr = self.last_lr
-        kl = 1.0
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
 
@@ -145,11 +145,17 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             batch_dict['seq_length'] = self.seq_len
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+            
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
-            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            if self.ewma_ppo:
+                ewma_dict = self.ewma_model(batch_dict)
+                behavior_neglogp = ewma_dict['prev_neglogp']
+                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, behavior_neglogp, advantage, curr_e_clip)
+            else:
+                a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -193,4 +199,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = kl_dist.mean()
         if self.has_phasic_policy_gradients:
             c_loss = self.ppg_aux_loss.train_value(self,input_dict)
+        if self.ewma_ppo:
+            self.ewma_model.update()
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)

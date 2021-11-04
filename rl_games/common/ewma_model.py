@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 import numpy as np
 
-class EwmaModel():
+class EwmaModel(torch.nn.Module):
     def __init__(self, model, ewma_decay):
         super().__init__()
         self.model = model

@@ -1,5 +1,6 @@
 from torch import nn
 import torch
+import math
 
 def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
     if clip_value:
@@ -24,18 +25,17 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
                                 1.0 + curr_e_clip)
         a_loss = torch.max(-surr1, -surr2)
     else:
-        a_loss = (action_log_probs * advantage)
+        a_loss = (action_neglog_probs * advantage)
     
     return a_loss
 
 
-def decoupled_actor_loss(behavior_action_neglog_probs, action_neglog_probs, proxy_neglog_probs, advantage, is_ppo, curr_e_clip):
-    assert is_ppo
+def decoupled_actor_loss(behavior_action_neglog_probs, action_neglog_probs, proxy_neglog_probs, advantage, curr_e_clip):
     logratio = proxy_neglog_probs - action_neglog_probs
     neglogp_adj = -torch.max(-behavior_action_neglog_probs, -action_neglog_probs.detach() - math.log(100))
     pg_losses = advantage * torch.exp(neglogp_adj - action_neglog_probs)
-    clipped_logratio = torch.clamp(logratio, math.log(1.0 - clip_param), math.log(1.0 + clip_param))
+    clipped_logratio = torch.clamp(logratio, math.log(1.0 - curr_e_clip), math.log(1.0 + curr_e_clip))
     pg_losses2 = advantage * torch.exp(clipped_logratio - proxy_neglog_probs + neglogp_adj)
     pg_losses = torch.max(-pg_losses,-pg_losses2)
     
-    return a_loss
+    return pg_losses
