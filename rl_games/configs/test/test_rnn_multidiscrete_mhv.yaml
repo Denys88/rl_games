@@ -53,6 +53,7 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
+    normalize_value: True
     seq_length: 16
     weight_decay: 0.0000
     max_epochs: 10000
