@@ -42,7 +42,9 @@ def rescale_actions(low, high, action):
 class A2CBase:
     def __init__(self, base_name, config):
         pbt_str = ''
-        if config.get('population_based_training', False):
+
+        self.population_based_training = config.get('population_based_training', False)
+        if self.population_based_training:
             # in PBT, make sure experiment name contains a unique id of the policy within a population
             pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
 
@@ -63,6 +65,7 @@ class A2CBase:
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
+        self.curr_frames = 0
         if self.multi_gpu:
             from rl_games.distributed.hvd_wrapper import HorovodWrapper
             self.hvd = HorovodWrapper()
@@ -197,14 +200,19 @@ class A2CBase:
 
         if self.rank == 0:
             writer = SummaryWriter(self.summaries_dir)
-            self.writer = IntervalSummaryWriter(writer, self.config)
+
+            if self.population_based_training:
+                self.writer = IntervalSummaryWriter(writer, self.config)
+            else:
+                self.writer = writer
+
         else:
             self.writer = None
 
         self.value_bootstrap = self.config.get('value_bootstrap')
 
         if self.normalize_value:
-            self.value_mean_std = RunningMeanStd((1,)).to(self.ppo_device)
+            self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
@@ -900,7 +908,7 @@ class DiscreteA2CBase(A2CBase):
             curr_frames = self.curr_frames
             self.frame += curr_frames
             total_time += sum_time
-
+            should_exit = False
             if self.rank == 0:
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
@@ -952,13 +960,19 @@ class DiscreteA2CBase(A2CBase):
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            return self.last_mean_rewards, epoch_num
+                            should_exit = True
 
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
                     print('MAX EPOCHS NUM!')
-                    return self.last_mean_rewards, epoch_num                           
+                    should_exit = True                              
                 update_time = 0
+            if self.multi_gpu:
+                    should_exit_t = torch.tensor(should_exit).float()
+                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
+                    should_exit = should_exit_t.bool().item()
+            if should_exit:
+                return self.last_mean_rewards, epoch_num
 
 
 class ContinuousA2CBase(A2CBase):
@@ -969,15 +983,22 @@ class ContinuousA2CBase(A2CBase):
         self.actions_num = action_space.shape[0]
         self.bounds_loss_coef = config.get('bounds_loss_coef', None)
 
+        self.clip_actions = config.get('clip_actions', True)
+
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
    
     def preprocess_actions(self, actions):
-        clamped_actions = torch.clamp(actions, -1.0, 1.0)	            
-        rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        if self.clip_actions:
+            clamped_actions = torch.clamp(actions, -1.0, 1.0)
+            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
+        else:
+            rescaled_actions = actions
+
         if not self.is_tensor_obses:
             rescaled_actions = rescaled_actions.cpu().numpy()
+
         return rescaled_actions
 
     def init_tensors(self):
@@ -1134,7 +1155,7 @@ class ContinuousA2CBase(A2CBase):
             self.dataset.update_values_dict(None)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
-
+            should_exit = False
             if self.rank == 0:
                 # do we need scaled_time?
                 scaled_time = sum_time #self.num_agents * sum_time
@@ -1154,6 +1175,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
+                
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
@@ -1185,11 +1207,18 @@ class ContinuousA2CBase(A2CBase):
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            return self.last_mean_rewards, epoch_num
+                            should_exit = True
+                            
 
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
-                    return self.last_mean_rewards, epoch_num
+                    should_exit = True
 
                 update_time = 0
+            if self.multi_gpu:
+                    should_exit_t = torch.tensor(should_exit).float()
+                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
+                    should_exit = should_exit_t.float().item()
+            if should_exit:
+                return self.last_mean_rewards, epoch_num
