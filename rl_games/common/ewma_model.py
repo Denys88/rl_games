@@ -3,9 +3,9 @@ import torch
 import numpy as np
 
 class EwmaModel(torch.nn.Module):
-'''
-https://github.com/openai/ppo-ewma/blob/master/ppo_ewma/ppo.py
-'''
+    '''
+    https://github.com/openai/ppo-ewma/blob/master/ppo_ewma/ppo.py
+    '''
     def __init__(self, model, ewma_decay):
         super().__init__()
         self.model = model
@@ -34,8 +34,8 @@ class AdamEwmaUpdate():
     def __init__(self, c):
         self.c = c
 
-def __call__(self, adam):
-    c = self.c
-    for g in adam.param_groups:
-        g['lr'] = g['lr'] / np.sqrt(c)
-        g['betas'] = (g['betas'][0]**(1/c), g['betas'][1]**(1/c))
+    def __call__(self, adam):
+        c = self.c
+        for g in adam.param_groups:
+            g['lr'] = g['lr'] / np.sqrt(c)
+            g['betas'] = (g['betas'][0]**(1/c), g['betas'][1]**(1/c))

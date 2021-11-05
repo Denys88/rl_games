@@ -29,13 +29,12 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
     
     return a_loss
 
-
 def decoupled_actor_loss(behavior_action_neglog_probs, action_neglog_probs, proxy_neglog_probs, advantage, curr_e_clip):
     logratio = proxy_neglog_probs - action_neglog_probs
-    neglogp_adj = behavior_action_neglog_probs #-torch.max(-behavior_action_neglog_probs, -action_neglog_probs.detach() - math.log(100))
-    pg_losses1 = -advantage * torch.exp(neglogp_adj - action_neglog_probs)
+    #neglogp_adj = -torch.max(-behavior_action_neglog_probs, -action_neglog_probs.detach() - math.log(100))
+    pg_losses1 = -advantage * torch.exp(behavior_action_neglog_probs - action_neglog_probs)
     clipped_logratio = torch.clamp(logratio, math.log(1.0 - curr_e_clip), math.log(1.0 + curr_e_clip))
-    pg_losses2 = -advantage * torch.exp(clipped_logratio - proxy_neglog_probs + neglogp_adj)
+    pg_losses2 = -advantage * torch.exp(clipped_logratio - proxy_neglog_probs + behavior_action_neglog_probs)
     pg_losses = torch.max(pg_losses1,pg_losses2)
     
     return pg_losses

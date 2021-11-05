@@ -29,7 +29,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.model.to(self.ppo_device)
         self.states = None
         if self.ewma_ppo:
-            self.ewma_model = EwmaModel(self.model,ewma_decay=0.0)
+            self.ewma_model = EwmaModel(self.model, ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
@@ -121,8 +121,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
             if self.ewma_ppo:
                 ewma_dict = self.ewma_model(batch_dict)
-                behavior_neglogp = ewma_dict['prev_neglogp']
-                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, behavior_neglogp, advantage, curr_e_clip)
+                proxy_neglogp = ewma_dict['prev_neglogp']
+                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
+                old_action_log_probs_batch = proxy_neglogp # to get right statistic later
+                #a_loss2 = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+                #print(((a_loss2 - a_loss)**2).mean())
             else:
                 a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 

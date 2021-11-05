@@ -99,7 +99,7 @@ class A2CBase:
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
-        self.ewma_ppo = config.get('ewma_ppo', True)
+        self.ewma_ppo = config.get('ewma_ppo', False)
         self.ewma_model = None
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None

@@ -152,8 +152,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             entropy = res_dict['entropy']
             if self.ewma_ppo:
                 ewma_dict = self.ewma_model(batch_dict)
-                behavior_neglogp = ewma_dict['prev_neglogp']
-                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, behavior_neglogp, advantage, curr_e_clip)
+                proxy_neglogp = ewma_dict['prev_neglogp']
+                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
+                old_action_log_probs_batch = proxy_neglogp # to get right statistic later
             else:
                 a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 

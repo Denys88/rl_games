@@ -39,7 +39,7 @@ params:
       gamma: 0.995
       tau: 0.95
       learning_rate: 3e-4
-      name: walker
+      name: walker_ewma
       score_to_win: 300
       grad_norm: 0.5
       entropy_coef: 0
@@ -50,18 +50,18 @@ params:
       clip_value: False
       num_actors: 16
       horizon_length: 256
-      minibatch_size: 1024
+      minibatch_size: 512
       mini_epochs: 4
       critic_coef: 2
       schedule_type: 'standard'
       lr_schedule: adaptive
-      kl_threshold: 0.005
+      kl_threshold: 0.008
       normalize_input: True
       bounds_loss_coef: 0.00
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True
-      ewma_ppo: False
+      ewma_ppo: True
       #weight_decay: 0.0001
       player:
         render: True
