@@ -6,6 +6,7 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.algos_torch import ppg_aux
+from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch 
@@ -27,7 +28,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
         self.states = None
-
+        if self.ewma_ppo:
+            self.ewma_model = EwmaModel(self.model,ewma_decay=0.0)
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
@@ -165,7 +167,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
-                
+
         if self.ewma_ppo:
             self.ewma_model.update()                    
         self.train_result = (a_loss, c_loss, entropy, \
