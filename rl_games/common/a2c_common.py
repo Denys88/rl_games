@@ -9,6 +9,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
+from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
 import numpy as np
 import time
 import gym
@@ -70,6 +71,13 @@ class A2CBase:
             self.config = self.hvd.update_algo_config(config)
             self.rank = self.hvd.rank
             self.rank_size  = self.hvd.rank_size
+
+        self.use_diagnostics = config.get('use_diagnostics', False)
+
+        if self.use_diagnostics and self.rank == 0:
+            self.diagnostics = PpoDiagnostics()
+        else:
+            self.diagnostics = DefaultDiagnostics()
 
 
         self.network_path = config.get('network_path', "./nn/")
@@ -141,6 +149,7 @@ class A2CBase:
         self.horizon_length = config['horizon_length']
         self.seq_len = self.config.get('seq_length', 4)
         self.normalize_advantage = config['normalize_advantage']
+        self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -159,6 +168,7 @@ class A2CBase:
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
+        print(self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
@@ -179,7 +189,7 @@ class A2CBase:
         self.mean_rewards = self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-
+        self.curr_frames = 0
         # allows us to specify a folder where all experiments will reside
         self.train_dir = config.get('train_dir', 'runs')
 
@@ -213,6 +223,11 @@ class A2CBase:
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
 
+
+        if self.normalize_advantage and self.normalize_rms_advantage:
+            momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
+            self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
+
         self.is_tensor_obses = False
 
         self.last_rnn_indices = None
@@ -233,7 +248,7 @@ class A2CBase:
 
     def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
         # do we need scaled time?
-
+        self.diagnostics.send_info(self.writer)
         self.writer.add_scalar('performance/step_inference_rl_update_fps', curr_frames / scaled_time, frame)
         self.writer.add_scalar('performance/step_inference_fps', curr_frames / scaled_play_time, frame)
         self.writer.add_scalar('performance/step_fps', curr_frames / step_time, frame)
@@ -264,6 +279,9 @@ class A2CBase:
             self.running_mean_std.train()
         if self.normalize_value:
             self.value_mean_std.train()
+        if self.normalize_rms_advantage:
+            self.advantage_mean_std.train()
+            
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -328,7 +346,7 @@ class A2CBase:
                 value = result['values']
 
             if self.normalize_value:
-                value = self.value_mean_std(value, True)
+                value = self.value_mean_std(value, unnorm=True)
             return value
 
     @property
@@ -560,6 +578,8 @@ class A2CBase:
         state = {}
         if self.normalize_input:
             state['running_mean_std'] = self.running_mean_std.state_dict()
+        if self.normalize_rms_advantage:
+            state['advantage_mean_std'] = self.advantage_mean_std
         if self.normalize_value:
             state['reward_mean_std'] = self.value_mean_std.state_dict()
         if self.has_central_value:
@@ -569,6 +589,8 @@ class A2CBase:
         return state
 
     def set_stats_weights(self, weights):
+        if self.normalize_rms_advantage:
+            self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
         if self.normalize_input:
             self.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value:
@@ -809,7 +831,7 @@ class DiscreteA2CBase(A2CBase):
         if self.is_rnn:
             print('non masked rnn obs ratio: ', rnn_masks.sum().item() / (rnn_masks.nelement()))
 
-        for _ in range(0, self.mini_epochs_num):
+        for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
@@ -826,6 +848,7 @@ class DiscreteA2CBase(A2CBase):
             self.update_lr(self.last_lr)
             kls.append(av_kls)
 
+            self.diagnostics.mini_epoch(self, mini_ep)
         if self.has_phasic_policy_gradients:
             self.ppg_aux_loss.train_net(self)
 
@@ -845,7 +868,7 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-
+        
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       
@@ -854,9 +877,15 @@ class DiscreteA2CBase(A2CBase):
  
         if self.normalize_advantage:
             if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
+                else:
+                    advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages)
+                else:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -901,7 +930,7 @@ class DiscreteA2CBase(A2CBase):
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
-
+            #print(self.advantage_mean_std.moving_mean, self.advantage_mean_std.moving_var)
             if self.multi_gpu:
                 self.hvd.sync_stats(self)    
             total_time += sum_time
@@ -910,6 +939,7 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             should_exit = False
             if self.rank == 0:
+                self.diagnostics.epoch(self, current_epoch=epoch_num)
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
                 
@@ -1039,7 +1069,7 @@ class ContinuousA2CBase(A2CBase):
             frames_mask_ratio = rnn_masks.sum().item() / (rnn_masks.nelement())
             print(frames_mask_ratio)
 
-        for _ in range(0, self.mini_epochs_num):
+        for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
@@ -1066,6 +1096,7 @@ class ContinuousA2CBase(A2CBase):
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
                 self.update_lr(self.last_lr)
             kls.append(av_kls)
+            self.diagnostics.mini_epoch(self, mini_ep)
 
         if self.schedule_type == 'standard_epoch':
             if self.multi_gpu:
@@ -1105,9 +1136,15 @@ class ContinuousA2CBase(A2CBase):
 
         if self.normalize_advantage:
             if self.is_rnn:
-                advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
+                else:
+                    advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
             else:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                if self.normalize_rms_advantage:
+                    advantages = self.advantage_mean_std(advantages)
+                else:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1157,6 +1194,7 @@ class ContinuousA2CBase(A2CBase):
                 self.hvd.sync_stats(self)
             should_exit = False
             if self.rank == 0:
+                self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
@@ -1222,3 +1260,4 @@ class ContinuousA2CBase(A2CBase):
                     should_exit = should_exit_t.float().item()
             if should_exit:
                 return self.last_mean_rewards, epoch_num
+

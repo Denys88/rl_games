@@ -3,6 +3,9 @@ import torch
 import numpy as np
 
 class EwmaModel(torch.nn.Module):
+'''
+https://github.com/openai/ppo-ewma/blob/master/ppo_ewma/ppo.py
+'''
     def __init__(self, model, ewma_decay):
         super().__init__()
         self.model = model

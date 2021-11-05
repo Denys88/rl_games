@@ -199,6 +199,17 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = kl_dist.mean()
         if self.has_phasic_policy_gradients:
             c_loss = self.ppg_aux_loss.train_value(self,input_dict)
+
         if self.ewma_ppo:
             self.ewma_model.update()
+
+        self.diagnostics.mini_batch(self,
+        {
+            'values' : value_preds_batch,
+            'returns' : return_batch,
+            'new_neglogp' : action_log_probs,
+            'old_neglogp' : old_action_log_probs_batch,
+            'masks' : rnn_masks
+        }, curr_e_clip, 0) 
+
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
