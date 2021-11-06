@@ -42,7 +42,7 @@ class RunningMeanStd(nn.Module):
         new_count = tot_count
         return new_mean, new_var, new_count
 
-    def forward(self, input, mask=None, unnorm=False):
+    def forward(self, input, unnorm=False, mask=None):
         if self.training:
             if mask is not None:
                 mean, var = torch_ext.get_mean_std_with_masks(input, mask)
