@@ -318,7 +318,7 @@ class A2CBase:
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
         if self.normalize_value:
-            res_dict['values'] = self.value_mean_std(res_dict['values'], True)
+            res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
         return res_dict
 
     def get_values(self, obs):
