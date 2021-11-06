@@ -49,8 +49,8 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
-    learning_rate: 3e-4
-    name: breakout_ppo
+    learning_rate: 1e-3
+    name: breakout_ppo_ewma
     score_to_win: 900
     grad_norm: 10
     entropy_coef: 0.01
@@ -59,18 +59,20 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: False
-    num_actors: 24
+    num_actors: 16
     horizon_length: 128
     minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  adaptive
+    lr_schedule:  None
     kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
-    normalize_value: True
+    normalize_value: False
     normalize_input: False
     max_epochs: 3000
+    ewma_ppo: True
+    use_diagnostics: True
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'

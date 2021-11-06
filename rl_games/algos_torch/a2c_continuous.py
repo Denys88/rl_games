@@ -24,7 +24,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'num_seqs' : self.num_actors * self.num_agents,
             'value_size': self.env_info.get('value_size',1)
         }
-
+        
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -94,8 +94,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
 
-        lr = self.last_lr
-        kl = 1.0
+
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
 
@@ -124,8 +123,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 proxy_neglogp = ewma_dict['prev_neglogp']
                 a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
                 old_action_log_probs_batch = proxy_neglogp # to get right statistic later
-                #a_loss2 = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-                #print(((a_loss2 - a_loss)**2).mean())
+                old_mu_batch = ewma_dict['mus']
+                old_sigma_batch = ewma_dict['sigmas']
             else:
                 a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
@@ -170,7 +169,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
-
 
         if self.ewma_ppo:
             self.ewma_model.update()                    

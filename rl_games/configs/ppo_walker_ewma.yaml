@@ -38,7 +38,7 @@ params:
       normalize_advantage: True
       gamma: 0.995
       tau: 0.95
-      learning_rate: 3e-4
+      learning_rate: 5e-4
       name: walker_ewma
       score_to_win: 300
       grad_norm: 0.5
@@ -50,14 +50,14 @@ params:
       clip_value: False
       num_actors: 16
       horizon_length: 256
-      minibatch_size: 512
+      minibatch_size: 1024
       mini_epochs: 4
       critic_coef: 2
       schedule_type: 'standard'
       lr_schedule: adaptive
       kl_threshold: 0.008
-      normalize_input: True
-      bounds_loss_coef: 0.00
+      normalize_input: False
+      bounds_loss_coef: 0.000
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True
