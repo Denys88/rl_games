@@ -38,7 +38,7 @@ params:
       normalize_advantage: True
       gamma: 0.995
       tau: 0.95
-      learning_rate: 5e-4
+      learning_rate: 3e-4
       name: walker_ewma
       score_to_win: 300
       grad_norm: 1.0
@@ -47,7 +47,7 @@ params:
       env_name:  BipedalWalker-v3
       ppo: True
       e_clip: 0.2
-      clip_value: False
+      clip_value: True
       num_actors: 16
       horizon_length: 256
       minibatch_size: 512
@@ -56,8 +56,8 @@ params:
       schedule_type: 'standard'
       lr_schedule: adaptive
       kl_threshold: 0.008
-      normalize_input: False
-      bounds_loss_coef: 0.000
+      normalize_input: True
+      bounds_loss_coef: 0.00
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True

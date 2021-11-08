@@ -99,6 +99,7 @@ class A2CBase:
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
+
         self.ewma_ppo = config.get('ewma_ppo', False)
         self.ewma_model = None
         self.central_value_config = self.config.get('central_value_config', None)
@@ -268,20 +269,23 @@ class A2CBase:
 
     def set_eval(self):
         self.model.eval()
+        if self.normalize_rms_advantage:
+            self.advantage_mean_std.eval()
         if self.normalize_input:
             self.running_mean_std.eval()
         if self.normalize_value:
             self.value_mean_std.eval()
 
+
     def set_train(self):
         self.model.train()
+        if self.normalize_rms_advantage:
+            self.advantage_mean_std.train()
+
         if self.normalize_input:
             self.running_mean_std.train()
         if self.normalize_value:
             self.value_mean_std.train()
-        if self.normalize_rms_advantage:
-            self.advantage_mean_std.train()
-            
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -861,7 +865,7 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-        obses = batch_dict['obses']
+        
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
@@ -869,6 +873,7 @@ class DiscreteA2CBase(A2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
         
+        obses = self._preproc_obs(batch_dict['obses'])
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       

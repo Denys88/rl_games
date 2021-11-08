@@ -93,6 +93,7 @@ class CentralValueTrain(nn.Module):
         returns = batch_dict['returns']   
         actions = batch_dict['actions']
         rnn_masks = batch_dict['rnn_masks']
+        batch_dict['obs'] = self._preproc_obs(batch_dict['obs'])
         if self.num_agents > 1:
             res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
             batch_dict['old_values'] = res[0]
@@ -186,7 +187,7 @@ class CentralValueTrain(nn.Module):
         return avg_loss
 
     def calc_gradients(self, batch):
-        obs_batch = self._preproc_obs(batch['obs']) 
+        obs_batch = batch['obs']
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
         actions_batch = batch['actions']

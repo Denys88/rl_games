@@ -127,7 +127,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         return_batch = input_dict['returns']
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
-        obs_batch = self._preproc_obs(obs_batch)
+        #obs_batch = self._preproc_obs(obs_batch)
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
 
