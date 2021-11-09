@@ -873,7 +873,7 @@ class DiscreteA2CBase(A2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
         
-        obses = self._preproc_obs(batch_dict['obses'])
+        obses = batch_dict['obses']
         if self.normalize_value:
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)       
