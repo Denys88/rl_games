@@ -39,7 +39,7 @@ params:
       gamma: 0.995
       tau: 0.95
       learning_rate: 3e-4
-      name: walker
+      name: walker_ewma
       score_to_win: 300
       grad_norm: 1.0
       entropy_coef: 0
@@ -61,7 +61,7 @@ params:
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True
-      ewma_ppo: False
+      ewma_ppo: True
       #weight_decay: 0.0001
       player:
         render: True
