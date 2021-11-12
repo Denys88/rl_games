@@ -206,8 +206,6 @@ class ModelA2CContinuousLogStd(BaseModel):
 
     def build(self, config):
         net = self.network_builder.build('a2c', **config)
-        for name, _ in net.named_parameters():
-            print(name)
         return ModelA2CContinuousLogStd.Network(net)
 
     class Network(nn.Module):

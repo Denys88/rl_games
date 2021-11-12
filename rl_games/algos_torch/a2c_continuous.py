@@ -6,6 +6,7 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.algos_torch import ppg_aux
+from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch 
@@ -23,11 +24,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'num_seqs' : self.num_actors * self.num_agents,
             'value_size': self.env_info.get('value_size',1)
         }
-
+        
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
         self.states = None
-
+        if self.ewma_ppo:
+            self.ewma_model = EwmaModel(self.model, ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
@@ -92,8 +94,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
 
-        lr = self.last_lr
-        kl = 1.0
+
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
 
@@ -117,7 +118,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            if self.ewma_ppo:
+                ewma_dict = self.ewma_model(batch_dict)
+                proxy_neglogp = ewma_dict['prev_neglogp']
+                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
+                old_action_log_probs_batch = proxy_neglogp # to get right statistic later
+                old_mu_batch = ewma_dict['mus']
+                old_sigma_batch = ewma_dict['sigmas']
+            else:
+                a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -161,6 +170,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
 
+        if self.ewma_ppo:
+            self.ewma_model.update()                    
+
         self.diagnostics.mini_batch(self,
         {
             'values' : value_preds_batch,
@@ -169,6 +181,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'old_neglogp' : old_action_log_probs_batch,
             'masks' : rnn_masks
         }, curr_e_clip, 0)      
+
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
             mu.detach(), sigma.detach(), b_loss)
