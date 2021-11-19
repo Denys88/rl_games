@@ -92,8 +92,9 @@ class A2CBase:
             self.env_info = self.vec_env.get_env_info()
 
         self.ppo_device = config.get('device', 'cuda:0')
-        #print('Env info:')
-        #print(self.env_info)
+        print('Env info:')
+        print(self.env_info)
+
         self.value_size = self.env_info.get('value_size', 1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
@@ -162,7 +163,7 @@ class A2CBase:
                 self.obs_shape[k] = v.shape
         else:
             self.obs_shape = self.observation_space.shape
-        
+
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -215,7 +216,6 @@ class A2CBase:
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
                 self.writer = writer
-
         else:
             self.writer = None
 
@@ -223,7 +223,6 @@ class A2CBase:
 
         if self.normalize_value:
             self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
-
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
@@ -276,7 +275,6 @@ class A2CBase:
         if self.normalize_value:
             self.value_mean_std.eval()
 
-
     def set_train(self):
         self.model.train()
         if self.normalize_rms_advantage:
@@ -321,8 +319,10 @@ class A2CBase:
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
+
         if self.normalize_value:
             res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
+
         return res_dict
 
     def get_values(self, obs):
@@ -509,6 +509,7 @@ class A2CBase:
             masks_t = mb_masks[t].unsqueeze(1)
             delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t])
             mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
+
         return mb_advs
 
     def clear_stats(self):
@@ -865,14 +866,14 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-        
+
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-        
+
         obses = batch_dict['obses']
         if self.normalize_value:
             values = self.value_mean_std(values)
@@ -943,11 +944,11 @@ class DiscreteA2CBase(A2CBase):
             self.frame += curr_frames
             total_time += sum_time
             should_exit = False
+
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 scaled_time = sum_time #self.num_agents * sum_time
                 scaled_play_time = play_time #self.num_agents * play_time
-                
 
                 frame = self.frame
 
@@ -1000,12 +1001,14 @@ class DiscreteA2CBase(A2CBase):
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
                     print('MAX EPOCHS NUM!')
-                    should_exit = True                              
+                    should_exit = True
                 update_time = 0
+
             if self.multi_gpu:
                     should_exit_t = torch.tensor(should_exit).float()
                     self.hvd.broadcast_value(should_exit_t, 'should_exit')
                     should_exit = should_exit_t.bool().item()
+
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
@@ -1023,7 +1026,7 @@ class ContinuousA2CBase(A2CBase):
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
         self.actions_high = torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
-   
+
     def preprocess_actions(self, actions):
         if self.clip_actions:
             clamped_actions = torch.clamp(actions, -1.0, 1.0)
@@ -1100,6 +1103,7 @@ class ContinuousA2CBase(A2CBase):
                     av_kls = self.hvd.average_value(av_kls, 'ep_kls')
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
                 self.update_lr(self.last_lr)
+
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
 
@@ -1250,8 +1254,7 @@ class ContinuousA2CBase(A2CBase):
                         if self.last_mean_rewards > self.config['score_to_win']:
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            should_exit = True
-                            
+                            should_exit = True 
 
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
@@ -1259,10 +1262,11 @@ class ContinuousA2CBase(A2CBase):
                     should_exit = True
 
                 update_time = 0
+
             if self.multi_gpu:
                     should_exit_t = torch.tensor(should_exit).float()
                     self.hvd.broadcast_value(should_exit_t, 'should_exit')
                     should_exit = should_exit_t.float().item()
+
             if should_exit:
                 return self.last_mean_rewards, epoch_num
-

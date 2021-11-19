@@ -22,7 +22,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1)
+            'value_size': self.env_info.get('value_size', 1)
         }
         
         self.model = self.network.build(config)
@@ -146,6 +146,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
+
         #TODO: Refactor this ugliest code of they year
         if self.truncate_grads:
             if self.multi_gpu:
@@ -198,6 +199,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
             b_loss = 0
+
         return b_loss
 
 

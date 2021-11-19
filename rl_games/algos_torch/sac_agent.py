@@ -83,10 +83,9 @@ class SACAgent:
         self.step = 0
         self.algo_observer = config['features']['observer']
 
-
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
+
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.sac_device)
 
@@ -105,8 +104,8 @@ class SACAgent:
         self.sac_device = config.get('device', 'cuda:0')
         #temporary:
         self.ppo_device = self.sac_device
-        #print('Env info:')
-        #print(self.env_info)
+        print('Env info:')
+        print(self.env_info)
 
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']
