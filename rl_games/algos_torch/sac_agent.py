@@ -105,8 +105,8 @@ class SACAgent:
         self.sac_device = config.get('device', 'cuda:0')
         #temporary:
         self.ppo_device = self.sac_device
-        print('Env info:')
-        print(self.env_info)
+        #print('Env info:')
+        #print(self.env_info)
 
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']

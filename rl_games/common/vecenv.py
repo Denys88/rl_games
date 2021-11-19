@@ -80,6 +80,7 @@ class RayWorker:
             info['value_size'] = self.env.value_size
         if hasattr(self.env, 'state_space'):
             info['state_space'] = self.env.state_space
+
         return info
 
 
