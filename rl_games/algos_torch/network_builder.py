@@ -40,6 +40,7 @@ class NetworkBuilder:
             self.activations_factory.register_builder('sigmoid', lambda **kwargs : nn.Sigmoid(**kwargs))
             self.activations_factory.register_builder('elu', lambda  **kwargs : nn.ELU(**kwargs))
             self.activations_factory.register_builder('selu', lambda **kwargs : nn.SELU(**kwargs))
+            self.activations_factory.register_builder('swish', lambda **kwargs : nn.SiLU(**kwargs))
             self.activations_factory.register_builder('softplus', lambda **kwargs : nn.Softplus(**kwargs))
             self.activations_factory.register_builder('None', lambda **kwargs : nn.Identity())
 
