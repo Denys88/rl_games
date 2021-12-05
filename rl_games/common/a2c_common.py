@@ -70,7 +70,7 @@ class A2CBase:
             self.hvd = HorovodWrapper()
             self.config = self.hvd.update_algo_config(config)
             self.rank = self.hvd.rank
-            self.rank_size  = self.hvd.rank_size
+            self.rank_size = self.hvd.rank_size
 
         self.use_diagnostics = config.get('use_diagnostics', False)
 
