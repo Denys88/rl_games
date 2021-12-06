@@ -399,13 +399,13 @@ class A2CBuilder(NetworkBuilder):
                         states = states[0]
 
                     if self.rnn_name == 'sru':
-                        out = out.transpose(0,1)
+                        out = out.transpose(0, 1)
 
                     out, states = self.rnn(out, states)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
 
                     if self.rnn_name == 'sru':
-                        out = out.transpose(0,1)
+                        out = out.transpose(0, 1)
                     if self.rnn_ln:
                         out = self.layer_norm(out)
                     if self.is_rnn_before_mlp:
