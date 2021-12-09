@@ -935,10 +935,10 @@ class EnvModelBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            self.value_size = kwargs.pop('value_size', 1)
+            self.reward_size = kwargs.pop('value_size', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
-            in_mlp_shape = input_shape[0]
+            in_mlp_shape = input_shape[0] + actions_num
             mlp_args = {
                 'input_size': in_mlp_shape,
                 'units': self.units,
@@ -961,10 +961,14 @@ class EnvModelBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             obs = obs_dict['obs']
             action = obs_dict['action']
-            out = self.mlp(obs)
+            out = self.mlp(torch.cat([obs,action],dim=-1))
             obs = self.obs(out)
             reward = self.reward_out(out)
-            return obs, reward
+            res_dict = {
+                'obs': obs,
+                'reward': reward
+            }
+            return res_dict
 
         def is_rnn(self):
             return False
@@ -977,8 +981,6 @@ class EnvModelBuilder(NetworkBuilder):
             self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
-
-
 
     def build(self, name, **kwargs):
         net = EnvModelBuilder.Network(self.params, **kwargs)

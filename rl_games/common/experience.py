@@ -349,15 +349,15 @@ class ExperienceBuffer:
     def _init_from_aux_dict(self, tensor_dict):
         obs_base_shape = self.obs_base_shape
         for k,v in tensor_dict.items():
-            self.tensor_dict[k] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(v), dtype=np.float32), obs_base_shape)
+            self.tensor_dict[k] = self._create_tensor_from_space(v, obs_base_shape)
 
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape + space.shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + space.shape, dtype= dtype, device=self.device)
         if type(space) is gym.spaces.Discrete:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape, dtype= dtype, device=self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
