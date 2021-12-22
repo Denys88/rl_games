@@ -28,10 +28,7 @@ if __name__ == '__main__':
         if args['num_actors'] > 0:
             config['params']['config']['num_actors'] = args['num_actors']
 
-        if args['tf']:
-            from rl_games.tf14_runner import Runner
-        else:
-            from rl_games.torch_runner import Runner
+        from rl_games.torch_runner import Runner
 
         ray.init(object_store_memory=1024*1024*1000)
         #signal.signal(signal.SIGINT, exit_gracefully)
