@@ -25,13 +25,14 @@ class ModelBuilder:
         self.network_factory.register_builder('actor_critic', lambda **kwargs : network_builder.A2CBuilder())
         self.network_factory.register_builder('resnet_actor_critic', lambda **kwargs : network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
-        self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.())
-    def load(self, params):
-        self.model_name = params['model']['name']
-        self.network_name = params['network']['name']
+        self.network_factory.register_builder('env_model', lambda **kwargs: network_builder.EnvModelBuilder())
 
-        network = self.network_factory.create(self.network_name)
+    def load(self, params):
+        model_name = params['model']['name']
+        network_name = params['network']['name']
+
+        network = self.network_factory.create(network_name)
         network.load(params['network'])
-        model = self.model_factory.create(self.model_name, network=network)
+        model = self.model_factory.create(model_name, network=network)
 
         return model

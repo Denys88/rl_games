@@ -28,13 +28,15 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
+        self.env_model = self.model_network.build(config)
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
 
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
-
+        self.env_model_optimizer = optim.Adam(self.env_model.parameters(), float(self.last_lr), eps=1e-08,
+                                    weight_decay=self.weight_decay)
         if self.normalize_input:
             if isinstance(self.observation_space, gym.spaces.Dict):
                 self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
@@ -226,9 +228,6 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         if self.has_central_value:
             self.train_central_value()
-
-        if self.is_rnn:
-            print('non masked rnn obs ratio: ', rnn_masks.sum().item() / (rnn_masks.nelement()))
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []

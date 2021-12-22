@@ -255,6 +255,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
 
+
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):

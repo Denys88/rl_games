@@ -961,7 +961,7 @@ class EnvModelBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             obs = obs_dict['obs']
             action = obs_dict['action']
-            out = self.mlp(torch.cat([obs,action],dim=-1))
+            out = self.mlp(torch.cat([obs, action], dim=-1))
             obs = self.obs(out)
             reward = self.reward_out(out)
             res_dict = {
