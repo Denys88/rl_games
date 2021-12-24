@@ -10,6 +10,7 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
+from rl_games.algos_torch import  model_builder
 import numpy as np
 import time
 import gym
@@ -247,12 +248,12 @@ class A2CBase:
         assert not self.has_soft_aug
 
     def load_networks(self, config):
-        model_builder = model_builder.ModelBuilder()
-        self.config['network'] = self.model_builder.load(params)
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(config['network'])
 
         if has_central_value_net:
             print('Adding Central Value Network')
-            network = model_builder.get_network_builder().load(params['config']['central_value_config'])
+            network = builder.get_network_builder().load(params['config']['central_value_config'])
             self.config['central_value_config']['network'] = network
 
 
