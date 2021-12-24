@@ -57,10 +57,9 @@ class A2CBase:
             self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
 
         self.config = config
-
         self.algo_observer = config['features']['observer']
         self.algo_observer.before_init(base_name, config, self.experiment_name)
-
+        self.load_networks(config)
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
@@ -246,6 +245,16 @@ class A2CBase:
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
         assert not self.has_soft_aug
+
+    def load_networks(self, config):
+        model_builder = model_builder.ModelBuilder()
+        self.config['network'] = self.model_builder.load(params)
+
+        if has_central_value_net:
+            print('Adding Central Value Network')
+            network = model_builder.get_network_builder().load(params['config']['central_value_config'])
+            self.config['central_value_config']['network'] = network
+
 
     def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
         # do we need scaled time?
