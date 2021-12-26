@@ -25,7 +25,6 @@ params:
       activation: relu
       initializer:
         name: default
-        scale: 2         
       
   load_checkpoint: False
   load_path: './nn/last_walkerep=10001rew=108.35405.pth'
@@ -41,13 +40,13 @@ params:
       learning_rate: 3e-4
       name: walker
       score_to_win: 300
-      grad_norm: 1.0
-      entropy_coef: 0
+      grad_norm: 5.0
+      entropy_coef: -0.004
       truncate_grads: True
       env_name:  BipedalWalker-v3
       ppo: True
       e_clip: 0.2
-      clip_value: True
+      clip_value: False
       num_actors: 16
       horizon_length: 256
       minibatch_size: 512
@@ -57,12 +56,12 @@ params:
       lr_schedule: adaptive
       kl_threshold: 0.008
       normalize_input: True
-      bounds_loss_coef: 0.00
+      bounds_loss_coef: 0.000
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True
       ewma_ppo: False
-      #weight_decay: 0.0001
+      #value_bootstrap: True
       player:
         render: True
         determenistic: True

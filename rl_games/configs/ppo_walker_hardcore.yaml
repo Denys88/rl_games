@@ -23,9 +23,7 @@ params:
       d2rl: False
       activation: elu
       initializer:
-        name: default       
-      regularizer:
-        name:  'None' #'l2_regularizer'
+        name: default
   load_checkpoint: False
   load_path: './nn/walker_hc.pth'
 

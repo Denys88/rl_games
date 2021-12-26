@@ -75,7 +75,7 @@ class Runner:
 
     def reset(self):
         pass
-    
+
     def run(self, args):
         if 'checkpoint' in args and args['checkpoint'] is not None:
             if len(args['checkpoint']) > 0:
