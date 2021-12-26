@@ -6,8 +6,9 @@ from rl_games.common import env_configurations
 
 
 class BasePlayer(object):
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, params):
+        self.config = config = params['config']
+        self.load_networks(params)
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
@@ -45,6 +46,10 @@ class BasePlayer(object):
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
         self.max_steps = 108000 // 4
         self.device = torch.device(self.device_name)
+
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:

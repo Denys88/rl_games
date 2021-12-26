@@ -15,17 +15,17 @@ import numpy as np
 import gym
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
-        config = {
+        build_config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
             'value_size': self.env_info.get('value_size',1)
         }
         
-        self.model = self.network.build(config)
+        self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
         if self.ewma_ppo:

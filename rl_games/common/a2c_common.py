@@ -40,9 +40,9 @@ def rescale_actions(low, high, action):
 
 
 class A2CBase:
-    def __init__(self, base_name, config):
+    def __init__(self, base_name, params):
+        self.config = config = params['config']
         pbt_str = ''
-
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
             # in PBT, make sure experiment name contains a unique id of the policy within a population
@@ -60,7 +60,7 @@ class A2CBase:
         self.config = config
         self.algo_observer = config['features']['observer']
         self.algo_observer.before_init(base_name, config, self.experiment_name)
-        self.load_networks(config)
+        self.load_networks(params)
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
@@ -210,7 +210,6 @@ class A2CBase:
 
         if self.rank == 0:
             writer = SummaryWriter(self.summaries_dir)
-
             if self.population_based_training:
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
@@ -247,10 +246,10 @@ class A2CBase:
         # soft augmentation not yet supported
         assert not self.has_soft_aug
 
-    def load_networks(self, config):
+    def load_networks(self, params):
         builder = model_builder.ModelBuilder()
-        self.config['network'] = builder.load(config['network'])
-
+        self.config['network'] = builder.load(params)
+        has_central_value_net = self.config.get('central_value_config') is not  None
         if has_central_value_net:
             print('Adding Central Value Network')
             network = builder.get_network_builder().load(params['config']['central_value_config'])
@@ -791,8 +790,8 @@ class A2CBase:
 
 
 class DiscreteA2CBase(A2CBase):
-    def __init__(self, base_name, config):
-        A2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        A2CBase.__init__(self, base_name, params)
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
         if type(action_space) is gym.spaces.Discrete:
@@ -1021,14 +1020,14 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
-    def __init__(self, base_name, config):
-        A2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        A2CBase.__init__(self, base_name, params)
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
-        self.bounds_loss_coef = config.get('bounds_loss_coef', None)
+        self.bounds_loss_coef = self.config.get('bounds_loss_coef', None)
 
-        self.clip_actions = config.get('clip_actions', True)
+        self.clip_actions = self.config.get('clip_actions', True)
 
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)

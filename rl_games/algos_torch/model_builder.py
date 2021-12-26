@@ -48,6 +48,6 @@ class ModelBuilder:
 
     def load(self, params):
         model_name = params['model']['name']
-        network = self.model_factory.load(params['network'])
+        network = self.network_builder.load(params['network'])
         model = self.model_factory.create(model_name, network=network)
         return model

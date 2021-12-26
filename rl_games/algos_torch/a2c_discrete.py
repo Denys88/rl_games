@@ -15,8 +15,8 @@ import numpy as np
 import gym
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        a2c_common.DiscreteA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         
         config = {

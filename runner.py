@@ -38,8 +38,7 @@ if __name__ == '__main__':
             runner.load(config)
         except yaml.YAMLError as exc:
             print(exc)
-    
-    runner.reset()
+
     runner.run(args)
 
     ray.shutdown()

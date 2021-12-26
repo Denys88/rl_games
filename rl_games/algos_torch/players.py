@@ -16,8 +16,8 @@ def rescale_actions(low, high, action):
 
 
 class PpoPlayerContinuous(BasePlayer):
-    def __init__(self, config):
-        BasePlayer.__init__(self, config)
+    def __init__(self, params):
+        BasePlayer.__init__(self, params)
         self.network = config['network']
         self.actions_num = self.action_space.shape[0] 
         self.actions_low = torch.from_numpy(self.action_space.low.copy()).float().to(self.device)
@@ -76,8 +76,8 @@ class PpoPlayerContinuous(BasePlayer):
         self.init_rnn()
 
 class PpoPlayerDiscrete(BasePlayer):
-    def __init__(self, config):
-        BasePlayer.__init__(self, config)
+    def __init__(self, params):
+        BasePlayer.__init__(self, params)
 
         self.network = config['network']
         if type(self.action_space) is gym.spaces.Discrete:
@@ -176,8 +176,8 @@ class PpoPlayerDiscrete(BasePlayer):
 
 
 class SACPlayer(BasePlayer):
-    def __init__(self, config):
-        BasePlayer.__init__(self, config)
+    def __init__(self, params):
+        BasePlayer.__init__(self, params)
         self.network = config['network']
         self.actions_num = self.action_space.shape[0] 
         self.action_range = [
