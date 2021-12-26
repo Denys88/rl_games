@@ -73,6 +73,9 @@ class Runner:
     def create_player(self):
         return self.player_factory.create(self.algo_name, params=self.params)
 
+    def reset(self):
+        pass
+    
     def run(self, args):
         if 'checkpoint' in args and args['checkpoint'] is not None:
             if len(args['checkpoint']) > 0:

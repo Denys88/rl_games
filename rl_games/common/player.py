@@ -3,7 +3,7 @@ import gym
 import numpy as np
 import torch
 from rl_games.common import env_configurations
-
+from rl_games.algos_torch import  model_builder
 
 class BasePlayer(object):
     def __init__(self, params):
