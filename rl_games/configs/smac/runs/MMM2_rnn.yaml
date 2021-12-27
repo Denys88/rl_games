@@ -32,7 +32,7 @@ params:
     normalize_advantage: True
     gamma: 0.995
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 1e-4
     score_to_win: 25
     grad_norm: 1.5
     entropy_coef: 0.01
@@ -42,16 +42,16 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 8
-    horizon_length: 256
+    horizon_length: 128
     minibatch_size: 2560
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.05
     normalize_input: True
-    normalize_value: True
+    normalize_value: False
     use_action_masks: True
-    seq_length: 16
+    seq_length: 4
     max_epochs: 30000
     use_diagnostics: True
     player:
@@ -63,7 +63,7 @@ params:
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      learning_rate: 3e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       network:
