@@ -18,7 +18,7 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-* [Old TF1.x results](docs/BRAX.md)  
+* [Random Envs](docs/OTHER.md)  
 
 ## Config file  
 
