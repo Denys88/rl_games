@@ -146,7 +146,6 @@ def get_mean_var_with_masks(values, masks):
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
     values_var = min_sqr * sum_mask / (sum_mask-1)
-
     return values_mean, values_var
 
 def explained_variance(y_pred,y, masks=None):
@@ -158,6 +157,7 @@ def explained_variance(y_pred,y, masks=None):
         ev=1  =>  perfect prediction
         ev<0  =>  worse than just predicting zero
     """
+    masks = masks.unsqueeze(1)
     if masks is not None:
         _, var_y = get_mean_var_with_masks(y_pred,masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)

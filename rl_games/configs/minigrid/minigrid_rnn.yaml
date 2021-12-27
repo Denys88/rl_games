@@ -11,7 +11,6 @@ params:
   network:
     name: actor_critic
     separate: False
-    #normalization: 'layer_norm'
     space: 
       discrete:
     cnn:
@@ -48,7 +47,6 @@ params:
       units: 256
       layers: 1
       before_mlp: False
-      #layer_norm: True
   config:
     reward_shaper:
         scale_value: 1
@@ -78,11 +76,8 @@ params:
     weight_decay: 0.0000
     save_frequency: 100
     env_config:
-      #action_bonus: True
-      #state_bonus : False
       fully_obs: False
-      name: MiniGrid-MemoryS13Random-v0           #MiniGrid-MemoryS7-v0
-      global_state: False
+      name: MiniGrid-MemoryS13Random-v0 #MiniGrid-MemoryS7-v0
     player:
       games_num: 100
       render: True

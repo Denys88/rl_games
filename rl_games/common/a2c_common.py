@@ -252,7 +252,7 @@ class A2CBase:
         has_central_value_net = self.config.get('central_value_config') is not  None
         if has_central_value_net:
             print('Adding Central Value Network')
-            network = builder.get_network_builder().load(params['config']['central_value_config'])
+            network = builder.get_network_builder().load(params['config']['central_value_config']['network'])
             self.config['central_value_config']['network'] = network
 
 

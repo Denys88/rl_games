@@ -39,6 +39,7 @@ params:
       name: walker_hc
       score_to_win: 300
       grad_norm: 1.5
+      save_best_after: 10
       entropy_coef: 0
       truncate_grads: True
       env_name:  BipedalWalkerHardcore-v3
