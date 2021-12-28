@@ -47,7 +47,7 @@ params:
     lr_schedule:  None
     kl_threshold: 0.05
     normalize_input: True
-    normalize_value: False
+    normalize_value: True
     use_action_masks: True
     max_epochs: 30000
 
@@ -58,11 +58,6 @@ params:
       clip_value: False
       normalize_input: True
       network:
-        #normalization: batch_norm
-        #joint_obs_actions:
-        #    embedding: False
-        #    embedding_scale: 1 #(actions // embedding_scale)
-        #    mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:

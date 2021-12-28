@@ -537,7 +537,7 @@ class A2CBase:
         pass
 
     def train_epoch(self):
-        self.vec_env.set_train_info(self.frame)
+        self.vec_env.set_train_info(self.frame, self)
         if self.ewma_ppo:
             self.ewma_model.reset()
 
@@ -954,11 +954,10 @@ class DiscreteA2CBase(A2CBase):
             should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
-                scaled_time = sum_time #self.num_agents * sum_time
-                scaled_play_time = play_time #self.num_agents * play_time
-                
+                scaled_time = self.num_agents * sum_time
+                scaled_play_time = self.num_agents * play_time
 
-                frame = self.frame
+                frame = self.frame // self.num_agents
 
                 if self.print_stats:
                     fps_step = curr_frames / step_time
@@ -968,8 +967,6 @@ class DiscreteA2CBase(A2CBase):
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
-                if self.has_soft_aug:
-                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
                 if self.game_rewards.current_size > 0:
@@ -1200,7 +1197,7 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            frame = self.frame
+            frame = self.frame // self.num_agents
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
@@ -1210,12 +1207,12 @@ class ContinuousA2CBase(A2CBase):
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
-                scaled_time = sum_time #self.num_agents * sum_time
-                scaled_play_time = play_time #self.num_agents * play_time
+                scaled_time = self.num_agents * sum_time
+                scaled_play_time = self.num_agents * play_time
                 curr_frames = self.curr_frames
                 self.frame += curr_frames
                 if self.print_stats:
-                    fps_step = curr_frames / step_time
+                    fps_step = curr_frames / scaled_step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f}')

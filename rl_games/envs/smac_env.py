@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from smac.env import StarCraft2Env
-
+from smac.env import MultiAgentEnv
 
 class SMACEnv(gym.Env):
     def __init__(self, name="3m",  **kwargs):

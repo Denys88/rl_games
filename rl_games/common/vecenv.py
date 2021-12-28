@@ -163,7 +163,8 @@ class RayVecEnv(IVecEnv):
 
     def get_action_masks(self):
         mask = [worker.get_action_mask.remote() for worker in self.workers]
-        return np.asarray(ray.get(mask), dtype=np.int32)
+        masks = ray.get(mask)
+        return np.concatenate(masks, axis=0)
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]

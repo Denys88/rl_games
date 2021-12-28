@@ -93,7 +93,6 @@ class CentralValueTrain(nn.Module):
         returns = batch_dict['returns']   
         actions = batch_dict['actions']
         rnn_masks = batch_dict['rnn_masks']
-        
         if self.num_agents > 1:
             res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
             batch_dict['old_values'] = res[0]
@@ -166,7 +165,8 @@ class CentralValueTrain(nn.Module):
 
         if self.is_rnn:
             rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-            rnn_masks = rnn_masks.flatten(0)[:batch_size] 
+            rnn_masks = rnn_masks.flatten(0)[:batch_size]
+
         return value_preds, returns, actions, rnn_masks
 
     def train_net(self):
