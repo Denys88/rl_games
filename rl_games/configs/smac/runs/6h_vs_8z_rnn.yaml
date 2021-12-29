@@ -6,7 +6,7 @@ params:
     name: discrete_a2c
 
   load_checkpoint: False
-  load_path: 'nn/MMM2.pth'
+  load_path: ''
 
   network:
     name: actor_critic
@@ -14,7 +14,6 @@ params:
     #normalization: layer_norm
     space: 
       discrete:
-
     mlp:
       units: [512, 256]
       activation: relu
@@ -26,43 +25,45 @@ params:
       layers: 1
       layer_norm: False
   config:
-    name: MMM2_rnn
+    name: 6h_vs_8z_rnn
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
-    gamma: 0.995
+    gamma: 0.99
     tau: 0.95
-    learning_rate: 5e-4
-    score_to_win: 25
-    grad_norm: 1.5
-    entropy_coef: 0.01
+    learning_rate: 3e-4
+    score_to_win: 20
+    grad_norm: 0.5
+    entropy_coef: 0.02
     truncate_grads: True
     env_name:  smac
     ppo: true
     e_clip: 0.2
-    clip_value: False
+    clip_value: True
     num_actors: 8
-    horizon_length: 200
-    minibatch_size: 8000
-    mini_epochs: 5
+    horizon_length: 128
+    minibatch_size: 3072 # 6 * 512
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.05
     normalize_input: True
     normalize_value: True
     use_action_masks: True
-    seq_length: 10
-    max_epochs: 30000
-    use_diagnostics: True
-    player:
-      render: False
-      games_num: 200
-      n_game_life: 1
-      determenistic: True
+    seq_length: 16
+    env_config:
+      name: 6h_vs_8z
+      central_value: True
+      reward_only_positive: True
+      obs_last_action: True
+      #frames: 1
+      #reward_negative_scale: 0.9
+      #apply_agent_ids: True
+      #flatten: False
 
     central_value_config:
-      minibatch_size: 800
-      mini_epochs: 5
+      minibatch_size: 512
+      mini_epochs: 4
       learning_rate: 5e-4
       clip_value: False
       normalize_input: True
@@ -74,18 +75,9 @@ params:
           activation: relu
           initializer:
             name: default
+            scale: 2 
         rnn:
           name: lstm
           units: 128
           layers: 1
           layer_norm: False
-
-    env_config:
-      name: MMM2
-      central_value: True
-      #reward_only_positive: True
-      reward_only_positive: True
-      obs_last_action: False
-      apply_agent_ids: True
-      replay_save_freq: 10000
-      #reward_negative_scale: 0.5

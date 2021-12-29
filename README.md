@@ -82,11 +82,16 @@ Shadow Hand block orientation task
 
 
 # Release Notes
-1.1.5
+
+1.2.0
+
 * Added Swish (SILU) and GELU activations, it can improve Isaac Gym results for some of the envs.
 * Removed tensorflow and made initial cleanup of the old/unused code.
+* Simplified runner.
+* Now networks are created in the algos with load_network method.
 
 1.1.4
+
 * Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
 * Fixed variuos multi gpu errors.
 
