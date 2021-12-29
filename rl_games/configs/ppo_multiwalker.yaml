@@ -21,7 +21,7 @@ params:
     mlp:
       units: [256,128, 64]
       d2rl: False
-      activation: relu
+      activation: elu
       initializer:
         name: default  
 
@@ -36,8 +36,9 @@ params:
       normalize_advantage: True
       gamma: 0.995
       tau: 0.95
-      learning_rate: 1e-4
+      learning_rate: 3e-4
       name: multiwalker
+      save_best_after: 10
       score_to_win: 300
       grad_norm: 0.5
       entropy_coef: 0
@@ -48,7 +49,7 @@ params:
       use_experimental_cv: False
       clip_value: False
       num_actors: 16
-      horizon_length: 512
+      horizon_length: 1024
       minibatch_size: 3072 #768 #3072 #1536
       mini_epochs: 4
       critic_coef: 1
@@ -64,14 +65,15 @@ params:
       player:
         render: True
         games_num: 200
+        determenistic: False
 
       env_config:
         central_value: True
-        use_prev_actions: True
+        use_prev_actions: False
         apply_agent_ids: True
 
       central_value_config:
-        minibatch_size: 512
+        minibatch_size: 2048
         mini_epochs: 4
         learning_rate: 3e-4
         clip_value: False

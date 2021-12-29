@@ -37,7 +37,7 @@ class PpoDiagnostics(DefaultDiagnostics):
             self.diag_dict['diagnostics/rms_value/var'] = agent.value_mean_std.running_var
 
         exp_var = torch.stack(self.exp_vars, axis=0).mean()
-        self.exp_var = []
+        self.exp_vars = []
         self.diag_dict['diagnostics/exp_var'] = exp_var
 
     def mini_epoch(self, agent, miniepoch):
@@ -54,6 +54,7 @@ class PpoDiagnostics(DefaultDiagnostics):
             old_neglogp = batch['old_neglogp'].detach()
             masks = batch['masks']
             exp_var = torch_ext.explained_variance(values, returns, masks)
+
             clip_frac = torch_ext.policy_clip_fraction(new_neglogp, old_neglogp, e_clip, masks)
             self.exp_vars.append(exp_var)
             self.clip_fracs.append(clip_frac)

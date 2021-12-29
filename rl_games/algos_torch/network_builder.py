@@ -41,6 +41,7 @@ class NetworkBuilder:
             self.activations_factory.register_builder('elu', lambda  **kwargs : nn.ELU(**kwargs))
             self.activations_factory.register_builder('selu', lambda **kwargs : nn.SELU(**kwargs))
             self.activations_factory.register_builder('swish', lambda **kwargs : nn.SiLU(**kwargs))
+            self.activations_factory.register_builder('gelu', lambda **kwargs: nn.GELU(**kwargs))
             self.activations_factory.register_builder('softplus', lambda **kwargs : nn.Softplus(**kwargs))
             self.activations_factory.register_builder('None', lambda **kwargs : nn.Identity())
 
@@ -921,89 +922,5 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
-
-
-    
-        
-'''
-class DQNBuilder(NetworkBuilder):
-    def __init__(self, **kwargs):
-        NetworkBuilder.__init__(self)
-
-    def load(self, params):
-        self.units = params['mlp']['units']
-        self.activation = params['mlp']['activation']
-        self.initializer = params['mlp']['initializer']
-        self.regularizer = params['mlp']['regularizer']         
-        self.is_dueling = params['dueling']
-        self.atoms = params['atoms']
-        self.is_noisy = params['noisy']
-        self.normalization = params.get('normalization', None)
-        if 'cnn' in params:
-            self.has_cnn = True
-            self.cnn = params['cnn']
-        else:
-            self.has_cnn = False
-
-    def build(self, name, **kwargs):
-        actions_num = kwargs.pop('actions_num')
-        input = kwargs.pop('inputs')
-        reuse = kwargs.pop('reuse')
-        is_train = kwargs.pop('is_train', True)
-        if self.is_noisy:
-            dense_layer = self._noisy_dense
-        else:
-            dense_layer = torch.nn.Linear
-        with tf.variable_scope(name, reuse=reuse):   
-            out = input
-            if self.has_cnn:
-                cnn_args = {
-                    'name' :'dqn_cnn',
-                    'ctype' : self.cnn['type'], 
-                    'input' : input, 
-                    'convs' :self.cnn['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'initializer' : self.cnn['initializer'], 
-                    'regularizer' : self.cnn['regularizer'],
-                    'norm_func_name' : self.normalization,
-                    'is_train' : is_train
-                }
-                out = self._build_conv(**cnn_args)
-                out = tf.contrib.layers.flatten(out)
-
-            mlp_args = {
-                'name' :'dqn_mlp',  
-                'input' : out, 
-                'activation' : self.activation, 
-                'initializer' : self.initializer, 
-                'regularizer' : self.regularizer,
-                'norm_func_name' : self.normalization,
-                'is_train' : is_train,
-                'dense_func' : dense_layer
-            }
-            if self.is_dueling:
-                if len(self.units) > 1:
-                    mlp_args['units'] = self.units[:-1]
-                    out = self._build_mlp(**mlp_args)
-                hidden_value = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_val')
-                hidden_advantage = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_adv')
-
-                value = dense_layer(inputs=hidden_value, units=self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), activation=tf.identity, kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='value')
-                advantage = dense_layer(inputs=hidden_advantage, units= actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='advantage')
-                advantage = tf.reshape(advantage, shape = [-1, actions_num, self.atoms])
-                value = tf.reshape(value, shape = [-1, 1, self.atoms])
-                q_values = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keepdims=True)
-            else:
-                mlp_args['units'] = self.units
-                out = self._build_mlp('dqn_mlp', out, self.units, self.activation, self.initializer, self.regularizer)
-                q_values = dense_layer(inputs=out, units=actions_num *self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='q_vals')
-                q_values = tf.reshape(q_values, shape = [-1, actions_num, self.atoms])
-
-            if self.atoms == 1:
-                return tf.squeeze(q_values)
-            else:
-                return q_values
-
-'''
 
             

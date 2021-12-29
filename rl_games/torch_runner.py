@@ -9,7 +9,6 @@ from rl_games.common import env_configurations
 from rl_games.common import experiment
 from rl_games.common import tr_helpers
 
-from rl_games.algos_torch import network_builder
 from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
@@ -31,15 +30,8 @@ class Runner:
         self.player_factory.register_builder('sac', lambda **kwargs : players.SACPlayer(**kwargs))
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
-        self.model_builder = model_builder.ModelBuilder()
-        self.network_builder = network_builder.NetworkBuilder()
-
-        self.algo_observer = algo_observer
-
+        self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
-
-    def reset(self):
-        pass
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
@@ -59,76 +51,30 @@ class Runner:
             print(params['load_path'])
             self.load_path = params['load_path']
 
-        self.model = self.model_builder.load(params)
-        self.config = copy.deepcopy(params['config'])
-        
-        self.config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**self.config['reward_shaper'])
-        self.config['network'] = self.model
-        
-        has_rnd_net = self.config.get('rnd_config', None) != None
-        if has_rnd_net:
-            print('Adding RND Network')
-            network = self.model_builder.network_factory.create(params['config']['rnd_config']['network']['name'])
-            network.load(params['config']['rnd_config']['network'])
-            self.config['rnd_config']['network'] = network
-        
-        has_central_value_net = self.config.get('central_value_config', None) != None
-        if has_central_value_net:
-            print('Adding Central Value Network')
-            network = self.model_builder.network_factory.create(params['config']['central_value_config']['network']['name'])
-            network.load(params['config']['central_value_config']['network'])
-            self.config['central_value_config']['network'] = network
+        config = params['config']
+        config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
+        if 'features' not in config:
+            config['features'] = {}
+        config['features']['observer'] = self.algo_observer
+        self.params = params
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
-        self.load_config(copy.deepcopy(self.default_config))
-
-        if 'experiment_config' in yaml_conf:
-            self.exp_config = yaml_conf['experiment_config']
-
-    def get_prebuilt_config(self):
-        return self.config
+        self.load_config(params=copy.deepcopy(self.default_config))
 
     def run_train(self):
         print('Started to train')
-        if self.algo_observer is None:
-            self.algo_observer = DefaultAlgoObserver()
+        agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
+        if self.load_check_point and (self.load_path is not None):
+            agent.restore(self.load_path)
 
-        if self.exp_config:
-            self.experiment = experiment.Experiment(self.default_config, self.exp_config)
-            exp_num = 0
-            exp = self.experiment.get_next_config()
-            while exp is not None:
-                exp_num += 1
-                print('Starting experiment number: ' + str(exp_num))
-                self.reset()
-                self.load_config(exp)
-                if 'features' not in self.config:
-                    self.config['features'] = {}
-                self.config['features']['observer'] = self.algo_observer
-                #if 'soft_augmentation' in self.config['features']:
-                #    self.config['features']['soft_augmentation'] = SoftAugmentation(**self.config['features']['soft_augmentation'])
-                agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
-                self.experiment.set_results(*agent.train())
-                exp = self.experiment.get_next_config()
-        else:
-            self.reset()
-            self.load_config(self.default_config)
-            if 'features' not in self.config:
-                self.config['features'] = {}
-            self.config['features']['observer'] = self.algo_observer
-            #if 'soft_augmentation' in self.config['features']:
-            #    self.config['features']['soft_augmentation'] = SoftAugmentation(**self.config['features']['soft_augmentation'])
-            agent = self.algo_factory.create(self.algo_name, base_name='run', config=self.config)  
-            if self.load_check_point and (self.load_path is not None):
-                agent.restore(self.load_path)
-            agent.train()
+        agent.train()
             
     def create_player(self):
-        return self.player_factory.create(self.algo_name, config=self.config)
+        return self.player_factory.create(self.algo_name, params=self.params)
 
-    def create_agent(self, obs_space, action_space):
-        return self.algo_factory.create(self.algo_name, base_name='run', observation_space=obs_space, action_space=action_space, config=self.config)
+    def reset(self):
+        pass
 
     def run(self, args):
         if 'checkpoint' in args and args['checkpoint'] is not None:
@@ -137,6 +83,7 @@ class Runner:
 
         if args['train']:
             self.run_train()
+
         elif args['play']:
             print('Started to play')
             player = self.create_player()

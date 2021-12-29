@@ -15,8 +15,8 @@ import numpy as np
 import gym
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        a2c_common.DiscreteA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         
         config = {
@@ -105,7 +105,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 res_dict['values'] = value
 
         if self.normalize_value:
-            value = self.value_mean_std(value, True)
+            res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
         if self.is_multi_discrete:
             action_masks = torch.cat(action_masks, dim=-1)
         res_dict['action_masks'] = action_masks

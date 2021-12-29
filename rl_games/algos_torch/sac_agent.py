@@ -19,9 +19,11 @@ import time
 
 
 class SACAgent:
-    def __init__(self, base_name, config):
+    def __init__(self, base_name, params):
         print(config)
+        self.config = config = params['config']
         # TODO: Get obs shape and self.network
+        self.load_networks(self, params)
         self.base_init(base_name, config)
         self.num_seed_steps = config["num_seed_steps"]
         self.gamma = config["gamma"]
@@ -90,8 +92,11 @@ class SACAgent:
         if self.normalize_input:
             self.running_mean_std = RunningMeanStd(obs_shape).to(self.sac_device)
 
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
+
     def base_init(self, base_name, config):
-        self.config = config
         self.env_config = config.get('env_config', {})
         self.num_actors = config.get('num_actors', 1)
         self.env_name = config['env_name']

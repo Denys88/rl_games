@@ -10,6 +10,7 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
+from rl_games.algos_torch import  model_builder
 import numpy as np
 import time
 import gym
@@ -39,9 +40,9 @@ def rescale_actions(low, high, action):
 
 
 class A2CBase:
-    def __init__(self, base_name, config):
+    def __init__(self, base_name, params):
+        self.config = config = params['config']
         pbt_str = ''
-
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
             # in PBT, make sure experiment name contains a unique id of the policy within a population
@@ -57,10 +58,9 @@ class A2CBase:
             self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
 
         self.config = config
-
         self.algo_observer = config['features']['observer']
         self.algo_observer.before_init(base_name, config, self.experiment_name)
-
+        self.load_networks(params)
         self.multi_gpu = config.get('multi_gpu', False)
         self.rank = 0
         self.rank_size = 1
@@ -210,7 +210,6 @@ class A2CBase:
 
         if self.rank == 0:
             writer = SummaryWriter(self.summaries_dir)
-
             if self.population_based_training:
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
@@ -246,6 +245,16 @@ class A2CBase:
         self.has_soft_aug = self.soft_aug is not None
         # soft augmentation not yet supported
         assert not self.has_soft_aug
+
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
+        has_central_value_net = self.config.get('central_value_config') is not  None
+        if has_central_value_net:
+            print('Adding Central Value Network')
+            network = builder.get_network_builder().load(params['config']['central_value_config']['network'])
+            self.config['central_value_config']['network'] = network
+
 
     def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
         # do we need scaled time?
@@ -528,7 +537,7 @@ class A2CBase:
         pass
 
     def train_epoch(self):
-        self.vec_env.set_train_info(self.frame)
+        self.vec_env.set_train_info(self.frame, self)
         if self.ewma_ppo:
             self.ewma_model.reset()
 
@@ -781,8 +790,8 @@ class A2CBase:
 
 
 class DiscreteA2CBase(A2CBase):
-    def __init__(self, base_name, config):
-        A2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        A2CBase.__init__(self, base_name, params)
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
         if type(action_space) is gym.spaces.Discrete:
@@ -945,11 +954,10 @@ class DiscreteA2CBase(A2CBase):
             should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
-                scaled_time = sum_time #self.num_agents * sum_time
-                scaled_play_time = play_time #self.num_agents * play_time
-                
+                scaled_time = self.num_agents * sum_time
+                scaled_play_time = self.num_agents * play_time
 
-                frame = self.frame
+                frame = self.frame // self.num_agents
 
                 if self.print_stats:
                     fps_step = curr_frames / step_time
@@ -959,8 +967,6 @@ class DiscreteA2CBase(A2CBase):
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
-                if self.has_soft_aug:
-                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
                 if self.game_rewards.current_size > 0:
@@ -1011,14 +1017,14 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
-    def __init__(self, base_name, config):
-        A2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        A2CBase.__init__(self, base_name, params)
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
-        self.bounds_loss_coef = config.get('bounds_loss_coef', None)
+        self.bounds_loss_coef = self.config.get('bounds_loss_coef', None)
 
-        self.clip_actions = config.get('clip_actions', True)
+        self.clip_actions = self.config.get('clip_actions', True)
 
         # todo introduce device instead of cuda()
         self.actions_low = torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
@@ -1191,7 +1197,7 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
-            frame = self.frame
+            frame = self.frame // self.num_agents
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
@@ -1201,12 +1207,12 @@ class ContinuousA2CBase(A2CBase):
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
-                scaled_time = sum_time #self.num_agents * sum_time
-                scaled_play_time = play_time #self.num_agents * play_time
+                scaled_time = self.num_agents * sum_time
+                scaled_play_time = self.num_agents * play_time
                 curr_frames = self.curr_frames
                 self.frame += curr_frames
                 if self.print_stats:
-                    fps_step = curr_frames / step_time
+                    fps_step = curr_frames / scaled_step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f}')

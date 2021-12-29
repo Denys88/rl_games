@@ -20,14 +20,10 @@ params:
       activation: elu
       initializer:
         name: default
-      regularizer:
-        name: 'None'
       
     mlp:
       units: [512]
       activation: elu
-      regularizer:
-        name: 'None'
       initializer:
         name: default 
     rnn1:

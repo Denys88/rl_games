@@ -82,6 +82,18 @@ Shadow Hand block orientation task
 
 
 # Release Notes
+1.1.5
+* Added Swish (SILU) and GELU activations, it can improve Isaac Gym results for some of the envs.
+* Removed tensorflow and made initial cleanup of the old/unused code.
+
+1.1.4
+* Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
+* Fixed variuos multi gpu errors.
+
+1.1.3
+
+* Fixed crash when running single Isaac Gym environment in a play (test) mode.
+* Added config parameter ```clip_actions``` for switching off internal action clipping and rescaling
 
 1.1.0
 
@@ -89,14 +101,8 @@ Shadow Hand block orientation task
 * Added reporting env (sim) step fps, without policy inference. Improved naming.
 * Renames in yaml config for better readability: steps_num to horizon_length amd lr_threshold to kl_threshold
 
-1.1.3
 
-* Fixed crash when running single Isaac Gym environment in a play (test) mode.
-* Added config parameter ```clip_actions``` for switching off internal action clipping and rescaling
 
-1.1.4
-* Fixed crash in a play (test) mode in player, when simulation and rl_devices are not the same.
-* Fixed variuos multi gpu errors
 
 # Troubleshouting
 
