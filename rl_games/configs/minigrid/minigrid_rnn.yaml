@@ -77,7 +77,7 @@ params:
     save_frequency: 100
     env_config:
       fully_obs: False
-      name: MiniGrid-MemoryS13Random-v0 #MiniGrid-MemoryS7-v0
+      name: MiniGrid-MemoryS7-v0 # MiniGrid-MemoryS13Random-v0 #
     player:
       games_num: 100
       render: True
