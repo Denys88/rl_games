@@ -65,14 +65,14 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    horizon_length: 256
+    horizon_length: 64
     minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
+    seq_length: 64
     weight_decay: 0.0000
     save_frequency: 100
     env_config:

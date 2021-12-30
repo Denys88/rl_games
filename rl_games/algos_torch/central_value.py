@@ -117,15 +117,10 @@ class CentralValueTrain(nn.Module):
             obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
-    def pre_step_rnn(self, rnn_indices, state_indices):
-        if self.num_agents > 1:
-            rnn_indices = rnn_indices[::self.num_agents] 
-            shifts = rnn_indices % (self.num_steps // self.seq_len)
-            rnn_indices = (rnn_indices - shifts) // self.num_agents + shifts
-            state_indices = state_indices[::self.num_agents] // self.num_agents
-
-        for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-            mb_s[:, rnn_indices, :] = s[:, state_indices, :]
+    def pre_step_rnn(self, n):
+        if n % self.seq_len == 0:
+            for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
+                mb_s[:, n//self.seq_len, :] = s
 
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
@@ -191,11 +186,13 @@ class CentralValueTrain(nn.Module):
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
         actions_batch = batch['actions']
+        dones_batch = batch['dones']
         rnn_masks_batch = batch.get('rnn_masks')
 
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
-                    'seq_length' : self.seq_len }
+                    'seq_length' : self.seq_len,
+                    'dones' : dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 

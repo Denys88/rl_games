@@ -134,6 +134,9 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
+    if masks is None:
+        return (values - values.mean()) / (values.std() + 1e-8)
+
     values_mean, values_var = get_mean_var_with_masks(values, masks)
     values_std = torch.sqrt(values_var)
     normalized_values = (values - values_mean) / (values_std + 1e-8)

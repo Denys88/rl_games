@@ -11,7 +11,7 @@ import math
 import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
-
+from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)   
@@ -80,12 +80,9 @@ class NetworkBuilder:
             if name == 'identity':
                 return torch_ext.IdentityRNN(input, units)
             if name == 'lstm':
-                return torch.nn.LSTM(input, units, layers, batch_first=True)
+                return LSTMWithDones(input_size=input, hidden_size=units, num_layers=layers)
             if name == 'gru':
-                return torch.nn.GRU(input, units, layers, batch_first=True)
-            if name == 'sru':
-                from sru import SRU
-                return SRU(input, units, layers, dropout=0, layer_norm=False)
+                return GRUWithDones(input_size=input, hidden_size=units, num_layers=layers)
 
         def _build_sequential_mlp(self, 
         input_size, 
@@ -295,6 +292,9 @@ class A2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
+            dones = obs_dict.get('dones', None)
+            bptt_len = obs_dict.get('bptt_len', 1)
+
             if self.has_cnn:
                 # for obs shape 4
                 # input expected shape (B, W, H, C)
@@ -326,9 +326,8 @@ class A2CBuilder(NetworkBuilder):
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
 
-                    if self.rnn_name == 'sru':
-                        a_out =a_out.transpose(0,1)
-                        c_out =c_out.transpose(0,1)
+                    a_out =a_out.transpose(0,1)
+                    c_out =c_out.transpose(0,1)
 
                     if len(states) == 2:
                         a_states = states[0]
@@ -336,19 +335,16 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         a_states = states[:2]
                         c_states = states[2:]                        
-                    a_out, a_states = self.a_rnn(a_out, a_states)
-                    c_out, c_states = self.c_rnn(c_out, c_states)
-         
-                    if self.rnn_name == 'sru':
-                        a_out = a_out.transpose(0,1)
-                        c_out = c_out.transpose(0,1)
-                    else:
-                        if self.rnn_ln:
-                            a_out = self.a_layer_norm(a_out)
-                            c_out = self.c_layer_norm(c_out)
+                    a_out, a_states = self.a_rnn(a_out, a_states, dones, bptt_len)
+                    c_out, c_states = self.c_rnn(c_out, c_states, dones, bptt_len)
+
+                    a_out = a_out.transpose(0,1)
+                    c_out = c_out.transpose(0,1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
-
+                    if self.rnn_ln:
+                        a_out = self.a_layer_norm(a_out)
+                        c_out = self.c_layer_norm(c_out)
                     if type(a_states) is not tuple:
                         a_states = (a_states,)
                         c_states = (c_states,)
@@ -399,14 +395,13 @@ class A2CBuilder(NetworkBuilder):
                     if len(states) == 1:
                         states = states[0]
 
-                    if self.rnn_name == 'sru':
-                        out = out.transpose(0, 1)
+                    out = out.transpose(0, 1)
+                    out, states = self.rnn(out, states, dones, bptt_len)
+                    out = out.transpose(0, 1)
 
-                    out, states = self.rnn(out, states)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
 
-                    if self.rnn_name == 'sru':
-                        out = out.transpose(0, 1)
+
                     if self.rnn_ln:
                         out = self.layer_norm(out)
                     if self.is_rnn_before_mlp:
