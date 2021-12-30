@@ -293,7 +293,7 @@ class A2CBuilder(NetworkBuilder):
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
             dones = obs_dict.get('dones', None)
-            bptt_len = obs_dict.get('bptt_len', 1)
+            bptt_len = obs_dict.get('bptt_len', 0)
 
             if self.has_cnn:
                 # for obs shape 4
@@ -326,8 +326,11 @@ class A2CBuilder(NetworkBuilder):
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
 
-                    a_out =a_out.transpose(0,1)
-                    c_out =c_out.transpose(0,1)
+                    a_out = a_out.transpose(0,1)
+                    c_out = c_out.transpose(0,1)
+                    if dones is not None:
+                        dones = dones.reshape(num_seqs, seq_length, -1)
+                        dones = dones.transpose(0,1)
 
                     if len(states) == 2:
                         a_states = states[0]
@@ -396,6 +399,9 @@ class A2CBuilder(NetworkBuilder):
                         states = states[0]
 
                     out = out.transpose(0, 1)
+                    if dones is not None:
+                        dones = dones.reshape(num_seqs, seq_length, -1)
+                        dones = dones.transpose(0, 1)
                     out, states = self.rnn(out, states, dones, bptt_len)
                     out = out.transpose(0, 1)
 

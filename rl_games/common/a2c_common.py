@@ -149,7 +149,7 @@ class A2CBase:
         self.num_agents = self.env_info.get('agents', 1)
         self.horizon_length = config['horizon_length']
         self.seq_len = self.config.get('seq_length', 4)
-        self.bptt_len = self.config.get('bptt_len', self.seq_len)
+        self.bptt_len = self.config.get('bptt_length', self.seq_len)
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']

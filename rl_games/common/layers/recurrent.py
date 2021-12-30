@@ -26,10 +26,10 @@ class RnnWithDones(nn.Module):
         max_steps = input.size()[0]
         batch_size = input.size()[1]
         out_batch = []
+
         for i in range(max_steps):
             if done_masks is not None:
-                dones = done_masks[i*batch_size:(i+1)*batch_size].float()
-                dones = dones.unsqueeze(0).unsqueeze(2)
+                dones = done_masks[i].float().unsqueeze(0)
                 states = multiply_hidden(states, 1.0-dones)
             if (bptt_len > 0) and (i % bptt_len == 0):
                 states = repackage_hidden(states)
