@@ -665,6 +665,9 @@ class A2CBase:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
                     mb_s[n // self.seq_len,:,:,:] = s
 
+            if self.has_central_value:
+                self.central_value_net.pre_step_rnn(n)
+
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -699,6 +702,8 @@ class A2CBase:
             if len(all_done_indices) > 0:
                 for s in self.rnn_states:
                     s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+                if self.has_central_value:
+                    self.central_value_net.post_step_rnn(all_done_indices)
 
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])

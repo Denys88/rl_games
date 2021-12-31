@@ -162,7 +162,7 @@ class CentralValueTrain(nn.Module):
 
     def update_multiagent_tensors(self, value_preds, returns, actions, dones, rnn_masks):
         batch_size = self.batch_size
-        ma_batch_size = self.num_actors * self.num_agents * self.num_steps
+        ma_batch_size = self.num_actors * self.num_agents * self.horizon_length
         value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
