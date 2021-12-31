@@ -402,6 +402,7 @@ class A2CBuilder(NetworkBuilder):
                     if dones is not None:
                         dones = dones.reshape(num_seqs, seq_length, -1)
                         dones = dones.transpose(0, 1)
+
                     out, states = self.rnn(out, states, dones, bptt_len)
                     out = out.transpose(0, 1)
 

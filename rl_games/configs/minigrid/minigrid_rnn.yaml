@@ -72,8 +72,8 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
-    bptt_length: 16
+    seq_length: 32
+    bptt_length: 0
     weight_decay: 0.0000
     save_frequency: 100
     env_config:

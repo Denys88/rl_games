@@ -326,8 +326,6 @@ class A2CBase:
                 input_dict = {
                     'is_train': False,
                     'states' : states,
-                    #'actions' : res_dict['action'],
-                    #'rnn_states' : self.rnn_states
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
@@ -390,10 +388,10 @@ class A2CBase:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
 
-            batch_size = self.num_agents * self.num_actors
-            num_seqs = self.horizon_length * batch_size // self.seq_len
-            assert((self.horizon_length * batch_size // self.num_minibatches) % self.seq_len == 0)
-            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
+            total_agents = self.num_agents * self.num_actors
+            num_seqs = self.horizon_length // self.seq_len
+            assert((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+            self.mb_rnn_states = [torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
     def init_rnn_from_model(self, model):
         self.is_rnn = self.model.is_rnn()
@@ -665,9 +663,7 @@ class A2CBase:
         for n in range(self.horizon_length):
             if n % self.seq_len == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                    r1 = n//self.seq_len * s.size()[1]
-                    r2 = n // self.seq_len * s.size()[1] + s.size()[1]
-                    mb_s[:, r1:r2, :] = s
+                    mb_s[n // self.seq_len,:,:,:] = s
 
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
@@ -703,6 +699,7 @@ class A2CBase:
             if len(all_done_indices) > 0:
                 for s in self.rnn_states:
                     s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+
             self.game_rewards.update(self.current_rewards[done_indices])
             self.game_lengths.update(self.current_lengths[done_indices])
             self.algo_observer.process_infos(infos, done_indices)
@@ -723,7 +720,12 @@ class A2CBase:
         batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
-        batch_dict['rnn_states'] = mb_rnn_states
+        states = []
+        for mb_s in mb_rnn_states:
+            t_size = mb_s.size()[0] * mb_s.size()[2]
+            h_size = mb_s.size()[3]
+            states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
+        batch_dict['rnn_states'] = states
         batch_dict['step_time'] = step_time
         return batch_dict
 

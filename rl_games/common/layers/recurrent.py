@@ -9,8 +9,6 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 def multiply_hidden(h, mask):
-    """Wraps hidden states in new Tensors, to detach them from their history."""
-
     if isinstance(h, torch.Tensor):
         return h * mask
     else:
@@ -35,7 +33,7 @@ class RnnWithDones(nn.Module):
                 states = repackage_hidden(states)
             out, states = self.rnn(input[i].unsqueeze(0), states)
             out_batch.append(out)
-        return torch.cat(out_batch), states
+        return torch.cat(out_batch, dim=0), states
 
 
 class LSTMWithDones(RnnWithDones):
