@@ -1,8 +1,9 @@
 import torch
 from torch import nn
+import gym
 import numpy as np
 from rl_games.algos_torch import torch_ext
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
+from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.common  import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
@@ -55,7 +56,10 @@ class CentralValueTrain(nn.Module):
         self.truncate_grad = self.config.get('truncate_grads', False)
         
         if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(state_shape)
+            if isinstance(state_shape, dict):
+                self.running_mean_std = RunningMeanStdObs(state_shape).to(self.ppo_device)
+            else:
+                self.running_mean_std = RunningMeanStd(state_shape)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
@@ -107,9 +111,12 @@ class CentralValueTrain(nn.Module):
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
-        if type(obs_batch) is dict:
+        if isinstance(obs_batch, dict):
             for k,v in obs_batch.items():
-                obs_batch[k] = self._preproc_obs(v)
+                if v.dtype == torch.uint8:
+                    obs_batch[k] = v.float() / 255.0
+                else:
+                    obs_batch[k] = v
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
