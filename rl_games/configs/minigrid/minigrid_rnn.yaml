@@ -72,13 +72,13 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 32
-    bptt_length: 0
+    seq_length: 64
+    bptt_length: 32
     weight_decay: 0.0000
     save_frequency: 100
     env_config:
       fully_obs: False
-      name: MiniGrid-MemoryS7-v0 # MiniGrid-MemoryS13Random-v0 #
+      name:  MiniGrid-MemoryS13Random-v0 # MiniGrid-MemoryS7-v0 #
     player:
       games_num: 100
       render: True

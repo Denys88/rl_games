@@ -8,10 +8,11 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, num_steps, num_actors, num_actions, seq_len, model, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, bptt_len,model, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
-        self.num_agents, self.num_steps, self.num_actors, self.seq_len = num_agents, num_steps, num_actors, seq_len
+        self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
+        self.bptt_len = bptt_len
         self.num_actions = num_actions
         self.state_shape = state_shape
         self.value_size = value_size
@@ -40,7 +41,7 @@ class CentralValueTrain(nn.Module):
         
         self.mini_epoch = config['mini_epochs']
         self.mini_batch = config['minibatch_size']
-        self.num_minibatches = self.num_steps * self.num_actors // self.mini_batch
+        self.num_minibatches = self.horizon_length * self.num_actors // self.mini_batch
         self.clip_value = config['clip_value']
         self.normalize_input = config['normalize_input']
         self.writter = writter
@@ -59,13 +60,14 @@ class CentralValueTrain(nn.Module):
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
-        self.batch_size = self.num_steps * self.num_actors
+        self.batch_size = self.horizon_length * self.num_actors
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
-            num_seqs = self.num_steps * self.num_actors // self.seq_len
-            assert((self.num_steps * self.num_actors // self.num_minibatches) % self.seq_len == 0)
-            self.mb_rnn_states = [torch.zeros((s.size()[0], num_seqs, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
+            total_agents = self.num_actors #* self.num_agents
+            num_seqs = self.horizon_length // self.seq_len
+            assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+            self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
@@ -92,15 +94,23 @@ class CentralValueTrain(nn.Module):
         value_preds = batch_dict['old_values']     
         returns = batch_dict['returns']   
         actions = batch_dict['actions']
+        dones = batch_dict['dones']
         rnn_masks = batch_dict['rnn_masks']
         if self.num_agents > 1:
-            res = self.update_multiagent_tensors(value_preds, returns, actions, rnn_masks)
+            res = self.update_multiagent_tensors(value_preds, returns, actions, dones)
             batch_dict['old_values'] = res[0]
-            batch_dict['returns']  = res[1]
-            batch_dict['actions']  = res[2]
+            batch_dict['returns'] = res[1]
+            batch_dict['actions'] = res[2]
+            batch_dict['dones'] = res[3]
         
         if self.is_rnn:
-            batch_dict['rnn_states'] = self.mb_rnn_states
+            states = []
+            for mb_s in self.mb_rnn_states:
+                t_size = mb_s.size()[0] * mb_s.size()[2]
+                h_size = mb_s.size()[3]
+                states.append(mb_s.permute(1,2,0,3).reshape(-1, t_size, h_size))
+
+            batch_dict['rnn_states'] = states
             if self.num_agents > 1:
                 rnn_masks = res[3]
             batch_dict['rnn_masks'] = rnn_masks
@@ -120,7 +130,7 @@ class CentralValueTrain(nn.Module):
     def pre_step_rnn(self, n):
         if n % self.seq_len == 0:
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-                mb_s[:, n//self.seq_len, :] = s
+                mb_s[n // self.seq_len,:,:,:] = s
 
     def post_step_rnn(self, all_done_indices):
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
@@ -150,19 +160,19 @@ class CentralValueTrain(nn.Module):
         loss = self.calc_gradients(input_dict)
         return loss.item()
 
-    def update_multiagent_tensors(self, value_preds, returns, actions, rnn_masks):
+    def update_multiagent_tensors(self, value_preds, returns, actions, dones, rnn_masks):
         batch_size = self.batch_size
         ma_batch_size = self.num_actors * self.num_agents * self.num_steps
         value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        #if self.is_rnn:
+        #    rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
+        #    rnn_masks = rnn_masks.flatten(0)[:batch_size]
 
-        if self.is_rnn:
-            rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-            rnn_masks = rnn_masks.flatten(0)[:batch_size]
-
-        return value_preds, returns, actions, rnn_masks
+        return value_preds, returns, actions, dones
 
     def train_net(self):
         self.train()
@@ -192,6 +202,7 @@ class CentralValueTrain(nn.Module):
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
                     'seq_length' : self.seq_len,
+                    'bptt_len' : self.bptt_len,
                     'dones' : dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']

@@ -863,6 +863,7 @@ class DiscreteA2CBase(A2CBase):
             dataset_dict['advantages'] = advantages
             dataset_dict['returns'] = returns
             dataset_dict['actions'] = actions
+            dataset_dict['dones'] = dones
             dataset_dict['obs'] = batch_dict['states'] 
             dataset_dict['rnn_masks'] = rnn_masks
             self.central_value_net.update_dataset(dataset_dict)
