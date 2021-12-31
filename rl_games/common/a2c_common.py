@@ -1212,7 +1212,7 @@ class ContinuousA2CBase(A2CBase):
                 curr_frames = self.curr_frames
                 self.frame += curr_frames
                 if self.print_stats:
-                    fps_step = curr_frames / scaled_step_time
+                    fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
                     print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f}')
