@@ -38,10 +38,10 @@ class RnnWithDones(nn.Module):
 
 class LSTMWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):
-        lstm = torch.nn.LSTM(**kwargs)
+        lstm = torch.nn.LSTM(*args, **kwargs)
         RnnWithDones.__init__(self, lstm)
 
 class GRUWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):
-        gru = torch.nn.gru(**kwargs)
+        gru = torch.nn.GRU(*args,**kwargs)
         RnnWithDones.__init__(self, gru)

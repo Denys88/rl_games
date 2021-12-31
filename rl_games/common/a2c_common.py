@@ -672,7 +672,7 @@ class A2CBase:
                 res_dict = self.get_action_values(self.obs)
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
-            self.experience_buffer.update_data('dones', n, self.dones)
+            self.experience_buffer.update_data('dones', n, self.dones.byte())
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -713,6 +713,7 @@ class A2CBase:
 
         fdones = self.dones.float()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
+
         mb_values = self.experience_buffer.tensor_dict['values']
         mb_rewards = self.experience_buffer.tensor_dict['rewards']
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
