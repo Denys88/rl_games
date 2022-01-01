@@ -53,7 +53,7 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
+    seq_length: 32
     weight_decay: 0.0000
     max_epochs: 10000
 
@@ -69,7 +69,7 @@ params:
         games_num: 100
         determenistic: True
 
-    central_value_config1: 
+    central_value_config:
       minibatch_size: 512
       mini_epochs: 4
       learning_rate: 5e-4
@@ -87,7 +87,7 @@ params:
             name: default
           regularizer:
             name:  'None'
-        rnn:
+        rnn1:
           name: lstm
           units: 64
           layers: 1

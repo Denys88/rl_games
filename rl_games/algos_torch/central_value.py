@@ -128,11 +128,15 @@ class CentralValueTrain(nn.Module):
         return obs_batch
 
     def pre_step_rnn(self, n):
+        if not self.is_rnn:
+            return
         if n % self.seq_len == 0:
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
                 mb_s[n // self.seq_len,:,:,:] = s
 
     def post_step_rnn(self, all_done_indices):
+        if not self.is_rnn:
+            return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
             s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
