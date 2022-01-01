@@ -7,7 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -52,13 +52,13 @@ params:
       num_actors: 16
       horizon_length: 1024
       minibatch_size: 4096
-      mini_epochs: 15
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
       kl_threshold: 0.008
-
-      normalize_input: False
-      seq_length: 8
+      schedule_type: 'standard'
+      normalize_input: True
+      normalize_value: True
       bounds_loss_coef: 0.001
 
       env_config:

@@ -20,34 +20,21 @@ class HCRewardEnv(gym.RewardWrapper):
         return np.max([-10, reward])
 
 
-class DMControlReward(gym.RewardWrapper):
+class DMControlWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        
-        self.num_stops = 0
-        self.max_stops = 1000
-        self.reward_threshold = 0.001
+        self.observation_space = self.env.observation_space['observations']
+        self.observation_space.dtype = np.dtype('float32')
 
     def reset(self, **kwargs):
         self.num_stops = 0
- 
         return self.env.reset(**kwargs)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
-        if reward < self.reward_threshold:
-            self.num_stops += 1
-        else:
-            self.num_stops = max(0, self.num_stops-1)
-        if self.num_stops > self.max_stops:
-            #print('too many stops!')
-            reward = -10
-            observation = self.reset()
-            done = True
-        return observation, self.reward(reward), done, info
+        return observation, reward, done, info
 
-    def reward(self, reward):
-        return reward
+
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -123,7 +110,7 @@ def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = 'dm2gym:'+ kwargs.pop('name')
     env = gym.make(name, environment_kwargs=kwargs)
-    env = DMControlReward(env)
+    env = DMControlWrapper(env)
     env = DMControlObsWrapper(env)
 
     if frames > 1:
