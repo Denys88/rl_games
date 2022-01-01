@@ -7,9 +7,6 @@ from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
 
-#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
-FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
-
 
 
 class HCRewardEnv(gym.RewardWrapper):
@@ -437,6 +434,7 @@ def get_env_info(env):
     '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
+    
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
