@@ -193,8 +193,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def bound_loss(self, mu):
         if self.bounds_loss_coef is not None:
             soft_bound = 1.1
-            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
-            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
+            mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
+            print('b_loss:', mu_loss_high[:2], mu_loss_low[:2])
+            print('mu:', mu[:2])
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
             b_loss = 0

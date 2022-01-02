@@ -13,11 +13,12 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: default
-          scale: 0.02
+          name: glorot_normal_initializer
+          gain: 2
+
         sigma_init:
           name: const_initializer
-          val: 0
+          val: -1
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
@@ -48,8 +49,8 @@ params:
       env_name:  dm_control
       ppo: true
       e_clip: 0.2
-      clip_value: True
-      num_actors: 16
+      clip_value: False
+      num_actors: 24
       horizon_length: 1024
       minibatch_size: 4096
       mini_epochs: 4
@@ -65,4 +66,5 @@ params:
       env_config:
         name: HumanoidRun-v0
         flat_observation: True
-      
+      player:
+        render: True

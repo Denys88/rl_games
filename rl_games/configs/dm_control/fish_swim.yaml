@@ -67,4 +67,5 @@ params:
         flat_observation: True
       player:
         render: True
+        deterministic: True
       
