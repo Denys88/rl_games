@@ -112,7 +112,7 @@ def create_dm_control_env(**kwargs):
     env = gym.make(name, environment_kwargs=kwargs)
     env = DMControlWrapper(env)
     env = DMControlObsWrapper(env)
-
+    env = wrappers.TimeLimit(env, 1000)
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
     return env

@@ -24,6 +24,10 @@ params:
       activation: elu
       initializer:
         name: default
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
+
   load_checkpoint: False
   load_path: path
 
@@ -31,11 +35,11 @@ params:
       reward_shaper:
         scale_value: 0.1
       normalize_advantage: True
-      gamma: 0.995
-      tau: 0.95
+      gamma: 0.99
+      tau: 0.9
 
       learning_rate: 3e-4
-      name: dm_cheetah_run
+      name: dm_fish_swim
       score_to_win: 950
 
       grad_norm: 0.5
@@ -51,16 +55,16 @@ params:
       mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
-      kl_threshold: 0.008
       schedule_type: 'standard'
+      kl_threshold: 0.008
+      value_bootstrap: True
       normalize_input: True
       normalize_value: True
-      value_bootstrap: True
       bounds_loss_coef: 0.001
 
       env_config:
-        name: CheetahRun-v0
+        name: FishSwim-v0
         flat_observation: True
-
       player:
         render: True
+      

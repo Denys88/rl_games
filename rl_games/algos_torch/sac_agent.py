@@ -20,8 +20,8 @@ import time
 
 class SACAgent:
     def __init__(self, base_name, params):
-        print(config)
         self.config = config = params['config']
+        print(config)
         # TODO: Get obs shape and self.network
         self.load_networks(self, params)
         self.base_init(base_name, config)

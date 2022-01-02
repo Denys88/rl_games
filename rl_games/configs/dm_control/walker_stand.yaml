@@ -57,7 +57,7 @@ params:
       lr_schedule:  adaptive
       schedule_type: 'standard'
       kl_threshold: 0.008
-
+      value_bootstrap: True
       normalize_input: True
       normalize_value: True
       bounds_loss_coef: 0.001
