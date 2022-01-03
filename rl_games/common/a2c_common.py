@@ -86,6 +86,7 @@ class A2CBase:
         self.num_actors = config['num_actors']
         self.env_name = config['env_name']
 
+        self.vec_env = None
         self.env_info = config.get('env_info')
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
@@ -565,8 +566,9 @@ class A2CBase:
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
         state['last_mean_rewards'] = self.last_mean_rewards
 
-        env_state = self.vec_env.get_env_state()
-        state['env_state'] = env_state
+        if self.vec_env is not None:
+            env_state = self.vec_env.get_env_state()
+            state['env_state'] = env_state
 
         return state
 
@@ -580,7 +582,9 @@ class A2CBase:
         self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
 
         env_state = weights.get('env_state', None)
-        self.vec_env.set_env_state(env_state)
+
+        if self.vec_env is not None:
+            self.vec_env.set_env_state(env_state)
 
     def get_weights(self):
         state = self.get_stats_weights()
