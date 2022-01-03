@@ -62,8 +62,8 @@ params:
       normalize_input: True
       normalize_value: True
       bound_loss_type: 'regularisation' #'bound'
-      bounds_loss_coef: 0.001
-
+      bounds_loss_coef: 0.005
+      use_diagnostics: True
       env_config:
         name: HumanoidRun-v0
         flat_observation: True
