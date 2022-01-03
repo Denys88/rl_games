@@ -14,11 +14,11 @@ params:
         sigma_activation: None
         mu_init:
           name: glorot_normal_initializer
-          gain: 2
+          gain: 0.02
 
         sigma_init:
           name: const_initializer
-          val: -1
+          val: 0
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
@@ -61,8 +61,9 @@ params:
       value_bootstrap: True
       normalize_input: True
       normalize_value: True
-      bounds_loss_coef: 0.001
-
+      bound_loss_type: 'regularisation' #'bound'
+      bounds_loss_coef: 0.005
+      use_diagnostics: True
       env_config:
         name: HumanoidRun-v0
         flat_observation: True
