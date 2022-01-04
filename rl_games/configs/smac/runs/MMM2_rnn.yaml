@@ -44,7 +44,7 @@ params:
     num_actors: 8
     horizon_length: 200
     minibatch_size: 8000
-    mini_epochs: 5
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.05
@@ -62,7 +62,7 @@ params:
 
     central_value_config:
       minibatch_size: 800
-      mini_epochs: 5
+      mini_epochs: 4
       learning_rate: 5e-4
       clip_value: False
       normalize_input: True
@@ -70,11 +70,11 @@ params:
         name: actor_critic
         central_value: True
         mlp:
-          units: [512, 256]
+          units: [512, 256,128]
           activation: relu
           initializer:
             name: default
-        rnn:
+        rnn1:
           name: lstm
           units: 128
           layers: 1

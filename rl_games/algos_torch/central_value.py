@@ -164,11 +164,11 @@ class CentralValueTrain(nn.Module):
         loss = self.calc_gradients(input_dict)
         return loss.item()
 
-    def update_multiagent_tensors(self, value_preds, returns, actions, dones, rnn_masks):
+    def update_multiagent_tensors(self, value_preds, returns, actions, dones):
         batch_size = self.batch_size
         ma_batch_size = self.num_actors * self.num_agents * self.horizon_length
-        value_preds = value_preds.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
-        returns = returns.view(self.num_actors, self.num_agents, self.num_steps, self.value_size).transpose(0,1)
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
+        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
