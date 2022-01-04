@@ -13,8 +13,7 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: glorot_normal_initializer
-          gain: 0.02
+          name: default
 
         sigma_init:
           name: const_initializer
@@ -22,7 +21,7 @@ params:
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
-      activation: elu
+      activation: swish
       initializer:
         name: default
       regularizer:
@@ -36,9 +35,8 @@ params:
       reward_shaper:
         scale_value: 0.1
       normalize_advantage: True
-      gamma: 0.99
-      tau: 0.9
-
+      gamma: 0.995
+      tau: 0.95
       learning_rate: 3e-4
       name: dm_humanoid_run
       score_to_win: 1000
@@ -62,8 +60,8 @@ params:
       normalize_input: True
       normalize_value: True
       bound_loss_type: 'regularisation' #'bound'
-      bounds_loss_coef: 0.005
-      use_diagnostics: True
+      bounds_loss_coef: 0.001
+
       env_config:
         name: HumanoidRun-v0
         flat_observation: True
