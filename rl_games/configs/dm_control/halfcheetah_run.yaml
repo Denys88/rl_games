@@ -7,7 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -18,41 +18,12 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
-        fixed_sigma: False
-
-    cnn:
-      type: conv1d
-      activation: elu
-      initializer:
-        name: default
-      regularizer:
-        name: 'None'
-      convs:    
-        - filters: 64
-          kernel_size: 3
-          strides: 1
-          padding: 1
-        - filters: 64
-          kernel_size: 3
-          strides: 1
-          padding: 1
-        - filters: 64
-          kernel_size: 3
-          strides: 1
-          padding: 1
-        - filters: 128
-          kernel_size: 2
-          strides: 1
-          padding: 0
+        fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: default
-      regularizer:
-        name:  'None' #'l2_regularizer'
-        #scale: 0.001
-
   load_checkpoint: False
   load_path: path
 
@@ -60,12 +31,12 @@ params:
       reward_shaper:
         scale_value: 0.1
       normalize_advantage: True
-      gamma: 0.99
-      tau: 0.9
+      gamma: 0.995
+      tau: 0.95
 
-      learning_rate: 1e-4
-      name: humanoid_conv
-      score_to_win: 15000
+      learning_rate: 3e-4
+      name: dm_cheetah_run
+      score_to_win: 950
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -76,18 +47,20 @@ params:
       clip_value: True
       num_actors: 16
       horizon_length: 1024
-      minibatch_size: 8192
+      minibatch_size: 4096
       mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
       kl_threshold: 0.008
-
-      normalize_input: False
-      seq_length: 8
+      schedule_type: 'standard'
+      normalize_input: True
+      normalize_value: True
+      value_bootstrap: True
       bounds_loss_coef: 0.001
 
       env_config:
-        frames: 4
-        name: Humanoid2Run-v0
+        name: CheetahRun-v0
         flat_observation: True
-      
+
+      player:
+        render: True

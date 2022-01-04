@@ -32,7 +32,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.ewma_model = EwmaModel(self.model, ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
-
+        self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
         if self.normalize_input:
@@ -133,8 +133,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
                 c_loss = torch.zeros(1, device=self.ppo_device)
-
-            b_loss = self.bound_loss(mu)
+            if self.bound_loss_type == 'regularisation':
+                b_loss = self.reg_loss(mu)
+            elif self.bound_loss_type == 'bound':
+                b_loss = self.bound_loss(mu)
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
@@ -191,11 +193,18 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.calc_gradients(input_dict)
         return self.train_result
 
+    def reg_loss(self, mu):
+        if self.bounds_loss_coef is not None:
+            reg_loss = (mu*mu).sum(axis=-1)
+        else:
+            reg_loss = 0
+        return reg_loss
+
     def bound_loss(self, mu):
         if self.bounds_loss_coef is not None:
             soft_bound = 1.1
-            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0)**2
-            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0)**2
+            mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
             b_loss = 0

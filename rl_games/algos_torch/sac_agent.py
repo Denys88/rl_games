@@ -8,7 +8,7 @@ from rl_games.common import experience
 
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-
+from rl_games.algos_torch import  model_builder
 from torch import optim
 import torch 
 from torch import nn
@@ -20,10 +20,10 @@ import time
 
 class SACAgent:
     def __init__(self, base_name, params):
-        print(config)
         self.config = config = params['config']
+        print(config)
         # TODO: Get obs shape and self.network
-        self.load_networks(self, params)
+        self.load_networks(params)
         self.base_init(base_name, config)
         self.num_seed_steps = config["num_seed_steps"]
         self.gamma = config["gamma"]
@@ -228,8 +228,7 @@ class SACAgent:
         if self.normalize_input:
             self.running_mean_std.train()
 
-    def update_critic(self, obs, action, reward, next_obs, not_done,
-                      step):
+    def update_critic(self, obs, action, reward, next_obs, not_done,step):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
@@ -313,6 +312,8 @@ class SACAgent:
         return obs
 
     def env_step(self, actions):
+        if not self.is_tensor_obses:
+            actions = actions.cpu().numpy()
         obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
 
         self.step += self.num_actors

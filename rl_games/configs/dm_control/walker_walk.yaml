@@ -7,7 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -20,10 +20,13 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [32, 16]
-      activation: relu
+      units: [256, 128, 64]
+      activation: elu
       initializer:
         name: default
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
 
   load_checkpoint: False
   load_path: path
@@ -35,8 +38,8 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-4
-      name: cartpole
+      learning_rate: 3e-4
+      name: dm_walker_walk
       score_to_win: 950
 
       grad_norm: 0.5
@@ -47,18 +50,19 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      horizon_length: 128
-      minibatch_size: 1024
-      mini_epochs: 8
+      horizon_length: 1024
+      minibatch_size: 4096
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
+      schedule_type: 'standard'
       kl_threshold: 0.008
       value_bootstrap: True
-      normalize_input: False
-      seq_length: 8
-      bounds_loss_coef: 0.0000
+      normalize_input: True
+      normalize_value: True
+      bounds_loss_coef: 0.001
 
       env_config:
-        name: CartpoleBalance-v0
+        name: WalkerWalk-v0
         flat_observation: True
       

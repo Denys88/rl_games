@@ -7,8 +7,7 @@ params:
 
   network:
     name: actor_critic
-    separate: True
-    value_shape: 2
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -34,14 +33,14 @@ params:
 
   config:
       reward_shaper:
-        scale_value: 1
+        scale_value: 0.1
       normalize_advantage: True
       gamma: 0.99
       tau: 0.9
 
       learning_rate: 3e-4
-      name: dm_humanoid
-      score_to_win: 10000
+      name: dm_fish_swim
+      score_to_win: 950
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -53,37 +52,20 @@ params:
       num_actors: 16
       horizon_length: 1024
       minibatch_size: 4096
-      mini_epochs: 15
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
+      schedule_type: 'standard'
       kl_threshold: 0.008
-
+      value_bootstrap: True
       normalize_input: True
-      seq_length: 8
+      normalize_value: True
       bounds_loss_coef: 0.001
 
       env_config:
-        name: HumanoidRun-v0
+        name: FishSwim-v0
         flat_observation: True
-
-      rnd_config:
-        scale_value: 1.0
-        gamma: 0.99
-        mini_epochs: 2
-        minibatch_size: 4096
-        learning_rate: 5e-4
-        exp_percent: 0.25
-        adv_coef: 0.5
-        network:
-          name: rnd_curiosity
-          mlp:
-            rnd:
-              units: [256,128,32]
-            net:
-              units: [128,32]
-            activation: elu
-            initializer:
-                name: default
-                scale: 2
-            regularizer:
-              name:  'None' 
+      player:
+        render: True
+        deterministic: True
+      
