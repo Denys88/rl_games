@@ -110,7 +110,7 @@ class PpoPlayerDiscrete(BasePlayer):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
-        action_masks = torch.Tensor(action_masks).to(self.device)
+        action_masks = torch.Tensor(action_masks).to(self.device).bool()
         input_dict = {
             'is_train': False,
             'prev_actions': None, 
@@ -121,7 +121,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.eval()
 
         with torch.no_grad():
-            neglogp, value, action, logits, self.states = self.model(input_dict)
+            res_dict = self.model(input_dict)
         logits = res_dict['logits']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
