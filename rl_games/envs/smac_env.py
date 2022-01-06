@@ -78,7 +78,8 @@ class SMACEnv(gym.Env):
         reward, done, info = self.env.step(actions)
         time_out = self.env._episode_steps >= self.env.episode_limit
         info['time_outs'] = [time_out]*self.n_agents
-
+        if time_out:
+            print(self.env._episode_steps, time_out)
         if done:
             battle_won = info.get('battle_won', False)
             if not battle_won and self.reward_sparse:
