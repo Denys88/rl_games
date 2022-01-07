@@ -19,6 +19,8 @@ class RnnWithDones(nn.Module):
         nn.Module.__init__(self)
         self.rnn = rnn_layer
 
+
+
     #got idea from ikostrikov :)
     def forward(self, input, states, done_masks=None, bptt_len = 0):
         # ignoring bptt_ln for now
@@ -41,19 +43,18 @@ class RnnWithDones(nn.Module):
         else:
             has_zeros = (has_zeros + 1).numpy().tolist()
 
-        # add t=0 and t=T to the list
+        # add t=0 an`d t=T to the list
         has_zeros = [0] + has_zeros + [max_steps]
         out_batch = []
 
         for i in range(len(has_zeros) - 1):
             start_idx = has_zeros[i]
             end_idx = has_zeros[i + 1]
-            not_done = not_dones[start_idx].float().unsqueeze(0)
+            not_done = not_dones[start_idx].unsqueeze(0)
             states = multiply_hidden(states, not_done)
             out, states = self.rnn(input[start_idx:end_idx], states)
             out_batch.append(out)
         return torch.cat(out_batch, dim=0), states
-
 
 class LSTMWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):

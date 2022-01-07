@@ -631,11 +631,11 @@ class A2CBase:
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
+            env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
 
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-            self.algo_observer.process_infos(infos, done_indices)
+            self.game_rewards.update(self.current_rewards[env_done_indices])
+            self.game_lengths.update(self.current_lengths[env_done_indices])
+            self.algo_observer.process_infos(infos, env_done_indices)
 
             not_dones = 1.0 - self.dones.float()
 
@@ -701,16 +701,16 @@ class A2CBase:
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
+            env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
             if len(all_done_indices) > 0:
                 for s in self.rnn_states:
                     s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
                 if self.has_central_value:
                     self.central_value_net.post_step_rnn(all_done_indices)
 
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-            self.algo_observer.process_infos(infos, done_indices)
+            self.game_rewards.update(self.current_rewards[env_done_indices])
+            self.game_lengths.update(self.current_lengths[env_done_indices])
+            self.algo_observer.process_infos(infos, env_done_indices)
 
             not_dones = 1.0 - self.dones.float()
 

@@ -197,31 +197,27 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
-    class ActionWrapper(gym.core.Wrapper):
-        def __init__(self, env):
-            super().__init__(env)
-            self.action_space = gym.spaces.Discrete(3)
-
 
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
-    fully_obs = kwargs.pop('fully_obs', False)
+    rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
+    rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
-    env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
+
 
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
     if action_bonus:
         env = gym_minigrid.wrappers.ActionBonus(env)
 
-    if fully_obs:
+    if rgb_fully_obs:
         env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
-        env = gym_minigrid.wrappers.ImgObsWrapper(env)
-    else:
+    elif rgb_partial_obs:
+        env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
         env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=84//view_size) # Get pixel observations
-        env = gym_minigrid.wrappers.ImgObsWrapper(env)
-    
+
+    env = gym_minigrid.wrappers.ImgObsWrapper(env)
     print('minigird_env observation space shape:', env.observation_space)
     return env
 

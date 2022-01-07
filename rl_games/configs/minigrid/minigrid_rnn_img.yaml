@@ -55,7 +55,7 @@ params:
     tau: 0.95
     learning_rate: 2e-4
     name: minigrid_env_rnn
-    score_to_win: 100
+    score_to_win: 0.9
     grad_norm: 1
 
     entropy_coef: 0.01
@@ -66,19 +66,20 @@ params:
     clip_value: True
     num_actors: 16
     horizon_length: 256
-    minibatch_size: 512
+    minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 64
-    bptt_length: 32
+    seq_length: 32
+    #bptt_length: 32
     weight_decay: 0.0000
     save_frequency: 100
+    max_epochs: 1200
     env_config:
-      fully_obs: False
-      name:  MiniGrid-MemoryS13Random-v0 # MiniGrid-MemoryS7-v0 #
+      rgb_fully_obs: False
+      name:   MiniGrid-MemoryS7-v0 # MiniGrid-MemoryS13Random-v0 #
     player:
       games_num: 100
       render: True
