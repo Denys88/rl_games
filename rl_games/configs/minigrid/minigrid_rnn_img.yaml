@@ -58,7 +58,7 @@ params:
     score_to_win: 0.9
     grad_norm: 1
 
-    entropy_coef: 0.01
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  minigrid_env
     ppo: true
@@ -66,14 +66,14 @@ params:
     clip_value: True
     num_actors: 16
     horizon_length: 256
-    minibatch_size: 1024
+    minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 32
-    #bptt_length: 32
+    seq_length: 64
+    bptt_length: 32
     weight_decay: 0.0000
     save_frequency: 100
     max_epochs: 1200

@@ -19,8 +19,7 @@ class RnnWithDones(nn.Module):
         nn.Module.__init__(self)
         self.rnn = rnn_layer
 
-
-
+    """
     #got idea from ikostrikov :)
     def forward(self, input, states, done_masks=None, bptt_len = 0):
         # ignoring bptt_ln for now
@@ -50,11 +49,27 @@ class RnnWithDones(nn.Module):
         for i in range(len(has_zeros) - 1):
             start_idx = has_zeros[i]
             end_idx = has_zeros[i + 1]
-            not_done = not_dones[start_idx].unsqueeze(0)
+            not_done = not_dones[start_idx].float().unsqueeze(0)
             states = multiply_hidden(states, not_done)
             out, states = self.rnn(input[start_idx:end_idx], states)
             out_batch.append(out)
         return torch.cat(out_batch, dim=0), states
+    """
+    def forward(self, input, states, done_masks=None, bptt_len = 0):
+        max_steps = input.size()[0]
+        batch_size = input.size()[1]
+        out_batch = []
+
+        for i in range(max_steps):
+            if done_masks is not None:
+                dones = done_masks[i].float().unsqueeze(0)
+                states = multiply_hidden(states, 1.0-dones)
+            if (bptt_len > 0) and (i % bptt_len == 0):
+                states = repackage_hidden(states)
+            out, states = self.rnn(input[i].unsqueeze(0), states)
+            out_batch.append(out)
+        return torch.cat(out_batch, dim=0), states
+
 
 class LSTMWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):
