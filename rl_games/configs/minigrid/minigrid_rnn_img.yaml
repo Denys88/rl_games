@@ -58,7 +58,7 @@ params:
     score_to_win: 0.9
     grad_norm: 1
 
-    entropy_coef: 0.005
+    entropy_coef: 0.015
     truncate_grads: True
     env_name:  minigrid_env
     ppo: true
@@ -72,14 +72,14 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 64
-    bptt_length: 32
+    seq_length: 16
+    bptt_length: 16
     weight_decay: 0.0000
     save_frequency: 100
-    max_epochs: 1200
+    max_epochs: 2200
     env_config:
       rgb_fully_obs: False
-      name:   MiniGrid-MemoryS7-v0 # MiniGrid-MemoryS13Random-v0 #
+      name: MiniGrid-MemoryS13Random-v0 #   MiniGrid-MemoryS7-v0 #
     player:
       games_num: 100
       render: True

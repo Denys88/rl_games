@@ -19,7 +19,7 @@ class RnnWithDones(nn.Module):
         nn.Module.__init__(self)
         self.rnn = rnn_layer
 
-    """
+
     #got idea from ikostrikov :)
     def forward(self, input, states, done_masks=None, bptt_len = 0):
         # ignoring bptt_ln for now
@@ -69,7 +69,7 @@ class RnnWithDones(nn.Module):
             out, states = self.rnn(input[i].unsqueeze(0), states)
             out_batch.append(out)
         return torch.cat(out_batch, dim=0), states
-
+    """
 
 class LSTMWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):
