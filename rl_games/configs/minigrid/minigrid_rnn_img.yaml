@@ -54,7 +54,7 @@ params:
     gamma: 0.99
     tau: 0.95
     learning_rate: 2e-4
-    name: minigrid_env_rnn
+    name: minigrid_env_rnn_5
     score_to_win: 0.9
     grad_norm: 1
 
@@ -79,6 +79,7 @@ params:
     max_epochs: 2200
     env_config:
       rgb_fully_obs: False
+      view_size: 5
       name: MiniGrid-MemoryS13Random-v0 #   MiniGrid-MemoryS7-v0 #
     player:
       games_num: 100
