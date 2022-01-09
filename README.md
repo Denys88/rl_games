@@ -83,6 +83,10 @@ Shadow Hand block orientation task
 
 # Release Notes
 
+1.3.0
+* Simplified rnn implementation. Works a little bit slower but much more stable. 
+* Now central value can be non-rnn if policy is rnn.
+
 1.2.0
 
 * Added Swish (SILU) and GELU activations, it can improve Isaac Gym results for some of the envs.
