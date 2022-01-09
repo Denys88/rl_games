@@ -21,7 +21,7 @@ params:
       initializer:
         name: default
     rnn:
-      name: lstm
+      name: gru
       units: 128
       layers: 1
       layer_norm: False
@@ -32,28 +32,29 @@ params:
     normalize_advantage: True
     gamma: 0.995
     tau: 0.95
-    learning_rate: 5e-4
+    learning_rate: 1e-4
     score_to_win: 25
-    grad_norm: 1.5
-    entropy_coef: 0.01
+    grad_norm: 0.5
+    entropy_coef: 0.005
     truncate_grads: True
     env_name:  smac
     ppo: true
     e_clip: 0.2
     clip_value: False
     num_actors: 8
-    horizon_length: 200
-    minibatch_size: 8000
-    mini_epochs: 5
+    horizon_length: 128
+    minibatch_size: 2560
+    mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.05
     normalize_input: True
     normalize_value: True
     use_action_masks: True
-    seq_length: 10
+    seq_length: 32
     max_epochs: 30000
     use_diagnostics: True
+    value_bootstrap: False
     player:
       render: False
       games_num: 200
@@ -61,8 +62,8 @@ params:
       determenistic: True
 
     central_value_config:
-      minibatch_size: 800
-      mini_epochs: 5
+      minibatch_size: 512
+      mini_epochs: 4
       learning_rate: 5e-4
       clip_value: False
       normalize_input: True
@@ -70,22 +71,17 @@ params:
         name: actor_critic
         central_value: True
         mlp:
-          units: [512, 256]
+          units: [512, 256,128]
           activation: relu
           initializer:
             name: default
-        rnn:
-          name: lstm
-          units: 128
-          layers: 1
-          layer_norm: False
 
     env_config:
       name: MMM2
       central_value: True
       #reward_only_positive: True
       reward_only_positive: True
-      obs_last_action: False
-      apply_agent_ids: True
+      obs_last_action: True
+      apply_agent_ids: False
       replay_save_freq: 10000
       #reward_negative_scale: 0.5

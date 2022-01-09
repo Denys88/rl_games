@@ -52,14 +52,14 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
+    seq_length: 32
     weight_decay: 0.0000
     max_epochs: 10000
 
     env_config:
       name: TestRnnEnv-v0
       hide_object: True
-      apply_dist_reward: True
+      apply_dist_reward: False
       min_dist: 2
       max_dist: 8
       use_central_value: False

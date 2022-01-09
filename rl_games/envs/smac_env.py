@@ -9,6 +9,7 @@ class SMACEnv(gym.Env):
         self.seed = kwargs.pop('seed', None)
         self.reward_sparse = kwargs.get('reward_sparse', False)
         self.use_central_value = kwargs.pop('central_value', False)
+        self.concat_infos = True
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
         self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
         self.apply_agent_ids = kwargs.pop('apply_agent_ids', False)
@@ -75,6 +76,10 @@ class SMACEnv(gym.Env):
             actions, fixed_rewards = self._preproc_actions(actions)
 
         reward, done, info = self.env.step(actions)
+        time_out = self.env._episode_steps >= self.env.episode_limit
+        info['time_outs'] = [time_out]*self.n_agents
+        if time_out:
+            print(self.env._episode_steps, time_out)
         if done:
             battle_won = info.get('battle_won', False)
             if not battle_won and self.reward_sparse:

@@ -47,10 +47,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'value_size' : self.value_size,
                 'ppo_device' : self.ppo_device, 
                 'num_agents' : self.num_agents, 
-                'num_steps' : self.horizon_length, 
+                'horizon_length' : self.horizon_length,
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
-                'seq_len' : self.seq_len, 
+                'seq_len' : self.seq_len,
+                'bptt_len' : self.bptt_len,
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
@@ -99,7 +100,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 input_dict = {
                     'is_train': False,
                     'states' : obs['states'],
-                    #'actions' : action,
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
@@ -143,9 +143,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
+            batch_dict['bptt_len'] = self.bptt_len
+            batch_dict['dones'] = input_dict['dones']
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
-            
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -194,7 +195,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
-            if self.is_rnn:
+            if rnn_masks is not None:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()

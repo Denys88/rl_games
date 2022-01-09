@@ -77,7 +77,7 @@ params:
     save_frequency: 100
     env_config:
       view_size: 3
-      fully_obs: False
+      rgb_fully_obs: False
       name: MiniGrid-LavaCrossingS11N5-v0 #MiniGrid-LavaCrossingS9N1-v0 MiniGrid-LavaCrossingS9N3-v0
     player:
       games_num: 100
