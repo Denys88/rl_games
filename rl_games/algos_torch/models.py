@@ -7,6 +7,7 @@ import rl_games.common.divergence as divergence
 from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
 from rl_games.algos_torch.sac_helper import SquashedNormal
+from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 
 
 class BaseModel():
@@ -19,7 +20,26 @@ class BaseModel():
     def is_separate_critic(self):
         return False
 
+class BaseModelNetwork(nn.Module):
+    def __init__(self, **kwargs):
+        nn.Module.__init__(self)
+        self.normalize_value = kwargs.pop('normalize_value')
+        self.normalize_input = kwargs.pop('normalize_input')
+        self.value_size = kwargs.get('value_size')
 
+        if normalize_value:
+            self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
+        if normalize_input:
+            if isinstance(state_shape, dict):
+                self.running_mean_std = RunningMeanStdObs(state_shape).to(self.ppo_device)
+            else:
+                self.running_mean_std = RunningMeanStd(state_shape)
+
+    def norm_obs(self, observation):
+        return self.running_mean_std(observation) if self.normalize_input else observation
+
+    def unnorm_value(self, value):
+        return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -29,16 +49,16 @@ class ModelA2C(BaseModel):
     def build(self, config):
         return ModelA2C.Network(self.network_builder.build('a2c', **config))
 
-    class Network(nn.Module):
-        def __init__(self, a2c_network):
-            nn.Module.__init__(self)
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self,**kwargs)
             self.a2c_network = a2c_network
+
         def is_rnn(self):
             return self.a2c_network.is_rnn()
         
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()            
-
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -49,7 +69,9 @@ class ModelA2C(BaseModel):
             is_train = input_dict.get('is_train', True)
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
             logits, value, states = self.a2c_network(input_dict)
+
             if is_train:
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
                 prev_neglogp = -categorical.log_prob(prev_actions)
@@ -68,7 +90,7 @@ class ModelA2C(BaseModel):
                 neglogp = -categorical.log_prob(selected_action)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : value,
+                    'values' : self.unnorm_value(value),
                     'actions' : selected_action,
                     'logits' : categorical.logits,
                     'rnn_states' : states
@@ -83,9 +105,9 @@ class ModelA2CMultiDiscrete(BaseModel):
     def build(self, config):
         return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config))
 
-    class Network(nn.Module):
+    class Network(BaseModelNetwork):
         def __init__(self, a2c_network):
-            nn.Module.__init__(self)
+            BaseModelNetwork.__init__(self)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -103,6 +125,7 @@ class ModelA2CMultiDiscrete(BaseModel):
             is_train = input_dict.get('is_train', True)
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
             logits, value, states = self.a2c_network(input_dict)
             if is_train:
                 if action_masks is None:
@@ -134,7 +157,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : value,
+                    'values' : self.unnorm_value(value),
                     'actions' : selected_action,
                     'logits' : [c.logits for c in categorical],
                     'rnn_states' : states
@@ -150,9 +173,9 @@ class ModelA2CContinuous(BaseModel):
         return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config))
 
 
-    class Network(nn.Module):
+    class Network(BaseModelNetwork):
         def __init__(self, a2c_network):
-            nn.Module.__init__(self)
+            BaseModelNetwork.__init__(self)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -169,6 +192,7 @@ class ModelA2CContinuous(BaseModel):
         def forward(self, input_dict):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, sigma, value, states = self.a2c_network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
 
@@ -189,7 +213,7 @@ class ModelA2CContinuous(BaseModel):
                 neglogp = -distr.log_prob(selected_action).sum(dim=-1)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : torch.squeeze(value),
+                    'values' : self.unnorm_value(value),
                     'actions' : selected_action,
                     'entropy' : entropy,
                     'rnn_states' : states,
@@ -208,9 +232,9 @@ class ModelA2CContinuousLogStd(BaseModel):
         net = self.network_builder.build('a2c', **config)
         return ModelA2CContinuousLogStd.Network(net)
 
-    class Network(nn.Module):
+    class Network(BaseModelNetwork):
         def __init__(self, a2c_network):
-            nn.Module.__init__(self)
+            BaseModelNetwork.__init__(self)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -222,6 +246,7 @@ class ModelA2CContinuousLogStd(BaseModel):
         def forward(self, input_dict):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)

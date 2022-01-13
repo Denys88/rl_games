@@ -9,26 +9,30 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, bptt_len,model, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,model, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
-        self.bptt_len = bptt_len
+        self.normalize_value = normalize_value
         self.num_actions = num_actions
         self.state_shape = state_shape
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
         self.truncate_grads = config.get('truncate_grads', False)
+        self.config = config
+        self.normalize_input = config['normalize_input']
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
             'actions_num' : num_actions,
             'num_agents' : num_agents,
-            'num_seqs' : num_actors
+            'num_seqs' : num_actors,
+            'normalize_input' : self.normalize_input,
+            'normalize_value': self.normalize_input,
         }
 
-        self.config = config
+
         self.model = model.build('cvalue', **state_config)
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
@@ -44,7 +48,7 @@ class CentralValueTrain(nn.Module):
         self.mini_batch = config['minibatch_size']
         self.num_minibatches = self.horizon_length * self.num_actors // self.mini_batch
         self.clip_value = config['clip_value']
-        self.normalize_input = config['normalize_input']
+
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
         self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
@@ -55,12 +59,6 @@ class CentralValueTrain(nn.Module):
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
         self.truncate_grad = self.config.get('truncate_grads', False)
-        
-        if self.normalize_input:
-            if isinstance(state_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(state_shape).to(self.ppo_device)
-            else:
-                self.running_mean_std = RunningMeanStd(state_shape)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
@@ -85,14 +83,11 @@ class CentralValueTrain(nn.Module):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
-    def get_stats_weights(self): 
-        if self.normalize_input:
-            return self.running_mean_std.state_dict()
-        else:
-            return {}
+    def get_stats_weights(self):
+        return {}
 
     def set_stats_weights(self, weights): 
-        self.running_mean_std.load_state_dict(weights)
+        pass
         
     def update_dataset(self, batch_dict):
         value_preds = batch_dict['old_values']     
@@ -130,8 +125,6 @@ class CentralValueTrain(nn.Module):
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def pre_step_rnn(self, n):

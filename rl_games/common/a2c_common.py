@@ -106,6 +106,7 @@ class A2CBase:
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
         self.truncate_grads = self.config.get('truncate_grads', False)
+
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
             if isinstance(self.state_space,gym.spaces.Dict):
@@ -222,8 +223,7 @@ class A2CBase:
 
         self.value_bootstrap = self.config.get('value_bootstrap')
 
-        if self.normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
+
 
 
         if self.normalize_advantage and self.normalize_rms_advantage:
@@ -282,10 +282,6 @@ class A2CBase:
         self.model.eval()
         if self.normalize_rms_advantage:
             self.advantage_mean_std.eval()
-        if self.normalize_input:
-            self.running_mean_std.eval()
-        if self.normalize_value:
-            self.value_mean_std.eval()
 
 
     def set_train(self):
@@ -293,10 +289,6 @@ class A2CBase:
         if self.normalize_rms_advantage:
             self.advantage_mean_std.train()
 
-        if self.normalize_input:
-            self.running_mean_std.train()
-        if self.normalize_value:
-            self.value_mean_std.train()
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -330,8 +322,6 @@ class A2CBase:
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
-        if self.normalize_value:
-            res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
         return res_dict
 
     def get_values(self, obs):
@@ -357,9 +347,6 @@ class A2CBase:
                 }
                 result = self.model(input_dict)
                 value = result['values']
-
-            if self.normalize_value:
-                value = self.value_mean_std(value, unnorm=True)
             return value
 
     @property
@@ -557,14 +544,6 @@ class A2CBase:
 
     def get_stats_weights(self):
         state = {}
-        if self.normalize_input:
-            state['running_mean_std'] = self.running_mean_std.state_dict()
-        if self.normalize_rms_advantage:
-            state['advantage_mean_std'] = self.advantage_mean_std
-        if self.normalize_value:
-            state['reward_mean_std'] = self.value_mean_std.state_dict()
-        if self.has_central_value:
-            state['assymetric_vf_mean_std'] = self.central_value_net.get_stats_weights()
         if self.mixed_precision:
             state['scaler'] = self.scaler.state_dict()
         return state
@@ -572,10 +551,10 @@ class A2CBase:
     def set_stats_weights(self, weights):
         if self.normalize_rms_advantage:
             self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value:
-            self.value_mean_std.load_state_dict(weights['reward_mean_std'])
+        if self.normalize_input and 'running_mean_std' in weights:
+            self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_value and 'reward_mean_std' in weights:
+            self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.has_central_value:
             self.central_value_net.set_stats_weights(weights['assymetric_vf_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
@@ -595,8 +574,6 @@ class A2CBase:
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def play_steps(self):
@@ -811,8 +788,8 @@ class DiscreteA2CBase(A2CBase):
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
-
             self.diagnostics.mini_epoch(self, mini_ep)
+
         if self.has_phasic_policy_gradients:
             self.ppg_aux_loss.train_net(self)
 
@@ -836,8 +813,10 @@ class DiscreteA2CBase(A2CBase):
         
         obses = batch_dict['obses']
         if self.normalize_value:
+            self.value_mean_std.train()
             values = self.value_mean_std(values)
-            returns = self.value_mean_std(returns)       
+            returns = self.value_mean_std(returns)
+            self.network.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
  

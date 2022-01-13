@@ -88,8 +88,6 @@ class PpoPlayerDiscrete(BasePlayer):
             self.is_multi_discrete = True
         self.mask = [False]
 
-        self.normalize_input = self.config['normalize_input']
-
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
@@ -102,9 +100,6 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
-            self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = True):
         if self.has_batch_dimension == False:
@@ -168,8 +163,8 @@ class PpoPlayerDiscrete(BasePlayer):
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
         self.init_rnn()
@@ -197,17 +192,14 @@ class SACPlayer(BasePlayer):
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        # if self.normalize_input:
-        #     self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
-        #     self.running_mean_std.eval()  
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.model.sac_network.actor.load_state_dict(checkpoint['actor'])
         self.model.sac_network.critic.load_state_dict(checkpoint['critic'])
         self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def get_action(self, obs, sample=False):
         dist = self.model.actor(obs)
