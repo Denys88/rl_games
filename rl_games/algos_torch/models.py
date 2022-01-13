@@ -11,14 +11,22 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 
 
 class BaseModel():
-    def __init__(self):
-        pass
+    def __init__(self, model_class):
+        self.model_class = model_class
 
     def is_rnn(self):
         return False
 
     def is_separate_critic(self):
         return False
+
+    def build(self, config):
+        obs_shape = config['input_shape']
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
 class BaseModelNetwork(nn.Module):
     def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
@@ -44,16 +52,8 @@ class BaseModelNetwork(nn.Module):
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
-        BaseModel.__init__(self)
+        BaseModel.__init__(self, 'a2c')
         self.network_builder = network
-
-    def build(self, config):
-        obs_shape = config['input_shape']
-        normalize_value = config['normalize_value']
-        normalize_input = config['normalize_input']
-        value_size = config['value_size']
-        return ModelA2C.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
@@ -105,7 +105,7 @@ class ModelA2C(BaseModel):
 
 class ModelA2CMultiDiscrete(BaseModel):
     def __init__(self, network):
-        BaseModel.__init__(self)
+        BaseModel.__init__(self, 'a2c')
         self.network_builder = network
 
     def build(self, config):
@@ -177,7 +177,7 @@ class ModelA2CMultiDiscrete(BaseModel):
 
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
-        BaseModel.__init__(self)
+        BaseModel.__init__(self, 'a2c')
         self.network_builder = network
 
     def build(self, config):
@@ -241,7 +241,7 @@ class ModelA2CContinuous(BaseModel):
 
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
-        BaseModel.__init__(self)
+        BaseModel.__init__(self, 'a2c')
         self.network_builder = network
 
     def build(self, config):
@@ -300,19 +300,44 @@ class ModelA2CContinuousLogStd(BaseModel):
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
 
+
+class ModelCentralValue(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self, 'a2c')
+        self.network_builder = network
+
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
+            self.a2c_network = a2c_network
+
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def kl(self, p_dict, q_dict):
+            return None # or throw exception?
+
+        def forward(self, input_dict):
+            prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+            value, states = self.a2c_network(input_dict)
+
+            result = {
+                'values': value,
+                'rnn_states': states
+            }
+            return result
+
+
+
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):
-        BaseModel.__init__(self)
+        BaseModel.__init__(self, 'sac')
         self.network_builder = network
-
-    def build(self, config):
-        obs_shape = config['input_shape']
-        normalize_value = config['normalize_value']
-        normalize_input = config['normalize_input']
-        value_size = config['value_size']
-        return ModelSACContinuous.Network(self.network_builder.build('sac', **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
     
     class Network(BaseModelNetwork):
         def __init__(self, sac_network,**kwargs):

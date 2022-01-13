@@ -9,7 +9,7 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,model, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
@@ -29,11 +29,11 @@ class CentralValueTrain(nn.Module):
             'num_agents' : num_agents,
             'num_seqs' : num_actors,
             'normalize_input' : self.normalize_input,
-            'normalize_value': self.normalize_input,
+            'normalize_value': self.normalize_value,
         }
 
 
-        self.model = model.build('cvalue', **state_config)
+        self.model = network.build(state_config)
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
         if self.linear_lr:
@@ -142,8 +142,8 @@ class CentralValueTrain(nn.Module):
             s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
 
     def forward(self, input_dict):
-        value, rnn_states = self.model(input_dict)
-        return value, rnn_states
+        return self.model(input_dict)
+
 
     def get_value(self, input_dict):
         self.eval()
@@ -151,8 +151,9 @@ class CentralValueTrain(nn.Module):
         actions = input_dict.get('actions', None)
 
         obs_batch = self._preproc_obs(obs_batch)
-        value, self.rnn_states = self.forward({'obs' : obs_batch, 'actions': actions, 
+        res_dict = self.forward({'obs' : obs_batch, 'actions': actions,
                                              'rnn_states': self.rnn_states})
+        value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
@@ -206,12 +207,12 @@ class CentralValueTrain(nn.Module):
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
                     'seq_length' : self.seq_len,
-                    'bptt_len' : self.bptt_len,
                     'dones' : dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
-        values, _ = self.forward(batch_dict)
+        res_dict = self.forward(batch_dict)
+        values = res_dict['values']
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]

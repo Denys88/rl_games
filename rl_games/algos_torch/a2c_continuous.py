@@ -47,7 +47,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len,
                 'normalize_value' : self.normalize_value,
-                'model' : self.central_value_config['network'],
+                'network' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
