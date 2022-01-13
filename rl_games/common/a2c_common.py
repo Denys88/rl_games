@@ -791,7 +791,8 @@ class DiscreteA2CBase(A2CBase):
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
-
+            if self.normalize_input:
+                self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
         if self.has_phasic_policy_gradients:
             self.ppg_aux_loss.train_net(self)
 

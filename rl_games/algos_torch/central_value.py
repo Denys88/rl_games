@@ -185,6 +185,8 @@ class CentralValueTrain(nn.Module):
         for _ in range(self.mini_epoch):
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
+            if self.normalize_input:
+                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
