@@ -21,8 +21,9 @@ class BaseModel():
         return False
 
 class BaseModelNetwork(nn.Module):
-    def __init__(self, normalize_value, normalize_input, value_size):
+    def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
         nn.Module.__init__(self)
+        self.obs_shape = obs_shape
         self.normalize_value = normalize_value
         self.normalize_input = normalize_input
         self.value_size = value_size
@@ -30,10 +31,10 @@ class BaseModelNetwork(nn.Module):
         if normalize_value:
             self.value_mean_std = RunningMeanStd((self.value_size,))
         if normalize_input:
-            if isinstance(state_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(state_shape)
+            if isinstance(obs_shape, dict):
+                self.running_mean_std = RunningMeanStdObs(obs_shape)
             else:
-                self.running_mean_std = RunningMeanStd(state_shape)
+                self.running_mean_std = RunningMeanStd(obs_shape)
 
     def norm_obs(self, observation):
         return self.running_mean_std(observation) if self.normalize_input else observation
@@ -47,10 +48,11 @@ class ModelA2C(BaseModel):
         self.network_builder = network
 
     def build(self, config):
+        obs_shape = config['input_shape']
         normalize_value = config['normalize_value']
         normalize_input = config['normalize_input']
         value_size = config['value_size']
-        return ModelA2C.Network(self.network_builder.build('a2c', **config),
+        return ModelA2C.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
@@ -107,14 +109,16 @@ class ModelA2CMultiDiscrete(BaseModel):
         self.network_builder = network
 
     def build(self, config):
+        obs_shape = config['input_shape']
         normalize_value = config['normalize_value']
         normalize_input = config['normalize_input']
         value_size = config['value_size']
-        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config), normalize_value, normalize_input, value_size)
+        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
-        def __init__(self, a2c_network):
-            BaseModelNetwork.__init__(self)
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -177,16 +181,17 @@ class ModelA2CContinuous(BaseModel):
         self.network_builder = network
 
     def build(self, config):
+        obs_shape = config['input_shape']
         normalize_value = config['normalize_value']
         normalize_input = config['normalize_input']
         value_size = config['value_size']
-        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config),
+        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
 
     class Network(BaseModelNetwork):
-        def __init__(self, a2c_network):
-            BaseModelNetwork.__init__(self)
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -240,15 +245,16 @@ class ModelA2CContinuousLogStd(BaseModel):
         self.network_builder = network
 
     def build(self, config):
+        obs_shape = config['input_shape']
         normalize_value = config['normalize_value']
         normalize_input = config['normalize_input']
         value_size = config['value_size']
-        return ModelA2CContinuousLogStd.Network(self.network_builder.build('a2c', **config),
+        return ModelA2CContinuousLogStd.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
-        def __init__(self, a2c_network):
-            BaseModelNetwork.__init__(self)
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
         def is_rnn(self):
@@ -301,15 +307,16 @@ class ModelSACContinuous(BaseModel):
         self.network_builder = network
 
     def build(self, config):
+        obs_shape = config['input_shape']
         normalize_value = config['normalize_value']
         normalize_input = config['normalize_input']
         value_size = config['value_size']
-        return ModelSACContinuous.Network(self.network_builder.build('sac', **config),
+        return ModelSACContinuous.Network(self.network_builder.build('sac', **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
     
-    class Network(nn.Module):
-        def __init__(self, sac_network):
-            nn.Module.__init__(self)
+    class Network(BaseModelNetwork):
+        def __init__(self, sac_network,**kwargs):
+            BaseModelNetwork.__init__(self,**kwargs)
             self.sac_network = sac_network
 
         def critic(self, obs, action):
