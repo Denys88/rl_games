@@ -816,7 +816,7 @@ class DiscreteA2CBase(A2CBase):
             self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
-            self.network.value_mean_std.eval()
+            self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
  

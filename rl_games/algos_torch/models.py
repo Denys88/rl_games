@@ -21,17 +21,17 @@ class BaseModel():
         return False
 
 class BaseModelNetwork(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, normalize_value, normalize_input, value_size):
         nn.Module.__init__(self)
-        self.normalize_value = kwargs.pop('normalize_value')
-        self.normalize_input = kwargs.pop('normalize_input')
-        self.value_size = kwargs.get('value_size')
+        self.normalize_value = normalize_value
+        self.normalize_input = normalize_input
+        self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)).to(self.ppo_device)
+            self.value_mean_std = RunningMeanStd((self.value_size,))
         if normalize_input:
             if isinstance(state_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(state_shape).to(self.ppo_device)
+                self.running_mean_std = RunningMeanStdObs(state_shape)
             else:
                 self.running_mean_std = RunningMeanStd(state_shape)
 
@@ -47,7 +47,11 @@ class ModelA2C(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelA2C.Network(self.network_builder.build('a2c', **config))
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return ModelA2C.Network(self.network_builder.build('a2c', **config),
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
@@ -103,7 +107,10 @@ class ModelA2CMultiDiscrete(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config))
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config), normalize_value, normalize_input, value_size)
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network):
@@ -170,7 +177,11 @@ class ModelA2CContinuous(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config))
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config),
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
 
     class Network(BaseModelNetwork):
@@ -229,8 +240,11 @@ class ModelA2CContinuousLogStd(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        net = self.network_builder.build('a2c', **config)
-        return ModelA2CContinuousLogStd.Network(net)
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return ModelA2CContinuousLogStd.Network(self.network_builder.build('a2c', **config),
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network):
@@ -287,7 +301,11 @@ class ModelSACContinuous(BaseModel):
         self.network_builder = network
 
     def build(self, config):
-        return ModelSACContinuous.Network(self.network_builder.build('sac', **config))
+        normalize_value = config['normalize_value']
+        normalize_input = config['normalize_input']
+        value_size = config['value_size']
+        return ModelSACContinuous.Network(self.network_builder.build('sac', **config),
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
     
     class Network(nn.Module):
         def __init__(self, sac_network):

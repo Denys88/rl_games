@@ -46,7 +46,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len,
-                'normalize_value' : self.normalize_value
+                'normalize_value' : self.normalize_value,
                 'model' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
@@ -90,7 +90,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
-
 
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
