@@ -287,7 +287,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : value,
+                    'values' : self.unnorm_value(value),
                     'actions' : selected_action,
                     'rnn_states' : states,
                     'mus' : mu,
@@ -326,7 +326,7 @@ class ModelCentralValue(BaseModel):
             value, states = self.a2c_network(input_dict)
 
             result = {
-                'values': value,
+                'values': self.unnorm_value(value),
                 'rnn_states': states
             }
             return result
