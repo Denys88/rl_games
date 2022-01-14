@@ -107,8 +107,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
 
-        if self.normalize_value:
-            res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
         if self.is_multi_discrete:
             action_masks = torch.cat(action_masks, dim=-1)
         res_dict['action_masks'] = action_masks

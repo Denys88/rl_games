@@ -32,7 +32,6 @@ class CentralValueTrain(nn.Module):
             'normalize_value': self.normalize_value,
         }
 
-
         self.model = network.build(state_config)
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
@@ -152,7 +151,8 @@ class CentralValueTrain(nn.Module):
 
         obs_batch = self._preproc_obs(obs_batch)
         res_dict = self.forward({'obs' : obs_batch, 'actions': actions,
-                                             'rnn_states': self.rnn_states})
+                                    'rnn_states': self.rnn_states,
+                                    'is_train' : False})
         value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
@@ -213,7 +213,7 @@ class CentralValueTrain(nn.Module):
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
-        res_dict = self.forward(batch_dict)
+        res_dict = self.model(batch_dict)
         values = res_dict['values']
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)

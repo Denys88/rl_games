@@ -108,14 +108,6 @@ class ModelA2CMultiDiscrete(BaseModel):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
 
-    def build(self, config):
-        obs_shape = config['input_shape']
-        normalize_value = config['normalize_value']
-        normalize_input = config['normalize_input']
-        value_size = config['value_size']
-        return ModelA2CMultiDiscrete.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
-
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
@@ -180,15 +172,6 @@ class ModelA2CContinuous(BaseModel):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
 
-    def build(self, config):
-        obs_shape = config['input_shape']
-        normalize_value = config['normalize_value']
-        normalize_input = config['normalize_input']
-        value_size = config['value_size']
-        return ModelA2CContinuous.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
-
-
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
@@ -243,14 +226,6 @@ class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
-
-    def build(self, config):
-        obs_shape = config['input_shape']
-        normalize_value = config['normalize_value']
-        normalize_input = config['normalize_input']
-        value_size = config['value_size']
-        return ModelA2CContinuousLogStd.Network(self.network_builder.build('a2c', **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
@@ -321,12 +296,15 @@ class ModelCentralValue(BaseModel):
             return None # or throw exception?
 
         def forward(self, input_dict):
+            is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             value, states = self.a2c_network(input_dict)
+            if not is_train:
+                value = self.unnorm_value(value)
 
             result = {
-                'values': self.unnorm_value(value),
+                'values': value,
                 'rnn_states': states
             }
             return result

@@ -1040,7 +1040,8 @@ class ContinuousA2CBase(A2CBase):
                 self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
-
+            if self.normalize_input:
+                self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
         if self.schedule_type == 'standard_epoch':
             if self.multi_gpu:
                 av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
@@ -1072,8 +1073,10 @@ class ContinuousA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
+            self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
+            self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
