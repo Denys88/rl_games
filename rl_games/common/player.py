@@ -58,8 +58,6 @@ class BasePlayer(object):
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def env_step(self, env, actions):
@@ -128,14 +126,12 @@ class BasePlayer(object):
     def get_weights(self):
         weights = {}
         weights['model'] = self.model.state_dict()
-        if self.normalize_input:
-            weights['running_mean_std'] = self.running_mean_std.state_dict()
         return weights
 
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in weights:
+            self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
