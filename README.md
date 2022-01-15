@@ -80,6 +80,12 @@ Shadow Hand block orientation task
 ```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```  
 ```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint nn/Ant_brax.pth``` 
 
+# Config Parameters
+
+| Name    | Value  | Comments                                        |
+| ------- | ------ | ----------------------------------------------- |
+| ------- | ------ | ----------------------------------------------- |
+
 
 # Release Notes
 
