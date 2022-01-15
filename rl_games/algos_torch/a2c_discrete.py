@@ -23,7 +23,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1)
+            'value_size': self.env_info.get('value_size',1),
+            'normalize_value': self.normalize_value,
+            'normalize_input': self.normalize_input,
         }
 
         self.model = self.network.build(config)
@@ -51,8 +53,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len,
-                'bptt_len' : self.bptt_len,
-                'model' : self.central_value_config['network'],
+                'normalize_value' : self.normalize_value,
+                'network' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
@@ -66,7 +68,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if 'phasic_policy_gradients' in self.config:
             self.has_phasic_policy_gradients = True
             self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
-
+        if self.normalize_value:
+            self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                             or (not self.has_phasic_policy_gradients and not self.has_central_value)
         self.algo_observer.after_init(self)
@@ -104,8 +107,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
 
-        if self.normalize_value:
-            res_dict['values'] = self.value_mean_std(res_dict['values'], unnorm=True)
         if self.is_multi_discrete:
             action_masks = torch.cat(action_masks, dim=-1)
         res_dict['action_masks'] = action_masks

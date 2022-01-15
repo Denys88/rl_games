@@ -56,7 +56,8 @@ class SACAgent:
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
-            'input_shape' : obs_shape
+            'input_shape' : obs_shape,
+            'normalize_input' : self.nnormalize_input
         } 
         self.model = self.network.build(net_config)
         self.model.to(self.sac_device)
@@ -89,8 +90,6 @@ class SACAgent:
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
         # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
-        if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.sac_device)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -200,8 +199,8 @@ class SACAgent:
         self.model.sac_network.critic.load_state_dict(weights['critic'])
         self.model.sac_network.critic_target.load_state_dict(weights['critic_target'])
 
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in weights:
+            self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
@@ -220,13 +219,9 @@ class SACAgent:
 
     def set_eval(self):
         self.model.eval()
-        if self.normalize_input:
-            self.running_mean_std.eval()
 
     def set_train(self):
         self.model.train()
-        if self.normalize_input:
-            self.running_mean_std.train()
 
     def update_critic(self, obs, action, reward, next_obs, not_done,step):
         with torch.no_grad():
@@ -307,8 +302,6 @@ class SACAgent:
     def preproc_obs(self, obs):
         if isinstance(obs, dict):
             obs = obs['obs']
-        if self.normalize_input:
-            obs = self.running_mean_std(obs)
         return obs
 
     def env_step(self, actions):
@@ -407,9 +400,7 @@ class SACAgent:
                 next_obs = next_obs['obs']
 
             rewards = self.rewards_shaper(rewards)
-            #if torch.min(obs) < -150 or torch.max(obs) > 150:
-            #    print('ATATATA')
-            #else:
+
             self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1))
 
             self.obs = obs = next_obs.clone()

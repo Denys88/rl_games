@@ -25,19 +25,20 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
+        self.normalize_value = self.config['normalize_value']
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'num_seqs' : self.num_agents
+            'num_seqs' : self.num_agents,
+            'value_size': self.env_info.get('value_size',1),
+            'normalize_value': self.normalize_value,
+            'normalize_input': self.normalize_input,
         } 
         self.model = self.network.build(config)
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
-            self.running_mean_std.eval()   
 
     def get_action(self, obs, is_determenistic = False):
         if self.has_batch_dimension == False:
@@ -69,8 +70,8 @@ class PpoPlayerContinuous(BasePlayer):
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
         self.init_rnn()
@@ -87,24 +88,22 @@ class PpoPlayerDiscrete(BasePlayer):
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
         self.mask = [False]
-
         self.normalize_input = self.config['normalize_input']
-
+        self.normalize_value = self.config['normalize_value']
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_agents,
-            'value_size': self.value_size
+            'value_size': self.env_info.get('value_size',1),
+            'normalize_value': self.normalize_value,
+            'normalize_input': self.normalize_input,
         }
 
         self.model = self.network.build(config)
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        if self.normalize_input:
-            self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
-            self.running_mean_std.eval()      
 
     def get_masked_action(self, obs, action_masks, is_determenistic = True):
         if self.has_batch_dimension == False:
@@ -168,8 +167,8 @@ class PpoPlayerDiscrete(BasePlayer):
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.model.load_state_dict(checkpoint['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def reset(self):
         self.init_rnn()
@@ -191,23 +190,23 @@ class SACPlayer(BasePlayer):
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
-            'input_shape' : obs_shape
+            'input_shape' : obs_shape,
+            'value_size': self.env_info.get('value_size', 1),
+            'normalize_value': False,
+            'normalize_input': self.normalize_input,
         }  
         self.model = self.network.build(config)
         self.model.to(self.device)
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
-        # if self.normalize_input:
-        #     self.running_mean_std = RunningMeanStd(obs_shape).to(self.device)
-        #     self.running_mean_std.eval()  
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
         self.model.sac_network.actor.load_state_dict(checkpoint['actor'])
         self.model.sac_network.critic.load_state_dict(checkpoint['critic'])
         self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in checkpoint:
+            self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
     def get_action(self, obs, sample=False):
         dist = self.model.actor(obs)

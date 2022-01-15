@@ -1,7 +1,6 @@
 from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
 
-from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
@@ -22,7 +21,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1)
+            'value_size': self.env_info.get('value_size',1),
+            'normalize_value' : self.normalize_value,
+            'normalize_input': self.normalize_input,
         }
         
         self.model = self.network.build(build_config)
@@ -35,12 +36,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
-        if self.normalize_input:
-            if isinstance(self.observation_space,gym.spaces.Dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
-            else:
-                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
-
         if self.has_central_value:
             cv_config = {
                 'state_shape' : self.state_shape, 
@@ -51,8 +46,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len,
-                'bptt_len': self.bptt_len,
-                'model' : self.central_value_config['network'],
+                'normalize_value' : self.normalize_value,
+                'network' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
@@ -62,7 +57,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
-        
+        if self.normalize_value:
+            self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         if 'phasic_policy_gradients' in self.config:
             self.has_phasic_policy_gradients = True
             self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
@@ -94,7 +90,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         actions_batch = input_dict['actions']
         obs_batch = input_dict['obs']
         obs_batch = self._preproc_obs(obs_batch)
-
 
         lr_mul = 1.0
         curr_e_clip = lr_mul * self.e_clip
