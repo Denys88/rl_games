@@ -99,15 +99,39 @@ Shadow Hand block orientation task
 |       mu_init          |                                           |          | Initializer for mu.                                                   |
 |         name           | default                                   |          |                                                                                     |
 |       sigma_init       |                                           |          | Initializer for sigma. if you are using logstd model good value is 0.                          |
-|         name           | const_initializer                         |          | Lorem ipsum dolor sit amet, consecteteur adipiscing.                                                   |
-|         val            | 0                                         |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'pede' b'at' b'et' b'lacus'.                 |
+|         name           | const_initializer                         |          |                                                    |
+|         val            | 0                                         |          |                  |
 |       fixed_sigma      | True                                      |          | If true then sigma vector doesn't depend on input.                                                   |
+|   cnn                  |                                           |          | Convolution block.                    |
+|     type               | conv2d                                    |          | Type: right now two types supported: conv2d or conv1d                                               |
+|     activation         | elu                                       |          | activation between conv layers.                                  |
+|     initializer        |                                           |          | Initialier. I took some names from the tensorflow.                                                             |
+|       name             | glorot_normal_initializer                 |          | initializer name                                                                                         |
+|       gain             | 1.4142                                    |          | Additional parameter.                                                                  |
+|     convs              |                                           |          | Convolution layers. Same parameters as we have in torch.                                                                                        |
+|         filters        | 32                                        |          | Number of filters.                                                                                                  |
+|         kernel_size    | 8                                         |          | Kernel size.                                                                                                    |
+|         strides        | 4                                         |          | Strides                                                                  |
+|         padding        | 0                                         |          | Padding                                                                                          |
+|         filters        | 64                                        |          | Next convolution layer info.                                                                  |
+|         kernel_size    | 4                                         |          |                                                                                                          |
+|         strides        | 2                                         |          |                                                                                                |
+|         padding        | 0                                         |          |                                                              |
+|         filters        | 64                                        |          |                                           |
+|         kernel_size    | 3                                         |          |                                                                                                         |
+|         strides        | 1                                         |          |                                                |
+|         padding        | 0                                         |          |                       
 |   mlp                  |                                           |          | MLP Block. Convolution is supported too. See other config examples.                                                                                           |
 |     units              |                                           |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit.                                              |
 |     d2rl               | False                                     |          | Use d2rl architecture from https://arxiv.org/abs/2010.09163.                                                                                     |
 |     activation         | elu                                       |          | Activations between dense layers.                                |
 |     initializer        |                                           |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'duis'.                                      |
 |       name             | default                                   |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'urna' b'mi'.                                |
+|   rnn                  |                                           |          | RNN block.                                 |
+|     name               | lstm                                      |          | RNN Layer name. lstm and gru are supported.                                                                                          |
+|     units              | 256                                       |          | Number of units.                                             |
+|     layers             | 1                                         |          | Number of layers                                                                                                  |
+|     before_mlp         | False                                     | False    | Apply rnn before mlp block or not.                                                                                                  |
 | load_checkpoint        | False                                     | False    | Load or not checkpoint in the start of the training.       |
 | load_path              | ./nn/walker.pth |                         | Checkpoint path.                                             |
 | config                 |                                           |          | RL Config block.                               |
@@ -142,6 +166,8 @@ Shadow Hand block orientation task
 |   normalize_value      | True                                      |          | Use value running mean std normalization.                                                                                          |
 |   use_diagnostics      | True                                      |          | Adds more information into the tensorboard.                                              |
 |   value_bootstrap      | True                                      |          | Bootstraping value when episode is finished. Very useful for different locomotion envs.               |
+|   bound_loss_type      | 'regularisation'                          | None     | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                                              |
+|   bounds_loss_coef     | 0.0005                                    | 0        | Regularisation coefficient               |
 |   player               |                                           |          | Player configuration block.                                                                                |
 |     render             | True                                      | False    | Render environment                                                                            |
 |     determenistic      | True                                      | True     | Use deterministic policy ( argmax or mu) or stochastic.                                                                                |
