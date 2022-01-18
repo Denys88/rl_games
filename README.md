@@ -144,7 +144,7 @@ Shadow Hand block orientation task
 |   learning_rate        | 3e-4                                      |          | Learning rate.                                                   |
 |   name                 | walker                                    |          | Name which will be used in tensorboard.                  |
 |   save_best_after      | 10                                        |          | How many epochs to wait before start saving checkpoint with best score.                                                                                    |
-|   score_to_win         | 300                                       |          | If score is >= than this value training will stop.        |
+|   score_to_win         | 300                                       |          | If score is >=value then this value training will stop.        |
 |   grad_norm            | 1.5                                       |          | Grad norm. Applied if truncate_grads is True. Good value is in (1.0, 10.0)                                             |
 |   entropy_coef         | 0                                         |          | Entropy coefficient. Good value for continuous space is 0. For discrete is 0.02                                              |
 |   truncate_grads       | True                                      |          | Apply truncate grads or not. It stabilizes training.                                                  |
