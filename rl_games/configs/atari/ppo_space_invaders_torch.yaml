@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/invader.pth'
-
   network:
     name: actor_critic
     separate: False

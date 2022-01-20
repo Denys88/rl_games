@@ -18,9 +18,6 @@ params:
         name: default
     log_std_bounds: [-5, 2]
 
-  load_checkpoint: False
-  load_path: nn/Ant.pth
-
   config:
     name: 'Ant_brax'
     env_name : brax

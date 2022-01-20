@@ -33,9 +33,6 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Humanoid_brax.pth
-
   config:
     name: 'Humanoid_brax'
     env_name: brax
