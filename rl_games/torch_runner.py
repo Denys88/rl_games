@@ -31,6 +31,7 @@ class Runner:
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
+        self.load_path = None
         torch.backends.cudnn.benchmark = True
 
     def load_config(self, params):
@@ -38,18 +39,12 @@ class Runner:
 
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
-        self.load_check_point = params['load_checkpoint']
         self.exp_config = None
 
         if self.seed:
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
-
-        if self.load_check_point:
-            print('Found checkpoint')
-            print(params['load_path'])
-            self.load_path = params['load_path']
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
@@ -62,14 +57,19 @@ class Runner:
         self.default_config = yaml_conf['params']
         self.load_config(params=copy.deepcopy(self.default_config))
 
-    def run_train(self):
+    def run_train(self, load_path=None):
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
-        if self.load_check_point and (self.load_path is not None):
-            agent.restore(self.load_path)
-
+        if load_path is not None:
+            agent.restore(load_path)
         agent.train()
-            
+
+    def run_play(self, load_path=None):
+        print('Started to play')
+        player = self.create_player()
+        player.restore(load_path)
+        player.run()
+
     def create_player(self):
         return self.player_factory.create(self.algo_name, params=self.params)
 
@@ -79,15 +79,12 @@ class Runner:
     def run(self, args):
         if 'checkpoint' in args and args['checkpoint'] is not None:
             if len(args['checkpoint']) > 0:
-                self.load_path = args['checkpoint']
+                load_path = args['checkpoint']
 
         if args['train']:
-            self.run_train()
+            self.run_train(load_path)
 
         elif args['play']:
-            print('Started to play')
-            player = self.create_player()
-            player.restore(self.load_path)
-            player.run()
+            self.run_play(load_path)
         else:
             self.run_train()
