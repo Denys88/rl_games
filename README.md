@@ -176,8 +176,33 @@ Shadow Hand block orientation task
 |     skip               | 4                                         |          | Number of frames to skip                                                                           |
 |     name               | 'BreakoutNoFrameskip-v4'                  |          | Name of exact atari env. Of course depending on your env this parameters may be different.                                                                                |
 
+## Custom network example: 
+[simple test network](rl_games/envs/test_network.py)  
+This network takes dictionary observation.
+To register it you can add code in your __init__.py
 
-# Release Notes
+```
+from rl_games.envs.test_network import TestNetBuilder 
+from rl_games.algos_torch import model_builder
+model_builder.register_network('testnet', TestNetBuilder)
+```
+[simple test environment](rl_games/envs/test/rnn_env.py)
+[example environment](rl_games/envs/test/example_env.py)  
+
+Additional environment supported properties and functions  
+
+| Field                       | Default Value   | Description                         |
+|-----------------------------|-----------------|-------------------------------------|
+| use_central_value           | 200             | If true than returned obs is expected to be dict with 'obs' and 'state'                                    |
+| value_size                  | 1               | Shape of the returned rewards. Network wil support multihead value automatically.                                    |
+| concat_infos                | False           | Should default vecenv convert list of dicts to the dicts of lists. Very usefull if you want to use value_boostrapping. in this case you need to always return 'time_outs' : True or False, from the env.                                    |
+| get_number_of_agents(self)  | 1               | Returns number of agents in the environment                                    |
+| has_action_mask(self)       | False           | Returns True if environment has invalid actions mask.                                    |
+| get_action_mask(self)       | None            | Returns action masks if  has_action_mask is true.  Good example is [SMAC Env](rl_games/envs/test/smac_env.py)                                 |
+
+
+## Release Notes
+
 
 1.3.0
 * Simplified rnn implementation. Works a little bit slower but much more stable. 
