@@ -31,7 +31,6 @@ class Runner:
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
-        self.load_path = None
         torch.backends.cudnn.benchmark = True
 
     def load_config(self, params):
@@ -67,7 +66,8 @@ class Runner:
     def run_play(self, load_path=None):
         print('Started to play')
         player = self.create_player()
-        player.restore(load_path)
+        if load_path is not None:
+            player.restore(load_path)
         player.run()
 
     def create_player(self):
@@ -77,6 +77,7 @@ class Runner:
         pass
 
     def run(self, args):
+        load_path = None
         if 'checkpoint' in args and args['checkpoint'] is not None:
             if len(args['checkpoint']) > 0:
                 load_path = args['checkpoint']
