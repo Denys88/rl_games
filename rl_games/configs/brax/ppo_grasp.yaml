@@ -33,9 +33,6 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Grasp_brax.pth
-
   config:
     name: 'Grasp_brax'
     env_name: brax

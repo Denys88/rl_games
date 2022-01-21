@@ -26,9 +26,6 @@ params:
       initializer:
         name: default       
       
-  load_checkpoint: True
-  load_path: './nn/walker_hc_ppg.pth'
-
   config:
       reward_shaper:
         #min_val: -1

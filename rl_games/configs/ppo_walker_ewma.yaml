@@ -27,9 +27,6 @@ params:
         name: default
         scale: 2         
       
-  load_checkpoint: False
-  load_path: './nn/last_walkerep=10001rew=108.35405.pth'
-
   config:
       reward_shaper:
         min_val: -1

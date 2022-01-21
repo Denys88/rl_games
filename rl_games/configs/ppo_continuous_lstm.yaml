@@ -32,9 +32,6 @@ params:
       units: 128
       concated: False
 
-  load_checkpoint: False
-  load_path: 'nn/runBipedalWalkerHardcore-v2'
-
   config:
       reward_shaper:
         scale_value: 0.1

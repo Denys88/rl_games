@@ -25,9 +25,6 @@ params:
       initializer:
         name: default  
 
-  load_checkpoint: False
-  load_path: './nn/multiwalker.pth'
-
   config:
       reward_shaper:
         min_val: -1
