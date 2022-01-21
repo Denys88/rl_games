@@ -87,4 +87,4 @@ class Runner:
         elif args['play']:
             self.run_play(load_path)
         else:
-            self.run_train()
+            self.run_train(load_path)
