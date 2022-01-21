@@ -132,8 +132,6 @@ Shadow Hand block orientation task
 |     units              | 256                                       |          | Number of units.                                             |
 |     layers             | 1                                         |          | Number of layers                                                                                                  |
 |     before_mlp         | False                                     | False    | Apply rnn before mlp block or not.                                                                                                  |
-| load_checkpoint        | False                                     | False    | Load or not checkpoint in the start of the training.       |
-| load_path              | ./nn/walker.pth |                         | Checkpoint path.                                             |
 | config                 |                                           |          | RL Config block.                               |
 |   reward_shaper        |                                           |          | Reward Shaper. Can apply simple transformations.                                              |
 |     min_val            | -1                                        |          | You can apply min_val, max_val, scale and shift.                  |
