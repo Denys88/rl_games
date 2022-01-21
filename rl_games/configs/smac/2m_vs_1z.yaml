@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/2m_vs_1z'
-
   network:
     name: actor_critic
     separate: True

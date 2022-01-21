@@ -25,9 +25,6 @@ params:
       initializer:
         name: default
 
-  load_checkpoint: False
-  load_path: path
-
   config:
       reward_shaper:
         scale_value: 0.1
