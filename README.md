@@ -29,7 +29,7 @@ Implemented in Pytorch:
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
 
- Implemented in Tensorflow 1.x (not updates now):
+ Implemented in Tensorflow 1.x (was removed in this version):
 
 * Rainbow DQN
 * A2C
