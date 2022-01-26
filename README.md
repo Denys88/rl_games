@@ -20,9 +20,6 @@
 * [BRAX](docs/BRAX.md)  
 * [Random Envs](docs/OTHER.md)  
 
-## Config file  
-
-* [Configuration](docs/CONFIG_PARAMS.md)  
 
 Implemented in Pytorch:
 
