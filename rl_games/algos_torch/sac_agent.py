@@ -5,7 +5,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common import vecenv
 from rl_games.common import schedulers
 from rl_games.common import experience
-
+from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from rl_games.algos_torch import  model_builder
@@ -18,7 +18,7 @@ import time
 
 
 
-class SACAgent:
+class SACAgent(BaseAlgorithm):
     def __init__(self, base_name, params):
         self.config = config = params['config']
         print(config)
@@ -57,7 +57,8 @@ class SACAgent:
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'normalize_input' : self.nnormalize_input
+            'normalize_input' : self.normalize_input,
+            'normalize_input': self.normalize_input,
         } 
         self.model = self.network.build(net_config)
         self.model.to(self.sac_device)
@@ -344,6 +345,12 @@ class SACAgent:
         if alpha_losses is not None:
             alphas.append(alpha)
             alpha_losses.append(alpha_loss)
+
+    def clear_stats(self):
+        self.game_rewards.clear()
+        self.game_lengths.clear()
+        self.mean_rewards = self.last_mean_rewards = -100500
+        self.algo_observer.after_clear_stats()
 
     def play_steps(self, random_exploration=False):
         total_time_start = time.time()

@@ -1,59 +1,39 @@
+from abc import ABC
+from abc import abstractmethod, abstractproperty
 
-
-class BaseAlgorithm:
+class BaseAlgorithm(ABC):
     def __init__(self, base_name, config):
         pass
 
-    def set_eval(self):
-        pass
-
-    def set_train(self):
-        pass
-
-    @property
+    @abstractproperty
     def device(self):
         pass
 
-    def reset_envs(self):
-        pass
-
-    def init_tensors(self):
-        pass
-
-
-    def env_reset(self):
-        pass
-
+    @abstractmethod
     def clear_stats(self):
         pass
 
-    def update_epoch(self):
-        pass
-
+    @abstractmethod
     def train(self):
         pass
 
+    @abstractmethod
     def train_epoch(self):
         pass
 
-    def calc_gradients(self):
-        pass
-
+    @abstractmethod
     def get_full_state_weights(self):
         pass
 
+    @abstractmethod
     def set_full_state_weights(self, weights):
         pass
 
+    @abstractmethod
     def get_weights(self):
         pass
 
-    def get_stats_weights(self):
-        pass
-
-    def set_stats_weights(self, weights):
-        pass
-
+    @abstractmethod
     def set_weights(self, weights):
         pass
 
