@@ -197,7 +197,9 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+1.3.1
 
+* Fixed SAC not working
 
 1.3.0
 
