@@ -200,9 +200,11 @@ Additional environment supported properties and functions
 
 
 1.3.0
+
 * Simplified rnn implementation. Works a little bit slower but much more stable. 
 * Now central value can be non-rnn if policy is rnn.
 * Removed load_checkpoint from the yaml file. now --checkpoint works for both train and play.
+
 1.2.0
 
 * Added Swish (SILU) and GELU activations, it can improve Isaac Gym results for some of the envs.
