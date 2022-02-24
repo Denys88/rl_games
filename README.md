@@ -197,6 +197,10 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+
+1.3.2
+* Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
+
 1.3.1
 
 * Fixed SAC not working
