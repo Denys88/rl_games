@@ -262,7 +262,7 @@ class A2CBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
@@ -283,7 +283,7 @@ class A2CBuilder(NetworkBuilder):
 
             if self.is_continuous:
                 mu_init(self.mu.weight)
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
                     sigma_init(self.sigma.weight)  
@@ -372,7 +372,7 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(a_out))
-                    if self.space_config['fixed_sigma']:
+                    if self.fixed_sigma:
                         sigma = mu * 0.0 + self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
@@ -427,7 +427,7 @@ class A2CBuilder(NetworkBuilder):
                     return logits, value, states
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
-                    if self.space_config['fixed_sigma']:
+                    if self.fixed_sigma:
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
@@ -483,6 +483,7 @@ class A2CBuilder(NetworkBuilder):
                 self.is_continuous = 'continuous'in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
+                    self.fixed_sigma = self.space_config['fixed_sigma']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
                 elif self.is_multi_discrete:
@@ -639,7 +640,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
@@ -658,7 +659,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 mlp_init(self.logits.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
                     sigma_init(self.sigma.weight)
@@ -705,7 +706,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_continuous:
                 mu = self.mu_act(self.mu(out))
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma = self.sigma_act(self.sigma)
                 else:
                     sigma = self.sigma_act(self.sigma(out))
@@ -723,6 +724,7 @@ class A2CResnetBuilder(NetworkBuilder):
             self.normalization = params.get('normalization', None)
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
+                self.fixed_sigma = self.space_config['fixed_sigma']
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
             elif self.is_multi_discrete:
@@ -916,6 +918,7 @@ class SACBuilder(NetworkBuilder):
                 self.is_continuous = 'continuous'in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
+                    self.fixed_sigma = self.space_config['fixed_sigma']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
             else:

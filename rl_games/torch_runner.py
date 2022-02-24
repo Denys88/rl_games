@@ -16,6 +16,19 @@ from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
 
+def _restore(agent, args):
+    if args['checkpoint'] is not None:
+        agent.restore(args['checkpoint'])
+
+def _override_sigma(agent, args):
+    if args['sigma'] is not None:
+        net = agent.model.a2c_network
+        if hasattr(net, 'sigma') and hasattr(net, 'fixed_sigma'):
+            if net.fixed_sigma:
+                with torch.no_grad():
+                    net.sigma.fill_(float(args['sigma']))
+            else:
+                print('Print cannot set new sigma because fixed_sigma is False')
 class Runner:
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
@@ -56,18 +69,18 @@ class Runner:
         self.default_config = yaml_conf['params']
         self.load_config(params=copy.deepcopy(self.default_config))
 
-    def run_train(self, load_path=None):
+    def run_train(self, args):
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
-        if load_path is not None:
-            agent.restore(load_path)
+        _restore(agent, args)
+        _override_sigma(agent, args)
         agent.train()
 
-    def run_play(self, load_path=None):
+    def run_play(self, args):
         print('Started to play')
         player = self.create_player()
-        if load_path is not None:
-            player.restore(load_path)
+        _restore(player, args)
+        _override_sigma(player, args)
         player.run()
 
     def create_player(self):
@@ -78,14 +91,11 @@ class Runner:
 
     def run(self, args):
         load_path = None
-        if 'checkpoint' in args and args['checkpoint'] is not None:
-            if len(args['checkpoint']) > 0:
-                load_path = args['checkpoint']
 
         if args['train']:
-            self.run_train(load_path)
+            self.run_train(args)
 
         elif args['play']:
-            self.run_play(load_path)
+            self.run_play(args)
         else:
-            self.run_train(load_path)
+            self.run_train(args)
