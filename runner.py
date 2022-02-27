@@ -14,7 +14,7 @@ if __name__ == '__main__':
     ap.add_argument("-f", "--file", required=True, help="path to config")
     ap.add_argument("-na", "--num_actors", type=int, default=0, required=False, 
                     help="number of envs running in parallel, if larger than 0 will overwrite the value in yaml config")
-
+    ap.add_argument("-s", "--sigma", type=float, required=False, help="sets new sigma value in case if 'fixed_sigma: True' in yaml config")
     os.makedirs("nn", exist_ok=True)
     os.makedirs("runs", exist_ok=True)
 
