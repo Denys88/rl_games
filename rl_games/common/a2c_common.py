@@ -228,9 +228,10 @@ class A2CBase(BaseAlgorithm):
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
         if self.use_smooth_clamp:
-            self.actor_loss_func = common_losses.actor_loss
-        else:
             self.actor_loss_func = common_losses.smoothed_actor_loss
+        else:
+            self.actor_loss_func = common_losses.actor_loss
+
 
 
         if self.normalize_advantage and self.normalize_rms_advantage:
