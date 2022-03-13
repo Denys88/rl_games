@@ -18,7 +18,7 @@ def smooth_clamp(x, mi, mx):
     return 1/(1 + torch.exp((-(x-mi)/(mx-mi)+0.5)*4)) * (mx-mi) + mi
 
 
-def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip):
+def smoothed_actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip):
     if is_ppo:
         ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
         surr1 = advantage * ratio
@@ -29,6 +29,19 @@ def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is
         a_loss = (action_neglog_probs * advantage)
     
     return a_loss
+
+
+def actor_loss(old_action_neglog_probs_batch, action_neglog_probs, advantage, is_ppo, curr_e_clip):
+    if is_ppo:
+        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
+        surr1 = advantage * ratio
+        surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+        a_loss = torch.max(-surr1, -surr2)
+    else:
+        a_loss = (action_neglog_probs * advantage)
+
+    return a_loss
+
 
 def decoupled_actor_loss(behavior_action_neglog_probs, action_neglog_probs, proxy_neglog_probs, advantage, curr_e_clip):
     logratio = proxy_neglog_probs - action_neglog_probs

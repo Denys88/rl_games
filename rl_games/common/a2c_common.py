@@ -23,6 +23,7 @@ from torch import nn
  
 from time import sleep
 
+from rl_games.common import common_losses
 
 def swap_and_flatten01(arr):
     """
@@ -224,7 +225,12 @@ class A2CBase(BaseAlgorithm):
 
         self.value_bootstrap = self.config.get('value_bootstrap')
 
+        self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
+        if self.use_smooth_clamp:
+            self.actor_loss_func = common_losses.actor_loss
+        else:
+            self.actor_loss_func = common_losses.smoothed_actor_loss
 
 
         if self.normalize_advantage and self.normalize_rms_advantage:
