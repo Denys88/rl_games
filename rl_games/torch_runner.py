@@ -18,11 +18,11 @@ from rl_games.algos_torch import sac_agent
 import rl_games.networks
 
 def _restore(agent, args):
-    if args['checkpoint'] is not None:
+    if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
         agent.restore(args['checkpoint'])
 
 def _override_sigma(agent, args):
-    if args['sigma'] is not None:
+    if 'sigma' in args and args['sigma'] is not None:
         net = agent.model.a2c_network
         if hasattr(net, 'sigma') and hasattr(net, 'fixed_sigma'):
             if net.fixed_sigma:
