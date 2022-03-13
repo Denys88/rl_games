@@ -158,7 +158,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
                 old_action_log_probs_batch = proxy_neglogp # to get right statistic later
             else:
-                a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
