@@ -163,6 +163,7 @@ Shadow Hand block orientation task
 |   value_bootstrap      | True                                      |          | Bootstraping value when episode is finished. Very useful for different locomotion envs.               |
 |   bound_loss_type      | 'regularisation'                          | None     | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                                              |
 |   bounds_loss_coef     | 0.0005                                    | 0        | Regularisation coefficient               |
+|   use_smooth_clamp     | False                                     |          | Use smooth clamp instead of regular for cliping               |
 |   player               |                                           |          | Player configuration block.                                                                                |
 |     render             | True                                      | False    | Render environment                                                                            |
 |     determenistic      | True                                      | True     | Use deterministic policy ( argmax or mu) or stochastic.                                                                                |
