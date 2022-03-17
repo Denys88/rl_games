@@ -20,8 +20,8 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: 'humanoid_brax_sac'
-    env_name : brax
+    name: 'Humanoid_brax_sac'
+    env_name: brax
     normalize_input: True
     reward_shaper:
       scale_value: 1

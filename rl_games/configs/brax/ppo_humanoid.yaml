@@ -1,8 +1,6 @@
 params:
   seed: 7
 
-  #devices: [0, 0]
-
   algo:
     name: a2c_continuous
 

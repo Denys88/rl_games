@@ -19,13 +19,13 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: 'Ant_brax'
+    name: 'Ant_brax_sac'
     env_name : brax
     normalize_input: True
     reward_shaper:
       scale_value: 1
     device: cuda
-    max_epochs: 2000000
+    max_epochs: 10000
     num_steps_per_episode: 128
     save_best_after: 100
     save_frequency: 10000

@@ -1,9 +1,6 @@
-
-
 from rl_games.common.ivecenv import IVecEnv
 import gym
 import numpy as np
-import torch
 import torch.utils.dlpack as tpack
 
 def jax_to_torch(tensor):
@@ -21,9 +18,7 @@ def torch_to_jax(tensor):
 
 class BraxEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
-        import brax
-        from brax import envs    
-        import jax
+        from brax import envs
         import jax.numpy as jnp
 
         self.batch_size = num_actors
@@ -40,7 +35,6 @@ class BraxEnv(IVecEnv):
         action_high = np.ones(self.env._env.unwrapped.action_size)
         self.action_space = gym.spaces.Box(-action_high, action_high, dtype=np.float32)
 
-
     def step(self, action):
         action = torch_to_jax(action)
         next_obs, reward, is_done, info = self.env.step(action)
@@ -50,8 +44,7 @@ class BraxEnv(IVecEnv):
         return next_obs, reward, is_done, info
 
     def reset(self):
-        import jax
-        rng = jax.random.PRNGKey(seed=0)
+        # todo add random init like in collab examples?
         obs = self.env.reset()
         return jax_to_torch(obs)
 
@@ -64,6 +57,6 @@ class BraxEnv(IVecEnv):
         info['observation_space'] = self.observation_space
         return info
 
+
 def create_brax_env(**kwargs):
     return BraxEnv("", kwargs.pop('num_actors', 256), **kwargs)
-
