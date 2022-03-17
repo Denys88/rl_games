@@ -918,7 +918,6 @@ class SACBuilder(NetworkBuilder):
                 self.is_continuous = 'continuous'in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
-                    self.fixed_sigma = self.space_config['fixed_sigma']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
             else:
