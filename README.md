@@ -37,10 +37,10 @@ Implemented in Pytorch:
 
 # Installation
 
-For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1 is highly recommended:
+For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1+ is highly recommended:
 
-```conda install pytorch torchvision cudatoolkit=11.1 -c pytorch -c nvidia``` or:
-```pip install torch==1.9.0+cu111 torchvision==0.10.0+cu111 -f https://download.pytorch.org/whl/torch_stable.htm```
+```conda install pytorch torchvision cudatoolkit=11.3 -c pytorch -c nvidia``` or:
+```pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html```
 
 Then:
 
@@ -55,23 +55,30 @@ To run Atari games or Box2d based environments training they need to be addition
 Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
 And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
-**Ant**
+*Ant*
+
 ```python train.py task=Ant headless=True```
 ```python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100```
 
-**Humanoid**
+*Humanoid*
+
 ```python train.py task=Humanoid headless=True```
 ```python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100```
 
-**Shadow Hand block orientation task**
+*Shadow Hand block orientation task*
+
 ```python train.py task=ShadowHand headless=True```
 ```python train.py task=ShadowHand test=True checkpoint=nn/ShadowHand.pth num_envs=100```
 
-**Atari Pong**
+**Other**
+
+*Atari Pong*
+
 ```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```
 ```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```
 
-**Brax Ant**
+*Brax Ant*
+
 ```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```
 ```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth```
 
