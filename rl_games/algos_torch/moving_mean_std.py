@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import rl_games.algos_torch.torch_ext as torch_ext
+
 '''
 updates moving statistics with momentum
 '''
 class MovingMeanStd(nn.Module):
-    def __init__(self, insize, momentum = 0.9998, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, momentum = 0.25, epsilon=1e-05, per_channel=False, norm_only=False):
         super(MovingMeanStd, self).__init__()
         self.insize = insize
         self.epsilon = epsilon
@@ -27,10 +29,14 @@ class MovingMeanStd(nn.Module):
         self.register_buffer("moving_mean", torch.zeros(in_size, dtype = torch.float64))
         self.register_buffer("moving_var", torch.ones(in_size, dtype = torch.float64))
 
-    def forward(self, input, unnorm=False):
+    def forward(self, input, mask=None, unnorm=False):
         if self.training:
-            mean = input.mean(self.axis) # along channel axis
-            var = input.var(self.axis)
+            if mask is not None:
+                mean, var = torch_ext.get_mean_std_with_masks(input, mask)
+            else:
+                mean = input.mean(self.axis) # along channel axis
+                var = input.var(self.axis)
+            
             self.moving_mean = self.moving_mean * self.momentum + mean * (1 - self.momentum)
             self.moving_var = self.moving_var * self.momentum + var * (1 - self.momentum)
 

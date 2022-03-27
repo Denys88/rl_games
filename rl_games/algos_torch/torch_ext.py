@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
+import math
+import time
 
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
@@ -132,15 +134,54 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
+    if masks is None:
+        return (values - values.mean()) / (values.std() + 1e-8)
+
+    values_mean, values_var = get_mean_var_with_masks(values, masks)
+    values_std = torch.sqrt(values_var)
+    normalized_values = (values - values_mean) / (values_std + 1e-8)
+
+    return normalized_values
+
+def get_mean_var_with_masks(values, masks):
     sum_mask = masks.sum()
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_std = torch.sqrt(min_sqr * sum_mask / (sum_mask-1))
-    normalized_values = (values_mask - values_mean) / (values_std + 1e-8)
+    values_var = min_sqr * sum_mask / (sum_mask-1)
+    return values_mean, values_var
 
-    return normalized_values
+def explained_variance(y_pred,y, masks=None):
+    """
+    Computes fraction of variance that ypred explains about y.
+    Returns 1 - Var[y-ypred] / Var[y]
+    interpretation:
+        ev=0  =>  might as well have predicted zero
+        ev=1  =>  perfect prediction
+        ev<0  =>  worse than just predicting zero
+    """
 
+    if masks is not None:
+        masks = masks.unsqueeze(1)
+        _, var_y = get_mean_var_with_masks(y_pred,masks)
+        _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
+    else:
+        var_y = torch.var(y)
+        var_dy = torch.var(y-y_pred)
+    return 1.0 - var_dy/var_y
+
+def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
+    logratio = old_neglogp - new_neglogp
+    clip_frac = torch.logical_or(
+                logratio < math.log(1.0 - clip_param),
+                logratio > math.log(1.0 + clip_param),
+            ).float()
+    if masks is not None:
+        clip_frac = clip_frac * masks/masks.sum()
+    else:
+        clip_frac = clip_frac.mean()
+    return clip_frac
+    
 class CoordConv2d(nn.Conv2d):
     pool = {}
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,

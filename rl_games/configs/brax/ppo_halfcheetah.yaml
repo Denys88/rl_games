@@ -33,9 +33,6 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Halfcheetah_brax.pth
-
   config:
     name: 'Halfcheetah_brax'
     env_name: brax

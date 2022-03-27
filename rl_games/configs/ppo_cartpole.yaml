@@ -49,4 +49,6 @@ params:
     kl_threshold: 0.008
     normalize_input: False
     save_best_after: 10
-    device: 'cuda:0'
+    device: 'cpu'
+    multi_gpu: False
+

@@ -33,9 +33,6 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Ur5e_brax.pth
-
   config:
     name: 'Ur5e_brax'
     env_name: brax

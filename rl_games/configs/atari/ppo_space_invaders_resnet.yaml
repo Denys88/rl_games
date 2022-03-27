@@ -5,10 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/invaders_resnet.pth'
-
-
   network:
     name: resnet_actor_critic
     separate: False

@@ -51,6 +51,17 @@ class DefaultAlgoObserver(AlgoObserver):
                 if game_res is not None:
                     self.game_scores.update(torch.from_numpy(np.asarray([game_res])).to(self.algo.ppo_device))
 
+        elif isinstance(infos, dict):
+            for ind in done_indices:
+                ind = ind.item()
+                game_res = None
+                if 'battle_won' in infos:
+                    game_res = infos['battle_won']
+                if 'scores' in infos:
+                    game_res = infos['scores']
+                if game_res is not None and len(game_res) > ind//self.algo.num_agents:
+                    self.game_scores.update(torch.from_numpy(np.asarray([game_res[ind//self.algo.num_agents]])).to(self.algo.ppo_device))
+
     def after_clear_stats(self):
         self.game_scores.clear()
 

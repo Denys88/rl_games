@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 
+
 
   network:
     name: actor_critic
@@ -69,7 +68,7 @@ params:
     clip_value: True
     num_actors: 16
     horizon_length: 256
-    minibatch_size: 1024
+    minibatch_size: 512
     mini_epochs: 3
     critic_coef: 1
     lr_schedule:  None # adaptive

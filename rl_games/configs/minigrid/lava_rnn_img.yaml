@@ -11,7 +11,6 @@ params:
   network:
     name: actor_critic
     separate: False
-    #normalization: 'layer_norm'
     space: 
       discrete:
     cnn:
@@ -23,17 +22,20 @@ params:
       regularizer:
         name: 'None'
       convs:    
-        - filters: 16
+        - filters: 32
           kernel_size: 8
           strides: 4
           padding: 0
-        - filters: 32
+        - filters: 64
           kernel_size: 4
           strides: 2
           padding: 0
-      
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 0      
     mlp:
-      units: [128]
+      units: []
       activation: relu
       regularizer:
         name: 'None'
@@ -42,19 +44,20 @@ params:
         gain: 1.4142 
     rnn:
       name: 'lstm'
-      units: 128
+      units: 256
       layers: 1
-      before_mlp: True
+      before_mlp: False
   config:
     reward_shaper:
         scale_value: 1
     normalize_advantage: True
     gamma: 0.99
-    tau: 0.9
-    learning_rate: 5e-4
-    name: minigrid_env_rnn
-    score_to_win: 1000
-    grad_norm: 0.5
+    tau: 0.95
+    learning_rate: 2e-4
+    name: minigrid_lava_rnn
+    score_to_win: 1
+    grad_norm: 1
+
     entropy_coef: 0.01
     truncate_grads: True
     env_name:  minigrid_env
@@ -63,22 +66,22 @@ params:
     clip_value: True
     num_actors: 16
     horizon_length: 256
-    minibatch_size: 2048
+    minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: False
-    seq_length: 16
+    seq_length: 32
     weight_decay: 0.0000
-
+    save_frequency: 100
     env_config:
-      #action_bonus: True
-      #state_bonus : True
-      name: MiniGrid-MemoryS7-v0
-      fully_obs: False
+      view_size: 3
+      rgb_fully_obs: False
+      name: MiniGrid-LavaCrossingS11N5-v0 #MiniGrid-LavaCrossingS9N1-v0 MiniGrid-LavaCrossingS9N3-v0
     player:
       games_num: 100
       render: True
       determenistic: False
-      
+      render_sleep: 0.0
+

@@ -57,7 +57,5 @@ params:
       critic_coef: 1
       lr_schedule:  adaptive
       kl_threshold: 0.008
-
       normalize_input: False
-      seq_length: 8
       bounds_loss_coef: 0

@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/last_3s_vs_5z_cvep=10001rew=9.585825.pth'
-
   network:
     name: actor_critic
     separate: False
