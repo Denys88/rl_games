@@ -565,8 +565,6 @@ class A2CBase(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value and 'reward_mean_std' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
-        if self.has_central_value:
-            self.central_value_net.set_stats_weights(weights['assymetric_vf_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
             self.scaler.load_state_dict(weights['scaler'])
 
