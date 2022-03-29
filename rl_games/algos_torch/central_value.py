@@ -174,9 +174,6 @@ class CentralValueTrain(nn.Module):
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-        #if self.is_rnn:
-        #    rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        #    rnn_masks = rnn_masks.flatten(0)[:batch_size]
 
         return value_preds, returns, actions, dones
 
