@@ -74,7 +74,6 @@ class CentralValueTrain(nn.Module):
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_lr(self, lr):
-
         if self.multi_gpu:
             lr_tensor = torch.tensor([lr])
             self.hvd.broadcast_value(lr_tensor, 'cv_learning_rate')
@@ -83,8 +82,14 @@ class CentralValueTrain(nn.Module):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
-    def get_stats_weights(self):
-        return {}
+    def get_stats_weights(self, model_stats=False):
+        state = {}
+        if model_stats:
+            if self.normalize_input:
+                state['running_mean_std'] = self.model.running_mean_std.state_dict()
+            if self.normalize_value:
+                state['reward_mean_std'] = self.model.value_mean_std.state_dict()
+        return state
 
     def set_stats_weights(self, weights): 
         pass

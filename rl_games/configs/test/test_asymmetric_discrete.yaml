@@ -52,7 +52,7 @@ params:
     seq_length: 4
     weight_decay: 0.0000
     multi_gpu: True
-
+    use_diagnostics: True
     env_config:
       name: TestAsymmetricEnv-v0
       wrapped_env_name: "LunarLander-v2"

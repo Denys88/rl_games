@@ -552,10 +552,18 @@ class A2CBase(BaseAlgorithm):
         state['model'] = self.model.state_dict()
         return state
 
-    def get_stats_weights(self):
+    def get_stats_weights(self, model_stats=False):
         state = {}
         if self.mixed_precision:
             state['scaler'] = self.scaler.state_dict()
+        if self.has_central_value:
+            state['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
+        if model_stats:
+            if self.normalize_input:
+                state['running_mean_std'] = self.model.running_mean_std.state_dict()
+            if self.normalize_value:
+                state['reward_mean_std'] = self.model.value_mean_std.state_dict()
+
         return state
 
     def set_stats_weights(self, weights):
@@ -563,7 +571,7 @@ class A2CBase(BaseAlgorithm):
             self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value and 'reward_mean_std' in weights:
+        if self.normalize_value and 'normalize_value' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
             self.scaler.load_state_dict(weights['scaler'])
@@ -776,7 +784,8 @@ class DiscreteA2CBase(A2CBase):
         c_losses = []
         entropies = []
         kls = []
-
+        if self.multi_gpu:
+            self.hvd.sync_stats(self)
         if self.has_central_value:
             self.train_central_value()
 
@@ -886,8 +895,6 @@ class DiscreteA2CBase(A2CBase):
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
-            if self.multi_gpu:
-                self.hvd.sync_stats(self)    
             total_time += sum_time
             curr_frames = self.curr_frames
             self.frame += curr_frames
@@ -1006,7 +1013,8 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
         self.algo_observer.after_steps()
-
+        if self.multi_gpu:
+            self.hvd.sync_stats(self)
         if self.has_central_value:
             self.train_central_value()
 
@@ -1143,8 +1151,6 @@ class ContinuousA2CBase(A2CBase):
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
-            if self.multi_gpu:
-                self.hvd.sync_stats(self)
             should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)

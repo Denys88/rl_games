@@ -61,6 +61,7 @@ params:
     weight_decay: 0.0000
     multi_gpu: True
     bounds_loss_coef: 0.0
+    use_diagnostics: True
     env_config:
       name: TestAsymmetricEnv-v0
       wrapped_env_name: "LunarLanderContinuous-v2"
