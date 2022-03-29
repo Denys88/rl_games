@@ -891,7 +891,6 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             curr_frames = self.curr_frames
             self.frame += curr_frames
-            total_time += sum_time
             should_exit = False
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
