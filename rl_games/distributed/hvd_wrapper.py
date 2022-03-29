@@ -27,8 +27,9 @@ class HorovodWrapper:
         self.sync_stats(algo)
 
         if algo.has_central_value:
+            hvd.broadcast_parameters(algo.central_value_net.model.state_dict(), root_rank=0)
             hvd.broadcast_optimizer_state(algo.central_value_net.optimizer, root_rank=0)
-            hvd.broadcast_parameters(algo.central_value_net.state_dict(), root_rank=0)
+
             algo.central_value_net.optimizer = hvd.DistributedOptimizer(algo.central_value_net.optimizer, named_parameters=algo.central_value_net.model.named_parameters())
 
     def sync_stats(self, algo):
