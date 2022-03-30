@@ -9,7 +9,7 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu, hvd):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
@@ -19,6 +19,7 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
+        self.hvd = hvd
         self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
@@ -73,7 +74,6 @@ class CentralValueTrain(nn.Module):
         self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_lr(self, lr):
-
         if self.multi_gpu:
             lr_tensor = torch.tensor([lr])
             self.hvd.broadcast_value(lr_tensor, 'cv_learning_rate')
@@ -82,8 +82,14 @@ class CentralValueTrain(nn.Module):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
-    def get_stats_weights(self):
-        return {}
+    def get_stats_weights(self, model_stats=False):
+        state = {}
+        if model_stats:
+            if self.normalize_input:
+                state['running_mean_std'] = self.model.running_mean_std.state_dict()
+            if self.normalize_value:
+                state['reward_mean_std'] = self.model.value_mean_std.state_dict()
+        return state
 
     def set_stats_weights(self, weights): 
         pass
@@ -173,9 +179,6 @@ class CentralValueTrain(nn.Module):
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-        #if self.is_rnn:
-        #    rnn_masks = rnn_masks.view(self.num_actors, self.num_agents, self.num_steps).transpose(0,1)
-        #    rnn_masks = rnn_masks.flatten(0)[:batch_size]
 
         return value_preds, returns, actions, dones
 

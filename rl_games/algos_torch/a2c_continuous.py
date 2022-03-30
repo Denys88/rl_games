@@ -51,7 +51,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
-                'multi_gpu' : self.multi_gpu
+                'multi_gpu' : self.multi_gpu,
+                'hvd': self.hvd if self.multi_gpu else None
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -65,6 +66,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                             or (not self.has_phasic_policy_gradients and not self.has_central_value) 
         self.algo_observer.after_init(self)
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num

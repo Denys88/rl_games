@@ -50,5 +50,5 @@ params:
     normalize_input: False
     save_best_after: 10
     device: 'cpu'
-    multi_gpu: False
+    multi_gpu: True
 

@@ -37,12 +37,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.last_lr = float(self.last_lr)
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
-        if self.normalize_input:
-            if isinstance(self.observation_space, gym.spaces.Dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
-            else:
-                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
-
         if self.has_central_value:
             cv_config = {
                 'state_shape' : self.state_shape, 
@@ -58,7 +52,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
-                'multi_gpu' : self.multi_gpu
+                'multi_gpu' : self.multi_gpu,
+                'hvd': self.hvd if self.multi_gpu else None
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
