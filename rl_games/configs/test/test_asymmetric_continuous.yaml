@@ -1,15 +1,23 @@
 params:  
   algo:
-    name: a2c_discrete
+    name: a2c_continuous
 
   model:
-    name: discrete_a2c
+    name: continuous_a2c_logstd
 
   network:
     name: actor_critic
     separate: True
-    space: 
-      discrete:
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
 
     mlp:
       units: [64]
@@ -31,7 +39,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 5e-4
-    name: test_asymmetric
+    name: test_asymmetric_continuous
     score_to_win: 100000
     grad_norm: 0.5
     entropy_coef: 0.005
@@ -52,10 +60,11 @@ params:
     seq_length: 4
     weight_decay: 0.0000
     multi_gpu: True
+    bounds_loss_coef: 0.0
     use_diagnostics: True
     env_config:
       name: TestAsymmetricEnv-v0
-      wrapped_env_name: "LunarLander-v2"
+      wrapped_env_name: "LunarLanderContinuous-v2"
       apply_mask: False
       use_central_value: True
 
