@@ -45,10 +45,12 @@ class BaseModelNetwork(nn.Module):
                 self.running_mean_std = RunningMeanStd(obs_shape)
 
     def norm_obs(self, observation):
-        return self.running_mean_std(observation) if self.normalize_input else observation
+        with torch.no_grad():
+            return self.running_mean_std(observation) if self.normalize_input else observation
 
     def unnorm_value(self, value):
-        return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
+        with torch.no_grad():
+            return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
