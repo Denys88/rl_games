@@ -25,7 +25,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        self.normalize_value = self.config['normalize_value']
+        self.normalize_value = self.config.get('normalize_value', False)
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
@@ -89,7 +89,7 @@ class PpoPlayerDiscrete(BasePlayer):
             self.is_multi_discrete = True
         self.mask = [False]
         self.normalize_input = self.config['normalize_input']
-        self.normalize_value = self.config['normalize_value']
+        self.normalize_value = self.config.get('normalize_value', False)
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,

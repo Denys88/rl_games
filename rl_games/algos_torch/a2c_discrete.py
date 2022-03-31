@@ -74,19 +74,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         return self.epoch_num
 
     def save(self, fn):
-        
-        import rl_games.algos_torch.flatten as flatten
-        inputs = {
-            'obs' : torch.zeros((1,4)).to(self.device),
-            'rnn_states' : None
-        }
-        with torch.no_grad():
-            adapter = flatten.TracingAdapter(self.model.a2c_network, inputs,allow_non_tensor=True)
-            traced = torch.jit.trace(adapter, adapter.flattened_inputs,check_trace=True)
-            flattened_outputs = traced(*adapter.flattened_inputs)
-            print(flattened_outputs)
-            flattened_outputs = traced(*adapter.flattened_inputs)
-            print(flattened_outputs)
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
 
