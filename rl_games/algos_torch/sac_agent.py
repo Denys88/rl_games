@@ -306,17 +306,6 @@ class SACAgent(BaseAlgorithm):
         if isinstance(obs, dict):
             obs = obs['obs']
         return obs
-
-    def env_step(self, actions):
-        if not self.is_tensor_obses:
-            actions = actions.cpu().numpy()
-        obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
-
-        self.step += self.num_actors
-        if self.is_tensor_obses:
-            return obs, rewards, dones, infos
-        else:
-            return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
     
     def cast_obs(self, obs):
         if isinstance(obs, torch.Tensor):
@@ -329,7 +318,7 @@ class SACAgent(BaseAlgorithm):
                 obs = torch.FloatTensor(obs).to(self.ppo_device)
         return obs
 
-    # todo move to common utils
+    # todo: move to common utils
     def obs_to_tensors(self, obs):
         obs_is_dict = isinstance(obs, dict)
         if obs_is_dict:
@@ -351,6 +340,22 @@ class SACAgent(BaseAlgorithm):
             upd_obs = self.cast_obs(obs)
         return upd_obs
 
+    def preprocess_actions(self, actions):
+        if not self.is_tensor_obses:
+            actions = actions.cpu().numpy()
+        return actions
+
+    def env_step(self, actions):
+        actions = self.preprocess_actions(actions)
+        obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
+
+        self.step += self.num_actors
+        if self.is_tensor_obses:
+            #return obs, rewards, dones, infos
+            return self.obs_to_tensors(obs), rewards.to(self.ppo_device), dones.to(self.ppo_device), infos
+        else:
+            return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
+
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
@@ -358,17 +363,6 @@ class SACAgent(BaseAlgorithm):
         obs = self.obs_to_tensors(obs)
 
         return obs
-
-        # print(obs.shape)
-        # if isinstance(obs, torch.Tensor):
-        #     self.is_tensor_obses = True
-            
-        # print("Observations are tensors:", self.is_tensor_obses)
-
-        # if self.is_tensor_obses:
-        #     return obs.to(self.sac_device)
-        # else:
-        #     return torch.from_numpy(obs).to(self.sac_device)
 
     def act(self, obs, action_dim, sample=False):
         obs = self.preproc_obs(obs)
