@@ -1,3 +1,4 @@
+from turtle import shape
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
@@ -5,6 +6,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common import vecenv
 from rl_games.common import schedulers
 from rl_games.common import experience
+
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -17,11 +19,11 @@ import numpy as np
 import time
 
 
-
 class SACAgent(BaseAlgorithm):
     def __init__(self, base_name, params):
         self.config = config = params['config']
         print(config)
+
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
@@ -84,9 +86,9 @@ class SACAgent(BaseAlgorithm):
         self.target_entropy_coef = config.get("target_entropy_coef", 0.5)
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
+
         self.step = 0
         self.algo_observer = config['features']['observer']
-
 
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
@@ -150,7 +152,7 @@ class SACAgent(BaseAlgorithm):
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         
-        self.is_tensor_obses = None
+        self.is_tensor_obses = False
         self.is_rnn = False
         self.last_rnn_indices = None
         self.last_state_indices = None
@@ -316,18 +318,57 @@ class SACAgent(BaseAlgorithm):
         else:
             return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
     
+    def cast_obs(self, obs):
+        if isinstance(obs, torch.Tensor):
+            self.is_tensor_obses = True
+        elif isinstance(obs, np.ndarray):
+            assert(self.observation_space.dtype != np.int8)
+            if self.observation_space.dtype == np.uint8:
+                obs = torch.ByteTensor(obs).to(self.ppo_device)
+            else:
+                obs = torch.FloatTensor(obs).to(self.ppo_device)
+        return obs
+
+    # todo move to common utils
+    def obs_to_tensors(self, obs):
+        obs_is_dict = isinstance(obs, dict)
+        if obs_is_dict:
+            upd_obs = {}
+            for key, value in obs.items():
+                upd_obs[key] = self._obs_to_tensors_internal(value)
+        else:
+            upd_obs = self.cast_obs(obs)
+        if not obs_is_dict or 'obs' not in obs:    
+            upd_obs = {'obs' : upd_obs}
+        return upd_obs
+
+    def _obs_to_tensors_internal(self, obs):
+        if isinstance(obs, dict):
+            upd_obs = {}
+            for key, value in obs.items():
+                upd_obs[key] = self._obs_to_tensors_internal(value)
+        else:
+            upd_obs = self.cast_obs(obs)
+        return upd_obs
+
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
 
-        if self.is_tensor_obses is None:
-            self.is_tensor_obses = torch.is_tensor(obs)
-            print("Observations are tensors:", self.is_tensor_obses)
-                
-        if self.is_tensor_obses:
-            return obs.to(self.sac_device)
-        else:
-            return torch.from_numpy(obs).to(self.sac_device)
+        obs = self.obs_to_tensors(obs)
+
+        return obs
+
+        # print(obs.shape)
+        # if isinstance(obs, torch.Tensor):
+        #     self.is_tensor_obses = True
+            
+        # print("Observations are tensors:", self.is_tensor_obses)
+
+        # if self.is_tensor_obses:
+        #     return obs.to(self.sac_device)
+        # else:
+        #     return torch.from_numpy(obs).to(self.sac_device)
 
     def act(self, obs, action_dim, sample=False):
         obs = self.preproc_obs(obs)
