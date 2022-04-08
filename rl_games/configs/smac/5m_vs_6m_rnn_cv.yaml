@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/5m_vs_6m_cv.pth'
-
   network:
     name: actor_critic
     separate: False
@@ -34,9 +31,9 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 1e-4
+    learning_rate: 5e-4
     score_to_win: 20
-    entropy_coef: 0.005
+    entropy_coef: 0.02
     truncate_grads: True
     grad_norm: 10
     env_name:  smac
@@ -44,12 +41,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 2560 # 5 * 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
     normalize_value: False
     use_action_masks: True
@@ -59,21 +56,20 @@ params:
       name: 5m_vs_6m
       central_value: True
       reward_only_positive: True
-      obs_last_action: True
+      obs_last_action: False
       apply_agent_ids: True
 
     player:
       render: False
       games_num: 200
       n_game_life: 1
-      is_determenistic: True
+      determenistic: True
 
 
     central_value_config:
-      use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
-      lr: 1e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       truncate_grads: True

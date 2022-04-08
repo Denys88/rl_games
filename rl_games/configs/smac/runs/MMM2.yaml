@@ -40,30 +40,24 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 2560
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
-    normalize_value: False
+    normalize_value: True
     use_action_masks: True
     max_epochs: 30000
 
     central_value_config:
-      #use_joint_obs_actions: False
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       network:
-        #normalization: batch_norm
-        #joint_obs_actions:
-        #    embedding: False
-        #    embedding_scale: 1 #(actions // embedding_scale)
-        #    mlp_scale: 4 # (mlp from obs size) // mlp_out_scale
         name: actor_critic
         central_value: True
         mlp:

@@ -7,61 +7,60 @@ params:
 
   network:
     name: actor_critic
-    separate: True
+    separate: False
     space:
       continuous:
         mu_activation: None
         sigma_activation: None
         mu_init:
           name: default
-          scale: 0.02
+
         sigma_init:
           name: const_initializer
           val: 0
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
-      activation: elu
+      activation: swish
       initializer:
         name: default
       regularizer:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
 
-  load_checkpoint: False
-  load_path: path
-
   config:
       reward_shaper:
         scale_value: 0.1
       normalize_advantage: True
-      gamma: 0.99
-      tau: 0.9
-
+      gamma: 0.995
+      tau: 0.95
       learning_rate: 3e-4
-      name: dm_humanoid
-      score_to_win: 10000
+      name: dm_humanoid_run
+      score_to_win: 1000
 
-      grad_norm: 0.5
+      grad_norm: 10.5
       entropy_coef: 0.0
       truncate_grads: True
       env_name:  dm_control
       ppo: true
       e_clip: 0.2
-      clip_value: True
-      num_actors: 16
-      steps_num: 1024
+      clip_value: False
+      num_actors: 24
+      horizon_length: 1024
       minibatch_size: 4096
-      mini_epochs: 15
+      mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
-      lr_threshold: 0.008
-
-      normalize_input: False
-      seq_length: 8
+      kl_threshold: 0.008
+      schedule_type: 'standard'
+      value_bootstrap: True
+      normalize_input: True
+      normalize_value: True
+      bound_loss_type: 'regularisation' #'bound'
       bounds_loss_coef: 0.001
 
       env_config:
         name: HumanoidRun-v0
         flat_observation: True
-      
+      player:
+        render: True

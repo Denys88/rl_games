@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: path
+
 
   network:
     name: actor_critic
@@ -58,12 +57,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 24
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  none
-    #lr_threshold: 0.008
+    #kl_threshold: 0.008
     #schedule_entropy : True
     normalize_input: False
     max_epochs: 1500
@@ -77,4 +76,4 @@ params:
       render: True
       games_num: 100
       n_game_life: 1
-      is_determenistic: True
+      determenistic: True

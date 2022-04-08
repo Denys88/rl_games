@@ -32,9 +32,6 @@ params:
       units: 128
       concated: False
 
-  load_checkpoint: False
-  load_path: 'nn/runBipedalWalkerHardcore-v2'
-
   config:
       reward_shaper:
         scale_value: 0.1
@@ -53,12 +50,12 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 512
+      horizon_length: 512
       minibatch_size: 2048
       mini_epochs: 8
       critic_coef: 1
       lr_schedule:  None
-      lr_threshold: 0.008
+      kl_threshold: 0.008
       normalize_input: False
       seq_length: 8
       bounds_loss_coef: 0.5

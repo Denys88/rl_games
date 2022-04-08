@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/slime_pvp.pth'
-
   network:
     name: actor_critic
     separate: True
@@ -39,12 +36,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 512
+    horizon_length: 512
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: False
     games_to_track: 500
 
@@ -63,5 +60,5 @@ params:
       render: True
       games_num: 200
       n_game_life: 1
-      is_determenistic: True
+      determenistic: True
       device_name: 'cpu'

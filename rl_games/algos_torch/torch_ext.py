@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
+import math
+import time
 
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
@@ -13,8 +15,9 @@ numpy_to_torch_dtype_dict = {
     np.dtype('int32')      : torch.int32,
     np.dtype('int64')      : torch.int64,
     np.dtype('float16')    : torch.float16,
+    np.dtype('float64')    : torch.float32,
     np.dtype('float32')    : torch.float32,
-    np.dtype('float64')    : torch.float64,
+    #np.dtype('float64')    : torch.float64,
     np.dtype('complex64')  : torch.complex64,
     np.dtype('complex128') : torch.complex128,
 }
@@ -43,14 +46,36 @@ def shape_whc_to_cwh(shape):
     
     return shape
 
-def save_scheckpoint(filename, state):
-    print("=> saving checkpoint '{}'".format(filename + '.pth'))
+def safe_filesystem_op(func, *args, **kwargs):
+    """
+    This is to prevent spurious crashes related to saving checkpoints or restoring from checkpoints in a Network
+    Filesystem environment (i.e. NGC cloud or SLURM)
+    """
+    num_attempts = 5
+    for attempt in range(num_attempts):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            print(f'Exception {exc} when trying to execute {func} with args:{args} and kwargs:{kwargs}...')
+            wait_sec = 2 ** attempt
+            print(f'Waiting {wait_sec} before trying again...')
+            time.sleep(wait_sec)
 
-    torch.save(state, filename + '.pth')
+    raise RuntimeError(f'Could not execute {func}, give up after {num_attempts} attempts...')
+
+def safe_save(state, filename):
+    return safe_filesystem_op(torch.save, state, filename)
+
+def safe_load(filename):
+    return safe_filesystem_op(torch.load, filename)
+
+def save_checkpoint(filename, state):
+    print("=> saving checkpoint '{}'".format(filename + '.pth'))
+    safe_save(state, filename + '.pth')
 
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
-    state = torch.load(filename)
+    state = safe_load(filename)
     return state
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
@@ -110,15 +135,54 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
+    if masks is None:
+        return (values - values.mean()) / (values.std() + 1e-8)
+
+    values_mean, values_var = get_mean_var_with_masks(values, masks)
+    values_std = torch.sqrt(values_var)
+    normalized_values = (values - values_mean) / (values_std + 1e-8)
+
+    return normalized_values
+
+def get_mean_var_with_masks(values, masks):
     sum_mask = masks.sum()
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_std = torch.sqrt(min_sqr * sum_mask / (sum_mask-1))
-    normalized_values = (values_mask - values_mean) / (values_std + 1e-8)
+    values_var = min_sqr * sum_mask / (sum_mask-1)
+    return values_mean, values_var
 
-    return normalized_values
+def explained_variance(y_pred,y, masks=None):
+    """
+    Computes fraction of variance that ypred explains about y.
+    Returns 1 - Var[y-ypred] / Var[y]
+    interpretation:
+        ev=0  =>  might as well have predicted zero
+        ev=1  =>  perfect prediction
+        ev<0  =>  worse than just predicting zero
+    """
 
+    if masks is not None:
+        masks = masks.unsqueeze(1)
+        _, var_y = get_mean_var_with_masks(y_pred,masks)
+        _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
+    else:
+        var_y = torch.var(y)
+        var_dy = torch.var(y-y_pred)
+    return 1.0 - var_dy/var_y
+
+def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
+    logratio = old_neglogp - new_neglogp
+    clip_frac = torch.logical_or(
+                logratio < math.log(1.0 - clip_param),
+                logratio > math.log(1.0 + clip_param),
+            ).float()
+    if masks is not None:
+        clip_frac = clip_frac * masks/masks.sum()
+    else:
+        clip_frac = clip_frac.mean()
+    return clip_frac
+    
 class CoordConv2d(nn.Conv2d):
     pool = {}
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
@@ -237,6 +301,12 @@ class CategoricalMasked(torch.distributions.Categorical):
             logits = torch.where(self.masks, logits, torch.tensor(-1e+8).to(self.device))
             super(CategoricalMasked, self).__init__(probs, logits, validate_args)
     
+    def rsample(self):
+        u = torch.distributions.Uniform(low=torch.zeros_like(self.logits, device = self.logits.device), high=torch.ones_like(self.logits, device = self.logits.device)).sample()
+        #print(u.size(), self.logits.size())
+        rand_logits = self.logits -(-u.log()).log()
+        return torch.max(rand_logits, axis=-1)[1]
+
     def entropy(self):
         if self.masks is None:
             return super(CategoricalMasked, self).entropy()

@@ -1,12 +1,11 @@
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
+from rl_games.envs.brax import create_brax_env
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
-
-#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
-FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
+import math
 
 
 
@@ -18,34 +17,21 @@ class HCRewardEnv(gym.RewardWrapper):
         return np.max([-10, reward])
 
 
-class DMControlReward(gym.RewardWrapper):
+class DMControlWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        
-        self.num_stops = 0
-        self.max_stops = 1000
-        self.reward_threshold = 0.001
+        self.observation_space = self.env.observation_space['observations']
+        self.observation_space.dtype = np.dtype('float32')
 
     def reset(self, **kwargs):
         self.num_stops = 0
- 
         return self.env.reset(**kwargs)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
-        if reward < self.reward_threshold:
-            self.num_stops += 1
-        else:
-            self.num_stops = max(0, self.num_stops-1)
-        if self.num_stops > self.max_stops:
-            #print('too many stops!')
-            reward = -10
-            observation = self.reset()
-            done = True
-        return observation, self.reward(reward), done, info
+        return observation, reward, done, info
 
-    def reward(self, reward):
-        return reward
+
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -121,9 +107,9 @@ def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = 'dm2gym:'+ kwargs.pop('name')
     env = gym.make(name, environment_kwargs=kwargs)
-    env = DMControlReward(env)
+    env = DMControlWrapper(env)
     env = DMControlObsWrapper(env)
-
+    env = wrappers.TimeLimit(env, 1000)
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
     return env
@@ -173,31 +159,6 @@ def create_roboschool_env(name):
     import roboschool
     return gym.make(name)
 
-def create_multiflex(path, num_instances=1):
-    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env_muli_env
-    from autolab_core import YamlConfig
-    import gym
-
-    set_flex_bin_path(FLEX_PATH + '/bin')
-
-    cfg_env = YamlConfig(path)
-    env = make_flex_vec_env_muli_env([cfg_env] * num_instances)
-
-    return env
-
-def create_flex(path):
-    from flex_gym.flex_vec_env import set_flex_bin_path, make_flex_vec_env
-    from autolab_core import YamlConfig
-    import gym
-
-    set_flex_bin_path(FLEX_PATH + '/bin')
-
-    cfg_env = YamlConfig(path)
-    cfg_env['gym']['rank'] = 0
-    env = make_flex_vec_env(cfg_env)
-
-    return env
-
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv
     frames = kwargs.pop('frames', 1)
@@ -235,21 +196,28 @@ def create_test_env(name, **kwargs):
 def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
+
+
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
-    fully_obs = kwargs.pop('fully_obs', False)
-
+    rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
+    rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
+    view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
+
+
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
     if action_bonus:
         env = gym_minigrid.wrappers.ActionBonus(env)
-    if fully_obs:
-        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
-    else:
-        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env) # Get pixel observations
-    env = gym_minigrid.wrappers.ImgObsWrapper(env) # Get rid of the 'mission' field
 
+    if rgb_fully_obs:
+        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
+    elif rgb_partial_obs:
+        env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
+        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=84//view_size) # Get pixel observations
+
+    env = gym_minigrid.wrappers.ImgObsWrapper(env)
     print('minigird_env observation space shape:', env.observation_space)
     return env
 
@@ -262,6 +230,13 @@ def create_multiwalker_env(**kwargs):
 def create_diambra_env(**kwargs):
     from rl_games.envs.diambra.diambra import DiambraEnv
     env = DiambraEnv(**kwargs)
+    return env
+
+def create_env(name, **kwargs):
+    steps_limit = kwargs.pop('steps_limit', None)
+    env = gym.make(name, **kwargs)
+    if steps_limit is not None:
+        env = wrappers.TimeLimit(env, steps_limit)
     return env
 
 configurations = {
@@ -342,7 +317,7 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v3' : {
-        'env_creator' : lambda **kwargs  : gym.make('BipedalWalker-v3'),
+        'env_creator' : lambda **kwargs  : create_env('BipedalWalker-v3', **kwargs),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerCnn-v3' : {
@@ -379,11 +354,11 @@ configurations = {
     },
     'smac' : {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),
-        'vecenv_type' : 'RAY_SMAC'
+        'vecenv_type' : 'RAY'
     },
     'smac_cnn' : {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
-        'vecenv_type' : 'RAY_SMAC'
+        'vecenv_type' : 'RAY'
     },
     'dm_control' : {
         'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
@@ -425,6 +400,10 @@ configurations = {
         'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
         'vecenv_type': 'RAY'
     },
+    'brax' : {
+        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'vecenv_type': 'BRAX' 
+    },
 }
 
 def get_env_info(env):
@@ -438,6 +417,7 @@ def get_env_info(env):
     '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
+    
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']

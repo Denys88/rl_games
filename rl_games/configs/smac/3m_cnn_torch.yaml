@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/6h_vs_8z_cnnsmac_cnn'
-
   network:
     name: actor_critic
     separate: True
@@ -62,12 +59,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1536
     mini_epochs: 1
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
     seq_length: 2
     use_action_masks: True

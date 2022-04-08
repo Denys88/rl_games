@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c_lstm
 
-  load_checkpoint: False
-  load_path: 'nn/3s_vs_4z_lstm'
-
   network:
     name: actor_critic
     separate: True
@@ -41,12 +38,12 @@ params:
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 64
+    horizon_length: 64
     minibatch_size: 1536
     mini_epochs: 8
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: False
     seq_length: 4
     use_action_masks: True

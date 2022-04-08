@@ -3,6 +3,8 @@ import random
 import gym
 import torch
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
+import torch
+
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
 
 class ReplayBuffer(object):
@@ -196,13 +198,96 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._max_priority = max(self._max_priority, priority)
 
 
+class VectorizedReplayBuffer:
+    def __init__(self, obs_shape, action_shape, capacity, device):
+        """Create Vectorized Replay buffer.
+        Parameters
+        ----------
+        size: int
+            Max number of transitions to store in the buffer. When the buffer
+            overflows the old memories are dropped.
+        See Also
+        --------
+        ReplayBuffer.__init__
+        """
+
+        self.device = device
+
+        self.obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
+        self.next_obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
+        self.actions = torch.empty((capacity, *action_shape), dtype=torch.float32, device=self.device)
+        self.rewards = torch.empty((capacity, 1), dtype=torch.float32, device=self.device)
+        self.dones = torch.empty((capacity, 1), dtype=torch.bool, device=self.device)
+
+        self.capacity = capacity
+        self.idx = 0
+        self.full = False
+        
+
+    def add(self, obs, action, reward, next_obs, done):
+
+        num_observations = obs.shape[0]
+        remaining_capacity = min(self.capacity - self.idx, num_observations)
+        overflow = num_observations - remaining_capacity
+        if remaining_capacity < num_observations:
+            self.obses[0: overflow] = obs[-overflow:]
+            self.actions[0: overflow] = action[-overflow:]
+            self.rewards[0: overflow] = reward[-overflow:]
+            self.next_obses[0: overflow] = next_obs[-overflow:]
+            self.dones[0: overflow] = done[-overflow:]
+            self.full = True
+        self.obses[self.idx: self.idx + remaining_capacity] = obs[:remaining_capacity]
+        self.actions[self.idx: self.idx + remaining_capacity] = action[:remaining_capacity]
+        self.rewards[self.idx: self.idx + remaining_capacity] = reward[:remaining_capacity]
+        self.next_obses[self.idx: self.idx + remaining_capacity] = next_obs[:remaining_capacity]
+        self.dones[self.idx: self.idx + remaining_capacity] = done[:remaining_capacity]
+
+        self.idx = (self.idx + num_observations) % self.capacity
+        self.full = self.full or self.idx == 0
+
+    def sample(self, batch_size):
+        """Sample a batch of experiences.
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
+        Returns
+        -------
+        obses: torch tensor
+            batch of observations
+        actions: torch tensor
+            batch of actions executed given obs
+        rewards: torch tensor
+            rewards received as results of executing act_batch
+        next_obses: torch tensor
+            next set of observations seen after executing act_batch
+        not_dones: torch tensor
+            inverse of whether the episode ended at this tuple of (observation, action) or not
+        not_dones_no_max: torch tensor
+            inverse of whether the episode ended at this tuple of (observation, action) or not, specifically exlcuding maximum episode steps
+        """
+
+        idxs = torch.randint(0,
+                            self.capacity if self.full else self.idx, 
+                            (batch_size,), device=self.device)
+        obses = self.obses[idxs]
+        actions = self.actions[idxs]
+        rewards = self.rewards[idxs]
+        next_obses = self.next_obses[idxs]
+        dones = self.dones[idxs]
+
+        return obses, actions, rewards, next_obses, dones
+
+
+
+
 
 class ExperienceBuffer:
     '''
     More generalized than replay buffers.
     Implemented for on-policy algos
     '''
-    def __init__(self, env_info, algo_info, device):
+    def __init__(self, env_info, algo_info, device, aux_tensor_dict=None):
         self.env_info = env_info
         self.algo_info = algo_info
         self.device = device
@@ -211,14 +296,15 @@ class ExperienceBuffer:
         self.action_space = env_info['action_space']
         
         self.num_actors = algo_info['num_actors']
-        self.steps_num = algo_info['steps_num']
+        self.horizon_length = algo_info['horizon_length']
         self.has_central_value = algo_info['has_central_value']
         self.use_action_masks = algo_info.get('use_action_masks', False)
         batch_size = self.num_actors * self.num_agents
         self.is_discrete = False
         self.is_multi_discrete = False
         self.is_continuous = False
-
+        self.obs_base_shape = (self.horizon_length, self.num_agents * self.num_actors)
+        self.state_base_shape = (self.horizon_length, self.num_actors)
         if type(self.action_space) is gym.spaces.Discrete:
             self.actions_shape = ()
             self.actions_num = self.action_space.n
@@ -234,9 +320,13 @@ class ExperienceBuffer:
         self.tensor_dict = {}
         self._init_from_env_info(self.env_info)
 
+        self.aux_tensor_dict = aux_tensor_dict
+        if self.aux_tensor_dict is not None:
+            self._init_from_aux_dict(self.aux_tensor_dict)
+
     def _init_from_env_info(self, env_info):
-        obs_base_shape = (self.steps_num, self.num_agents * self.num_actors)
-        state_base_shape = (self.steps_num, self.num_actors)
+        obs_base_shape = self.obs_base_shape
+        state_base_shape = self.state_base_shape
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
         if self.has_central_value:
@@ -255,6 +345,11 @@ class ExperienceBuffer:
             self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
             self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
             self.tensor_dict['sigmas'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
+
+    def _init_from_aux_dict(self, tensor_dict):
+        obs_base_shape = self.obs_base_shape
+        for k,v in tensor_dict.items():
+            self.tensor_dict[k] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(v), dtype=np.float32), obs_base_shape)
 
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:

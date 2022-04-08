@@ -28,9 +28,6 @@ params:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
 
-  load_checkpoint: False
-  load_path: path
-
   config:
       reward_shaper:
         scale_value: 1.0
@@ -49,12 +46,12 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 256
+      horizon_length: 256
       minibatch_size: 2048
       mini_epochs: 12
       critic_coef: 2
       lr_schedule:  adaptive
-      lr_threshold: 0.008
+      kl_threshold: 0.008
       normalize_input: True
       seq_length: 4
       bounds_loss_coef: 0.0001

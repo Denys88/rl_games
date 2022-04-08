@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/pacman_ff.pth'
+
 
   network:
     name: actor_critic
@@ -65,7 +64,7 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 256
+    horizon_length: 256
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1

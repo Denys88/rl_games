@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 
+
 
   network:
     name: actor_critic
@@ -47,9 +46,9 @@ params:
       scale_value: 1
         
     normalize_advantage: True
-    gamma: 0.99
-    tau: 0.9
-    learning_rate: 3e-4
+    gamma: 0.999
+    tau: 0.95
+    learning_rate: 5e-4
     name: breakout_ppo
     score_to_win: 900
     grad_norm: 10
@@ -58,26 +57,26 @@ params:
     env_name: atari_gym
     ppo: true
     e_clip: 0.2
-    clip_value: True
-    num_actors: 24
-    steps_num: 128
+    clip_value: False
+    num_actors: 16
+    horizon_length: 256
     minibatch_size: 512
-    mini_epochs: 4
+    mini_epochs: 3
     critic_coef: 1
-    lr_schedule:  adaptive
-    lr_threshold: 0.008
+    lr_schedule:  None #adaptive
+    kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
-    normalize_value: True
+    normalize_value: False
     normalize_input: False
     max_epochs: 3000
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'
       episode_life: True
-
+      seed: 5
     player:
-      render: True
+      render: False
       games_num: 200
       n_game_life: 5
-      is_determenistic: True
+      determenistic: False

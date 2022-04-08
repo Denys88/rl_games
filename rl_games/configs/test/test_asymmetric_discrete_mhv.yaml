@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: path
-
   network:
     name: actor_critic
     separate: False
@@ -45,12 +42,12 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 512
+    horizon_length: 512
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     normalize_input: False
     normalize_value: True
     weight_decay: 0.0000
@@ -66,7 +63,7 @@ params:
       max_dist: 8
       use_central_value: True
       multi_discrete_space: False
-      multi_head_value: True
+      multi_head_value: False
     player:
         games_num: 100
         determenistic: True
@@ -74,7 +71,7 @@ params:
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       truncate_grads: True

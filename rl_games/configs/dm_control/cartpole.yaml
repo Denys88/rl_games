@@ -24,12 +24,6 @@ params:
       activation: relu
       initializer:
         name: default
-      regularizer:
-        name:  'None' #'l2_regularizer'
-        #scale: 0.001
-
-  load_checkpoint: False
-  load_path: path
 
   config:
       reward_shaper:
@@ -40,7 +34,7 @@ params:
 
       learning_rate: 1e-4
       name: cartpole
-      score_to_win: 1000
+      score_to_win: 950
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -50,13 +44,13 @@ params:
       e_clip: 0.2
       clip_value: True
       num_actors: 16
-      steps_num: 128
+      horizon_length: 128
       minibatch_size: 1024
       mini_epochs: 8
       critic_coef: 1
       lr_schedule:  adaptive
-      lr_threshold: 0.008
-
+      kl_threshold: 0.008
+      value_bootstrap: True
       normalize_input: False
       seq_length: 8
       bounds_loss_coef: 0.0000
