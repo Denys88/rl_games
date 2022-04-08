@@ -47,8 +47,9 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
+        ### it didnot help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
-
+        #torch.use_deterministic_algorithms(True)
     def reset(self):
         pass
 
@@ -60,6 +61,7 @@ class Runner:
         self.exp_config = None
 
         if self.seed:
+
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)

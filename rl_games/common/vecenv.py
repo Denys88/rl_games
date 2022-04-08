@@ -40,9 +40,7 @@ class RayWorker:
         return next_state, reward, is_done, info
 
     def seed(self, seed):
-        print('try seed: ', seed)
         if hasattr(self.env, 'seed'):
-            print('seed: ', seed)
             torch.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
             np.random.seed(seed)
