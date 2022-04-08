@@ -351,8 +351,7 @@ class SACAgent(BaseAlgorithm):
 
         self.step += self.num_actors
         if self.is_tensor_obses:
-            #return obs, rewards, dones, infos
-            return self.obs_to_tensors(obs), rewards.to(self.ppo_device), dones.to(self.ppo_device), infos
+            return self.obs_to_tensors(obs), rewards.to(self.sac_device), dones.to(self.sac_device), infos
         else:
             return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
 
@@ -367,9 +366,11 @@ class SACAgent(BaseAlgorithm):
     def act(self, obs, action_dim, sample=False):
         obs = self.preproc_obs(obs)
         dist = self.model.actor(obs)
+
         actions = dist.sample() if sample else dist.mean
         actions = actions.clamp(*self.action_range)
         assert actions.ndim == 2
+
         return actions
 
     def extract_actor_stats(self, actor_losses, entropies, alphas, alpha_losses, actor_loss_info):
