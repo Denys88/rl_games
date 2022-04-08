@@ -31,8 +31,8 @@ params:
       tau: 0.95
 
       learning_rate: 3e-4
-      name: mujoco_gym
-      score_to_win: 4000
+      name: HalfCheetah-v2
+      score_to_win: 10000
 
       grad_norm: 0.5
       entropy_coef: 0.0
@@ -42,7 +42,7 @@ params:
       e_clip: 0.2
       clip_value: False
       num_actors: 16
-      horizon_length: 256
+      horizon_length: 128
       minibatch_size: 512
       mini_epochs: 4
       critic_coef: 1
@@ -52,10 +52,11 @@ params:
       normalize_input: True
       normalize_value: True
       value_bootstrap: True
-      bounds_loss_coef: 0.0001
+      bounds_loss_coef: 0.000
 
       env_config:
         name: HalfCheetah-v2
+        seed: 5
         #flat_observation: True
 
       player:

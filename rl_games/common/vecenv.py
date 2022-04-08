@@ -40,6 +40,7 @@ class RayWorker:
         return next_state, reward, is_done, info
 
     def seed(self, seed):
+        print('try seed: ', seed)
         if hasattr(self.env, 'seed'):
             print('seed: ', seed)
             torch.manual_seed(seed)
@@ -101,10 +102,10 @@ class RayVecEnv(IVecEnv):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
-
+        self.seed = kwargs.pop('seed', None)
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
-        self.seed = kwargs.pop('seed', None)
+
         if self.seed is not None:
             seeds = range(self.seed, self.seed + self.num_actors)
             seed_set = []
