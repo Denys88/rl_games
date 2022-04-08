@@ -19,7 +19,7 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [128, 64]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: default
@@ -34,7 +34,7 @@ params:
       name: mujoco_gym
       score_to_win: 4000
 
-      grad_norm: 0.5
+      grad_norm: 1.5
       entropy_coef: 0.0
       truncate_grads: True
       env_name:  openai_gym
