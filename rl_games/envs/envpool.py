@@ -3,13 +3,6 @@ import gym
 import numpy as np
 import torch.utils.dlpack as tpack
 
-def shape_cwh_to_whc(shape):
-    if len(shape) == 3:
-        return (shape[1], shape[2], shape[0])
-
-    return shape
-
-
 class Envpool(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import envpool
@@ -27,9 +20,11 @@ class Envpool(IVecEnv):
         self.observation_space = self.env.observation_space
         self.ids = np.arange(0, num_actors)
         self.action_space = self.env.action_space
+        #self.scores = np.zeros(num_actors)
 
     def step(self, action):
         next_obs, reward, is_done, info = self.env.step(action , self.ids)
+        info['time_outs'] = info['TimeLimit.truncated']
         return next_obs, reward, is_done, info
 
     def reset(self):
