@@ -14,8 +14,7 @@ from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 
 def _create_initializer(func, **kwargs):
-    return lambda v : func(v, **kwargs)   
-
+    return lambda v : func(v, **kwargs)
 
 class NetworkBuilder:
     def __init__(self, **kwargs):
@@ -190,7 +189,8 @@ class A2CBuilder(NetworkBuilder):
             self.critic_mlp = nn.Sequential()
             
             if self.has_cnn:
-                input_shape = torch_ext.shape_whc_to_cwh(input_shape)
+                if self.permute_input:
+                    input_shape = torch_ext.shape_whc_to_cwh(input_shape)
                 cnn_args = {
                     'ctype' : self.cnn['type'], 
                     'input_shape' : input_shape, 
@@ -294,12 +294,11 @@ class A2CBuilder(NetworkBuilder):
             seq_length = obs_dict.get('seq_length', 1)
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
-
             if self.has_cnn:
                 # for obs shape 4
                 # input expected shape (B, W, H, C)
                 # convert to (B, C, W, H)
-                if len(obs.shape) == 4:
+                if self.permute_input and len(obs.shape) == 4:
                     obs = obs.permute((0, 3, 1, 2))
 
             if self.separate:
@@ -504,6 +503,7 @@ class A2CBuilder(NetworkBuilder):
             if 'cnn' in params:
                 self.has_cnn = True
                 self.cnn = params['cnn']
+                self.permute_input = self.cnn.get('permute_input', True)
             else:
                 self.has_cnn = False
 

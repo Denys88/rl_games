@@ -39,11 +39,16 @@ def mean_mask(input, mask, sum_mask):
     return (input * rnn_masks).sum() / sum_mask
 
 def shape_whc_to_cwh(shape):
-    #if len(shape) == 2:
-    #    return (shape[1], shape[0])
     if len(shape) == 3:
         return (shape[2], shape[0], shape[1])
     
+    return shape
+
+
+def shape_cwh_to_whc(shape):
+    if len(shape) == 3:
+        return (shape[1], shape[2], shape[0])
+
     return shape
 
 def safe_filesystem_op(func, *args, **kwargs):
