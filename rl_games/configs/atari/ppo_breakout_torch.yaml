@@ -74,9 +74,9 @@ params:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'
       episode_life: True
-
+      seed: 5
     player:
-      render: True
+      render: False
       games_num: 200
       n_game_life: 5
-      determenistic: True
+      determenistic: False

@@ -60,4 +60,6 @@ params:
         #flat_observation: True
 
       player:
-        render: True
+        render: False
+        deterministic: True
+        games_num: 100
