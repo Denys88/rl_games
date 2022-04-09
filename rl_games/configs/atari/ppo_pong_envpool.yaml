@@ -24,7 +24,7 @@ params:
         #gain: 1.4142
       regularizer:
         name: 'None'
-      convs:    
+      convs:
         - filters: 32
           kernel_size: 8
           strides: 4
@@ -37,7 +37,7 @@ params:
           kernel_size: 3
           strides: 1
           padding: 0
-      
+
     mlp:
       units: [512]
       activation: elu
@@ -52,7 +52,7 @@ params:
     gamma: 0.999
     tau: 0.95
     learning_rate: 3e-4
-    name: Pong_envpool_001
+    name: Pong_envpool
     score_to_win: 20.0
     grad_norm: 10
     entropy_coef: 0.01

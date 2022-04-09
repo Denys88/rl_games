@@ -278,6 +278,110 @@ class ModelA2CContinuousLogStd(BaseModel):
                 + logstd.sum(dim=-1)
 
 
+class ModelSGDEContinuous(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self, 'a2c')
+        self.network_builder = network
+
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
+            self.a2c_network = a2c_network
+            self.use_expln = False
+            self.learn_features = False
+            self.epsilon= 1e-6
+
+        def get_std(self, log_std: torch.Tensor) -> torch.Tensor:
+            """
+            Get the standard deviation from the learned parameter
+            (log of it by default). This ensures that the std is positive.
+            :param log_std:
+            :return:
+            """
+            if self.use_expln:
+                # From gSDE paper, it allows to keep variance
+                # above zero and prevent it from growing too fast
+                below_threshold = torch.exp(log_std) * (log_std <= 0)
+                # Avoid NaN: zeros values that are below zero
+                safe_log_std = log_std * (log_std > 0) + self.epsilon
+                above_threshold = (torch.log1p(safe_log_std) + 1.0) * (log_std > 0)
+                std = below_threshold + above_threshold
+            else:
+                # Use normal exponential
+                std = torch.exp(log_std)
+
+        def sample_weights(self, log_std: torch.Tensor, batch_size: int = 1) -> None:
+            """
+            Sample weights for the noise exploration matrix,
+            using a centered Gaussian distribution.
+            :param log_std:
+            :param batch_size:
+            """
+            std = self.get_std(log_std)
+            weights_dist = torch.distributions.Normal(torch.zeros_like(std), std)
+            # Reparametrization trick to pass gradients
+            exploration_mat = weights_dist.rsample()
+            # Pre-compute matrices in case of parallel exploration
+            exploration_matrices = weights_dist.rsample((batch_size,))
+            return exploration_mat, exploration_matrices
+
+        def get_noise(self, latent_sde: torch.Tensor, exploration_mat: torch.Tensor, exploration_matrices: torch.Tensor) -> torch.Tensor:
+            latent_sde = latent_sde if self.learn_features else latent_sde.detach()
+
+            # Default case: only one exploration matrix
+            if len(latent_sde) == 1 or len(latent_sde) != len(self.exploration_matrices):
+                return torch.mm(latent_sde, self.exploration_mat)
+            # Use batch matrix multiplication for efficient computation
+            # (batch_size, n_features) -> (batch_size, 1, n_features)
+            latent_sde = latent_sde.unsqueeze(1)
+            # (batch_size, 1, n_actions)
+            noise = torch.bmm(latent_sde, self.exploration_matrices)
+            return noise.squeeze(1)
+
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def forward(self, input_dict):
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+            mu, logstd, value, states = self.a2c_network(input_dict)
+            sigma = self.get_std(logstd)
+            variance = torch.mm(latent_sde ** 2, sigma ** 2)
+            distr = Normal(mean_actions, torch.sqrt(variance + self.epsilon))
+            if is_train:
+                entropy = distr.entropy().sum(dim=-1)
+                prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
+                result = {
+                    'prev_neglogp': torch.squeeze(prev_neglogp),
+                    'values': value,
+                    'entropy': entropy,
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
+                }
+                return result
+            else:
+                selected_action = distr.sample()
+                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
+                result = {
+                    'neglogpacs': torch.squeeze(neglogp),
+                    'values': self.unnorm_value(value),
+                    'actions': selected_action,
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
+                }
+                return result
+
+        def neglogp(self, x, mean, std, logstd):
+            return 0.5 * (((x - mean) / std) ** 2).sum(dim=-1) \
+                   + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
+                   + logstd.sum(dim=-1)
+
 class ModelCentralValue(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
