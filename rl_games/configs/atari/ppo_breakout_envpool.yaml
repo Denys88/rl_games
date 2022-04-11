@@ -49,7 +49,7 @@ params:
     normalize_advantage: True
     gamma: 0.999
     tau: 0.95
-    learning_rate: 5e-4
+    learning_rate: 8e-4
     name: breakout_ppo
     score_to_win: 900
     grad_norm: 10
@@ -62,7 +62,7 @@ params:
     num_actors: 16
     horizon_length: 256
     minibatch_size: 512
-    mini_epochs: 3
+    mini_epochs: 2
     critic_coef: 1
     lr_schedule:  None
     kl_threshold: 0.01
@@ -71,7 +71,7 @@ params:
     normalize_value: True
     normalize_input: False
     max_epochs: 3000
-
+    use_diagnostics: True
     env_config:
       env_name: 'Breakout-v5'
       episodic_life: True
