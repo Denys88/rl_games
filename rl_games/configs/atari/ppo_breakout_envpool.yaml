@@ -59,10 +59,10 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: False
-    num_actors: 16
-    horizon_length: 256
-    minibatch_size: 512
-    mini_epochs: 3
+    num_actors: 48
+    horizon_length: 128
+    minibatch_size: 768
+    mini_epochs: 2
     critic_coef: 1
     lr_schedule:  adaptive
     kl_threshold: 0.01
