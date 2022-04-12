@@ -69,7 +69,7 @@ params:
     #lr_schedule:  linear
     #schedule_entropy: True
     normalize_value: True
-    normalize_input: True
+    normalize_input: False
     max_epochs: 3000
 
     env_config:
