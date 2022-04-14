@@ -74,8 +74,8 @@ params:
 
     env_config:
       env_name: 'Breakout-v5'
-      episode_life: False
-
+      episodic_life: True
+      has_lives: True
     player:
       render: False
       games_num: 200
