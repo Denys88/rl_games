@@ -16,9 +16,7 @@ params:
       activation: relu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
-      regularizer:
-        name: 'None'
+        gain: 1.4142
       convs:    
         - filters: 32
           kernel_size: 8
@@ -69,17 +67,19 @@ params:
     normalize_input: False
     seq_length: 8
     use_diagnostics: True
+    normalize_value: True
     #lr_schedule:  adaptive
     # kl_threshold: 0.008
     # bounds_loss_coef: 0.5
     # max_epochs: 5000
 
     env_config:
-      skip: 3
+      skip: 4
       name: 'SpaceInvadersNoFrameskip-v4'
+      episode_life: False
 
     player:
         render: True
         games_num: 10
-        n_game_life: 3
+        n_game_life: 1
         determenistic: True
