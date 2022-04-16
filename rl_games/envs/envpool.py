@@ -34,6 +34,9 @@ class Envpool(IVecEnv):
             all_lives_exhausted = infos["lives"] == 0
             self.scores *= 1 - all_lives_exhausted
         else:
+            # removing lives otherwise default observer will use them
+            if 'lives' in infos:
+                del infos['lives']
             self.scores *= 1 - dones
 
     def step(self, action):
