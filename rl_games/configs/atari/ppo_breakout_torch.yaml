@@ -67,7 +67,7 @@ params:
     kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
-    normalize_value: False
+    normalize_value: True
     normalize_input: False
     max_epochs: 3000
     env_config:

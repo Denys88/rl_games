@@ -77,8 +77,7 @@ params:
 
     env_config:
       env_name: 'Pong-v5'
-      episode_life: True
-
+      has_lives: True
     player:
       render: False
       games_num: 100
