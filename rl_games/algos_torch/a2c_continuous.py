@@ -94,7 +94,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         obs_batch = self._preproc_obs(obs_batch)
 
         lr_mul = 1.0
-        curr_e_clip = self.e_clip
+        curr_e_clip = self.e_clip.item()
 
         batch_dict = {
             'is_train': True,
