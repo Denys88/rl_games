@@ -22,7 +22,12 @@ class TcnnNet(nn.Module):
         obs = obs['obs']
         mu_val = self.model(obs)
         mu, value = torch.split(mu_val, [self.actions_num, 1], dim=1)
-        return mu, mu * 0.0 + self.sigma, value, None
+        return {
+            'mu': mu,
+            'sigma': mu * 0 + sigma,
+            'value': value,
+            'states': states
+        }
 
 
 from rl_games.algos_torch.network_builder import NetworkBuilder

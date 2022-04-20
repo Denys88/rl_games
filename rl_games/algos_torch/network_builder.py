@@ -416,21 +416,37 @@ class A2CBuilder(NetworkBuilder):
                 value = self.value_act(self.value(out))
 
                 if self.central_value:
-                    return value, states
+                    return {
+                        'value': value,
+                        'states': states
+                    }
 
                 if self.is_discrete:
                     logits = self.logits(out)
-                    return logits, value, states
+                    return {
+                        'logits': logits,
+                        'value': value,
+                        'states': states
+                    }
                 if self.is_multi_discrete:
                     logits = [logit(out) for logit in self.logits]
-                    return logits, value, states
+                    return {
+                        'logits': logits,
+                        'value': value,
+                        'states': states
+                    }
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
                     if self.fixed_sigma:
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
-                    return mu, mu*0 + sigma, value, states
+                    return {
+                        'mu': mu,
+                        'sigma': mu * 0 + sigma,
+                        'value': value,
+                        'states': states
+                    }
                     
         def is_separate_critic(self):
             return self.separate
@@ -702,7 +718,12 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_discrete:
                 logits = self.logits(out)
-                return logits, value, states
+                return {
+                    'logits': logits,
+                    'value' : value,
+                    'states' : states
+                }
+
 
             if self.is_continuous:
                 mu = self.mu_act(self.mu(out))
@@ -710,7 +731,13 @@ class A2CResnetBuilder(NetworkBuilder):
                     sigma = self.sigma_act(self.sigma)
                 else:
                     sigma = self.sigma_act(self.sigma(out))
-                return mu, mu*0 + sigma, value, states
+                return {
+                    'mu' : mu,
+                    'sigma' : mu * 0 + sigma,
+                    'value' : value,
+                    'states' : states
+                }
+
 
         def load(self, params):
             self.separate = params['separate']

@@ -59,7 +59,11 @@ class OutBlock(nn.Module):
         p = F.relu(self.bn1(self.conv1(s))) # policy head
         p = p.view(-1, 6*7*32)
         p = self.fc(p)
-        return p, v, None
+        return {
+            'logits': p,
+            'value': v,
+            'states': None
+        }
 
 class ConnectNet(nn.Module):
     def __init__(self, blocks):

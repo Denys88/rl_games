@@ -34,8 +34,16 @@ class TestNet(nn.Module):
         action = self.mean_linear(x)
         value = self.value_linear(x)
         if self.central_value:
-            return value, None
-        return action, value, None
+            return {
+                'value': v,
+                'states': None
+            }
+
+        return {
+            'logits': action,
+            'value': v,
+            'states': None
+        }
 
 
 from rl_games.algos_torch.network_builder import NetworkBuilder
