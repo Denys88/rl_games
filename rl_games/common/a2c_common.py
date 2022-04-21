@@ -144,7 +144,7 @@ class A2CBase(BaseAlgorithm):
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
-        self.e_clip = nn.Parameter(torch.tensor(config['e_clip'], requires_grad=True, dtype=torch.float32, device= self.ppo_device), requires_grad=True)
+        self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
@@ -281,7 +281,7 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
-        self.writer.add_scalar('info/e_clip', self.e_clip.item() * lr_mul, frame)
+        self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
