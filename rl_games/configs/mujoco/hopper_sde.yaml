@@ -3,7 +3,7 @@ params:
     name: a2c_continuous
 
   model:
-    name: continuous_a2c_logstd
+    name: continuous_a2c_sde
 
   network:
     name: actor_critic
@@ -16,7 +16,7 @@ params:
           name: default
         sigma_init:
           name: const_initializer
-          val: 0
+          val: -2
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
@@ -31,7 +31,7 @@ params:
       tau: 0.95
 
       learning_rate: 3e-4
-      name: Walker2d-v2
+      name: Hopper-v2_sde
       score_to_win: 10000
 
       grad_norm: 0.5
@@ -54,10 +54,13 @@ params:
       value_bootstrap: True
       bounds_loss_coef: 0.000
       max_epochs: 1000
+      use_sde: True
+      sde_frequency: 4
       env_config:
-        name: Walker2d-v2
+        name: Hopper-v2
         seed: 5
         #flat_observation: True
 
       player:
-        render: True
+        render: False
+        determenistic: True

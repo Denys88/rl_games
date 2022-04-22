@@ -300,7 +300,7 @@ class ModelSGDEContinuous(BaseModel):
             self.learn_features = False
             self.epsilon= 1e-6
             self.full_std = True
-            log_std = torch.ones(self.a2c_network.latent_size, self.a2c_network.actions_num) if self.full_std else torch.ones(self.latent_sde_dim, 1)
+            log_std = torch.ones(self.a2c_network.latent_size, self.a2c_network.actions_num) if self.full_std else torch.ones(self.a2c_network.latent_size, 1)
             self.log_std = nn.Parameter(log_std, requires_grad=True)
             self.a2c_network.sigma_init(self.log_std)
 
@@ -361,12 +361,11 @@ class ModelSGDEContinuous(BaseModel):
 
             out_dict = self.a2c_network(input_dict)
             mu = out_dict['mu']
-            logstd = self.log_std
             value = out_dict['value']
             states = out_dict['states']
             latent_sde = out_dict['latent']
-
-            sigma = self.get_std(logstd)
+            latent_sde = latent_sde if self.learn_features else latent_sde.detach()
+            sigma = self.get_std(self.log_std)
             variance = torch.mm(latent_sde ** 2, sigma ** 2)
             noise_sigma = torch.sqrt(variance + self.epsilon)
             distr = torch.distributions.Normal(mu, noise_sigma)

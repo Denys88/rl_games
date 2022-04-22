@@ -53,7 +53,7 @@ params:
       normalize_value: True
       value_bootstrap: True
       bounds_loss_coef: 0.000
-
+      max_epochs: 1000
       env_config:
         name: Hopper-v2
         seed: 5
