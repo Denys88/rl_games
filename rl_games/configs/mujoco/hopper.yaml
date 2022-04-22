@@ -47,7 +47,7 @@ params:
       mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
-      kl_threshold: 0.008
+      kl_threshold: 0.016
       schedule_type: 'standard'
       normalize_input: True
       normalize_value: True
