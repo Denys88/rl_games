@@ -61,8 +61,8 @@ params:
     ppo: true
     e_clip: 0.2
     clip_value: False
-    num_actors: 24
-    horizon_length: 256
+    num_actors: 48
+    horizon_length: 128
     minibatch_size: 768
     mini_epochs: 3
     critic_coef: 1
@@ -77,8 +77,7 @@ params:
 
     env_config:
       env_name: 'Pong-v5'
-      episode_life: True
-
+      has_lives: True
     player:
       render: False
       games_num: 100
