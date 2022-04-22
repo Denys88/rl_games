@@ -177,7 +177,7 @@ class A2CBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num')
+            self.actions_num = actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.value_size = kwargs.pop('value_size', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
@@ -244,7 +244,7 @@ class A2CBuilder(NetworkBuilder):
             self.actor_mlp = self._build_mlp(**mlp_args)
             if self.separate:
                 self.critic_mlp = self._build_mlp(**mlp_args)
-
+            self.latent_size = out_size
             self.value = torch.nn.Linear(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
 
@@ -260,7 +260,7 @@ class A2CBuilder(NetworkBuilder):
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
-                sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
+                self.sigma_init = sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
@@ -376,7 +376,13 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
 
-                    return mu, sigma, value, states
+                    return {
+                        'mu': mu,
+                        'sigma': mu * 0 + sigma,
+                        'value': value,
+                        'latent' : a_out,
+                        'states': states
+                    }
             else:
                 out = obs
                 out = self.actor_cnn(out)
@@ -445,6 +451,7 @@ class A2CBuilder(NetworkBuilder):
                         'mu': mu,
                         'sigma': mu * 0 + sigma,
                         'value': value,
+                        'latent' : out,
                         'states': states
                     }
                     

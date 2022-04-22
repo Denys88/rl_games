@@ -254,6 +254,10 @@ class A2CBase(BaseAlgorithm):
         # soft augmentation not yet supported
         assert not self.has_soft_aug
 
+        self.use_sde = config.get('use_sde', False)
+        if self.use_sde:
+            self.sde_frequency = config.get('sde_frequency', self.horizon_length)
+
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
@@ -596,6 +600,9 @@ class A2CBase(BaseAlgorithm):
         step_time = 0.0
 
         for n in range(self.horizon_length):
+            if self.use_sde:
+                if n % self.sde_frequency == 0:
+                    self.model.update_exploration_mat(self.num_actors * self.num_agents)
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -659,6 +666,9 @@ class A2CBase(BaseAlgorithm):
         step_time = 0.0
 
         for n in range(self.horizon_length):
+            if self.use_sde:
+                if n % self.sde_frequency == 0:
+                    self.model.update_exploration_mat(self.num_actors * self.num_agents)
             if n % self.seq_len == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
                     mb_s[n // self.seq_len,:,:,:] = s

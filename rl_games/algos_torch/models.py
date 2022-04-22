@@ -78,7 +78,10 @@ class ModelA2C(BaseModel):
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            logits, value, states = self.a2c_network(input_dict)
+            out_dict = self.a2c_network(input_dict)
+            logits = out_dict['logits']
+            value = out_dict['value']
+            states = out_dict['states']
             categorical = CategoricalMasked(logits=logits, masks=action_masks)
             if is_train:
                 prev_neglogp = -categorical.log_prob(prev_actions)
@@ -129,7 +132,10 @@ class ModelA2CMultiDiscrete(BaseModel):
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            logits, value, states = self.a2c_network(input_dict)
+            out_dict = self.a2c_network(input_dict)
+            logits = out_dict['logits']
+            value = out_dict['value']
+            states = out_dict['states']
             if action_masks is None:
                 categorical = [Categorical(logits=logit) for logit in logits]
             else:
@@ -188,7 +194,12 @@ class ModelA2CContinuous(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, sigma, value, states = self.a2c_network(input_dict)
+            out_dict = self.a2c_network(input_dict)
+            mu = out_dict['mu']
+            sigma = out_dict['sigma']
+            value = out_dict['value']
+            states = out_dict['states']
+
             distr = torch.distributions.Normal(mu, sigma)
 
             if is_train:
@@ -238,7 +249,11 @@ class ModelA2CContinuousLogStd(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, logstd, value, states = self.a2c_network(input_dict)
+            out_dict = self.a2c_network(input_dict)
+            mu = out_dict['mu']
+            logstd = out_dict['sigma']
+            value = out_dict['value']
+            states = out_dict['states']
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
             if is_train:
@@ -284,6 +299,13 @@ class ModelSGDEContinuous(BaseModel):
             self.use_expln = False
             self.learn_features = False
             self.epsilon= 1e-6
+            self.full_std = True
+            log_std = torch.ones(self.a2c_network.latent_size, self.a2c_network.actions_num) if self.full_std else torch.ones(self.latent_sde_dim, 1)
+            self.log_std = nn.Parameter(log_std, requires_grad=True)
+            self.a2c_network.sigma_init(self.log_std)
+
+        def update_exploration_mat(self, batch_size):
+            self.exploration_mat = self.sample_weights(self.get_std(self.log_std), batch_size)
 
         def get_std(self, log_std: torch.Tensor) -> torch.Tensor:
             """
@@ -303,33 +325,27 @@ class ModelSGDEContinuous(BaseModel):
             else:
                 # Use normal exponential
                 std = torch.exp(log_std)
+            return std
 
-        def sample_weights(self, log_std: torch.Tensor, batch_size: int = 1) -> None:
+        def sample_weights(self, std: torch.Tensor, batch_size: int) -> None:
             """
             Sample weights for the noise exploration matrix,
             using a centered Gaussian distribution.
             :param log_std:
             :param batch_size:
             """
-            std = self.get_std(log_std)
             weights_dist = torch.distributions.Normal(torch.zeros_like(std), std)
-            # Reparametrization trick to pass gradients
-            exploration_mat = weights_dist.rsample()
             # Pre-compute matrices in case of parallel exploration
             exploration_matrices = weights_dist.rsample((batch_size,))
-            return exploration_mat, exploration_matrices
+            return exploration_matrices
 
-        def get_noise(self, latent_sde: torch.Tensor, exploration_mat: torch.Tensor, exploration_matrices: torch.Tensor) -> torch.Tensor:
+        def get_noise(self, latent_sde: torch.Tensor, exploration_matrices: torch.Tensor) -> torch.Tensor:
             latent_sde = latent_sde if self.learn_features else latent_sde.detach()
-
-            # Default case: only one exploration matrix
-            if len(latent_sde) == 1 or len(latent_sde) != len(self.exploration_matrices):
-                return torch.mm(latent_sde, self.exploration_mat)
             # Use batch matrix multiplication for efficient computation
             # (batch_size, n_features) -> (batch_size, 1, n_features)
             latent_sde = latent_sde.unsqueeze(1)
             # (batch_size, 1, n_actions)
-            noise = torch.bmm(latent_sde, self.exploration_matrices)
+            noise = torch.bmm(latent_sde, exploration_matrices)
             return noise.squeeze(1)
 
         def is_rnn(self):
@@ -342,39 +358,43 @@ class ModelSGDEContinuous(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, logstd, value, states = self.a2c_network(input_dict)
+
+            out_dict = self.a2c_network(input_dict)
+            mu = out_dict['mu']
+            logstd = self.log_std
+            value = out_dict['value']
+            states = out_dict['states']
+            latent_sde = out_dict['latent']
+
             sigma = self.get_std(logstd)
             variance = torch.mm(latent_sde ** 2, sigma ** 2)
-            distr = Normal(mean_actions, torch.sqrt(variance + self.epsilon))
+            noise_sigma = torch.sqrt(variance + self.epsilon)
+            distr = torch.distributions.Normal(mu, noise_sigma)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
-                prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
+                prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
                 result = {
                     'prev_neglogp': torch.squeeze(prev_neglogp),
                     'values': value,
                     'entropy': entropy,
                     'rnn_states': states,
                     'mus': mu,
-                    'sigmas': sigma
+                    'sigmas': noise_sigma
                 }
                 return result
             else:
-                selected_action = distr.sample()
-                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
+                noise = self.get_noise(latent_sde, self.exploration_mat)
+                selected_action = mu + noise
+                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
                 result = {
                     'neglogpacs': torch.squeeze(neglogp),
                     'values': self.unnorm_value(value),
                     'actions': selected_action,
                     'rnn_states': states,
                     'mus': mu,
-                    'sigmas': sigma
+                    'sigmas': noise_sigma
                 }
                 return result
-
-        def neglogp(self, x, mean, std, logstd):
-            return 0.5 * (((x - mean) / std) ** 2).sum(dim=-1) \
-                   + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
-                   + logstd.sum(dim=-1)
 
 class ModelCentralValue(BaseModel):
     def __init__(self, network):
