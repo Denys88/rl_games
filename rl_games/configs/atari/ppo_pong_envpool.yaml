@@ -72,12 +72,12 @@ params:
     #update_norm_in_train: True
     normalize_value: True 
     normalize_input: True
-    max_epochs: 1500
+    max_epochs: 500
     use_diagnostics: True
 
     env_config:
       env_name: 'Pong-v5'
-      has_lives: True
+      has_lives: False
     player:
       render: False
       games_num: 100
