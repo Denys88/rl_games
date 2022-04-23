@@ -5,11 +5,11 @@
 
 ## Results:  
 * **Humanoid-v3**
-![Ant](pictures/mujoco/humanoid.jpg)  
+![Humanoid](pictures/mujoco/humanoid.jpg)  
 * **HalfCheetah-v3**
-![Humanoid](pictures/mujoco/half_cheetah.jpg)  
+![HalfCheetah](pictures/mujoco/half_cheetah.jpg)  
 * **Hopper-v3**  
-![Humanoid](pictures/mujoco/hopper.jpg)
+![Hopper](pictures/mujoco/hopper.jpg)
 * **Walker-v3**  
-![Humanoid](pictures/mujoco/walker.jpg) 
+![Walker](pictures/mujoco/walker.jpg) 
 

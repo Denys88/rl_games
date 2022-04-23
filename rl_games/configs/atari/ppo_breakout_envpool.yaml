@@ -70,7 +70,7 @@ params:
     #schedule_entropy: True
     normalize_value: True
     normalize_input: False
-    max_epochs: 3000
+    max_epochs: 1800
 
     env_config:
       env_name: 'Breakout-v5'
