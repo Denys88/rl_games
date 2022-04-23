@@ -20,7 +20,7 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-  [MUJOCO](docs/MUJOCO.md) 
+* [MUJOCO](docs/MUJOCO.md) 
 * [Random Envs](docs/OTHER.md)  
 
 
