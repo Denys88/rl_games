@@ -1,7 +1,7 @@
-# Mujoco (https://github.com/deepmind/mujoco)  
+# Atari with Envpool (https://envpool.readthedocs.io/en/latest/)  
 
 ## How to run:  
-* **Humanoid** ```python runner.py --train --file rl_games/configs/mujoco/humanoid.yaml```
+* **Pong** ```python runner.py --train --file rl_games/configs/atari/ppo_pong_envpool.yaml```
 
 ## Results:  
 * **Pong-v5** 2 minutes training time to achieve 20+ score.

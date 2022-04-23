@@ -21,6 +21,7 @@
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
 * [MUJOCO](docs/MUJOCO.md) 
+* [ATARI ENVPOOL](docs/ATARI_ENVPOOL.md) 
 * [Random Envs](docs/OTHER.md)  
 
 
