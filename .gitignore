@@ -112,3 +112,5 @@ venv.bak/
 
 # pycharm
 /.idea
+
+MUJOCO_LOG.TXT
