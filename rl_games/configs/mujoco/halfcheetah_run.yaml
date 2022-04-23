@@ -48,19 +48,19 @@ params:
       mini_epochs: 4
       critic_coef: 1
       lr_schedule:  adaptive
-      kl_threshold: 0.016
+      kl_threshold: 0.008
       schedule_type: 'standard'
       normalize_input: True
       normalize_value: True
       value_bootstrap: True
       bounds_loss_coef: 0.000
-      max_epochs: 1000
+      max_epochs: 5000
       env_config:
-        name: HalfCheetah-v2
+        name: HalfCheetah-v3
         seed: 5
         #flat_observation: True
 
       player:
-        render: False
+        render: True
         deterministic: True
         games_num: 100
