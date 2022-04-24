@@ -1,5 +1,8 @@
 # RL Games: High performance RL library  
 
+## Discord Channel Link 
+* https://discord.gg/hnYRq7DsQh
+
 ## Papers and related links
 
 * Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
@@ -209,11 +212,18 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.4.0
+* Added discord channel https://discord.gg/hnYRq7DsQh :)
+* Added envpool support with a few atari examples. Works 3-4x time faster than ray.
+* Added mujoco results. Much better than openai spinning up ppo results.
+* Added tcnn(https://github.com/NVlabs/tiny-cuda-nn) support. Reduces 5-10% of training time in the IsaacGym envs. 
+* Various fixes and improvements.
+
+
 1.3.2
 * Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
 
 1.3.1
-
 * Fixed SAC not working
 
 1.3.0
