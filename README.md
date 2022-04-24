@@ -55,6 +55,8 @@ Then:
 
 To run Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
+To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
+
 
 # Training
 **NVIDIA Isaac Gym**

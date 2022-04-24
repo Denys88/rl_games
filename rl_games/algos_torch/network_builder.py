@@ -1,7 +1,6 @@
 from rl_games.common import object_factory
 from rl_games.algos_torch import torch_ext
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,6 +11,7 @@ import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
+
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
