@@ -14,8 +14,7 @@ class Envpool(IVecEnv):
                                  env_type=kwargs.pop('env_type', 'gym'),
                                  num_envs=num_actors,
                                  batch_size=self.batch_size,
-                                 episodic_life=kwargs.pop('episodic_life', True),
-                                 reward_clip=kwargs.pop('reward_clip', False) # thread_affinity=False,
+                                 **kwargs
                                 )
 
         self.observation_space = self.env.observation_space
@@ -26,6 +25,8 @@ class Envpool(IVecEnv):
 
     def _set_scores(self, infos, dones):
         # thanks to cleanrl: https://github.com/vwxyzjn/cleanrl/blob/3d20d11f45a5f1d764934e9851b816d0b03d2d10/cleanrl/ppo_atari_envpool.py#L111
+        if 'reward' not in infos:
+            return
         self.scores += infos["reward"]
         self.returned_scores[:] = self.scores
         infos["scores"] = self.returned_scores
