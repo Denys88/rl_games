@@ -55,6 +55,7 @@ params:
       value_bootstrap: True
       bounds_loss_coef: 0.000
       max_epochs: 5000
+      use_diagnostics: True
       env_config:
         env_name: Humanoid-v4
         seed: 5

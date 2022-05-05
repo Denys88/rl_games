@@ -8,7 +8,7 @@ from rl_games.algos_torch.torch_ext import CategoricalMasked
 from torch.distributions import Categorical
 from rl_games.algos_torch.sac_helper import SquashedNormal
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
-
+from rl_games.common.layers.pop_art import PopArt
 
 class BaseModel():
     def __init__(self, model_class):
@@ -29,15 +29,18 @@ class BaseModel():
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
 class BaseModelNetwork(nn.Module):
-    def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
+    def __init__(self, network, obs_shape, normalize_value, normalize_input, value_size):
         nn.Module.__init__(self)
+        self.network = network
         self.obs_shape = obs_shape
         self.normalize_value = normalize_value
         self.normalize_input = normalize_input
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,))
+            self.value_mean_std = PopArt(self.network.value)
+            #self.value_mean_std = RunningMeanStd((self.value_size,))
+
         if normalize_input:
             if isinstance(obs_shape, dict):
                 self.running_mean_std = RunningMeanStdObs(obs_shape)
@@ -59,14 +62,14 @@ class ModelA2C(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self,**kwargs)
-            self.a2c_network = a2c_network
+            BaseModelNetwork.__init__(self,a2c_network, **kwargs)
+
 
         def is_rnn(self):
-            return self.a2c_network.is_rnn()
+            return self.network.is_rnn()
         
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()            
+            return self.network.get_default_rnn_state()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -78,7 +81,7 @@ class ModelA2C(BaseModel):
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            logits, value, states = self.a2c_network(input_dict)
+            logits, value, states = self.network(input_dict)
 
             if is_train:
                 categorical = CategoricalMasked(logits=logits, masks=action_masks)
@@ -112,14 +115,14 @@ class ModelA2CMultiDiscrete(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
+            BaseModelNetwork.__init__(self, a2c_network, **kwargs)
+
 
         def is_rnn(self):
-            return self.a2c_network.is_rnn()
+            return self.network.is_rnn()
         
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.network.get_default_rnn_state()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -131,7 +134,7 @@ class ModelA2CMultiDiscrete(BaseModel):
             action_masks = input_dict.get('action_masks', None)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            logits, value, states = self.a2c_network(input_dict)
+            logits, value, states = self.network(input_dict)
             if is_train:
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
@@ -176,14 +179,14 @@ class ModelA2CContinuous(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
+            BaseModelNetwork.__init__(self,a2c_network, **kwargs)
+
 
         def is_rnn(self):
-            return self.a2c_network.is_rnn()
+            return self.network.is_rnn()
             
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.network.get_default_rnn_state()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['mu'], p_dict['sigma']
@@ -194,7 +197,7 @@ class ModelA2CContinuous(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, sigma, value, states = self.a2c_network(input_dict)
+            mu, sigma, value, states = self.network(input_dict)
             distr = torch.distributions.Normal(mu, sigma)
 
             if is_train:
@@ -231,20 +234,20 @@ class ModelA2CContinuousLogStd(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
+            BaseModelNetwork.__init__(self,a2c_network, **kwargs)
+
 
         def is_rnn(self):
-            return self.a2c_network.is_rnn()
+            return self.network.is_rnn()
             
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.network.get_default_rnn_state()
 
         def forward(self, input_dict):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, logstd, value, states = self.a2c_network(input_dict)
+            mu, logstd, value, states = self.network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma)
             if is_train:
@@ -285,14 +288,14 @@ class ModelCentralValue(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
+            BaseModelNetwork.__init__(self,a2c_network, **kwargs)
+
 
         def is_rnn(self):
-            return self.a2c_network.is_rnn()
+            return self.network.is_rnn()
 
         def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
+            return self.network.get_default_rnn_state()
 
         def kl(self, p_dict, q_dict):
             return None # or throw exception?
@@ -301,7 +304,7 @@ class ModelCentralValue(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            value, states = self.a2c_network(input_dict)
+            value, states = self.network(input_dict)
             if not is_train:
                 value = self.unnorm_value(value)
 
@@ -321,8 +324,8 @@ class ModelSACContinuous(BaseModel):
     
     class Network(BaseModelNetwork):
         def __init__(self, sac_network,**kwargs):
-            BaseModelNetwork.__init__(self,**kwargs)
-            self.sac_network = sac_network
+            BaseModelNetwork.__init__(self,a2c_network, **kwargs)
+
 
         def critic(self, obs, action):
             return self.sac_network.critic(obs, action)
@@ -338,7 +341,7 @@ class ModelSACContinuous(BaseModel):
 
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
-            mu, sigma = self.sac_network(input_dict)
+            mu, sigma = self.network(input_dict)
             dist = SquashedNormal(mu, sigma)
             return dist
 
