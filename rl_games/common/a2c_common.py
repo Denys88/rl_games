@@ -818,8 +818,6 @@ class DiscreteA2CBase(A2CBase):
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -1069,9 +1067,6 @@ class ContinuousA2CBase(A2CBase):
                 av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
             self.update_lr(self.last_lr)
-
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
