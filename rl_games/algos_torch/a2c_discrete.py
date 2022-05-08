@@ -5,8 +5,6 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-from rl_games.algos_torch import ppg_aux
-from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch 
@@ -30,8 +28,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
-        if self.ewma_ppo:
-            self.ewma_model = EwmaModel(self.model,ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
@@ -60,9 +56,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.use_experimental_cv = self.config.get('use_experimental_cv', False)        
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
 
-        if 'phasic_policy_gradients' in self.config:
-            self.has_phasic_policy_gradients = True
-            self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
@@ -147,13 +140,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
-            if self.ewma_ppo:
-                ewma_dict = self.ewma_model(batch_dict)
-                proxy_neglogp = ewma_dict['prev_neglogp']
-                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
-                old_action_log_probs_batch = proxy_neglogp # to get right statistic later
-            else:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -172,22 +159,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
-        if self.truncate_grads:
-            if self.multi_gpu:
-                self.optimizer.synchronize()
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                with self.optimizer.skip_synchronize():
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-            else:
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()    
-        else:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        self.trancate_gradients()
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
@@ -195,11 +167,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
-        if self.has_phasic_policy_gradients:
-            c_loss = self.ppg_aux_loss.train_value(self,input_dict)
-
-        if self.ewma_ppo:
-            self.ewma_model.update()
 
         self.diagnostics.mini_batch(self,
         {
@@ -210,4 +177,5 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'masks' : rnn_masks
         }, curr_e_clip, 0) 
 
-        self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
+        self.train_result = (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
+
