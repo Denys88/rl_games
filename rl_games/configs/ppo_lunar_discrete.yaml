@@ -28,7 +28,7 @@ params:
     gamma: 0.99
     tau: 0.9
     learning_rate: 8e-4
-    name: LunarLander-discrete-ewma
+    name: LunarLander-discrete
     score_to_win: 500
     grad_norm: 1.0
     entropy_coef: 0.01
@@ -48,4 +48,3 @@ params:
     device: 'cuda'
     multi_gpu: False
     use_diagnostics: True
-    ewma_ppo: True
