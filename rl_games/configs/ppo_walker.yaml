@@ -58,7 +58,6 @@ params:
       max_epochs: 10000
       normalize_value: True
       use_diagnostics: True
-      ewma_ppo: False
       value_bootstrap: True
       #weight_decay: 0.0001
       use_smooth_clamp: True
