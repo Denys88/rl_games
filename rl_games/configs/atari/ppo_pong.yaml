@@ -6,8 +6,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: path
+
 
   network:
     name: actor_critic

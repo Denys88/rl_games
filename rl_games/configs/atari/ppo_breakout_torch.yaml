@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 
+
 
   network:
     name: actor_critic
@@ -68,16 +67,16 @@ params:
     kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
-    normalize_value: False
+    normalize_value: True
     normalize_input: False
     max_epochs: 3000
     env_config:
       skip: 4
       name: 'BreakoutNoFrameskip-v4'
       episode_life: True
-
+      seed: 5
     player:
-      render: True
+      render: False
       games_num: 200
       n_game_life: 5
-      determenistic: True
+      determenistic: False

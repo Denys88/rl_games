@@ -1,0 +1,65 @@
+params:  
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+          scale: 0.02
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 128, 64]
+      activation: elu
+      initializer:
+        name: default
+      regularizer:
+        name:  'None' #'l2_regularizer'
+        #scale: 0.001
+
+  config:
+      reward_shaper:
+        scale_value: 0.1
+      normalize_advantage: True
+      gamma: 0.99
+      tau: 0.9
+
+      learning_rate: 3e-4
+      name: dm_walker_walk
+      score_to_win: 950
+
+      grad_norm: 0.5
+      entropy_coef: 0.0
+      truncate_grads: True
+      env_name:  dm_control
+      ppo: true
+      e_clip: 0.2
+      clip_value: True
+      num_actors: 16
+      horizon_length: 1024
+      minibatch_size: 4096
+      mini_epochs: 4
+      critic_coef: 1
+      lr_schedule:  adaptive
+      schedule_type: 'standard'
+      kl_threshold: 0.008
+      value_bootstrap: True
+      normalize_input: True
+      normalize_value: True
+      bounds_loss_coef: 0.001
+
+      env_config:
+        name: WalkerWalk-v0
+        flat_observation: True
+      

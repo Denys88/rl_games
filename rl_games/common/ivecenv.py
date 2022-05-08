@@ -14,6 +14,9 @@ class IVecEnv:
     def get_env_info(self):
         pass
 
+    def seed(self, seed):
+        pass
+
     def set_train_info(self, env_frames, *args, **kwargs):
         """
         Send the information in the direction algo->environment.

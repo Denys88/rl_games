@@ -28,9 +28,6 @@ params:
         name:  'None' #'l2_regularizer'
         #scale: 0.001
 
-  load_checkpoint: False
-  load_path: path
-
   config:
       reward_shaper:
         scale_value: 1.0

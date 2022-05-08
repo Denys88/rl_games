@@ -27,15 +27,36 @@ class HorovodWrapper:
         self.sync_stats(algo)
 
         if algo.has_central_value:
+            hvd.broadcast_parameters(algo.central_value_net.model.state_dict(), root_rank=0)
             hvd.broadcast_optimizer_state(algo.central_value_net.optimizer, root_rank=0)
-            hvd.broadcast_parameters(algo.central_value_net.state_dict(), root_rank=0)
+
             algo.central_value_net.optimizer = hvd.DistributedOptimizer(algo.central_value_net.optimizer, named_parameters=algo.central_value_net.model.named_parameters())
 
+    # allreduce doesn't work in expected way. need to fix it in the future
+    def sync_recursive(self, values, name):
+        if isinstance(values, torch.Tensor):
+            values.data = hvd.allreduce(values, name=name)
+        else:
+            for k, v in values.items():
+                self.sync_recursive(v, name+'/'+k)
+
     def sync_stats(self, algo):
-        stats_dict = algo.get_stats_weights()
-        for k,v in stats_dict.items():
-            for in_k, in_v in v.items():
-                in_v.data = hvd.allreduce(in_v, name=k + in_k)
+        stats_dict = algo.get_stats_weights(model_stats=False)
+        #self.sync_recursive(stats_dict, 'stats')
+        if algo.normalize_input:
+            algo.model.running_mean_std.running_mean = hvd.allreduce(algo.model.running_mean_std.running_mean, 'normalize_input/running_mean')
+            algo.model.running_mean_std.running_var = hvd.allreduce(algo.model.running_mean_std.running_var, 'normalize_input/running_var')
+        if algo.normalize_value:
+            algo.model.value_mean_std.running_mean = hvd.allreduce(algo.model.value_mean_std.running_mean, 'normalize_value/running_mean')
+            algo.model.value_mean_std.running_var = hvd.allreduce(algo.model.value_mean_std.running_var, 'normalize_value/running_var')
+        if algo.has_central_value:
+            cv_net = algo.central_value_net
+            if cv_net.normalize_input:
+                cv_net.model.running_mean_std.running_mean = hvd.allreduce(cv_net.model.running_mean_std.running_mean, 'cval/normalize_input/running_mean')
+                cv_net.model.running_mean_std.running_var = hvd.allreduce(cv_net.model.running_mean_std.running_var, 'cval/normalize_input/running_var')
+            if cv_net.normalize_value:
+                cv_net.model.value_mean_std.running_mean = hvd.allreduce(cv_net.model.value_mean_std.running_mean, 'cval/normalize_value/running_mean')
+                cv_net.model.value_mean_std.running_var = hvd.allreduce(cv_net.model.value_mean_std.running_var, 'cval/normalize_value/running_var')
         algo.curr_frames = hvd.allreduce(torch.tensor(algo.curr_frames), average=False).item()
 
     def broadcast_value(self, val, name):

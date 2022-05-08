@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/pacman_ff.pth'
+
 
   network:
     name: actor_critic
@@ -88,5 +87,5 @@ params:
         render: True
         games_num: 10
         n_game_life: 3
-        determenistic: True
+        determenistic: False
         render_sleep: 0.05

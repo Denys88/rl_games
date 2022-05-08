@@ -3,16 +3,17 @@ import gym
 import numpy as np
 import torch
 from rl_games.common import env_configurations
-
+from rl_games.algos_torch import  model_builder
 
 class BasePlayer(object):
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, params):
+        self.config = config = params['config']
+        self.load_networks(params)
         self.env_name = self.config['env_name']
         self.env_config = self.config.get('env_config', {})
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
-
+        self.seed = self.env_config.pop('seed', None)
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
@@ -46,6 +47,10 @@ class BasePlayer(object):
         self.max_steps = 108000 // 4
         self.device = torch.device(self.device_name)
 
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
+
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
             for k, v in obs_batch.items():
@@ -53,8 +58,6 @@ class BasePlayer(object):
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
-        if self.normalize_input:
-            obs_batch = self.running_mean_std(obs_batch)
         return obs_batch
 
     def env_step(self, env, actions):
@@ -123,14 +126,12 @@ class BasePlayer(object):
     def get_weights(self):
         weights = {}
         weights['model'] = self.model.state_dict()
-        if self.normalize_input:
-            weights['running_mean_std'] = self.running_mean_std.state_dict()
         return weights
 
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
-        if self.normalize_input:
-            self.running_mean_std.load_state_dict(weights['running_mean_std'])
+        if self.normalize_input and 'running_mean_std' in weights:
+            self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
@@ -214,8 +215,7 @@ class BasePlayer(object):
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
-                            s[:, all_done_indices, :] = s[:,
-                                                          all_done_indices, :] * 0.0
+                            s[:, all_done_indices, :] = s[:,all_done_indices, :] * 0.0
 
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()

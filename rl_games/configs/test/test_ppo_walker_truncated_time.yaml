@@ -26,9 +26,6 @@ params:
       initializer:
         name: default
         scale: 2         
-      
-  load_checkpoint: False
-  load_path: './nn/walker_truncated_step_1000.pth'
 
   config:
     name: walker_truncated_step_1000

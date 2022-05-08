@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: path
-
   network:
     name: actor_critic
     separate: True
@@ -51,9 +48,11 @@ params:
     lr_schedule:  None
     kl_threshold: 0.008
     normalize_input: True
+    normalize_value: True
     seq_length: 4
     weight_decay: 0.0000
-
+    multi_gpu: True
+    use_diagnostics: True
     env_config:
       name: TestAsymmetricEnv-v0
       wrapped_env_name: "LunarLander-v2"

@@ -15,8 +15,9 @@ numpy_to_torch_dtype_dict = {
     np.dtype('int32')      : torch.int32,
     np.dtype('int64')      : torch.int64,
     np.dtype('float16')    : torch.float16,
+    np.dtype('float64')    : torch.float32,
     np.dtype('float32')    : torch.float32,
-    np.dtype('float64')    : torch.float64,
+    #np.dtype('float64')    : torch.float64,
     np.dtype('complex64')  : torch.complex64,
     np.dtype('complex128') : torch.complex128,
 }
@@ -38,11 +39,16 @@ def mean_mask(input, mask, sum_mask):
     return (input * rnn_masks).sum() / sum_mask
 
 def shape_whc_to_cwh(shape):
-    #if len(shape) == 2:
-    #    return (shape[1], shape[0])
     if len(shape) == 3:
         return (shape[2], shape[0], shape[1])
     
+    return shape
+
+
+def shape_cwh_to_whc(shape):
+    if len(shape) == 3:
+        return (shape[1], shape[2], shape[0])
+
     return shape
 
 def safe_filesystem_op(func, *args, **kwargs):
@@ -134,6 +140,9 @@ def apply_masks(losses, mask=None):
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
+    if masks is None:
+        return (values - values.mean()) / (values.std() + 1e-8)
+
     values_mean, values_var = get_mean_var_with_masks(values, masks)
     values_std = torch.sqrt(values_var)
     normalized_values = (values - values_mean) / (values_std + 1e-8)
@@ -146,7 +155,6 @@ def get_mean_var_with_masks(values, masks):
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
     values_var = min_sqr * sum_mask / (sum_mask-1)
-
     return values_mean, values_var
 
 def explained_variance(y_pred,y, masks=None):
@@ -158,7 +166,9 @@ def explained_variance(y_pred,y, masks=None):
         ev=1  =>  perfect prediction
         ev<0  =>  worse than just predicting zero
     """
+
     if masks is not None:
+        masks = masks.unsqueeze(1)
         _, var_y = get_mean_var_with_masks(y_pred,masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:

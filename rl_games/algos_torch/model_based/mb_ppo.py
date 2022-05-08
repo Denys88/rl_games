@@ -37,11 +37,6 @@ class MBAgent(a2c_common.ContinuousA2CBase):
                                     weight_decay=self.weight_decay)
         self.env_model_optimizer = optim.Adam(self.env_model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
-        if self.normalize_input:
-            if isinstance(self.observation_space, gym.spaces.Dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
-            else:
-                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
 
         if self.has_central_value:
             cv_config = {
@@ -67,7 +62,17 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                               or (not self.has_central_value)
+
         self.algo_observer.after_init(self)
+
+
+    def init_tensors(self):
+        super().init_tensors()
+        self.experience_buffer.tensor_dict['next_obses'] = torch.zeros_like(self.experience_buffer.tensor_dict['obses'])
+        self.experience_buffer.tensor_dict['rewards'] = torch.zeros_like(self.experience_buffer.tensor_dict['rewards'])
+
+        self.tensor_list += ['next_obses', 'rewards']
+        return
 
     def update_epoch(self):
         self.epoch_num += 1
