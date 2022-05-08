@@ -28,33 +28,7 @@ class EnvModel(torch.nn.Module):
         return self.env_info
 
 
-    def train(self, algo, batch_dict):
-        policy = algo.model
-        model_dict = {
-            'obs': batch_dict['obses'],
-            'action': batch_dict['action'],
-        }
-        model_out = self.model(model_dict)
-        pred_next_obs = model_out['obs']
-        pred_next_rewards = model_out['reward']
 
-        model_policy_dict = {
-            'obs': pred_next_obs,
-        }
-        pred_res_dict = policy(policy_dict)
-
-        pred_values = pred_res_dict['values']
-        pred_mu = pred_res_dict['mus']
-        pred_sigma = pred_res_dict['sigmas']
-
-        with torch.no_grad():
-            policy_dict = {
-                'obs': batch_dict['next_obses'],
-            }
-            res_dict = policy(policy_dict)
-            values = res_dict['values']
-            mu = res_dict['mus']
-            sigma = res_dict['sigmas']
 
 
 

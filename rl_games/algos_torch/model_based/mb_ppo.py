@@ -35,8 +35,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
-        self.env_model_optimizer = optim.Adam(self.env_model.parameters(), float(self.last_lr), eps=1e-08,
-                                    weight_decay=self.weight_decay)
+
 
         if self.has_central_value:
             cv_config = {
@@ -66,13 +65,13 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.algo_observer.after_init(self)
 
 
-    def init_tensors(self):
-        super().init_tensors()
-        self.experience_buffer.tensor_dict['next_obses'] = torch.zeros_like(self.experience_buffer.tensor_dict['obses'])
-        self.experience_buffer.tensor_dict['rewards'] = torch.zeros_like(self.experience_buffer.tensor_dict['rewards'])
 
-        self.tensor_list += ['next_obses', 'rewards']
+    def prepare_dataset(self, batch_dict):
+        super().prepare_dataset(batch_dict)
+        self.dataset.values_dict['next_obses'] = batch_dict['next_obses']
+        self.dataset.values_dict['rewards'] = batch_dict['rewards']
         return
+
 
     def update_epoch(self):
         self.epoch_num += 1
@@ -146,22 +145,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         # TODO: Refactor this ugliest code of they year
-        if self.truncate_grads:
-            if self.multi_gpu:
-                self.optimizer.synchronize()
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                with self.optimizer.skip_synchronize():
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-            else:
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-        else:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        self.trancate_gradients()
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
@@ -197,12 +181,11 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         return b_loss
 
     def init_tensors(self):
-        self.aux_tensor_dict = {
-            'prev_obses' : self.env_info['observation_space'],
-        }
-        A2CBase.init_tensors(self)
-        self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
-        self.tensor_list = self.update_list + ['prev_obses', 'obses', 'states', 'dones']
+        super().init_tensors(self)
+        self.tensor_list += ['next_obses', 'rewards']
+        self.experience_buffer.tensor_dict['next_obses'] = torch.zeros_like(self.experience_buffer.tensor_dict['obses'])
+        self.experience_buffer.tensor_dict['rewards'] = torch.zeros_like(self.experience_buffer.tensor_dict['rewards'])
+
 
     def train_epoch(self):
         super().train_epoch()
@@ -272,7 +255,6 @@ class MBAgent(a2c_common.ContinuousA2CBase):
             else:
                 res_dict = self.get_action_values(self.obs)
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
-            self.experience_buffer.update_data('prev_obses', n, self.obs)
             self.experience_buffer.update_data('dones', n, self.dones)
 
             for k in update_list:
@@ -290,8 +272,8 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
             if self.value_bootstrap and 'time_outs' in infos:
                 shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
-
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
+            self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
 
             self.current_rewards += rewards
             self.current_lengths += 1
