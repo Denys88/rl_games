@@ -1,12 +1,10 @@
 from rl_games.common import a2c_common
 from rl_games.algos_torch import torch_ext
-
+from rl_games.algos_torch.model_based.model_trainer import ModelTrainer
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-from rl_games.algos_torch import ppg_aux
-from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch
@@ -29,6 +27,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
         self.env_model = self.model_network.build(config)
+        self.model_trainer = ModelTrainer(self.env_model, self.last_lr, self.weight_decay, self.minibatch_size, self.mini_epochs_num)
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
@@ -65,6 +64,19 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.algo_observer.after_init(self)
 
 
+
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
+
+        self.config['model_network'] = builder.load(params['model_network'])
+        has_central_value_net = self.config.get('central_value_config') is not  None
+        if has_central_value_net:
+            print('Adding Central Value Network')
+            if 'model' not in params['config']['central_value_config']:
+                params['config']['central_value_config']['model'] = {'name': 'central_value'}
+            network = builder.load(params['config']['central_value_config'])
+            self.config['central_value_config']['network'] = network
 
     def prepare_dataset(self, batch_dict):
         super().prepare_dataset(batch_dict)
@@ -132,16 +144,15 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
             b_loss = self.bound_loss(mu)
             losses, sum_mask = torch_ext.apply_masks(
-                [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+                [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2]
 
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
 
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:
-                for param in self.model.parameters():
-                    param.grad = None
+                self.optimizer.zero_grad(set_to_none=True)
 
         self.scaler.scale(loss).backward()
         # TODO: Refactor this ugliest code of they year
@@ -170,16 +181,6 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.calc_gradients(input_dict)
         return self.train_result
 
-    def bound_loss(self, mu):
-        if self.bounds_loss_coef is not None:
-            soft_bound = 1.1
-            mu_loss_high = torch.clamp_max(mu - soft_bound, 0.0) ** 2
-            mu_loss_low = torch.clamp_max(-mu + soft_bound, 0.0) ** 2
-            b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
-        else:
-            b_loss = 0
-        return b_loss
-
     def init_tensors(self):
         super().init_tensors(self)
         self.tensor_list += ['next_obses', 'rewards']
@@ -188,7 +189,6 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
 
     def train_epoch(self):
-        super().train_epoch()
 
         self.set_eval()
         play_time_start = time.time()
@@ -216,6 +216,8 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         if self.has_central_value:
             self.train_central_value()
+
+        self.model_trainer.train_epoch(self)
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []

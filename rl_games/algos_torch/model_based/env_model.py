@@ -1,7 +1,7 @@
 import torch
 
 
-class EnvModel(torch.nn.Module):
+class ModelEnvironment(torch.nn.Module):
     def __init__(self, model, env_info, has_done=False):
         torch.nn.Module.__init__(self)
         self.model = model
