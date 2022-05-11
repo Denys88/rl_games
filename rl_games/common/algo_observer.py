@@ -79,7 +79,7 @@ class DefaultAlgoObserver(AlgoObserver):
             self.writer.add_scalar('scores/time', mean_scores, total_time)
 
 
-class RlGpuAlgoObserver(AlgoObserver):
+class IsaacAlgoObserver(AlgoObserver):
     """Log statistics from the environment along with the algorithm running stats."""
 
     def __init__(self):
