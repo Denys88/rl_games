@@ -94,14 +94,18 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
 ```bash
 poetry install -E atari
-python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
-python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
 ```
 
 *Brax Ant*
 
-```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```
-```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth```
+```bash
+poetry install -E brax
+poetry run pip install --upgrade "jax[cuda]==0.3.13" -f https://storage.googleapis.com/jax-releases/jax_releases.html
+poetry run python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
+poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
+```
 
 
 # Config Parameters

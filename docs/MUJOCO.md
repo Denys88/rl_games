@@ -1,7 +1,12 @@
 # Mujoco (https://github.com/deepmind/mujoco)  
 
 ## How to run:  
-* **Humanoid** ```python runner.py --train --file rl_games/configs/mujoco/humanoid.yaml```
+* **Humanoid** 
+
+```bash
+poetry install -E mujoco
+python runner.py --train --file rl_games/configs/mujoco/humanoid.yaml
+```
 
 ## Results:  
 * **Humanoid-v3**
