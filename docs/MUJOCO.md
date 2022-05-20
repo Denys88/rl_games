@@ -5,7 +5,7 @@
 
 ```bash
 poetry install -E mujoco
-python runner.py --train --file rl_games/configs/mujoco/humanoid.yaml
+poetry run python runner.py --train --file rl_games/configs/mujoco/humanoid.yaml
 ```
 
 ## Results:  
