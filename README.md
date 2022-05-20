@@ -58,6 +58,15 @@ To run Atari games or Box2d based environments training they need to be addition
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
 
 
+# Development setup
+
+
+```bash
+poetry install
+# install cuda related dependencies
+poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+```
+
 # Training
 **NVIDIA Isaac Gym**
 
@@ -83,8 +92,11 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
 *Atari Pong*
 
-```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```
-```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```
+```bash
+poetry install -E atari
+python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+```
 
 *Brax Ant*
 
