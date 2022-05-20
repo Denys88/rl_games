@@ -1,8 +1,11 @@
 [tool.poetry]
 name = "rl_games"
-version = "0.1.0"
+version = "1.4.0"
 description = ""
-authors = ["DenSumy"]
+authors = [
+    "Denys Makoviichuk <trrrrr97@gmail.com>",
+    "Viktor Makoviichuk <victor.makoviychuk@gmail.com>"
+]
 
 [tool.poetry.dependencies]
 python = ">=3.7.1,<3.11"
