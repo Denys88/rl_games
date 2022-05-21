@@ -79,20 +79,56 @@ class PPODataset(Dataset):
 
 
 class DatasetList(Dataset):
-    def __init__(self):
+    def __init__(self, datasets = []):
         self.dataset_list = []
-
+        self.dataset_lens = []
+        self.len = 0
+        self.last_ds_idx = 0
+        for d in datasets:
+            self.add_dataset(d)
     def __len__(self):
-        return self.dataset_list[0].length * len(self.dataset_list)
+        return self.len
+
+    def deepcopy_dataset(self, dataset):
+        self.add_dataset(copy.deepcopy(dataset))
 
     def add_dataset(self, dataset):
-        self.dataset_list.append(copy.deepcopy(dataset))
-
+        self.len += len(dataset)
+        self.dataset_lens.append(len(dataset))
+        self.dataset_list.append(dataset)
     def clear(self):
         self.dataset_list = []
+        self.dataset_lens = []
+        self.len = 0
+        self.last_ds_idx = 0
+
+    def update_mu_sigma(self, mu, sigma):
+        self.dataset_list[self.last_ds_idx].update_mu_sigma(mu, sigma)
 
     def __getitem__(self, idx):
-        ds_len = len(self.dataset_list)
-        ds_idx = idx % ds_len
-        in_idx = idx // ds_len
+        ds_idx = 0
+        in_idx = idx
+        while (in_idx >= self.dataset_lens[ds_idx]):
+            in_idx -= self.dataset_lens[ds_idx]
+            ds_idx += 1
+        self.last_ds_idx = ds_idx
         return self.dataset_list[ds_idx].__getitem__(in_idx)
+
+
+class ReplayBufferDataset(Dataset):
+    def __init__(self, replay_buffer, start_idx, end_idx, batch_size):
+        self.replay_buffer = replay_buffer
+        self.start_idx = start_idx
+        self.end_idx = end_idx
+        self.batch_size = batch_size
+        self.len = (end_idx-start_idx) // batch_size
+
+    def __len__(self):
+        return self.len
+
+    def __getitem__(self, idx):
+        si = idx * self.batch_size
+        ei = min((idx + 1) * self.batch_size, self.end_idx)
+        return self.replay_buffer.obses[si:ei], self.replay_buffer.actions[si:ei], \
+               self.replay_buffer.rewards[si:ei], self.replay_buffer.next_obses[si:ei], \
+               self.replay_buffer.dones[si:ei]

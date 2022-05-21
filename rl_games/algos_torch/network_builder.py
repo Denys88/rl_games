@@ -951,7 +951,7 @@ class EnvModelBuilder(NetworkBuilder):
             }
             self.mlp = self._build_mlp(**mlp_args)
             self.obs_out = torch.nn.Linear(self.units[-1], input_shape[0])
-            self.reward_out = torch.nn.Linear(self.units[-1], self.value_size)
+            self.reward_out = torch.nn.Linear(self.units[-1], self.reward_size)
             mlp_init = self.init_factory.create(**self.initializer)
             for m in self.modules():
                 if isinstance(m, nn.Linear):
@@ -963,7 +963,7 @@ class EnvModelBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             action = obs_dict['action']
             out = self.mlp(torch.cat([obs, action], dim=-1))
-            obs = self.obs(out)
+            obs = self.obs_out(out)
             reward = self.reward_out(out)
             res_dict = {
                 'obs': obs,

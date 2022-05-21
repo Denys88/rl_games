@@ -245,6 +245,20 @@ class VectorizedReplayBuffer:
         self.idx = (self.idx + num_observations) % self.capacity
         self.full = self.full or self.idx == 0
 
+    def __len__(self):
+        return self.capacity if self.full else self.idx
+
+    def shuffle(self):
+        current_capacity = self.capacity if self.full else self.idx
+        idxs = torch.randint(0,
+                             current_capacity,
+                             (current_capacity,), device=self.device)
+        self.obses = self.obses[idxs]
+        self.actions = self.actions[idxs]
+        self.rewards = self.rewards[idxs]
+        self.next_obses = self.next_obses[idxs]
+        self.dones = self.dones[idxs]
+
     def sample(self, batch_size):
         """Sample a batch of experiences.
         Parameters

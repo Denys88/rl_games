@@ -240,6 +240,11 @@ class ModelA2CContinuousLogStd(BaseModel):
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
+        def kl(self, p_dict, q_dict):
+            p = p_dict['mu'], p_dict['sigma']
+            q = q_dict['mu'], q_dict['sigma']
+            return divergence.d_kl_normal(p, q)
+
         def forward(self, input_dict):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)

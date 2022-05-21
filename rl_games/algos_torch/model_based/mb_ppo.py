@@ -5,62 +5,94 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-
+from rl_games.algos_torch import model_builder
+from rl_games.algos_torch.model_based.env_model import ModelEnvironment
+from rl_games.common.experience import ExperienceBuffer, VectorizedReplayBuffer
 from torch import optim
 import torch
 from torch import nn
 import numpy as np
 import gym
+import time
+import copy
 
+def swap_and_flatten01(arr):
+    """
+    swap and then flatten axes 0 and 1
+    """
+    if arr is None:
+        return arr
+    s = arr.size()
+    return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
 
 class MBAgent(a2c_common.ContinuousA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
-        obs_shape = self.obs_shape
+    def __init__(self, base_name, params):
+        a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         config = {
             'actions_num': self.actions_num,
-            'input_shape': obs_shape,
+            'input_shape': self.obs_shape,
             'num_seqs': self.num_actors * self.num_agents,
+            'value_size': self.env_info.get('value_size', 1),
+            'normalize_value': self.normalize_value,
+            'normalize_input': self.normalize_input,
+        }
+        model_config = {
+            'actions_num': self.actions_num,
+            'input_shape': self.obs_shape,
             'value_size': self.env_info.get('value_size', 1)
         }
 
+
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
-        self.env_model = self.model_network.build(config)
-        self.model_trainer = ModelTrainer(self.env_model, self.last_lr, self.weight_decay, self.minibatch_size, self.mini_epochs_num)
+        print(model_config)
+        self.env_model = self.config['model_network'].build('env_model', **model_config)
+        self.env_model.to(self.ppo_device)
+
+        self.model_training_config = params['model_training_config'].copy()
+        self.replay_buffer_size = self.model_training_config.pop('replay_buffer_size')
+        self.model_trainer = ModelTrainer(self.env_model, **self.model_training_config)
+        self.fake_env = ModelEnvironment(self.env_model, self.env_info)
         self.states = None
-        self.init_rnn_from_model(self.model)
+        self.is_rnn = False
         self.last_lr = float(self.last_lr)
 
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
+        self.model_horizon_length = self.horizon_length
+        self.max_model_horizon = 16
+        self.original_horizon_length = self.horizon_length
 
+        model_info = {
+            'num_actors' : self.num_actors * self.model_horizon_length//self.max_model_horizon,
+            'horizon_length' : self.max_model_horizon,
+            'has_central_value' : False,
+            'use_action_masks' : False,
+        }
 
-        if self.has_central_value:
-            cv_config = {
-                'state_shape': self.state_shape,
-                'value_size': self.value_size,
-                'ppo_device': self.ppo_device,
-                'num_agents': self.num_agents,
-                'num_steps': self.horizon_length,
-                'num_actors': self.num_actors,
-                'num_actions': self.actions_num,
-                'seq_len': self.seq_len,
-                'model': self.central_value_config['network'],
-                'config': self.central_value_config,
-                'writter': self.writer,
-                'max_epochs': self.max_epochs,
-                'multi_gpu': self.multi_gpu
-            }
-            self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
+        self.replay_buffer = VectorizedReplayBuffer(self.env_info['observation_space'].shape,
+                                                               self.env_info['action_space'].shape,
+                                                               self.replay_buffer_size,
+                                                               self.device)
 
-        self.use_experimental_cv = self.config.get('use_experimental_cv', True)
+        self.model_experience_buffer = ExperienceBuffer(self.env_info, model_info, self.ppo_device)
+        self.model_datasets = [datasets.PPODataset(self.num_agents * self.num_actors*  self.model_horizon_length, self.minibatch_size, False, False,
+                                           self.ppo_device, self.seq_len)]
+
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
                                            self.ppo_device, self.seq_len)
+        self.original_env = self.vec_env
+        self.original_obs = None
+        self.original_dataset = self.dataset
+        self.original_experience_buffer = None
+        self.original_dones = None
 
-        self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
-                              or (not self.has_central_value)
+        if self.normalize_value:
+            self.value_mean_std = self.model.value_mean_std
+        self.has_value_loss = True
 
+        self.dataset_list = datasets.DatasetList([self.dataset] + self.model_datasets) #
+        #self.dataset_list = datasets.DatasetList([self.dataset])
         self.algo_observer.after_init(self)
 
 
@@ -69,14 +101,8 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
 
-        self.config['model_network'] = builder.load(params['model_network'])
+        self.config['model_network'] = builder.get_network_builder().load(params['model_network'])
         has_central_value_net = self.config.get('central_value_config') is not  None
-        if has_central_value_net:
-            print('Adding Central Value Network')
-            if 'model' not in params['config']['central_value_config']:
-                params['config']['central_value_config']['model'] = {'name': 'central_value'}
-            network = builder.load(params['config']['central_value_config'])
-            self.config['central_value_config']['network'] = network
 
     def prepare_dataset(self, batch_dict):
         super().prepare_dataset(batch_dict)
@@ -142,10 +168,9 @@ class MBAgent(a2c_common.ContinuousA2CBase):
             else:
                 c_loss = torch.zeros(1, device=self.ppo_device)
 
-            b_loss = self.bound_loss(mu)
             losses, sum_mask = torch_ext.apply_masks(
                 [a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2]
+            a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
 
@@ -175,38 +200,66 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.train_result = (a_loss, c_loss, entropy, \
                              kl_dist, self.last_lr, lr_mul, \
-                             mu.detach(), sigma.detach(), b_loss)
+                             mu.detach(), sigma.detach(), torch.zeros_like(a_loss))
+
+    def prepare_model_env(self):
+        start_obs = []
+        for _ in range(self.horizon_length // self.max_model_horizon):
+            start_obs_idx = np.random.randint(0, self.original_horizon_length)
+            start_obs.append(self.original_experience_buffer.tensor_dict['obses'][start_obs_idx])
+        start_obs = torch.cat(start_obs)
+
+        self.original_obs = copy.deepcopy(self.obs)
+        self.obs['obs'] = start_obs
+        self.fake_env.reset(start_obs)
+        self.horizon_length = self.max_model_horizon
+        self.dataset = self.model_datasets[0]
+        self.experience_buffer = self.model_experience_buffer
+        self.vec_env = self.fake_env
+        self.original_dones = copy.deepcopy(self.dones)
+        self.dones = torch.zeros(start_obs.size()[0], device=self.device)
+        self.is_tensor_obses = True
+
+    def prepare_original_env(self):
+        self.dataset = self.original_dataset
+        self.experience_buffer = self.original_experience_buffer if self.original_experience_buffer != None else self.experience_buffer
+        self.obs = copy.deepcopy(self.original_obs) if self.original_obs != None else self.obs
+        self.vec_env = self.original_env
+        self.horizon_length = self.original_horizon_length
+        self.dones = copy.deepcopy(self.original_dones) if self.original_dones != None else self.dones
+        self.is_tensor_obses = False
 
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
         return self.train_result
 
     def init_tensors(self):
-        super().init_tensors(self)
+        super().init_tensors()
         self.tensor_list += ['next_obses', 'rewards']
         self.experience_buffer.tensor_dict['next_obses'] = torch.zeros_like(self.experience_buffer.tensor_dict['obses'])
         self.experience_buffer.tensor_dict['rewards'] = torch.zeros_like(self.experience_buffer.tensor_dict['rewards'])
-
+        self.model_experience_buffer.tensor_dict['next_obses'] = torch.zeros_like(self.model_experience_buffer.tensor_dict['obses'])
+        self.model_experience_buffer.tensor_dict['rewards'] = torch.zeros_like(self.model_experience_buffer.tensor_dict['rewards'])
+        self.original_experience_buffer = self.experience_buffer
 
     def train_epoch(self):
-
         self.set_eval()
         play_time_start = time.time()
-
         with torch.no_grad():
-            if self.is_rnn:
-                batch_dict = self.play_steps_rnn()
-            else:
-                batch_dict = self.play_steps()
-
-        self.set_train()
-
-        play_time_end = time.time()
-        update_time_start = time.time()
-        rnn_masks = batch_dict.get('rnn_masks', None)
-
+            batch_dict = self.play_steps()
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
+
+        with torch.no_grad():
+            batch_dict = self.play_fake_steps()
+            self.prepare_dataset(batch_dict)
+
+        self.prepare_original_env()
+        play_time_end = time.time()
+        update_time_start = time.time()
+        rnn_masks = None
+
+
         self.algo_observer.after_steps()
 
         a_losses = []
@@ -214,43 +267,70 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         entropies = []
         kls = []
 
-        if self.has_central_value:
-            self.train_central_value()
-
         self.model_trainer.train_epoch(self)
+        self.set_train()
+        a_losses = []
+        c_losses = []
+        b_losses = []
+        entropies = []
+        kls = []
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
-            for i in range(len(self.dataset)):
-                a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
+            for i in range(len(self.dataset_list)):
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(
+                    self.dataset_list[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
+                if self.bounds_loss_coef is not None:
+                    b_losses.append(b_loss)
+
+                self.dataset_list.update_mu_sigma(cmu, csigma)
+
+                if self.schedule_type == 'legacy':
+                    if self.multi_gpu:
+                        kl = self.hvd.average_value(kl, 'ep_kls')
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef,
+                                                                            self.epoch_num, 0, kl.item())
+                    self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
-            if self.multi_gpu:
-                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
 
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
-            self.update_lr(self.last_lr)
+            if self.schedule_type == 'standard':
+                if self.multi_gpu:
+                    av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num,
+                                                                        0, av_kls.item())
+                self.update_lr(self.last_lr)
             kls.append(av_kls)
-
             self.diagnostics.mini_epoch(self, mini_ep)
+            if self.normalize_input:
+                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
+        if self.schedule_type == 'standard_epoch':
+            if self.multi_gpu:
+                av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,
+                                                                    av_kls.item())
+            self.update_lr(self.last_lr)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
 
-        return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
+        return batch_dict[
+                   'step_time'], play_time, update_time, total_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul
 
     def play_steps(self):
         update_list = self.update_list
-
+        self.prepare_original_env()
         step_time = 0.0
 
         for n in range(self.horizon_length):
+            last_obs = self.obs
+            last_dones = self.dones
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -276,7 +356,11 @@ class MBAgent(a2c_common.ContinuousA2CBase):
                 shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
             self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
-
+            self.replay_buffer.add(last_obs['obs'],
+                                   res_dict['actions'],
+                                   shaped_rewards,
+                                   self.obs['obs'],
+                                   last_dones.unsqueeze(1))
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
@@ -290,6 +374,57 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
+
+
+        last_values = self.get_values(self.obs)
+
+        fdones = self.dones.float()
+        mb_fdones = self.experience_buffer.tensor_dict['dones'].float()
+        mb_values = self.experience_buffer.tensor_dict['values']
+        mb_rewards = self.experience_buffer.tensor_dict['rewards']
+        mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
+        mb_returns = mb_advs + mb_values
+
+
+
+        batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
+        batch_dict['returns'] = swap_and_flatten01(mb_returns)
+        batch_dict['played_frames'] = self.batch_size
+        batch_dict['step_time'] = step_time
+        return batch_dict
+
+    def play_fake_steps(self):
+        update_list = self.update_list
+        self.prepare_model_env()
+        step_time = 0.0
+        for n in range(self.max_model_horizon):
+            if self.use_action_masks:
+                masks = self.vec_env.get_action_masks()
+                res_dict = self.get_masked_action_values(self.obs, masks)
+            else:
+                res_dict = self.get_action_values(self.obs)
+            self.experience_buffer.update_data('obses', n, self.obs['obs'])
+            self.experience_buffer.update_data('dones', n, self.dones)
+
+            for k in update_list:
+                self.experience_buffer.update_data(k, n, res_dict[k])
+
+            step_time_start = time.time()
+            self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            step_time_end = time.time()
+
+            step_time += (step_time_end - step_time_start)
+
+            #shaped_rewards = self.rewards_shaper(rewards)
+            shaped_rewards = rewards
+            #if self.value_bootstrap and 'time_outs' in infos:
+            #    shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+            self.experience_buffer.update_data('rewards', n, shaped_rewards)
+            #self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
+
+            all_done_indices = self.dones.nonzero(as_tuple=False)
+            done_indices = all_done_indices[::self.num_agents]
+            not_dones = 1.0 - self.dones.float()
 
         last_values = self.get_values(self.obs)
 

@@ -1,7 +1,7 @@
 params:
   seed: 5
   algo:
-    name: a2c_continuous
+    name: mbppo_continuous
 
   model:
     name: continuous_a2c_logstd
@@ -24,7 +24,13 @@ params:
       activation: elu
       initializer:
         name: default
-
+  model_network:
+    name: env_model
+    mlp:
+      units: [512, 512, 512]
+      activation: relu
+      initializer:
+          name: default
   config:
       reward_shaper:
         scale_value: 0.1
@@ -59,7 +65,14 @@ params:
       env_config:
         env_name: Ant-v4
         seed: 5
-        #flat_observation: True
 
       player:
         render: True
+
+  model_training_config:
+    minibatch_size: 2048
+    mini_epochs: 4
+    learning_rate: 1e-4
+    replay_buffer_size: 8192 #1048576 # 1024 * 1024
+    weight_decay: 1e-5
+    hold_out: 0.1

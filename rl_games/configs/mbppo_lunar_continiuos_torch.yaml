@@ -1,7 +1,7 @@
 params:
   seed: 322
   algo:
-    name: a2c_continuous
+    name: mbppo_continuous
 
   model:
     name: continuous_a2c_logstd
@@ -21,15 +21,18 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [64,64]
+      units: [64, 64]
       activation: relu
       initializer:
           name: default
-          scale: 2
-    rnn_disabled:
-      name: 'lstm'
-      units: 64
-      layers: 1
+
+  model_network:
+    name: env_model
+    mlp:
+      units: [128, 128]
+      activation: relu
+      initializer:
+          name: default
 
   load_checkpoint: False
   load_path: path
@@ -41,8 +44,8 @@ params:
       gamma: 0.99
       tau: 0.9
 
-      learning_rate: 1e-3
-      name: test
+      learning_rate: 1e-4
+      name: LunarLander_model_based
       score_to_win: 300
 
       grad_norm: 0.5
@@ -54,13 +57,13 @@ params:
       clip_value: True
       num_actors: 16
       horizon_length: 128
-      minibatch_size: 1024
+      minibatch_size: 256
       mini_epochs: 4
       critic_coef: 1
-      lr_schedule:  adaptive
+      lr_schedule: None #adaptive
       kl_threshold: 0.008
       schedule_type: standard
-      normalize_input: True
+      normalize_input: False
       seq_length: 4
       bounds_loss_coef: 0
 
