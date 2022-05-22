@@ -45,8 +45,10 @@ class CentralValueTrain(nn.Module):
             self.scheduler = schedulers.IdentityScheduler()
         
         self.mini_epoch = config['mini_epochs']
-        self.mini_batch = config['minibatch_size']
-        self.num_minibatches = self.horizon_length * self.num_actors // self.mini_batch
+        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
+        self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
+        self.num_minibatches = self.horizon_length * self.num_actors // self.minibatch_size
         self.clip_value = config['clip_value']
 
         self.writter = writter
@@ -71,7 +73,7 @@ class CentralValueTrain(nn.Module):
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
-        self.dataset = datasets.PPODataset(self.batch_size, self.mini_batch, True, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_lr(self, lr):
         if self.multi_gpu:
