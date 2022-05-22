@@ -169,6 +169,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -312,7 +313,6 @@ class ModelCentralValue(BaseModel):
             return result
 
 
-
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):
@@ -339,6 +339,36 @@ class ModelSACContinuous(BaseModel):
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
             mu, sigma = self.sac_network(input_dict)
+            dist = SquashedNormal(mu, sigma)
+            return dist
+
+
+class ModelSHAC(BaseModel):
+
+    def __init__(self, network):
+        BaseModel.__init__(self, 'shac')
+        self.network_builder = network
+    
+    class Network(BaseModelNetwork):
+        def __init__(self, shac_network,**kwargs):
+            BaseModelNetwork.__init__(self,**kwargs)
+            self.shac_network = shac_network
+
+        def critic(self, obs, action):
+            return self.shac_network.critic(obs, action)
+
+        def critic_target(self, obs, action):
+            return self.shac_network.critic_target(obs, action)
+
+        def actor(self, obs):
+            return self.shac_network.actor(obs)
+        
+        def is_rnn(self):
+            return False
+
+        def forward(self, input_dict):
+            is_train = input_dict.pop('is_train', True)
+            mu, sigma = self.shac_network(input_dict)
             dist = SquashedNormal(mu, sigma)
             return dist
 

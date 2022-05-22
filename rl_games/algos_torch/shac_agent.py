@@ -9,29 +9,29 @@ from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from rl_games.algos_torch import  model_builder
-from torch import optim
+
 import torch 
-from torch import nn
+from torch import nn, optim
 import torch.nn.functional as F
 import numpy as np
 import time
 
 
-class SACAgent(BaseAlgorithm):
+class SHACAgent(BaseAlgorithm):
 
     def __init__(self, base_name, params):
+
         self.config = config = params['config']
         print(config)
+
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
-        self.num_seed_steps = config["num_seed_steps"]
+        self.horizon_length = config["horizon_length"]
         self.gamma = config["gamma"]
         self.critic_tau = config["critic_tau"]
         self.batch_size = config["batch_size"]
-        self.init_alpha = config["init_alpha"]
-        self.learnable_temperature = config["learnable_temperature"]
-        self.replay_buffer_size = config["replay_buffer_size"]
+
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
 
@@ -41,8 +41,6 @@ class SACAgent(BaseAlgorithm):
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
-        self.log_alpha = torch.tensor(np.log(self.init_alpha)).float().to(self.sac_device)
-        self.log_alpha.requires_grad = True
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
 
@@ -61,36 +59,24 @@ class SACAgent(BaseAlgorithm):
             'normalize_input': self.normalize_input,
         } 
         self.model = self.network.build(net_config)
-        self.model.to(self.sac_device)
+        self.model.to(self.shac_device)
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
-        self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
+        self.actor_optimizer = torch.optim.Adam(self.model.shac_network.actor.parameters(),
                                                 lr=self.config['actor_lr'],
                                                 betas=self.config.get("actor_betas", [0.9, 0.999]))
 
-        self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
+        self.critic_optimizer = torch.optim.Adam(self.model.shac_network.critic.parameters(),
                                                  lr=self.config["critic_lr"],
                                                  betas=self.config.get("critic_betas", [0.9, 0.999]))
 
-        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=self.config["alpha_lr"],
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]))
-
-        self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape, 
-        self.env_info['action_space'].shape, 
-        self.replay_buffer_size, 
-        self.sac_device)
-        self.target_entropy_coef = config.get("target_entropy_coef", 0.5)
-        self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
-        print("Target entropy", self.target_entropy)
         self.step = 0
         self.algo_observer = config['features']['observer']
 
 
         # TODO: Is there a better way to get the maximum number of episodes?
-        self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
+        #self.max_episodes = torch.ones(self.num_actors, device=self.shac_device)*self.num_steps_per_episode
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -107,11 +93,44 @@ class SACAgent(BaseAlgorithm):
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
             self.env_info = self.vec_env.get_env_info()
 
-        self.sac_device = config.get('device', 'cuda:0')
-        #temporary:
-        self.ppo_device = self.sac_device
+        self.shac_device = config.get('device', 'cuda:0')
+
         print('Env info:')
         print(self.env_info)
+
+        # shac params
+        self.gamma = config['params']['config'].get('gamma', 0.99)
+        
+        self.critic_method = config['params']['config'].get('critic_method', 'td-lambda') # ['one-step', 'td-lambda']
+        if self.critic_method == 'td-lambda':
+            self.lam = config['params']['config'].get('lambda', 0.95)
+
+    #    self.steps_num = cfg["params"]["config"]["steps_num"]
+        self.max_epochs = config["params"]["config"]["max_epochs"] # add get
+        self.actor_lr = float(config["params"]["config"]["actor_learning_rate"])
+        self.critic_lr = float(config['params']['config']['critic_learning_rate'])
+        self.lr_schedule = config['params']['config'].get('lr_schedule', 'linear')
+        
+        self.target_critic_alpha = config['params']['config'].get('target_critic_alpha', 0.4)
+
+        self.obs_rms = None
+        if config.get('obs_rms', False):
+            self.obs_rms = RunningMeanStd(shape = (self.num_obs), device = self.device)
+            
+        self.ret_rms = None
+        if config.get('ret_rms', False):
+            self.ret_rms = RunningMeanStd(shape = (), device = self.device)
+
+        #self.rew_scale = cfg['params']['config'].get('rew_scale', 1.0)
+
+        self.critic_iterations = config.get('critic_iterations', 16)
+        self.num_batch = config.get('num_batch', 4)
+        self.batch_size = self.num_actors * self.horizon_length // self.num_batch
+        self.name = config.get('name', "Ant")
+
+        self.truncate_grad = config["params"]["config"]["truncate_grads"]
+        self.grad_norm = config["params"]["config"]["grad_norm"]
+        ###########
 
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']
@@ -122,7 +141,7 @@ class SACAgent(BaseAlgorithm):
         self.c_loss = nn.MSELoss()
         # self.c2_loss = nn.SmoothL1Loss()
         
-        self.save_best_after = config.get('save_best_after', 500)
+        self.save_best_after = config.get('save_best_after', 100)
         self.print_stats = config.get('print_stats', True)
         self.rnn_states = None
         self.name = base_name
@@ -135,11 +154,9 @@ class SACAgent(BaseAlgorithm):
         self.obs_shape = self.observation_space.shape
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.sac_device)
-        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.sac_device)
+        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.shac_device)
+        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.shac_device)
         self.obs = None
-
-        self.min_alpha = torch.tensor(np.log(1)).float().to(self.sac_device)
         
         self.frame = 0
         self.update_time = 0
@@ -155,6 +172,51 @@ class SACAgent(BaseAlgorithm):
         self.last_rnn_indices = None
         self.last_state_indices = None
 
+        # shac
+
+        # replay buffer
+        self.obs_buf = torch.zeros((self.steps_num, self.num_envs, self.num_obs), dtype = torch.float32, device = self.device)
+        self.rew_buf = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
+        self.done_mask = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
+        self.next_values = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
+        self.target_values = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
+        self.ret = torch.zeros((self.num_envs), dtype = torch.float32, device = self.device)
+
+        # for kl divergence computing
+        self.old_mus = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.old_sigmas = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.mus = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.sigmas = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+
+        # counting variables
+        self.iter_count = 0
+        self.step_count = 0
+
+        # loss variables
+        self.episode_length_his = []
+        self.episode_loss_his = []
+        self.episode_discounted_loss_his = []
+        self.episode_loss = torch.zeros(self.num_envs, dtype = torch.float32, device = self.device)
+        self.episode_discounted_loss = torch.zeros(self.num_envs, dtype = torch.float32, device = self.device)
+        self.episode_gamma = torch.ones(self.num_envs, dtype = torch.float32, device = self.device)
+        self.episode_length = torch.zeros(self.num_envs, dtype = int)
+        self.best_policy_loss = np.inf
+        self.actor_loss = np.inf
+        self.value_loss = np.inf
+        
+        # average meter
+        self.episode_loss_meter = AverageMeter(1, 100).to(self.device)
+        self.episode_discounted_loss_meter = AverageMeter(1, 100).to(self.device)
+        self.episode_length_meter = AverageMeter(1, 100).to(self.device)
+
+        # timer
+        self.time_report = TimeReport()
+        self.all_params = list(self.actor.parameters()) + list(self.critic.parameters())
+        self.target_critic = copy.deepcopy(self.critic)
+    
+        # if cfg['params']['general']['train']:
+        #     self.save('init_policy')
+
     def init_tensors(self):
         if self.observation_space.dtype == np.uint8:
             torch_dtype = torch.uint8
@@ -162,33 +224,28 @@ class SACAgent(BaseAlgorithm):
             torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
 
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.sac_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.sac_device)
+        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.shac_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.shac_device)
 
-        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.sac_device)
+        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.shac_device)
  
     @property
-    def alpha(self):
-        return self.log_alpha.exp()
-
-    @property
     def device(self):
-        return self.sac_device
+        return self.shac_device
     
     def get_full_state_weights(self):
         state = self.get_weights()
 
         state['steps'] = self.step
         state['actor_optimizer'] = self.actor_optimizer.state_dict()
-        state['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()        
+        state['critic_optimizer'] = self.critic_optimizer.state_dict()    
 
         return state
 
     def get_weights(self):
-        state = {'actor': self.model.sac_network.actor.state_dict(),
-         'critic': self.model.sac_network.critic.state_dict(), 
-         'critic_target': self.model.sac_network.critic_target.state_dict()}
+        state = {'actor': self.model.shac_network.actor.state_dict(),
+         'critic': self.model.shac_network.critic.state_dict(), 
+         'critic_target': self.model.shac_network.critic_target.state_dict()}
         return state
 
     def save(self, fn):
@@ -196,9 +253,9 @@ class SACAgent(BaseAlgorithm):
         torch_ext.save_checkpoint(fn, state)
 
     def set_weights(self, weights):
-        self.model.sac_network.actor.load_state_dict(weights['actor'])
-        self.model.sac_network.critic.load_state_dict(weights['critic'])
-        self.model.sac_network.critic_target.load_state_dict(weights['critic_target'])
+        self.model.shac_network.actor.load_state_dict(weights['actor'])
+        self.model.shac_network.critic.load_state_dict(weights['critic'])
+        self.model.shac_network.critic_target.load_state_dict(weights['critic_target'])
 
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
@@ -209,7 +266,6 @@ class SACAgent(BaseAlgorithm):
         self.step = weights['step']
         self.actor_optimizer.load_state_dict(weights['actor_optimizer'])
         self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
-        self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
@@ -247,8 +303,8 @@ class SACAgent(BaseAlgorithm):
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
-    def update_actor_and_alpha(self, obs, step):
-        for p in self.model.sac_network.critic.parameters():
+    def update_actor(self, obs, step):
+        for p in self.model.shac_network.critic.parameters():
             p.requires_grad = False
 
         dist = self.model.actor(obs)
@@ -265,7 +321,7 @@ class SACAgent(BaseAlgorithm):
         actor_loss.backward()
         self.actor_optimizer.step()
 
-        for p in self.model.sac_network.critic.parameters():
+        for p in self.model.shac_network.critic.parameters():
             p.requires_grad = True
 
         if self.learnable_temperature:
@@ -296,7 +352,7 @@ class SACAgent(BaseAlgorithm):
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
 
         actor_loss_info = actor_loss, entropy, alpha, alpha_loss
-        self.soft_update_params(self.model.sac_network.critic, self.model.sac_network.critic_target,
+        self.soft_update_params(self.model.shac_network.critic, self.model.shac_network.critic_target,
                                      self.critic_tau)
         return actor_loss_info, critic1_loss, critic2_loss
 

@@ -2,21 +2,15 @@ import numpy as np
 import random
 import copy
 import torch
-import yaml
 
-from rl_games import envs
-from rl_games.common import object_factory
-from rl_games.common import env_configurations
-from rl_games.common import experiment
-from rl_games.common import tr_helpers
+from rl_games.common import object_factory, tr_helpers
 
-from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
-from rl_games.algos_torch import sac_agent
-import rl_games.networks
+from rl_games.algos_torch import sac_agent, shac_agent
+
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
@@ -31,18 +25,21 @@ def _override_sigma(agent, args):
                     net.sigma.fill_(float(args['sigma']))
             else:
                 print('Print cannot set new sigma because fixed_sigma is False')
+
 class Runner:
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
         self.algo_factory.register_builder('sac', lambda **kwargs: sac_agent.SACAgent(**kwargs))
+        self.algo_factory.register_builder('shac', lambda **kwargs: shac_agent.SHACAgent(**kwargs))
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
         self.player_factory = object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
         self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs))
         self.player_factory.register_builder('sac', lambda **kwargs : players.SACPlayer(**kwargs))
+        self.player_factory.register_builder('shac', lambda **kwargs : players.SHACPlayer(**kwargs))
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
@@ -50,6 +47,7 @@ class Runner:
         ### it didnot help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
+
     def reset(self):
         pass
 
@@ -61,7 +59,6 @@ class Runner:
         self.exp_config = None
 
         if self.seed:
-
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
