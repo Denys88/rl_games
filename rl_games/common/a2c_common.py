@@ -94,16 +94,12 @@ class A2CBase(BaseAlgorithm):
             self.env_info = self.vec_env.get_env_info()
 
         self.ppo_device = config.get('device', 'cuda:0')
-        print('Env info:')
-        print(self.env_info)
         self.value_size = self.env_info.get('value_size',1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        self.ewma_ppo = config.get('ewma_ppo', False)
-        self.ewma_model = None
         self.central_value_config = self.config.get('central_value_config', None)
         self.has_central_value = self.central_value_config is not None
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -145,7 +141,7 @@ class A2CBase(BaseAlgorithm):
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
-        self.e_clip = nn.Parameter(torch.tensor(config['e_clip'], requires_grad=True, dtype=torch.float32, device= self.ppo_device), requires_grad=True)
+        self.e_clip = config['e_clip']
         self.clip_value = config['clip_value']
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
@@ -173,14 +169,16 @@ class A2CBase(BaseAlgorithm):
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
-        print(self.ppo_device)
+        print('current training device:', self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
-        self.minibatch_size = self.config['minibatch_size']
+        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
+        self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
@@ -252,6 +250,24 @@ class A2CBase(BaseAlgorithm):
         # soft augmentation not yet supported
         assert not self.has_soft_aug
 
+    def trancate_gradients(self):
+        if self.truncate_grads:
+            if self.multi_gpu:
+                self.optimizer.synchronize()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                with self.optimizer.skip_synchronize():
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+            else:
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+        else:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
@@ -278,7 +294,7 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
-        self.writer.add_scalar('info/e_clip', self.e_clip.item() * lr_mul, frame)
+        self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
@@ -493,8 +509,6 @@ class A2CBase(BaseAlgorithm):
 
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)
-        if self.ewma_ppo:
-            self.ewma_model.reset()
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass 
@@ -799,8 +813,6 @@ class DiscreteA2CBase(A2CBase):
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
@@ -902,7 +914,7 @@ class DiscreteA2CBase(A2CBase):
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f}')
+                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
@@ -1051,9 +1063,6 @@ class ContinuousA2CBase(A2CBase):
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
             self.update_lr(self.last_lr)
 
-        if self.has_phasic_policy_gradients:
-            self.ppg_aux_loss.train_net(self)
-
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1154,7 +1163,7 @@ class ContinuousA2CBase(A2CBase):
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f}')
+                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
                 if len(b_losses) > 0:

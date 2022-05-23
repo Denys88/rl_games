@@ -4,14 +4,28 @@ from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
 import gym
-
+import random
 from time import sleep
-
+import torch
 
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
-        #self.obs = self.env.reset()
+
+    def _obs_to_fp32(self, obs):
+        if isinstance(obs, dict):
+            for k, v in obs.items():
+                if isinstance(v, dict):
+                    for dk, dv in v.items():
+                        if dv.dtype == np.float64:
+                            v[dk] = dv.astype(np.float32)
+                else:
+                    if v.dtype == np.float64:
+                        obs[k] = v.astype(np.float32)
+        else:
+            if obs.dtype == np.float64:
+                obs = obs.astype(np.float32)
+        return obs
 
     def step(self, action):
         next_state, reward, is_done, info = self.env.step(action)
@@ -22,26 +36,24 @@ class RayWorker:
             episode_done = is_done.all()
         if episode_done:
             next_state = self.reset()
-        if isinstance(next_state, dict):
-            for k,v in next_state.items():
-                if isinstance(v, dict):
-                    for dk,dv in v.items():
-                        if dv.dtype == np.float64:
-                            v[dk] = dv.astype(np.float32)
-                else:
-                    if v.dtype == np.float64:
-                        next_state[k] = v.astype(np.float32)
-        else: 
-            if next_state.dtype == np.float64:
-                next_state = next_state.astype(np.float32)
+        next_state = self._obs_to_fp32(next_state)
         return next_state, reward, is_done, info
 
+    def seed(self, seed):
+        if hasattr(self.env, 'seed'):
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            np.random.seed(seed)
+            random.seed(seed)
+            self.env.seed(seed)
+            
     def render(self):
         self.env.render()
 
     def reset(self):
-        self.obs = self.env.reset()
-        return self.obs
+        obs = self.env.reset()
+        obs = self._obs_to_fp32(obs)
+        return obs
 
     def get_action_mask(self):
         return self.env.get_action_mask()
@@ -88,9 +100,16 @@ class RayVecEnv(IVecEnv):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
-        
+        self.seed = kwargs.pop('seed', None)
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
+
+        if self.seed is not None:
+            seeds = range(self.seed, self.seed + self.num_actors)
+            seed_set = []
+            for (seed, worker) in zip(seeds, self.workers):	        
+                seed_set.append(worker.seed.remote(seed))
+            ray.get(seed_set)
 
         res = self.workers[0].get_number_of_agents.remote()
         self.num_agents = ray.get(res)
@@ -203,8 +222,9 @@ def create_vec_env(config_name, num_actors, **kwargs):
     return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
-register('RAY_SMAC', lambda config_name, num_actors, **kwargs: RayVecSMACEnv(config_name, num_actors, **kwargs))
 
 from rl_games.envs.brax import BraxEnv
 register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
 
+from rl_games.envs.envpool import Envpool
+register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))

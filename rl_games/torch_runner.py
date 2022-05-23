@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import copy
 import torch
 import yaml
@@ -46,6 +47,11 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
+        ### it didnot help for lots for openai gym envs anyway :(
+        #torch.backends.cudnn.deterministic = True
+        #torch.use_deterministic_algorithms(True)
+    def reset(self):
+        pass
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
@@ -55,9 +61,14 @@ class Runner:
         self.exp_config = None
 
         if self.seed:
+
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
+            random.seed(self.seed)
+            if 'env_config' in params['config']:
+                if not 'seed' in params['config']['env_config']:
+                    params['config']['env_config']['seed'] = self.seed
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])

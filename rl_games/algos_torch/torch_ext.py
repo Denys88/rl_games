@@ -15,8 +15,9 @@ numpy_to_torch_dtype_dict = {
     np.dtype('int32')      : torch.int32,
     np.dtype('int64')      : torch.int64,
     np.dtype('float16')    : torch.float16,
+    np.dtype('float64')    : torch.float32,
     np.dtype('float32')    : torch.float32,
-    np.dtype('float64')    : torch.float64,
+    #np.dtype('float64')    : torch.float64,
     np.dtype('complex64')  : torch.complex64,
     np.dtype('complex128') : torch.complex128,
 }
@@ -38,11 +39,16 @@ def mean_mask(input, mask, sum_mask):
     return (input * rnn_masks).sum() / sum_mask
 
 def shape_whc_to_cwh(shape):
-    #if len(shape) == 2:
-    #    return (shape[1], shape[0])
     if len(shape) == 3:
         return (shape[2], shape[0], shape[1])
     
+    return shape
+
+
+def shape_cwh_to_whc(shape):
+    if len(shape) == 3:
+        return (shape[1], shape[2], shape[0])
+
     return shape
 
 def safe_filesystem_op(func, *args, **kwargs):
