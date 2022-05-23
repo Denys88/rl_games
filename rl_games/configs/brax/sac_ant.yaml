@@ -19,8 +19,8 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: 'Ant_brax_sac'
-    env_name : brax
+    name: Ant_brax_sac
+    env_name: brax
     normalize_input: True
     reward_shaper:
       scale_value: 1
@@ -42,4 +42,4 @@ params:
     num_actors: 128
 
     env_config:
-      env_name: 'ant'
+      env_name: ant

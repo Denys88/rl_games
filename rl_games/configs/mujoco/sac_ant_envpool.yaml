@@ -1,0 +1,90 @@
+params:
+  seed: 5
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+    mlp:
+      units: [256, 128, 64]
+      activation: relu
+      
+      initializer:
+        name: default
+    log_std_bounds: [-5, 2]
+
+  # config:
+  #   name: Ant-v4_SAC
+  #   env_name: envpool
+  #   ppo: true
+  #   normalize_input: True
+  #   normalize_value: True
+  #   value_bootstrap: True
+  #   normalize_advantage: True
+  #   reward_shaper:
+  #     scale_value: 0.1
+
+  #   gamma: 0.99
+  #   tau: 0.95
+
+  #   learning_rate: 3e-4
+  #   lr_schedule: adaptive
+  #   kl_threshold: 0.008
+  #   schedule_type: standard
+    
+  #   score_to_win: 20000
+
+  #   grad_norm: 1.0 #0.5
+  #   entropy_coef: 0.0
+  #   truncate_grads: True
+
+  #   e_clip: 0.2
+  #   clip_value: False
+  #   num_actors: 64
+  #   horizon_length: 64
+  #   minibatch_size: 4096 #1024
+  #   mini_epochs: 4
+  #   critic_coef: 1
+
+  #   bounds_loss_coef: 0.0
+  #   max_epochs: 2000
+  #   env_config:
+  #     env_name: Ant-v4
+  #     seed: 5
+  #     #flat_observation: True
+
+  #   player:
+  #     render: True
+
+  config:
+    name: Ant-v4_SAC_8step
+    env_name: envpool
+    normalize_input: True
+    reward_shaper:
+      scale_value: 1.0
+
+    max_epochs: 10000
+    num_steps_per_episode: 8
+    save_best_after: 100
+    save_frequency: 10000
+    gamma: 0.99
+    init_alpha: 1
+    alpha_lr: 0.005
+    actor_lr: 0.0005
+    critic_lr: 0.0005
+    critic_tau: 0.005
+    batch_size: 2048 #4096
+    learnable_temperature: True
+    num_seed_steps: 5
+    replay_buffer_size: 1000000
+    num_actors: 64
+
+    env_config:
+      env_name: Ant-v4
+      seed: 5
