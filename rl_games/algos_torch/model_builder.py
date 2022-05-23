@@ -46,8 +46,6 @@ class ModelBuilder:
                                             lambda network, **kwargs: models.ModelA2CContinuousLogStd(network))
         self.model_factory.register_builder('soft_actor_critic',
                                             lambda network, **kwargs: models.ModelSACContinuous(network))
-        self.model_factory.register_builder('shac_actor_critic',
-                                            lambda network, **kwargs: models.ModelSHAC(network))
         self.model_factory.register_builder('central_value',
                                             lambda network, **kwargs: models.ModelCentralValue(network))
         self.network_builder = NetworkBuilder()
