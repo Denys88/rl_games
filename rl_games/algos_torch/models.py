@@ -375,8 +375,9 @@ class ModelSHAC(BaseModel):
 
         def forward(self, input_dict):
             is_train = input_dict.pop('is_train', True)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, sigma = self.shac_network(input_dict)
-            dist = SquashedNormal(mu, sigma)
+            dist = torch.distributions.Normal(mu, sigma)
             return dist
 
 
