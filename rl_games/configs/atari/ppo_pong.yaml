@@ -67,9 +67,8 @@ params:
     lr_schedule:  none
     #kl_threshold: 0.008
     #schedule_entropy : True
-    update_norm_in_train: True
-    normalize_value: True 
-    normalize_input: False
+    normalize_value: True
+    normalize_input: True
     max_epochs: 1500
     use_diagnostics: True
     player:

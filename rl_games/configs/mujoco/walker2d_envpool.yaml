@@ -1,5 +1,5 @@
 params:
-  seed: 7
+  seed: 5
   algo:
     name: a2c_continuous
 
@@ -20,14 +20,14 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128]
       activation: elu
       initializer:
         name: default
 
   config:
-      name: Humanoid-v3
-      env_name: openai_gym
+      name: Walker2d-v4
+      env_name: envpool
       ppo: True
       score_to_win: 20000
       normalize_input: True
@@ -61,7 +61,7 @@ params:
       critic_coef: 4
 
       env_config:
-        name: Humanoid-v4
+        env_name: Walker2d-v4
         seed: 5
         #flat_observation: True
 
