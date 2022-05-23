@@ -28,6 +28,7 @@ params:
   config:
       name: Humanoid-v3
       env_name: openai_gym
+      ppo: True
       score_to_win: 20000
       normalize_input: True
       normalize_value: True
@@ -39,29 +40,28 @@ params:
       tau: 0.95
 
       learning_rate: 3e-4
-      lr_schedule:  adaptive
+      lr_schedule: adaptive
       kl_threshold: 0.008
       schedule_type: standard
 
       grad_norm: 1.0
       entropy_coef: 0.0
       truncate_grads: True
-      ppo: true
       e_clip: 0.2
       clip_value: True
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
 
-      max_epochs: 2000
+      max_epochs: 5000
       num_actors: 64
       horizon_length: 64
-      minibatch_size: 2048 #1024
+      minibatch_size: 2048
       mini_epochs: 5
       critic_coef: 4
 
       env_config:
-        name: Humanoid-v3
+        env_name: Humanoid-v3
         seed: 5
         #flat_observation: True
 
