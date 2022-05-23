@@ -1,7 +1,6 @@
 from rl_games.common import object_factory
-import rl_games.algos_torch
-from rl_games.algos_torch import network_builder
-from rl_games.algos_torch import models
+from rl_games.algos_torch import network_builder, models
+
 
 NETWORK_REGISTRY = {}
 MODEL_REGISTRY = {}
@@ -14,6 +13,7 @@ def register_model(name, target_class):
 
 
 class NetworkBuilder:
+
     def __init__(self):
         self.network_factory = object_factory.ObjectFactory()
         self.network_factory.set_builders(NETWORK_REGISTRY)
@@ -22,6 +22,7 @@ class NetworkBuilder:
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
+        self.network_factory.register_builder('shac_actor_critic', lambda **kwargs: network_builder.SHACBuilder())
 
     def load(self, params):
         network_name = params['name']
@@ -32,6 +33,7 @@ class NetworkBuilder:
 
 
 class ModelBuilder:
+
     def __init__(self):
         self.model_factory = object_factory.ObjectFactory()
         self.model_factory.set_builders(MODEL_REGISTRY)
@@ -44,6 +46,8 @@ class ModelBuilder:
                                             lambda network, **kwargs: models.ModelA2CContinuousLogStd(network))
         self.model_factory.register_builder('soft_actor_critic',
                                             lambda network, **kwargs: models.ModelSACContinuous(network))
+        self.model_factory.register_builder('shac_actor_critic',
+                                            lambda network, **kwargs: models.ModelSHAC(network))
         self.model_factory.register_builder('central_value',
                                             lambda network, **kwargs: models.ModelCentralValue(network))
         self.network_builder = NetworkBuilder()

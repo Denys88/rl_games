@@ -2,9 +2,8 @@ from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 
-from rl_games.common import vecenv
-from rl_games.common import schedulers
-from rl_games.common import experience
+from rl_games.common import vecenv, schedulers, experience
+
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -16,6 +15,8 @@ import torch.nn.functional as F
 import numpy as np
 import time
 
+import gym
+
 
 class SHACAgent(BaseAlgorithm):
 
@@ -26,10 +27,57 @@ class SHACAgent(BaseAlgorithm):
 
         # TODO: Get obs shape and self.network
         self.load_networks(params)
-        self.base_init(base_name, config)
+
+        self.env_config = config.get('env_config', {})
+        self.num_actors = config.get('num_actors', 1)
+        self.env_name = config['env_name']
+        print("Env name:", self.env_name)
+
+        self.env_info = config.get('env_info')
+        if self.env_info is None:
+            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
+            self.env_info = self.vec_env.get_env_info()
+
+        self._device = config.get('device', 'cuda:0')
+
+        print('Env info:')
+        print(self.env_info)
+
+        # if cfg['train']:
+        #     self.save('init_policy')
+
+        self.rewards_shaper = config['reward_shaper']
+        self.observation_space = self.env_info['observation_space']
+        self.weight_decay = config.get('weight_decay', 0.0)
+        #self.use_action_masks = config.get('use_action_masks', False)
+        self.is_train = config.get('is_train', True)
+
+        self.c_loss = nn.MSELoss()
+        # self.c2_loss = nn.SmoothL1Loss()
+
+        self.save_best_after = config.get('save_best_after', 100)
+        self.print_stats = config.get('print_stats', True)
+        self.rnn_states = None
+        self.name = base_name
+
+        self.max_epochs = self.config.get('max_epochs', 1e6)
+
+        self.network = config['network']
+        self.rewards_shaper = config['reward_shaper']
+        self.num_agents = self.env_info.get('agents', 1)
+
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            self.obs_shape = {}
+            for k,v in self.observation_space.spaces.items():
+                self.obs_shape[k] = v.shape
+        else:
+            self.obs_shape = self.observation_space.shape
+
         self.horizon_length = config["horizon_length"]
         self.gamma = config["gamma"]
-        self.critic_tau = config["critic_tau"]
+        self.critic_coef = config.get('critic_coef', 1.0)
+        # self.tau = self.config['tau']
+        self.critic_tau = config["critic_tau"] # todo align names with PPO impl
         self.batch_size = config["batch_size"]
 
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
@@ -59,7 +107,7 @@ class SHACAgent(BaseAlgorithm):
             'normalize_input': self.normalize_input,
         } 
         self.model = self.network.build(net_config)
-        self.model.to(self.shac_device)
+        self.model.to(self.device)
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
@@ -74,52 +122,31 @@ class SHACAgent(BaseAlgorithm):
         self.step = 0
         self.algo_observer = config['features']['observer']
 
-
         # TODO: Is there a better way to get the maximum number of episodes?
-        #self.max_episodes = torch.ones(self.num_actors, device=self.shac_device)*self.num_steps_per_episode
+        #self.max_episodes = torch.ones(self.num_actors, device=self.device)*self.num_steps_per_episode
 
-    def load_networks(self, params):
-        builder = model_builder.ModelBuilder()
-        self.config['network'] = builder.load(params)
-
-    def base_init(self, base_name, config):
-        self.env_config = config.get('env_config', {})
-        self.num_actors = config.get('num_actors', 1)
-        self.env_name = config['env_name']
-        print("Env name:", self.env_name)
-
-        self.env_info = config.get('env_info')
-        if self.env_info is None:
-            self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-            self.env_info = self.vec_env.get_env_info()
-
-        self.shac_device = config.get('device', 'cuda:0')
-
-        print('Env info:')
-        print(self.env_info)
 
         # shac params
-        self.gamma = config['params']['config'].get('gamma', 0.99)
-        
-        self.critic_method = config['params']['config'].get('critic_method', 'td-lambda') # ['one-step', 'td-lambda']
+        self.gamma = config.get('gamma', 0.99)
+
+        self.critic_method = config.get('critic_method', 'td-lambda') # ['one-step', 'td-lambda']
         if self.critic_method == 'td-lambda':
-            self.lam = config['params']['config'].get('lambda', 0.95)
+            self.lam = config.get('lambda', 0.95)
 
-    #    self.steps_num = cfg["params"]["config"]["steps_num"]
-        self.max_epochs = config["params"]["config"]["max_epochs"] # add get
-        self.actor_lr = float(config["params"]["config"]["actor_learning_rate"])
-        self.critic_lr = float(config['params']['config']['critic_learning_rate'])
-        self.lr_schedule = config['params']['config'].get('lr_schedule', 'linear')
-        
-        self.target_critic_alpha = config['params']['config'].get('target_critic_alpha', 0.4)
+        self.max_epochs = config.get("max_epochs", 1000) # add get
+        self.actor_lr = float(config["actor_learning_rate"])
+        self.critic_lr = float(config['critic_learning_rate'])
+        self.lr_schedule = config.get('lr_schedule', 'linear')
 
-        self.obs_rms = None
-        if config.get('obs_rms', False):
-            self.obs_rms = RunningMeanStd(shape = (self.num_obs), device = self.device)
-            
-        self.ret_rms = None
-        if config.get('ret_rms', False):
-            self.ret_rms = RunningMeanStd(shape = (), device = self.device)
+        self.target_critic_alpha = config.get('target_critic_alpha', 0.4)
+
+        # self.obs_rms = None
+        # if config.get('obs_rms', False):
+        #     self.obs_rms = RunningMeanStd(shape = (self.num_obs), device = self.device)
+
+        # self.ret_rms = None
+        # if config.get('ret_rms', False):
+        #     self.ret_rms = RunningMeanStd(shape = (), device = self.device)
 
         #self.rew_scale = cfg['params']['config'].get('rew_scale', 1.0)
 
@@ -128,65 +155,28 @@ class SHACAgent(BaseAlgorithm):
         self.batch_size = self.num_actors * self.horizon_length // self.num_batch
         self.name = config.get('name', "Ant")
 
-        self.truncate_grad = config["params"]["config"]["truncate_grads"]
-        self.grad_norm = config["params"]["config"]["grad_norm"]
+        self.truncate_grad = config.get("truncate_grads", True)
+        self.grad_norm = config.get("grad_norm", 1.0)
         ###########
 
-        self.rewards_shaper = config['reward_shaper']
-        self.observation_space = self.env_info['observation_space']
-        self.weight_decay = config.get('weight_decay', 0.0)
-        #self.use_action_masks = config.get('use_action_masks', False)
-        self.is_train = config.get('is_train', True)
-
-        self.c_loss = nn.MSELoss()
-        # self.c2_loss = nn.SmoothL1Loss()
-        
-        self.save_best_after = config.get('save_best_after', 100)
-        self.print_stats = config.get('print_stats', True)
-        self.rnn_states = None
-        self.name = base_name
-
-        self.max_epochs = self.config.get('max_epochs', 1e6)
-
-        self.network = config['network']
-        self.rewards_shaper = config['reward_shaper']
-        self.num_agents = self.env_info.get('agents', 1)
-        self.obs_shape = self.observation_space.shape
-
         self.games_to_track = self.config.get('games_to_track', 100)
-        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.shac_device)
-        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.shac_device)
+        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.device)
+        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.device)
         self.obs = None
-        
+
         self.frame = 0
         self.update_time = 0
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-        
+
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        
-        self.is_tensor_obses = None
+
+        self.is_tensor_obses = True
         self.is_rnn = False
         self.last_rnn_indices = None
         self.last_state_indices = None
-
-        # shac
-
-        # replay buffer
-        self.obs_buf = torch.zeros((self.steps_num, self.num_envs, self.num_obs), dtype = torch.float32, device = self.device)
-        self.rew_buf = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
-        self.done_mask = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
-        self.next_values = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
-        self.target_values = torch.zeros((self.steps_num, self.num_envs), dtype = torch.float32, device = self.device)
-        self.ret = torch.zeros((self.num_envs), dtype = torch.float32, device = self.device)
-
-        # for kl divergence computing
-        self.old_mus = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
-        self.old_sigmas = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
-        self.mus = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
-        self.sigmas = torch.zeros((self.steps_num, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
 
         # counting variables
         self.iter_count = 0
@@ -196,43 +186,57 @@ class SHACAgent(BaseAlgorithm):
         self.episode_length_his = []
         self.episode_loss_his = []
         self.episode_discounted_loss_his = []
+
+        self.best_policy_loss = np.inf
+        self.actor_loss = np.inf
+        self.value_loss = np.inf
+
+        # average meter
+        self.episode_loss_meter = torch_ext.AverageMeter(1, 100).to(self.device)
+        self.episode_discounted_loss_meter = torch_ext.AverageMeter(1, 100).to(self.device)
+        self.episode_length_meter = torch_ext.AverageMeter(1, 100).to(self.device)
+
+        # timer
+        # self.time_report = TimeReport()
+        # self.all_params = list(self.actor.parameters()) + list(self.critic.parameters())
+        # self.target_critic = copy.deepcopy(self.critic)
+
+    def load_networks(self, params):
+        builder = model_builder.ModelBuilder()
+        self.config['network'] = builder.load(params)
+
+    def init_tensors(self):
+
+        batch_size = self.num_agents * self.num_actors
+
+        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.device)
+
+        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.device)
+
+        # replay buffer
+        self.obs_buf = torch.zeros((self.horizon_length, self.num_envs, self.num_obs), dtype = torch.float32, device = self.device)
+        self.rew_buf = torch.zeros((self.horizon_length, self.num_envs), dtype = torch.float32, device = self.device)
+        self.done_mask = torch.zeros((self.horizon_length, self.num_envs), dtype = torch.float32, device = self.device)
+        self.next_values = torch.zeros((self.horizon_length, self.num_envs), dtype = torch.float32, device = self.device)
+        self.target_values = torch.zeros((self.horizon_length, self.num_envs), dtype = torch.float32, device = self.device)
+        self.ret = torch.zeros((self.num_envs), dtype = torch.float32, device = self.device)
+
+        # for kl divergence computing
+        self.old_mus = torch.zeros((self.horizon_length, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.old_sigmas = torch.zeros((self.horizon_length, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.mus = torch.zeros((self.horizon_length, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+        self.sigmas = torch.zeros((self.horizon_length, self.num_envs, self.num_actions), dtype = torch.float32, device = self.device)
+
         self.episode_loss = torch.zeros(self.num_envs, dtype = torch.float32, device = self.device)
         self.episode_discounted_loss = torch.zeros(self.num_envs, dtype = torch.float32, device = self.device)
         self.episode_gamma = torch.ones(self.num_envs, dtype = torch.float32, device = self.device)
         self.episode_length = torch.zeros(self.num_envs, dtype = int)
-        self.best_policy_loss = np.inf
-        self.actor_loss = np.inf
-        self.value_loss = np.inf
-        
-        # average meter
-        self.episode_loss_meter = AverageMeter(1, 100).to(self.device)
-        self.episode_discounted_loss_meter = AverageMeter(1, 100).to(self.device)
-        self.episode_length_meter = AverageMeter(1, 100).to(self.device)
 
-        # timer
-        self.time_report = TimeReport()
-        self.all_params = list(self.actor.parameters()) + list(self.critic.parameters())
-        self.target_critic = copy.deepcopy(self.critic)
-    
-        # if cfg['params']['general']['train']:
-        #     self.save('init_policy')
-
-    def init_tensors(self):
-        if self.observation_space.dtype == np.uint8:
-            torch_dtype = torch.uint8
-        else:
-            torch_dtype = torch.float32
-        batch_size = self.num_agents * self.num_actors
-
-        self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self.shac_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.shac_device)
-
-        self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.shac_device)
- 
     @property
     def device(self):
-        return self.shac_device
-    
+        return self._device
+
     def get_full_state_weights(self):
         state = self.get_weights()
 
@@ -313,7 +317,7 @@ class SHACAgent(BaseAlgorithm):
         entropy = dist.entropy().sum(-1, keepdim=True).mean()
         actor_Q1, actor_Q2 = self.model.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
-        
+
         actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
@@ -370,8 +374,8 @@ class SHACAgent(BaseAlgorithm):
         if self.is_tensor_obses:
             return obs, rewards, dones, infos
         else:
-            return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
-    
+            return torch.from_numpy(obs).to(self.device), torch.from_numpy(rewards).to(self.device), torch.from_numpy(dones).to(self.device), infos
+
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
@@ -379,11 +383,11 @@ class SHACAgent(BaseAlgorithm):
         if self.is_tensor_obses is None:
             self.is_tensor_obses = torch.is_tensor(obs)
             print("Observations are tensors:", self.is_tensor_obses)
-                
+     
         if self.is_tensor_obses:
-            return obs.to(self.sac_device)
+            return obs.to(self.device)
         else:
-            return torch.from_numpy(obs).to(self.sac_device)
+            return torch.from_numpy(obs).to(self.device)
 
     def act(self, obs, action_dim, sample=False):
         obs = self.preproc_obs(obs)
@@ -395,7 +399,7 @@ class SHACAgent(BaseAlgorithm):
 
     def extract_actor_stats(self, actor_losses, entropies, alphas, alpha_losses, actor_loss_info):
         actor_loss, entropy, alpha, alpha_loss = actor_loss_info
-        
+
         actor_losses.append(actor_loss)
         entropies.append(entropy)
         if alpha_losses is not None:
@@ -424,7 +428,7 @@ class SHACAgent(BaseAlgorithm):
         for _ in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
-                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self.sac_device) * 2 - 1
+                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self.device) * 2 - 1
             else:
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
@@ -568,5 +572,3 @@ class SHACAgent(BaseAlgorithm):
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, self.epoch_num                               
                 update_time = 0
-
-    

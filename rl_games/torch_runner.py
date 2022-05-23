@@ -99,8 +99,6 @@ class Runner:
         pass
 
     def run(self, args):
-        load_path = None
-
         if args['train']:
             self.run_train(args)
 

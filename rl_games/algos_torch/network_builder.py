@@ -180,14 +180,14 @@ class A2CBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.value_size = kwargs.pop('value_size', 1)
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-            
+
             if self.has_cnn:
                 if self.permute_input:
                     input_shape = torch_ext.shape_whc_to_cwh(input_shape)
@@ -344,6 +344,7 @@ class A2CBuilder(NetworkBuilder):
                     c_out = c_out.transpose(0,1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
+
                     if self.rnn_ln:
                         a_out = self.a_layer_norm(a_out)
                         c_out = self.c_layer_norm(c_out)
@@ -358,7 +359,7 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     a_out = self.actor_mlp(a_out)
                     c_out = self.critic_mlp(c_out)
-                            
+
                 value = self.value_act(self.value(c_out))
 
                 if self.is_discrete:
@@ -431,7 +432,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, mu*0 + sigma, value, states
-                    
+
         def is_separate_critic(self):
             return self.separate
 
@@ -491,7 +492,7 @@ class A2CBuilder(NetworkBuilder):
                 self.is_discrete = False
                 self.is_continuous = False
                 self.is_multi_discrete = False
-     
+
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
@@ -510,6 +511,7 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
+
 
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
@@ -547,7 +549,7 @@ class ResidualBlock(nn.Module):
         if use_attention:
             self.ca = ChannelAttention(channels)
             self.sa = SpatialAttention()
-    
+
     def forward(self, x):
         residual = x
         x = self.activate1(x)
@@ -592,17 +594,17 @@ class A2CResnetBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             input_shape = torch_ext.shape_whc_to_cwh(input_shape)
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
-  
+
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
 
             in_mlp_shape = mlp_input_shape
-            
+    
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -617,7 +619,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     in_mlp_shape = self.rnn_units
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
-                    
+         
             mlp_args = {
                 'input_size' : in_mlp_shape, 
                 'units' :self.units, 
@@ -635,9 +637,9 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
-                self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
+                self.mu_act = self.activations_factory.create(self.space_config['mu_activation'])
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
-                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
+                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation'])
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
@@ -646,7 +648,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
-            
+
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
                     nn.init.kaiming_normal_(m.weight, mode='fan_out')
@@ -654,7 +656,7 @@ class A2CResnetBuilder(NetworkBuilder):
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
-            
+
             if self.is_discrete:
                 mlp_init(self.logits.weight)
             if self.is_continuous:
@@ -664,7 +666,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 else:
                     sigma_init(self.sigma.weight)
 
-            mlp_init(self.value.weight)     
+            mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
@@ -675,7 +677,7 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
-                
+
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     out = self.mlp(out)
@@ -765,6 +767,7 @@ class A2CResnetBuilder(NetworkBuilder):
         net = A2CResnetBuilder.Network(self.params, **kwargs)
         return net
 
+
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of an diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
@@ -793,6 +796,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         # Modify to only return mu and std
         return dist
 
+
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
     """Critic network, employes double Q-learning."""
     def __init__(self, output_dim, **mlp_args):
@@ -805,7 +809,6 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         self.Q2 = self._build_mlp(**mlp_args)
         last_layer = list(self.Q2.children())[-2].out_features
         self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
-
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
@@ -823,23 +826,22 @@ class SACBuilder(NetworkBuilder):
 
     def load(self, params):
         self.params = params
-    
+
     def build(self, name, **kwargs):
         net = SACBuilder.Network(self.params, **kwargs)
         return net
-    
+
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             obs_dim = kwargs.pop('obs_dim')
             action_dim = kwargs.pop('action_dim')
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
 
             mlp_input_shape = input_shape
-
 
             actor_mlp_args = {
                 'input_size' : obs_dim, 
@@ -881,7 +883,6 @@ class SACBuilder(NetworkBuilder):
                     if getattr(m, "bias", None) is not None:
                         torch.nn.init.zeros_(m.bias)    
 
-
         def _build_critic(self, output_dim, **mlp_args):
             return DoubleQCritic(output_dim, **mlp_args)
 
@@ -893,8 +894,7 @@ class SACBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             mu, sigma = self.actor(obs)
             return mu, sigma
-        
-                    
+
         def is_separate_critic(self):
             return self.separate
 
@@ -924,4 +924,215 @@ class SACBuilder(NetworkBuilder):
                 self.is_discrete = False
                 self.is_continuous = False
 
-            
+
+class SACBuilder(NetworkBuilder):
+    def __init__(self, **kwargs):
+        NetworkBuilder.__init__(self)
+
+    def load(self, params):
+        self.params = params
+
+    def build(self, name, **kwargs):
+        net = SHACBuilder.Network(self.params, **kwargs)
+        return net
+
+    class Network(NetworkBuilder.BaseNetwork):
+        def __init__(self, params, **kwargs):
+            actions_num = kwargs.pop('actions_num')
+            input_shape = kwargs.pop('input_shape')
+            obs_dim = kwargs.pop('obs_dim')
+            action_dim = kwargs.pop('action_dim')
+            self.num_seqs = kwargs.pop('num_seqs', 1)
+            NetworkBuilder.BaseNetwork.__init__(self)
+            self.load(params)
+
+            mlp_input_shape = input_shape
+
+            actor_mlp_args = {
+                'input_size' : obs_dim, 
+                'units' : self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear,
+                'd2rl' : self.is_d2rl,
+                'norm_only_first_layer' : self.norm_only_first_layer
+            }
+
+            critic_mlp_args = {
+                'input_size' : obs_dim + action_dim, 
+                'units' : self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear,
+                'd2rl' : self.is_d2rl,
+                'norm_only_first_layer' : self.norm_only_first_layer
+            }
+            print("Building Actor")
+            self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
+
+            if self.separate:
+                print("Building Critic")
+                self.critic = self._build_critic(1, **critic_mlp_args)
+                print("Building Critic Target")
+                self.critic_target = self._build_critic(1, **critic_mlp_args)
+                self.critic_target.load_state_dict(self.critic.state_dict())  
+
+            mlp_init = self.init_factory.create(**self.initializer)
+            for m in self.modules():         
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)
+                if isinstance(m, nn.Linear):
+                    mlp_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)    
+
+        def _build_critic(self, output_dim, **mlp_args):
+            return DoubleQCritic(output_dim, **mlp_args)
+
+        def _build_actor(self, output_dim, log_std_bounds, **mlp_args):
+            return DiagGaussianActor(output_dim, log_std_bounds, **mlp_args)
+
+        def forward(self, obs_dict):
+            """TODO"""
+            obs = obs_dict['obs']
+            mu, sigma = self.actor(obs)
+            return mu, sigma
+ 
+        def is_separate_critic(self):
+            return self.separate
+
+        def load(self, params):
+            self.separate = params.get('separate', True)
+            self.units = params['mlp']['units']
+            self.activation = params['mlp']['activation']
+            self.initializer = params['mlp']['initializer']
+            self.is_d2rl = params['mlp'].get('d2rl', False)
+            self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
+            self.value_activation = params.get('value_activation', 'None')
+            self.normalization = params.get('normalization', None)
+            self.has_space = 'space' in params
+            self.value_shape = params.get('value_shape', 1)
+            self.central_value = params.get('central_value', False)
+            self.joint_obs_actions_config = params.get('joint_obs_actions', None)
+            self.log_std_bounds = params.get('log_std_bounds', None)
+
+            # todo: add assert if discrete, there is no discrete action space for SHAC
+            if self.has_space:
+                self.is_discrete = 'discrete' in params['space']
+                self.is_continuous = 'continuous'in params['space']
+                if self.is_continuous:
+                    self.space_config = params['space']['continuous']
+                elif self.is_discrete:
+                    self.space_config = params['space']['discrete']
+            else:
+                self.is_discrete = False
+                self.is_continuous = False
+
+
+class SHACBuilder(NetworkBuilder):
+    def __init__(self, **kwargs):
+        NetworkBuilder.__init__(self)
+
+    def load(self, params):
+        self.params = params
+
+    def build(self, name, **kwargs):
+        net = SHACBuilder.Network(self.params, **kwargs)
+        return net
+
+    class Network(NetworkBuilder.BaseNetwork):
+        def __init__(self, params, **kwargs):
+            actions_num = kwargs.pop('actions_num')
+            input_shape = kwargs.pop('input_shape')
+            obs_dim = kwargs.pop('obs_dim')
+            action_dim = kwargs.pop('action_dim')
+            self.num_seqs = kwargs.pop('num_seqs', 1)
+
+            NetworkBuilder.BaseNetwork.__init__(self)
+            self.load(params)
+
+            mlp_input_shape = input_shape
+
+            actor_mlp_args = {
+                'input_size' : obs_dim, 
+                'units' : self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear,
+                'd2rl' : self.is_d2rl,
+                'norm_only_first_layer' : self.norm_only_first_layer
+            }
+
+            critic_mlp_args = {
+                'input_size' : obs_dim + action_dim, 
+                'units' : self.units, 
+                'activation' : self.activation, 
+                'norm_func_name' : self.normalization,
+                'dense_func' : torch.nn.Linear,
+                'd2rl' : self.is_d2rl,
+                'norm_only_first_layer' : self.norm_only_first_layer
+            }
+            print("Building Actor")
+            self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
+
+            if self.separate:
+                print("Building Critic")
+                self.critic = self._build_critic(1, **critic_mlp_args)
+                print("Building Critic Target")
+                self.critic_target = self._build_critic(1, **critic_mlp_args)
+                self.critic_target.load_state_dict(self.critic.state_dict())  
+
+            mlp_init = self.init_factory.create(**self.initializer)
+            for m in self.modules():         
+                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
+                    cnn_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)
+                if isinstance(m, nn.Linear):
+                    mlp_init(m.weight)
+                    if getattr(m, "bias", None) is not None:
+                        torch.nn.init.zeros_(m.bias)    
+
+        def _build_critic(self, output_dim, **mlp_args):
+            return DoubleQCritic(output_dim, **mlp_args)
+
+        def _build_actor(self, output_dim, log_std_bounds, **mlp_args):
+            return DiagGaussianActor(output_dim, log_std_bounds, **mlp_args)
+
+        def forward(self, obs_dict):
+            """TODO"""
+            obs = obs_dict['obs']
+            mu, sigma = self.actor(obs)
+            return mu, sigma
+ 
+        def is_separate_critic(self):
+            return self.separate
+
+        def load(self, params):
+            self.separate = params.get('separate', True)
+            self.units = params['mlp']['units']
+            self.activation = params['mlp']['activation']
+            self.initializer = params['mlp']['initializer']
+            self.is_d2rl = params['mlp'].get('d2rl', False)
+            self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
+            self.value_activation = params.get('value_activation', 'None')
+            self.normalization = params.get('normalization', None)
+            self.has_space = 'space' in params
+            self.value_shape = params.get('value_shape', 1)
+            self.central_value = params.get('central_value', False)
+            self.joint_obs_actions_config = params.get('joint_obs_actions', None)
+            self.log_std_bounds = params.get('log_std_bounds', None)
+
+            if self.has_space:
+                # todo: add assert if discrete, there is no discrete action space for SHAC
+                self.is_discrete = 'discrete' in params['space']
+                self.is_continuous = 'continuous'in params['space']
+                if self.is_continuous:
+                    self.space_config = params['space']['continuous']
+                elif self.is_discrete:
+                    self.space_config = params['space']['discrete']
+            else:
+                self.is_discrete = False
+                self.is_continuous = False

@@ -159,7 +159,7 @@ class A2CBase(BaseAlgorithm):
         self.truncate_grads = self.config.get('truncate_grads', False)
         self.has_phasic_policy_gradients = False
 
-        if isinstance(self.observation_space,gym.spaces.Dict):
+        if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
             for k,v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape

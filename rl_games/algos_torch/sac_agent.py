@@ -1,20 +1,20 @@
 from rl_games.algos_torch import torch_ext
 
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
+#from rl_games.algos_torch.running_mean_std import RunningMeanStd
 
-from rl_games.common import vecenv
-from rl_games.common import schedulers
-from rl_games.common import experience
+from rl_games.common import vecenv, schedulers, experience
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from rl_games.algos_torch import  model_builder
 from torch import optim
-import torch 
+import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
 import time
+
+import gym
 
 
 class SACAgent(BaseAlgorithm):
@@ -22,6 +22,7 @@ class SACAgent(BaseAlgorithm):
     def __init__(self, base_name, params):
         self.config = config = params['config']
         print(config)
+
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
@@ -59,7 +60,7 @@ class SACAgent(BaseAlgorithm):
             'input_shape' : obs_shape,
             'normalize_input' : self.normalize_input,
             'normalize_input': self.normalize_input,
-        } 
+        }
         self.model = self.network.build(net_config)
         self.model.to(self.sac_device)
 
@@ -86,7 +87,6 @@ class SACAgent(BaseAlgorithm):
         print("Target entropy", self.target_entropy)
         self.step = 0
         self.algo_observer = config['features']['observer']
-
 
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self.sac_device)*self.num_steps_per_episode
@@ -132,7 +132,13 @@ class SACAgent(BaseAlgorithm):
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
-        self.obs_shape = self.observation_space.shape
+        #self.obs_shape = self.observation_space.shape
+        if isinstance(self.observation_space, gym.spaces.Dict):
+            self.obs_shape = {}
+            for k,v in self.observation_space.spaces.items():
+                self.obs_shape[k] = v.shape
+        else:
+            self.obs_shape = self.observation_space.shape
 
         self.games_to_track = self.config.get('games_to_track', 100)
         self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track).to(self.sac_device)
@@ -140,16 +146,16 @@ class SACAgent(BaseAlgorithm):
         self.obs = None
 
         self.min_alpha = torch.tensor(np.log(1)).float().to(self.sac_device)
-        
+
         self.frame = 0
         self.update_time = 0
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
-        
+
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        
+
         self.is_tensor_obses = None
         self.is_rnn = False
         self.last_rnn_indices = None
@@ -166,7 +172,7 @@ class SACAgent(BaseAlgorithm):
         self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.sac_device)
 
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self.sac_device)
- 
+
     @property
     def alpha(self):
         return self.log_alpha.exp()
@@ -174,7 +180,7 @@ class SACAgent(BaseAlgorithm):
     @property
     def device(self):
         return self.sac_device
-    
+
     def get_full_state_weights(self):
         state = self.get_weights()
 
@@ -257,7 +263,7 @@ class SACAgent(BaseAlgorithm):
         entropy = dist.entropy().sum(-1, keepdim=True).mean()
         actor_Q1, actor_Q2 = self.model.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
-        
+
         actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
@@ -315,7 +321,7 @@ class SACAgent(BaseAlgorithm):
             return obs, rewards, dones, infos
         else:
             return torch.from_numpy(obs).to(self.sac_device), torch.from_numpy(rewards).to(self.sac_device), torch.from_numpy(dones).to(self.sac_device), infos
-    
+
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
@@ -323,7 +329,7 @@ class SACAgent(BaseAlgorithm):
         if self.is_tensor_obses is None:
             self.is_tensor_obses = torch.is_tensor(obs)
             print("Observations are tensors:", self.is_tensor_obses)
-                
+
         if self.is_tensor_obses:
             return obs.to(self.sac_device)
         else:
@@ -339,7 +345,7 @@ class SACAgent(BaseAlgorithm):
 
     def extract_actor_stats(self, actor_losses, entropies, alphas, alpha_losses, actor_loss_info):
         actor_loss, entropy, alpha, alpha_loss = actor_loss_info
-        
+
         actor_losses.append(actor_loss)
         entropies.append(entropy)
         if alpha_losses is not None:
@@ -512,5 +518,3 @@ class SACAgent(BaseAlgorithm):
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, self.epoch_num                               
                 update_time = 0
-
-    

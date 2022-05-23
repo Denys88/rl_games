@@ -1,4 +1,3 @@
-import rl_games.algos_torch.layers
 import numpy as np
 import torch.nn as nn
 import torch
@@ -28,7 +27,9 @@ class BaseModel():
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
+
 class BaseModelNetwork(nn.Module):
+
     def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
         nn.Module.__init__(self)
         self.obs_shape = obs_shape
@@ -52,6 +53,7 @@ class BaseModelNetwork(nn.Module):
         with torch.no_grad():
             return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
 
+
 class ModelA2C(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -64,7 +66,7 @@ class ModelA2C(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-        
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()            
 
@@ -105,7 +107,9 @@ class ModelA2C(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CMultiDiscrete(BaseModel):
+
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
@@ -171,6 +175,7 @@ class ModelA2CMultiDiscrete(BaseModel):
 
 
 class ModelA2CContinuous(BaseModel):
+
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
@@ -226,6 +231,7 @@ class ModelA2CContinuous(BaseModel):
 
 
 class ModelA2CContinuousLogStd(BaseModel):
+
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
@@ -280,6 +286,7 @@ class ModelA2CContinuousLogStd(BaseModel):
 
 
 class ModelCentralValue(BaseModel):
+
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
         self.network_builder = network
@@ -318,10 +325,10 @@ class ModelSACContinuous(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'sac')
         self.network_builder = network
-    
+
     class Network(BaseModelNetwork):
-        def __init__(self, sac_network,**kwargs):
-            BaseModelNetwork.__init__(self,**kwargs)
+        def __init__(self, sac_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
             self.sac_network = sac_network
 
         def critic(self, obs, action):
@@ -332,7 +339,7 @@ class ModelSACContinuous(BaseModel):
 
         def actor(self, obs):
             return self.sac_network.actor(obs)
-        
+
         def is_rnn(self):
             return False
 
@@ -348,10 +355,10 @@ class ModelSHAC(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'shac')
         self.network_builder = network
-    
+
     class Network(BaseModelNetwork):
-        def __init__(self, shac_network,**kwargs):
-            BaseModelNetwork.__init__(self,**kwargs)
+        def __init__(self, shac_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
             self.shac_network = shac_network
 
         def critic(self, obs, action):
@@ -362,7 +369,7 @@ class ModelSHAC(BaseModel):
 
         def actor(self, obs):
             return self.shac_network.actor(obs)
-        
+
         def is_rnn(self):
             return False
 

@@ -6,10 +6,8 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
-from torch import nn
-import numpy as np
-import gym
+import torch
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
@@ -23,7 +21,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None

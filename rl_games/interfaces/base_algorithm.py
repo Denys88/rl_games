@@ -1,6 +1,7 @@
 from abc import ABC
 from abc import abstractmethod, abstractproperty
 
+
 class BaseAlgorithm(ABC):
     def __init__(self, base_name, config):
         pass
