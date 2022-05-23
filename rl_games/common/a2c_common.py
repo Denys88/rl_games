@@ -895,8 +895,10 @@ class DiscreteA2CBase(A2CBase):
         while True:
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
+
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             total_time += sum_time
@@ -1147,11 +1149,13 @@ class ContinuousA2CBase(A2CBase):
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
             frame = self.frame // self.num_agents
+
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             should_exit = False
+
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
