@@ -252,18 +252,16 @@ class A2CBase(BaseAlgorithm):
         # soft augmentation not yet supported
         assert not self.has_soft_aug
 
-    def trancate_gradients(self):
+    def trancate_gradients_and_step(self):
+        if self.multi_gpu:
+            self.optimizer.synchronize()
+        
         if self.truncate_grads:
-            if self.multi_gpu:
-                self.optimizer.synchronize()
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                with self.optimizer.skip_synchronize():
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-            else:
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            self.scaler.unscale_(self.optimizer)
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+
+        if self.multi_gpu:
+            with self.optimizer.skip_synchronize():
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
         else:
