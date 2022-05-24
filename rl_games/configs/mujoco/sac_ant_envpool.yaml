@@ -63,7 +63,7 @@ params:
   #     render: True
 
   config:
-    name: Ant-v4_SAC_8step
+    name: Ant-v4
     env_name: envpool
     normalize_input: True
     reward_shaper:
@@ -79,7 +79,7 @@ params:
     actor_lr: 0.0005
     critic_lr: 0.0005
     critic_tau: 0.005
-    batch_size: 2048 #4096
+    batch_size: 2048
     learnable_temperature: True
     num_seed_steps: 5
     replay_buffer_size: 1000000
@@ -88,3 +88,4 @@ params:
     env_config:
       env_name: Ant-v4
       seed: 5
+  

@@ -19,14 +19,14 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant_brax_sac
+    name: Ant_brax_SAC
     env_name: brax
     normalize_input: True
     reward_shaper:
       scale_value: 1
     device: cuda
     max_epochs: 10000
-    num_steps_per_episode: 128
+    num_steps_per_episode: 16
     save_best_after: 100
     save_frequency: 10000
     gamma: 0.99
@@ -36,7 +36,7 @@ params:
     critic_lr: 0.0005
     critic_tau: 0.005
     batch_size: 4096
-    learnable_temperature: true
+    learnable_temperature: True
     num_seed_steps: 5
     replay_buffer_size: 1000000
     num_actors: 128

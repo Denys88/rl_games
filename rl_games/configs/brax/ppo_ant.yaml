@@ -68,4 +68,4 @@ params:
     bounds_loss_coef: 0.0001
 
     env_config:
-      env_name: 'ant'
+      env_name: ant
