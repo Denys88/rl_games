@@ -59,7 +59,6 @@ class Runner:
         if self.seed is None:
             self.seed = int(time.time())
         
-        print("params['config'].get('multi_gpu', False)", params['config'].get('multi_gpu', False))
         if params["config"].get('multi_gpu', False):
             import horovod.torch as hvd
 

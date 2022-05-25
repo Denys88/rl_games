@@ -24,7 +24,12 @@ params:
       activation: elu
       initializer:
         name: default
+
   config:
+      env_name: openai_gym
+      normalize_input: True
+      normalize_value: True
+      value_bootstrap: True
       reward_shaper:
         scale_value: 0.1
       normalize_advantage: True
@@ -38,7 +43,6 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.0
       truncate_grads: True
-      env_name:  openai_gym
       ppo: true
       e_clip: 0.2
       clip_value: False
@@ -49,16 +53,12 @@ params:
       critic_coef: 1
       lr_schedule:  adaptive
       kl_threshold: 0.008
-      schedule_type: 'standard'
-      normalize_input: True
-      normalize_value: True
-      value_bootstrap: True
-      bounds_loss_coef: 0.000
+      schedule_type: standard
+      bounds_loss_coef: 0.0
       max_epochs: 5000
       env_config:
         name: Ant-v3
         seed: 5
-        #flat_observation: True
 
       player:
         render: True

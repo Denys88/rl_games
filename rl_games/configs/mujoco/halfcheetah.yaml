@@ -26,10 +26,10 @@ params:
         name: default
 
   config:
-    name: Walker2d-v3
+    name: HalfCheetah-v3
     env_name:  openai_gym
     score_to_win: 20000
-    ppo: True
+    ppo: true
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -41,25 +41,26 @@ params:
 
     learning_rate: 3e-4
     lr_schedule: adaptive
-    kl_threshold: 0.008
     schedule_type: standard
+    kl_threshold: 0.008
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
+
     e_clip: 0.2
     clip_value: False
-    num_actors: 32
+    num_actors: 64
     horizon_length: 256
     minibatch_size: 2048
-    mini_epochs: 5
+    mini_epochs: 4
     critic_coef: 2
-    use_smooth_clamp: True
-    bound_loss_type: regularisation
-    bounds_loss_coef: 0.0005
+    bounds_loss_coef: 0.0
     max_epochs: 2000
     env_config:
-      name: Walker2d-v3
+      name: HalfCheetah-v3
       seed: 5
 
     player:
       render: True
+      deterministic: True
+      games_num: 100
