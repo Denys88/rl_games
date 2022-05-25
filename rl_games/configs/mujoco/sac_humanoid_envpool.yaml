@@ -12,7 +12,7 @@ params:
     space:
       continuous:
     mlp:
-      units: [512, 256]
+      units: [512, 256, 128]
       activation: relu
       
       initializer:
@@ -26,9 +26,9 @@ params:
     reward_shaper:
       scale_value: 1.0
 
-    max_epochs: 10000
-    num_steps_per_episode: 32
-    save_best_after: 100
+    max_epochs: 20000
+    num_steps_per_episode: 16
+    save_best_after: 500
     save_frequency: 10000
     gamma: 0.99
     init_alpha: 1

@@ -20,16 +20,16 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant-v4_SAC
+    name: HalfCheetah-v4_SAC
     env_name: envpool
     normalize_input: True
     reward_shaper:
       scale_value: 1.0
 
-    max_epochs: 10000
+    max_epochs: 50000
     num_steps_per_episode: 8
     save_best_after: 500
-    save_frequency: 10000
+    save_frequency: 1000
     gamma: 0.99
     init_alpha: 1
     alpha_lr: 0.005
@@ -40,9 +40,13 @@ params:
     learnable_temperature: True
     num_seed_steps: 5
     replay_buffer_size: 1000000
-    num_actors: 64
+    num_actors: 32
 
     env_config:
-      env_name: Ant-v4
+      env_name: HalfCheetah-v4
       seed: 5
-  
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 100

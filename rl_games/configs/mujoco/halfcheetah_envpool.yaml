@@ -26,42 +26,41 @@ params:
         name: default
 
   config:
-    name: Ant-v4
+    name: HalfCheetah-v4
     env_name: envpool
     score_to_win: 20000
     ppo: true
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
-    normalize_advantage: True
     reward_shaper:
       scale_value: 0.1
-
+    normalize_advantage: True
     gamma: 0.99
     tau: 0.95
+
     learning_rate: 3e-4
     lr_schedule: adaptive
-    kl_threshold: 0.008
     schedule_type: standard
+    kl_threshold: 0.008
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
-    e_clip: 0.2
-    clip_value: True
-    use_smooth_clamp: True
-    bound_loss_type: regularisation
-    bounds_loss_coef: 0.0
 
-    max_epochs: 2000
+    e_clip: 0.2
+    clip_value: False
     num_actors: 64
-    horizon_length: 64
+    horizon_length: 256
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 2
-
+    bounds_loss_coef: 0.0
+    max_epochs: 2000
     env_config:
-      env_name: Ant-v4
+      env_name: HalfCheetah-v4
       seed: 5
 
     player:
       render: True
+      deterministic: True
+      games_num: 100
