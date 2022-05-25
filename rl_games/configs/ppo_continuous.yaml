@@ -45,8 +45,8 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.0
       truncate_grads: True
-      env_name:  openai_gym
-      ppo: true
+      env_name: openai_gym
+      ppo: True
       e_clip: 0.2
       clip_value: True
       num_actors: 16

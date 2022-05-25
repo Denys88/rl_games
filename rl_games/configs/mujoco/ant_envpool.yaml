@@ -29,7 +29,7 @@ params:
     name: Ant-v4
     env_name: envpool
     score_to_win: 20000
-    ppo: true
+    ppo: True
     normalize_input: True
     normalize_value: True
     value_bootstrap: True

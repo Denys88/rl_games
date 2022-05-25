@@ -42,7 +42,7 @@ params:
   config:
     name: breakout_ppo
     env_name: envpool
-    ppo: true
+    ppo: True
     normalize_value: True
     normalize_input: False
     reward_shaper:
@@ -66,14 +66,14 @@ params:
     num_actors: 64
     horizon_length: 128
     minibatch_size: 1024
-
     mini_epochs: 2
     critic_coef: 1
     #schedule_entropy: True
-    max_epochs: 2000
+    max_epochs: 1500
+
 
     env_config:
-      env_name: 'Breakout-v5'
+      env_name: Breakout-v5
       episodic_life: True
       has_lives: True
 

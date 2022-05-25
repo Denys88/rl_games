@@ -52,9 +52,9 @@ params:
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
 
-      max_epochs: 5000
+      max_epochs: 2000
       num_actors: 64
-      horizon_length: 64
+      horizon_length: 128
       minibatch_size: 2048
       mini_epochs: 5
       critic_coef: 4
