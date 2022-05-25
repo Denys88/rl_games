@@ -118,7 +118,7 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 |     type               | conv2d                                    |          | Type: right now two types supported: conv2d or conv1d                                               |
 |     activation         | elu                                       |          | activation between conv layers.                                  |
 |     initializer        |                                           |          | Initialier. I took some names from the tensorflow.                                                             |
-|       name             | glorot_normal_initializer                 |          | initializer name                                                                                         |
+|       name             | glorot_normal_initializer                 |          | Initializer name                                                                                         |
 |       gain             | 1.4142                                    |          | Additional parameter.                                                                  |
 |     convs              |                                           |          | Convolution layers. Same parameters as we have in torch.                                                                                        |
 |         filters        | 32                                        |          | Number of filters.                                                                                                  |
@@ -134,11 +134,11 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 |         strides        | 1                                         |          |                                                |
 |         padding        | 0                                         |          |                       
 |   mlp                  |                                           |          | MLP Block. Convolution is supported too. See other config examples.                                                                                           |
-|     units              |                                           |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit.                                              |
+|     units              |                                           |          | Array of sizes of the MLP layers, for example: [512, 256, 128]                                              |
 |     d2rl               | False                                     |          | Use d2rl architecture from https://arxiv.org/abs/2010.09163.                                                                                     |
 |     activation         | elu                                       |          | Activations between dense layers.                                |
-|     initializer        |                                           |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'duis'.                                      |
-|       name             | default                                   |          | Lorem ipsum dolor sit amet, consecteteur adipiscing elit b'urna' b'mi'.                                |
+|     initializer        |                                           |          | Initializer.                                      |
+|       name             | default                                   |          | Initializer name.                                |
 |   rnn                  |                                           |          | RNN block.                                 |
 |     name               | lstm                                      |          | RNN Layer name. lstm and gru are supported.                                                                                          |
 |     units              | 256                                       |          | Number of units.                                             |
