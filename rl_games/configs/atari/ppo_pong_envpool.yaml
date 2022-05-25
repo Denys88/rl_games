@@ -44,7 +44,7 @@ params:
         gain: 1.41421356237
 
   config:
-    name: Pong_envpool_001
+    name: Pong_envpool_64
     env_name: envpool
     score_to_win: 20.0
     ppo: true
@@ -65,9 +65,9 @@ params:
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 48
+    num_actors: 64
     horizon_length: 128
-    minibatch_size: 1536
+    minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 2
     #schedule_entropy: True

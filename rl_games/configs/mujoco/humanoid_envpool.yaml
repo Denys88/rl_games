@@ -61,8 +61,6 @@ params:
 
       env_config:
         env_name: Humanoid-v4
-        seed: 5
-        #flat_observation: True
 
       player:
         render: True

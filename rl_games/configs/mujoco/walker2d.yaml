@@ -58,7 +58,6 @@ params:
       env_config:
         name: Walker2d-v3
         seed: 5
-        #flat_observation: True
 
       player:
         render: True

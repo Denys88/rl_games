@@ -59,7 +59,6 @@ params:
       env_config:
         name: Ant-v3
         seed: 5
-        #flat_observation: True
 
       player:
         render: True
