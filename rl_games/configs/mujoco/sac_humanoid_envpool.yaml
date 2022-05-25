@@ -12,7 +12,7 @@ params:
     space:
       continuous:
     mlp:
-      units: [256, 128, 64]
+      units: [512, 256]
       activation: relu
       
       initializer:
@@ -20,14 +20,14 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant-v4_SAC
+    name: Humanoid-v4_SAC
     env_name: envpool
     normalize_input: True
     reward_shaper:
       scale_value: 1.0
 
     max_epochs: 10000
-    num_steps_per_episode: 8
+    num_steps_per_episode: 32
     save_best_after: 100
     save_frequency: 10000
     gamma: 0.99
@@ -43,6 +43,5 @@ params:
     num_actors: 64
 
     env_config:
-      env_name: Ant-v4
+      env_name: Humanoid-v4
       seed: 5
-  
