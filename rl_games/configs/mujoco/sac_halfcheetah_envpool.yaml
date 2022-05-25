@@ -1,4 +1,5 @@
-params:  
+params:
+  seed: 5
   algo:
     name: sac
 
@@ -19,27 +20,33 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant_brax_SAC
-    env_name: brax
+    name: HalfCheetah-v4_SAC
+    env_name: envpool
     normalize_input: True
     reward_shaper:
-      scale_value: 1
-    device: cuda
-    max_epochs: 10000
-    num_steps_per_episode: 16
-    save_best_after: 100
-    save_frequency: 10000
+      scale_value: 1.0
+
+    max_epochs: 25000
+    num_steps_per_episode: 8
+    save_best_after: 500
+    save_frequency: 1000
     gamma: 0.99
     init_alpha: 1
     alpha_lr: 0.005
     actor_lr: 0.0005
     critic_lr: 0.0005
     critic_tau: 0.005
-    batch_size: 4096
+    batch_size: 2048
     learnable_temperature: True
     num_seed_steps: 5
     replay_buffer_size: 1000000
-    num_actors: 128
+    num_actors: 32
 
     env_config:
-      env_name: ant
+      env_name: HalfCheetah-v4
+      seed: 5
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 100

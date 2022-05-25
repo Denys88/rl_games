@@ -133,7 +133,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         #TODO: Refactor this ugliest code of they year
-        self.trancate_gradients()
+        self.trancate_gradients_and_step()
 
         with torch.no_grad():
             reduce_kl = rnn_masks is None

@@ -1,4 +1,3 @@
-# from rl_games.algos_torch.network_builder import NetworkBuilder
 from torch import distributions as pyd
 import math
 import torch.nn.functional as F
@@ -53,6 +52,3 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
     def entropy(self):
         return self.base_dist.entropy()
-
-
-
