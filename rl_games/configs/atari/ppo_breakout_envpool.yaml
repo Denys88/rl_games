@@ -42,7 +42,7 @@ params:
   config:
     name: breakout_ppo
     env_name: envpool
-    ppo: true
+    ppo: True
     normalize_value: True
     normalize_input: False
     reward_shaper:
@@ -70,7 +70,7 @@ params:
     critic_coef: 1
     #schedule_entropy: True
 
-    max_epochs: 1000
+    max_epochs: 1500
 
     env_config:
       env_name: Breakout-v5
