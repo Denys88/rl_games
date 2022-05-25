@@ -42,6 +42,13 @@ Implemented in Pytorch:
 * A2C
 * PPO
 
+## Quickstart: Colab in the Cloud
+
+Explore RL Games quick and easily in colab notebooks:
+
+* [Mujoco training](https://colab.research.google.com/github/google/brax/blob/main/notebooks/basics.ipynb) Mujoco envpool training environments.
+* [Brax training](https://colab.research.google.com/github/google/brax/blob/main/notebooks/environments.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+
 # Installation
 
 For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1+ is highly recommended:
