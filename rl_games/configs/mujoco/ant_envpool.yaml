@@ -65,4 +65,4 @@ params:
       #flat_observation: True
 
     player:
-      render: True
+      render: False
