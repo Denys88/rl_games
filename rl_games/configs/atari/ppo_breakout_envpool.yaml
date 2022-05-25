@@ -65,15 +65,15 @@ params:
     clip_value: False
     num_actors: 64
     horizon_length: 128
-    minibatch_size: 1024 #1536
+    minibatch_size: 1024
     mini_epochs: 2
     critic_coef: 1
     #schedule_entropy: True
 
-    max_epochs: 2000
+    max_epochs: 1000
 
     env_config:
-      env_name: 'Breakout-v5'
+      env_name: Breakout-v5
       episodic_life: True
       has_lives: True
 
