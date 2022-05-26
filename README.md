@@ -11,7 +11,7 @@
 * Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 * OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation: https://cremebrule.github.io/oscar-web/ https://arxiv.org/abs/2110.00704
 
-## Some results on interesting environments  
+## Some results on the different environments  
 
 * [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
 
@@ -42,7 +42,14 @@ Implemented in Pytorch:
 * A2C
 * PPO
 
-# Installation
+## Quickstart: Colab in the Cloud
+
+Explore RL Games quick and easily in colab notebooks:
+
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
+* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+
+## Installation
 
 For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1+ is highly recommended:
 
@@ -53,12 +60,12 @@ Then:
 
 ```pip install rl-games```
 
-To run Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
+To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
 
 
-# Training
+## Training
 **NVIDIA Isaac Gym**
 
 Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
@@ -92,7 +99,7 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 ```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth```
 
 
-# Config Parameters
+## Config Parameters
 
 | Field                  | Example Value                             | Default  | Description                                                                                            |
 |------------------------|-------------------------------------------|----------|--------------------------------------------------------------------------------------------------------|
@@ -214,18 +221,25 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.5.0
+
+* Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
+* Added Brax and Mujoco colab training examples.
+
 1.4.0
+
 * Added discord channel https://discord.gg/hnYRq7DsQh :)
 * Added envpool support with a few atari examples. Works 3-4x time faster than ray.
 * Added mujoco results. Much better than openai spinning up ppo results.
 * Added tcnn(https://github.com/NVlabs/tiny-cuda-nn) support. Reduces 5-10% of training time in the IsaacGym envs. 
 * Various fixes and improvements.
 
-
 1.3.2
+
 * Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
 
 1.3.1
+
 * Fixed SAC not working
 
 1.3.0
@@ -259,14 +273,13 @@ Additional environment supported properties and functions
 
 
 
-
-# Troubleshouting
+## Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
 * Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
     * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
 
-# Known issues
+## Known issues
 
 * Running a single environment with Isaac Gym can cause crash, if it happens switch to at least 2 environments simulated in parallel
     
