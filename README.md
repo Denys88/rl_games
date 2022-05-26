@@ -46,8 +46,8 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
+* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 
 # Installation
 
