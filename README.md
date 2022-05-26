@@ -46,8 +46,8 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM%2Fcolab/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM%2Fcolab/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
+* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM/colab/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 
 # Installation
 
@@ -222,10 +222,12 @@ Additional environment supported properties and functions
 ## Release Notes
 
 1.5.0
+
 * Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
 * Added Brax and Mujoco colab training examples.
 
 1.4.0
+
 * Added discord channel https://discord.gg/hnYRq7DsQh :)
 * Added envpool support with a few atari examples. Works 3-4x time faster than ray.
 * Added mujoco results. Much better than openai spinning up ppo results.
@@ -233,9 +235,11 @@ Additional environment supported properties and functions
 * Various fixes and improvements.
 
 1.3.2
+
 * Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
 
 1.3.1
+
 * Fixed SAC not working
 
 1.3.0
