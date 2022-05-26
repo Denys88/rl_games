@@ -46,8 +46,8 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/google/brax/blob/main/notebooks/basics.ipynb) Mujoco envpool training environments.
-* [Brax training](https://colab.research.google.com/github/google/brax/blob/main/notebooks/environments.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM%2Fcolab/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
+* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/VM%2Fcolab/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 
 # Installation
 
@@ -60,7 +60,7 @@ Then:
 
 ```pip install rl-games```
 
-To run Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
+To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
 
@@ -221,13 +221,16 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.5.0
+* Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
+* Added Brax and Mujoco colab training examples.
+
 1.4.0
 * Added discord channel https://discord.gg/hnYRq7DsQh :)
 * Added envpool support with a few atari examples. Works 3-4x time faster than ray.
 * Added mujoco results. Much better than openai spinning up ppo results.
 * Added tcnn(https://github.com/NVlabs/tiny-cuda-nn) support. Reduces 5-10% of training time in the IsaacGym envs. 
 * Various fixes and improvements.
-
 
 1.3.2
 * Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
