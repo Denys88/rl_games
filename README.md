@@ -239,7 +239,7 @@ Additional environment supported properties and functions
 
 | Field                       | Default Value   | Description                         |
 |-----------------------------|-----------------|-------------------------------------|
-| use_central_value           | 200             | If true than returned obs is expected to be dict with 'obs' and 'state'                                    |
+| use_central_value           | False             | If true than returned obs is expected to be dict with 'obs' and 'state'                                    |
 | value_size                  | 1               | Shape of the returned rewards. Network wil support multihead value automatically.                                    |
 | concat_infos                | False           | Should default vecenv convert list of dicts to the dicts of lists. Very usefull if you want to use value_boostrapping. in this case you need to always return 'time_outs' : True or False, from the env.                                    |
 | get_number_of_agents(self)  | 1               | Returns number of agents in the environment                                    |
@@ -249,10 +249,12 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
-1.5.0
+1.5.0 (in progress)
 
+* Added wandb support.
 * Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
 * Added Brax and Mujoco colab training examples.
+* Added 'seed' command line parameter. Will override seed in config in case it's > 0.
 
 1.4.0
 
@@ -264,7 +266,7 @@ Additional environment supported properties and functions
 
 1.3.2
 
-* Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
+* Added 'sigma' command line parameter. Will override sigma for continuous space in case if fixed_sigma is True.
 
 1.3.1
 

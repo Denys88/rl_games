@@ -8,6 +8,8 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 #warnings.filterwarnings("error")
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
+    ap.add_argument("--seed", type=int, default=0, required=False, 
+                    help="random seed, if larger than 0 will overwrite the value in yaml config")
     ap.add_argument("-tf", "--tf", required=False, help="run tensorflow runner", action='store_true')
     ap.add_argument("-t", "--train", required=False, help="train network", action='store_true')
     ap.add_argument("-p", "--play", required=False, help="play(test) network", action='store_true')
@@ -34,6 +36,10 @@ if __name__ == '__main__':
 
         if args['num_actors'] > 0:
             config['params']['config']['num_actors'] = args['num_actors']
+        
+        if args['seed'] > 0:
+            config['params']['seed'] = args['seed']
+            config['params']['config']['env_config']['seed'] = args['seed']
 
         from rl_games.torch_runner import Runner
 
