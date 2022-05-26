@@ -386,7 +386,7 @@ class A2CBase(BaseAlgorithm):
         val_shape = (self.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.ppo_device)
         self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
 
         if self.is_rnn:

@@ -38,7 +38,9 @@ class SHACAgent(ContinuousA2CBase):
             'normalize_input': self.normalize_input,
         }
         self.critic_lr = self.config.get('critic_learning_rate', 0.0001)
-        self.target_critic_alpha = 0.4
+        self.use_target_critic = self.config.get('use_target_critic', True)
+        self.target_critic_alpha = self.config.get('target_critic_alpha', 0.4)
+        self.max_episode_length = 1000 # temporary hardcoded
         self.actor_model = self.network.build(build_config)
         self.critic_model = self.critic_network.build(build_config)
 
@@ -55,9 +57,10 @@ class SHACAgent(ContinuousA2CBase):
         self.model = self.actor_model
         self.init_rnn_from_model(self.actor_model)
         self.last_lr = float(self.last_lr)
-        self.optimizer = self.actor_optimizer = optim.Adam(self.actor_model.parameters(), float(self.last_lr), eps=1e-08,
+        self.betas = self.config.get('betas',[0.9, 0.999])
+        self.optimizer = self.actor_optimizer = optim.Adam(self.actor_model.parameters(), float(self.last_lr), betas=self.betas, eps=1e-08,
                                     weight_decay=self.weight_decay)
-        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.critic_lr), eps=1e-08,
+        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.critic_lr), betas=self.betas, eps=1e-08,
                                            weight_decay=self.weight_decay)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
@@ -104,6 +107,7 @@ class SHACAgent(ContinuousA2CBase):
 
             self.current_rewards += rewards.detach()
             self.current_lengths += 1
+            episode_ended = self.current_lengths == self.max_episode_length
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
 
@@ -119,18 +123,19 @@ class SHACAgent(ContinuousA2CBase):
             accumulated_rewards[n + 1] = accumulated_rewards[n] + gamma * shaped_rewards.squeeze(1)
 
             last_values = self.get_values(obs)
-
+            episode_ended_vals = self.get_values(self.obs_to_tensors(infos['obs_before_reset'])).squeeze()
+            episode_ended_vals = episode_ended * episode_ended_vals
             end_vals = last_values.squeeze(1)
             end_vals = end_vals * not_dones
+
             if n < self.horizon_length - 1:
-                #- self.gamma * gamma[env_done_indices] * end_vals[env_done_indices]
-                actor_loss = actor_loss - accumulated_rewards[n + 1] * fdones
+                actor_loss = actor_loss - (accumulated_rewards[n + 1] * fdones + self.gamma * gamma * episode_ended_vals).sum() #
                 gamma = gamma * self.gamma
                 gamma[env_done_indices] = 1.0
                 accumulated_rewards[n + 1, env_done_indices] = 0.0
             else:
                 # terminate all envs at the end of optimization iteration
-                actor_loss = actor_loss + (-accumulated_rewards[n + 1] - self.gamma * gamma * end_vals)
+                actor_loss = actor_loss + (-accumulated_rewards[n + 1] - self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
 
 
 
@@ -146,7 +151,7 @@ class SHACAgent(ContinuousA2CBase):
         batch_dict['played_frames'] = self.batch_size
         batch_dict['step_time'] = step_time
 
-        actor_loss = actor_loss.mean() / self.horizon_length
+        actor_loss = actor_loss / (self.horizon_length * self.horizon_length)
         return batch_dict, actor_loss
 
     def env_step(self, actions):
@@ -185,7 +190,10 @@ class SHACAgent(ContinuousA2CBase):
         }
 
         processed_obs = self._preproc_obs(obs['obs'])
-        result = self.critic_model(input_dict)
+        if self.use_target_critic:
+            result = self.target_critic(input_dict)
+        else:
+            result = self.critic_model(input_dict)
         value = result['values']
         return value
 
