@@ -1,3 +1,4 @@
+from distutils.util import strtobool
 import numpy as np
 import argparse, copy, os, yaml
 import ray, signal
@@ -15,6 +16,12 @@ if __name__ == '__main__':
     ap.add_argument("-na", "--num_actors", type=int, default=0, required=False, 
                     help="number of envs running in parallel, if larger than 0 will overwrite the value in yaml config")
     ap.add_argument("-s", "--sigma", type=float, required=False, help="sets new sigma value in case if 'fixed_sigma: True' in yaml config")
+    ap.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+        help="if toggled, this experiment will be tracked with Weights and Biases")
+    ap.add_argument("--wandb-project-name", type=str, default="rl_games",
+        help="the wandb's project name")
+    ap.add_argument("--wandb-entity", type=str, default=None,
+        help="the entity (team) of wandb's project")
     os.makedirs("nn", exist_ok=True)
     os.makedirs("runs", exist_ok=True)
 
@@ -38,6 +45,18 @@ if __name__ == '__main__':
             runner.load(config)
         except yaml.YAMLError as exc:
             print(exc)
+
+    if args["track"]:
+        import wandb
+
+        wandb.init(
+            project=args["wandb_project_name"],
+            entity=args["wandb_entity"],
+            sync_tensorboard=True,
+            config=config,
+            monitor_gym=True,
+            save_code=True,
+        )
 
     runner.run(args)
 

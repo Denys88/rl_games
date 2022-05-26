@@ -114,6 +114,18 @@ poetry run python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
 poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
+## Experiment tracking
+
+rl_games support experiment tracking with [Weights and Biases](https://wandb.ai).
+
+```bash
+poetry install -E atari
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+WANDB_API_KEY=xxxx poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test --track
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
+```
+
 
 ## Config Parameters
 
