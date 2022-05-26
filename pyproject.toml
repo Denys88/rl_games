@@ -24,6 +24,7 @@ AutoROM = {version = "^0.4.2", optional = true, extras = ["accept-rom-license"]}
 brax = {version = "^0.0.13", optional = true}
 jax = {version = "^0.3.13", optional = true}
 mujoco-py = {version = "^2.1.2", optional = true}
+envpool = {version = "^0.6.1", optional = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -33,3 +34,4 @@ build-backend = "poetry.core.masonry.api"
 atari = ["ale-py", "AutoROM"]
 brax = ["brax", "jax"]
 mujoco = ["mujoco-py"]
+envpool = ["envpool"]

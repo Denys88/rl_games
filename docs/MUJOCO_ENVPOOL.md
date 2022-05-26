@@ -1,7 +1,12 @@
 # Mujoco (https://github.com/deepmind/mujoco)  
 
 ## How to run:
-* **Humanoid** ```python runner.py --train --file rl_games/configs/mujoco/humanoid_envpool.yaml```
+* **Humanoid** 
+```
+poetry install -E envpool
+poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+poetry run python runner.py --train --file rl_games/configs/mujoco/humanoid_envpool.yaml
+```
 
 ## Results:
 * **HalfCheetah-v4**

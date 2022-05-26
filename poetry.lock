@@ -226,6 +226,19 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "dm-env"
+version = "1.5"
+description = "A Python interface for Reinforcement Learning environments."
+category = "main"
+optional = true
+python-versions = "*"
+
+[package.dependencies]
+absl-py = "*"
+dm-tree = "*"
+numpy = "*"
+
+[[package]]
 name = "dm-tree"
 version = "0.1.7"
 description = "Tree is a library for working with nested data structures."
@@ -243,6 +256,21 @@ python-versions = "*"
 
 [package.dependencies]
 six = ">=1.4.0"
+
+[[package]]
+name = "envpool"
+version = "0.6.1.post1"
+description = "\"C++-based high-performance parallel environment execution engine (vectorized env) for general RL environments.\""
+category = "main"
+optional = true
+python-versions = ">=3.7"
+
+[package.dependencies]
+dm-env = ">=1.4"
+gym = ">=0.18"
+numpy = ">=1.19"
+types-protobuf = ">=3.17.3"
+typing-extensions = "*"
 
 [[package]]
 name = "fasteners"
@@ -1129,6 +1157,14 @@ easy = ["msgpack", "rtree", "svg.path", "xxhash", "pyglet", "chardet", "sympy", 
 test = ["ezdxf", "coveralls", "pytest-cov", "pytest", "pyinstrument"]
 
 [[package]]
+name = "types-protobuf"
+version = "3.19.21"
+description = "Typing stubs for protobuf"
+category = "main"
+optional = true
+python-versions = "*"
+
+[[package]]
 name = "typing-extensions"
 version = "4.2.0"
 description = "Backported and Experimental Type Hints for Python 3.7+"
@@ -1228,12 +1264,13 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytest-
 [extras]
 atari = ["ale-py", "AutoROM"]
 brax = ["brax", "jax"]
+envpool = ["envpool"]
 mujoco = ["mujoco-py"]
 
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.7.1,<3.11"
-content-hash = "bdb1f2491b6d3a7d57393bd277a8ffdabe53a2e91e2b0d5692ce9cef02012d1b"
+content-hash = "5175814ea4e00fb6709e6221f153bf342ff769d2763be4639de63d41a338fc47"
 
 [metadata.files]
 absl-py = [
@@ -1410,6 +1447,10 @@ distlib = [
     {file = "distlib-0.3.4-py2.py3-none-any.whl", hash = "sha256:6564fe0a8f51e734df6333d08b8b94d4ea8ee6b99b5ed50613f731fd4089f34b"},
     {file = "distlib-0.3.4.zip", hash = "sha256:e4b58818180336dc9c529bfb9a0b58728ffc09ad92027a3f30b7cd91e3458579"},
 ]
+dm-env = [
+    {file = "dm-env-1.5.tar.gz", hash = "sha256:3efd99b0652563599507c415d48b51896c88be2f01c2b6250af8bab51571e353"},
+    {file = "dm_env-1.5-py3-none-any.whl", hash = "sha256:026aaa404fb3ced1090f6a4e9ce724cb2998c4ea5fda16bff65560d458ef4467"},
+]
 dm-tree = [
     {file = "dm-tree-0.1.7.tar.gz", hash = "sha256:30fec8aca5b92823c0e796a2f33b875b4dccd470b57e91e6c542405c5f77fd2a"},
     {file = "dm_tree-0.1.7-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:3fae437135b6cbbdd51e96488a35e78c3617defa0b65265e7e8752d506f933fd"},
@@ -1437,6 +1478,11 @@ dm-tree = [
 docker-pycreds = [
     {file = "docker-pycreds-0.4.0.tar.gz", hash = "sha256:6ce3270bcaf404cc4c3e27e4b6c70d3521deae82fb508767870fdbf772d584d4"},
     {file = "docker_pycreds-0.4.0-py2.py3-none-any.whl", hash = "sha256:7266112468627868005106ec19cd0d722702d2b7d5912a28e19b826c3d37af49"},
+]
+envpool = [
+    {file = "envpool-0.6.1.post1-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:136277b06ea34502848d2fa741b7c72501840a225c7f272409d601946c5b14b1"},
+    {file = "envpool-0.6.1.post1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b241ac6396e5475dc6651204c5b1609ac3a1ee2ee1f6a39196e82e3873248697"},
+    {file = "envpool-0.6.1.post1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:34717c6efbcb2c52d552d662910e88595c20a5134996a73f4376c4c76588a4ba"},
 ]
 fasteners = [
     {file = "fasteners-0.17.3-py3-none-any.whl", hash = "sha256:cae0772df265923e71435cc5057840138f4e8b6302f888a567d06ed8e1cbca03"},
@@ -2286,6 +2332,10 @@ tqdm = [
 trimesh = [
     {file = "trimesh-3.12.3-py3-none-any.whl", hash = "sha256:b2932004a46baa5d909ece4a61db665df3f33ca9f759cf83c43f534027c4e2cf"},
     {file = "trimesh-3.12.3.tar.gz", hash = "sha256:32bbdf482e94cff1095d0dc5e6301b591d18258463aa3c0eed221ed0051239f0"},
+]
+types-protobuf = [
+    {file = "types-protobuf-3.19.21.tar.gz", hash = "sha256:ecbff0b17b4196aecec055ae4bd25eb344aaf5d848ce38043a44d68a0d51ec3e"},
+    {file = "types_protobuf-3.19.21-py3-none-any.whl", hash = "sha256:6ac25d57f6d674a3f31c9657997aeebdd1196b3ead87e0b798b174243d719856"},
 ]
 typing-extensions = [
     {file = "typing_extensions-4.2.0-py3-none-any.whl", hash = "sha256:6657594ee297170d19f67d55c05852a874e7eb634f4f753dbd667855e07c1708"},
