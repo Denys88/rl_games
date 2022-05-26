@@ -22,7 +22,6 @@ class NetworkBuilder:
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
-        self.network_factory.register_builder('shac_actor_critic', lambda **kwargs: network_builder.SHACBuilder())
 
     def load(self, params):
         network_name = params['name']
@@ -48,6 +47,8 @@ class ModelBuilder:
                                             lambda network, **kwargs: models.ModelSACContinuous(network))
         self.model_factory.register_builder('central_value',
                                             lambda network, **kwargs: models.ModelCentralValue(network))
+        self.model_factory.register_builder('shac',
+                                            lambda network, **kwargs: models.ModelA2CContinuousSHAC(network))
         self.network_builder = NetworkBuilder()
 
     def get_network_builder(self):

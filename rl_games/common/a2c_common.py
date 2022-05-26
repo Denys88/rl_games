@@ -43,10 +43,7 @@ def rescale_actions(low, high, action):
 
 class A2CBase(BaseAlgorithm):
     def __init__(self, base_name, params):
-
         self.config = config = params['config']
-
-        # population based training parameters
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
@@ -126,7 +123,7 @@ class A2CBase(BaseAlgorithm):
         self.rnn_states = None
         self.name = base_name
 
-        self.ppo = config['ppo']
+        self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', 1e6)
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'

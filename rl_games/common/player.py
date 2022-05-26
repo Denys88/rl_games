@@ -204,7 +204,7 @@ class BasePlayer(object):
                 steps += 1
 
                 if render:
-                    self.env.render(mode='human')
+                    #self.env.render()
                     time.sleep(self.render_sleep)
 
                 all_done_indices = done.nonzero(as_tuple=False)

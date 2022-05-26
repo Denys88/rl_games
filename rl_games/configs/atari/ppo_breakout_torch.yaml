@@ -75,8 +75,10 @@ params:
       name: 'BreakoutNoFrameskip-v4'
       episode_life: True
       seed: 5
+      #render_mode: 'human'
     player:
       render: False
-      games_num: 200
+      games_num: 50
       n_game_life: 5
       determenistic: False
+

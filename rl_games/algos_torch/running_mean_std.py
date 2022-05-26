@@ -43,29 +43,30 @@ class RunningMeanStd(nn.Module):
         return new_mean, new_var, new_count
 
     def forward(self, input, unnorm=False, mask=None):
-        if self.training:
-            if mask is not None:
-                mean, var = torch_ext.get_mean_std_with_masks(input, mask)
-            else:
-                mean = input.mean(self.axis) # along channel axis
-                var = input.var(self.axis)
-            self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(self.running_mean, self.running_var, self.count, 
-                                                    mean, var, input.size()[0] )
+        with torch.no_grad():
+            if self.training:
+                if mask is not None:
+                    mean, var = torch_ext.get_mean_std_with_masks(input, mask)
+                else:
+                    mean = input.mean(self.axis) # along channel axis
+                    var = input.var(self.axis)
+                self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(self.running_mean, self.running_var, self.count,
+                                                        mean, var, input.size()[0] )
 
-        # change shape
-        if self.per_channel:
-            if len(self.insize) == 3:
-                current_mean = self.running_mean.view([1, self.insize[0], 1, 1]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0], 1, 1]).expand_as(input)
-            if len(self.insize) == 2:
-                current_mean = self.running_mean.view([1, self.insize[0], 1]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0], 1]).expand_as(input)
-            if len(self.insize) == 1:
-                current_mean = self.running_mean.view([1, self.insize[0]]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0]]).expand_as(input)        
-        else:
-            current_mean = self.running_mean
-            current_var = self.running_var
+            # change shape
+            if self.per_channel:
+                if len(self.insize) == 3:
+                    current_mean = self.running_mean.view([1, self.insize[0], 1, 1]).expand_as(input)
+                    current_var = self.running_var.view([1, self.insize[0], 1, 1]).expand_as(input)
+                if len(self.insize) == 2:
+                    current_mean = self.running_mean.view([1, self.insize[0], 1]).expand_as(input)
+                    current_var = self.running_var.view([1, self.insize[0], 1]).expand_as(input)
+                if len(self.insize) == 1:
+                    current_mean = self.running_mean.view([1, self.insize[0]]).expand_as(input)
+                    current_var = self.running_var.view([1, self.insize[0]]).expand_as(input)
+            else:
+                current_mean = self.running_mean
+                current_var = self.running_var
         # get output
 
 

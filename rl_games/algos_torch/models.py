@@ -46,12 +46,10 @@ class BaseModelNetwork(nn.Module):
                 self.running_mean_std = RunningMeanStd(obs_shape)
 
     def norm_obs(self, observation):
-        with torch.no_grad():
-            return self.running_mean_std(observation) if self.normalize_input else observation
+        return self.running_mean_std(observation) if self.normalize_input else observation
 
     def unnorm_value(self, value):
-        with torch.no_grad():
-            return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
+        return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
 
 
 class ModelA2C(BaseModel):
@@ -285,6 +283,39 @@ class ModelA2CContinuousLogStd(BaseModel):
                 + logstd.sum(dim=-1)
 
 
+class ModelA2CContinuousSHAC(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self, 'a2c')
+        self.network_builder = network
+
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
+            self.a2c_network = a2c_network
+
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def forward(self, input_dict):
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+            mu, logstd, _, states = self.a2c_network(input_dict)
+            sigma = torch.exp(logstd)
+            distr = torch.distributions.Normal(mu, sigma)
+            entropy = distr.entropy().sum(dim=-1)
+            selected_action = distr.rsample()
+            result = {
+                'actions': selected_action,
+                'entropy': entropy,
+                'rnn_states': states,
+                'mus': mu,
+                'sigmas': sigma
+            }
+            return result
+
+
 class ModelCentralValue(BaseModel):
 
     def __init__(self, network):
@@ -312,7 +343,6 @@ class ModelCentralValue(BaseModel):
             value, states = self.a2c_network(input_dict)
             if not is_train:
                 value = self.unnorm_value(value)
-
             result = {
                 'values': value,
                 'rnn_states': states
