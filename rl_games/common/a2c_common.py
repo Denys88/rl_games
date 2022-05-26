@@ -81,7 +81,6 @@ class A2CBase(BaseAlgorithm):
         else:
             self.diagnostics = DefaultDiagnostics()
 
-
         self.network_path = config.get('network_path', "./nn/")
         self.log_path = config.get('log_path', "runs/")
         self.env_config = config.get('env_config', {})
@@ -157,7 +156,7 @@ class A2CBase(BaseAlgorithm):
         self.truncate_grads = self.config.get('truncate_grads', False)
         self.has_phasic_policy_gradients = False
 
-        if isinstance(self.observation_space,gym.spaces.Dict):
+        if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
             for k,v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape
@@ -217,7 +216,6 @@ class A2CBase(BaseAlgorithm):
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
                 self.writer = writer
-
         else:
             self.writer = None
 
@@ -229,8 +227,6 @@ class A2CBase(BaseAlgorithm):
             self.actor_loss_func = common_losses.smoothed_actor_loss
         else:
             self.actor_loss_func = common_losses.actor_loss
-
-
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
@@ -281,7 +277,6 @@ class A2CBase(BaseAlgorithm):
             network = builder.load(params['config']['central_value_config'])
             self.config['central_value_config']['network'] = network
 
-
     def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
         # do we need scaled time?
         self.diagnostics.send_info(self.writer)
@@ -307,12 +302,10 @@ class A2CBase(BaseAlgorithm):
         if self.normalize_rms_advantage:
             self.advantage_mean_std.eval()
 
-
     def set_train(self):
         self.model.train()
         if self.normalize_rms_advantage:
             self.advantage_mean_std.train()
-
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -900,8 +893,10 @@ class DiscreteA2CBase(A2CBase):
         while True:
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
+
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
+
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             total_time += sum_time
@@ -919,7 +914,7 @@ class DiscreteA2CBase(A2CBase):
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
@@ -1152,11 +1147,13 @@ class ContinuousA2CBase(A2CBase):
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
             frame = self.frame // self.num_agents
+
             if self.multi_gpu:
                 self.hvd.sync_stats(self)
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             should_exit = False
+
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 # do we need scaled_time?
@@ -1168,7 +1165,7 @@ class ContinuousA2CBase(A2CBase):
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f}  fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
                 if len(b_losses) > 0:

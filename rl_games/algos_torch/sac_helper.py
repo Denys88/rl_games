@@ -1,10 +1,8 @@
-# from rl_games.algos_torch.network_builder import NetworkBuilder
 from torch import distributions as pyd
-import torch
-import torch.nn as nn
 import math
 import torch.nn.functional as F
 import numpy as np
+
 
 class TanhTransform(pyd.transforms.Transform):
     domain = pyd.constraints.real
@@ -35,6 +33,7 @@ class TanhTransform(pyd.transforms.Transform):
         # https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
         return 2. * (math.log(2.) - x - F.softplus(-2. * x))
 
+
 class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
     def __init__(self, loc, scale):
         self.loc = loc
@@ -53,6 +52,3 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
 
     def entropy(self):
         return self.base_dist.entropy()
-
-
-
