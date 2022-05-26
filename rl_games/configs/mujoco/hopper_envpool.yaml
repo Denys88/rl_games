@@ -26,8 +26,8 @@ params:
         name: default
 
   config:
-    name: Hopper-v3
-    env_name: openai_gym
+    name: Hopper-v4
+    env_name: envpool
     score_to_win: 20000
     ppo: True
     normalize_input: True
@@ -48,8 +48,8 @@ params:
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 32
-    horizon_length: 128
+    num_actors: 64
+    horizon_length: 64
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 2
@@ -59,9 +59,10 @@ params:
     max_epochs: 1500
 
     env_config:
-      name: Hopper-v3
+      env_name: Hopper-v4
       seed: 5
 
     player:
       render: True
-      determenistic: True
+      deterministic: True
+      games_num: 100

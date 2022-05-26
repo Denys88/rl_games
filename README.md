@@ -23,7 +23,7 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-* [MUJOCO](docs/MUJOCO.md) 
+* [MUJOCO ENVPOOL](docs/MUJOCO_ENVPOOL.md) 
 * [ATARI ENVPOOL](docs/ATARI_ENVPOOL.md) 
 * [Random Envs](docs/OTHER.md)  
 
@@ -46,7 +46,7 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training environments.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example.
 * [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 
 ## Installation
