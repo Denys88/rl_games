@@ -65,7 +65,16 @@ To run Mujoco, Atari games or Box2d based environments training they need to be 
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
 
 
-## Training
+# Development setup
+
+
+```bash
+poetry install
+# install cuda related dependencies
+poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+```
+
+# Training
 **NVIDIA Isaac Gym**
 
 Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
@@ -90,13 +99,20 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
 *Atari Pong*
 
-```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```
-```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```
+```bash
+poetry install -E atari
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+```
 
 *Brax Ant*
 
-```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```
-```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth```
+```bash
+poetry install -E brax
+poetry run pip install --upgrade "jax[cuda]==0.3.13" -f https://storage.googleapis.com/jax-releases/jax_releases.html
+poetry run python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
+poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
+```
 
 
 ## Config Parameters
