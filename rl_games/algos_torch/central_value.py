@@ -176,8 +176,8 @@ class CentralValueTrain(nn.Module):
     def update_multiagent_tensors(self, value_preds, returns, actions, dones):
         batch_size = self.batch_size
         ma_batch_size = self.num_actors * self.num_agents * self.horizon_length
-        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
-        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
+        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
@@ -200,7 +200,8 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         if self.writter != None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
+
         return avg_loss
 
     def calc_gradients(self, batch):
