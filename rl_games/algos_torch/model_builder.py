@@ -20,7 +20,6 @@ class NetworkBuilder:
         self.network_factory.register_builder('actor_critic', lambda **kwargs: network_builder.A2CBuilder())
         self.network_factory.register_builder('resnet_actor_critic',
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
-        self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
 
     def load(self, params):
