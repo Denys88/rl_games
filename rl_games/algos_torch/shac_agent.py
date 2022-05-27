@@ -142,7 +142,7 @@ class SHACAgent(ContinuousA2CBase):
                 gamma[env_done_indices] = 1.0
                 accumulated_rewards[n + 1, env_done_indices] = 0.0
             else:
-                #last_values = last_values.detach() * not_dones.unsqueeze(1) + episode_ended.unsqueeze(1) * episode_ended_values.detach()
+                last_values = last_values.detach() * not_dones.unsqueeze(1) + episode_ended.unsqueeze(1) * episode_ended_values.detach()
                 # terminate all envs at the end of optimization iteration
                 actor_loss = actor_loss - (accumulated_rewards[n + 1] + self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
 
@@ -230,7 +230,6 @@ class SHACAgent(ContinuousA2CBase):
         values = batch_dict['values'].detach()
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
-
 
         if self.normalize_value:
             self.value_mean_std.train()
@@ -395,9 +394,6 @@ class SHACAgent(ContinuousA2CBase):
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
                     self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-
-                    if self.has_self_play_config:
-                        self.self_play_manager.update(self)
 
                     # removed equal signs (i.e. "rew=") from the checkpoint name since it messes with hydra CLI parsing
                     checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
