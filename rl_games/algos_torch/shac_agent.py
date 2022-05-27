@@ -96,7 +96,8 @@ class SHACAgent(ContinuousA2CBase):
                 self.experience_buffer.update_data('values', n, res_dict['values'].detach())
 
             step_time_start = time.time()
-            obs, rewards, self.dones, infos = self.env_step(torch.tanh(res_dict['actions']))
+            actions = torch.tanh(res_dict['actions'])
+            obs, rewards, self.dones, infos = self.env_step(actions)
             step_time_end = time.time()
 
             step_time += (step_time_end - step_time_start)
@@ -123,8 +124,8 @@ class SHACAgent(ContinuousA2CBase):
             accumulated_rewards[n + 1] = accumulated_rewards[n] + gamma * shaped_rewards.squeeze(1)
 
             last_values = self.get_values(obs)
-            episode_ended_vals = self.get_values(self.obs_to_tensors(infos['obs_before_reset'])).squeeze()
-            episode_ended_vals = episode_ended * episode_ended_vals
+            episode_ended_vals = self.get_values(self.obs_to_tensors(infos['obs_before_reset']))
+            episode_ended_vals = episode_ended * episode_ended_vals.squeeze()
             end_vals = last_values.squeeze(1)
             end_vals = end_vals * not_dones
 
@@ -135,7 +136,7 @@ class SHACAgent(ContinuousA2CBase):
                 accumulated_rewards[n + 1, env_done_indices] = 0.0
             else:
                 # terminate all envs at the end of optimization iteration
-                actor_loss = actor_loss + (-accumulated_rewards[n + 1] - self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
+                actor_loss = actor_loss - (accumulated_rewards[n + 1] + self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
 
 
 
@@ -151,7 +152,7 @@ class SHACAgent(ContinuousA2CBase):
         batch_dict['played_frames'] = self.batch_size
         batch_dict['step_time'] = step_time
 
-        actor_loss = actor_loss / (self.horizon_length * self.horizon_length)
+        actor_loss = actor_loss / (self.horizon_length * self.num_actors)
         return batch_dict, actor_loss
 
     def env_step(self, actions):
