@@ -56,6 +56,7 @@ class SHACAgent(ContinuousA2CBase):
             self.target_critic.running_mean_std = self.critic_model.running_mean_std
         if self.normalize_value:
             self.target_critic.value_mean_std = self.critic_model.value_mean_std
+            self.actor_model.value_mean_std = None
 
         self.states = None
         self.model = self.actor_model
@@ -85,12 +86,10 @@ class SHACAgent(ContinuousA2CBase):
         gamma = torch.ones(self.num_actors, dtype = torch.float32, device = self.device)
         step_time = 0.0
         self.critic_model.eval()
+        self.target_critic.eval()
         self.actor_model.train()
-
         if self.normalize_input:
             self.actor_model.running_mean_std.train()
-        if self.normalize_value:
-            self.actor_model.value_mean_std.eval()
         obs = self.initialize_trajectory()
 
         for n in range(self.horizon_length):
@@ -132,8 +131,8 @@ class SHACAgent(ContinuousA2CBase):
             accumulated_rewards[n + 1] = accumulated_rewards[n] + gamma * shaped_rewards.squeeze(1)
 
             last_values = self.get_values(obs)
-            episode_ended_vals = self.get_values(self.obs_to_tensors(infos['obs_before_reset']))
-            episode_ended_vals = episode_ended * episode_ended_vals.squeeze()
+            episode_ended_values = self.get_values(self.obs_to_tensors(infos['obs_before_reset']))
+            episode_ended_vals = episode_ended * episode_ended_values.squeeze()
             end_vals = last_values.squeeze(1)
             end_vals = end_vals * not_dones
 
@@ -143,6 +142,7 @@ class SHACAgent(ContinuousA2CBase):
                 gamma[env_done_indices] = 1.0
                 accumulated_rewards[n + 1, env_done_indices] = 0.0
             else:
+                #last_values = last_values.detach() * not_dones.unsqueeze(1) + episode_ended.unsqueeze(1) * episode_ended_values.detach()
                 # terminate all envs at the end of optimization iteration
                 actor_loss = actor_loss - (accumulated_rewards[n + 1] + self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
 
@@ -231,7 +231,6 @@ class SHACAgent(ContinuousA2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
 
-        advantages = returns - values
 
         if self.normalize_value:
             self.value_mean_std.train()
@@ -239,14 +238,10 @@ class SHACAgent(ContinuousA2CBase):
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
 
-        advantages = torch.sum(advantages, axis=1)
 
-        if self.normalize_advantage:
-            advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
-        dataset_dict['advantages'] = advantages
         dataset_dict['returns'] = returns
         dataset_dict['obs'] = obses
         dataset_dict['dones'] = dones
@@ -339,11 +334,9 @@ class SHACAgent(ContinuousA2CBase):
             for param, param_targ in zip(self.critic_model.parameters(), self.target_critic.parameters()):
                 param_targ.data.mul_(alpha)
                 param_targ.data.add_((1. - alpha) * param.data)
-
-        self.last_lr, _ = self.scheduler.update(self.last_lr, 0, self.epoch_num, 0, None)
+        self.last_lr, _ = self.scheduler.update(self.last_lr, 0, self.epoch_num,   0, None)
         #self.critic_lr, _ = self.scheduler.update(self.critic_lr, 0, self.epoch_num, 0, None)
         self.update_lr(self.last_lr, self.last_lr)
-
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -445,7 +438,7 @@ class SHACAgent(ContinuousA2CBase):
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
-        self.writer.add_scalar('info/last_lr', self.last_lr, frame)
-        self.writer.add_scalar('info/last_lr', self.last_lr, epoch_num)
+        self.writer.add_scalar('info/last_lr/frame', self.last_lr, frame)
+        self.writer.add_scalar('info/last_lr/epoch_num', self.last_lr, epoch_num)
 
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
