@@ -135,7 +135,6 @@ class SHACAgent(ContinuousA2CBase):
 
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
-            accumulated_rewards[n + 1, :] = accumulated_rewards[n, :] + gamma * shaped_rewards.squeeze(1)
             if n < self.horizon_length - 1:
                 actor_loss = actor_loss - (
                             accumulated_rewards[n + 1, env_done_indices]).sum()
