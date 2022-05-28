@@ -91,10 +91,13 @@ class SHACAgent(ContinuousA2CBase):
         if self.normalize_input:
             self.actor_model.running_mean_std.train()
         obs = self.initialize_trajectory()
-
+        last_values = None
         for n in range(self.horizon_length):
             res_dict = self.get_actions(obs)
-            res_dict['values'] = self.get_values(obs)
+            if last_values is None:
+                res_dict['values'] = self.get_values(obs)
+            else:
+                res_dict['values'] = last_values
 
             with torch.no_grad():
                 self.experience_buffer.update_data('obses', n, obs['obs'].detach())
@@ -125,27 +128,37 @@ class SHACAgent(ContinuousA2CBase):
             fdones = self.dones.float()
             not_dones = 1.0 - fdones
 
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
-
             accumulated_rewards[n + 1] = accumulated_rewards[n] + gamma * shaped_rewards.squeeze(1)
 
             last_values = self.get_values(obs)
-            episode_ended_values = self.get_values(self.obs_to_tensors(infos['obs_before_reset']))
-            episode_ended_vals = episode_ended * episode_ended_values.squeeze()
-            end_vals = last_values.squeeze(1)
-            end_vals = end_vals * not_dones
+            for id in env_done_indices:
+                if self.current_lengths[id] < self.max_episode_length:  # early termination
+                    last_values[id] = 0.
+                else:  # otherwise, use terminal value critic to estimate the long-term performance
+                    if self.normalize_input:
+                        self.actor_model.running_mean_std.eval()
+                    real_obs = self.obs_to_tensors(infos['obs_before_reset'][id])
+                    last_values[id] = self.get_values(real_obs)
+                    if self.normalize_input:
+                        self.actor_model.running_mean_std.train()
 
+            if (last_values > 1e6).sum() > 0 or (last_values < -1e6).sum() > 0:
+                print('next value error')
+                raise ValueError
+
+            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
+            self.current_lengths = self.current_lengths * not_dones
+            accumulated_rewards[n + 1, :] = accumulated_rewards[n, :] + gamma * shaped_rewards.squeeze(1)
             if n < self.horizon_length - 1:
-                actor_loss = actor_loss - (accumulated_rewards[n + 1] * fdones + self.gamma * gamma * episode_ended_vals).sum() #
-                gamma = gamma * self.gamma
-                gamma[env_done_indices] = 1.0
-                accumulated_rewards[n + 1, env_done_indices] = 0.0
+                actor_loss = actor_loss - (
+                            accumulated_rewards[n + 1, env_done_indices] + self.gamma * gamma[env_done_indices] *
+                            last_values.squeeze(1)[env_done_indices]).sum()
             else:
-                last_values = last_values.detach() * not_dones.unsqueeze(1) + episode_ended.unsqueeze(1) * episode_ended_values.detach()
-                # terminate all envs at the end of optimization iteration
-                actor_loss = actor_loss - (accumulated_rewards[n + 1] + self.gamma * gamma * (end_vals + episode_ended_vals)).sum()
-
+                actor_loss = actor_loss - (
+                            accumulated_rewards[n + 1, :] + self.gamma * gamma * last_values.squeeze()).sum()
+        gamma = gamma * self.gamma
+        gamma[env_done_indices] = 1.0
+        accumulated_rewards[n + 1, env_done_indices] = 0.0
         fdones = self.dones.float().detach()
         mb_fdones = self.experience_buffer.tensor_dict['dones'].float().detach()
         mb_rewards = self.experience_buffer.tensor_dict['rewards'].detach()
