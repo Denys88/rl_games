@@ -109,16 +109,17 @@ class SHACAgent(ContinuousA2CBase):
             actions = torch.tanh(res_dict['actions'])
             obs, rewards, self.dones, infos = self.env_step(actions)
             step_time_end = time.time()
-
+            episode_ended = self.current_lengths == self.max_episode_length - 1
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-
+            real_obs = self.obs_to_tensors(infos['obs_before_reset'])
+            shaped_rewards += self.gamma * self.get_values(real_obs) * episode_ended.unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards.detach())
 
             self.current_rewards += rewards.detach()
             self.current_lengths += 1
-            episode_ended = self.current_lengths == self.max_episode_length
+
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
 
@@ -131,31 +132,16 @@ class SHACAgent(ContinuousA2CBase):
             accumulated_rewards[n + 1] = accumulated_rewards[n] + gamma * shaped_rewards.squeeze(1)
 
             last_values = self.get_values(obs)
-            for id in env_done_indices:
-                if self.current_lengths[id] < self.max_episode_length:  # early termination
-                    last_values[id] = 0.
-                else:  # otherwise, use terminal value critic to estimate the long-term performance
-                    if self.normalize_input:
-                        self.actor_model.running_mean_std.eval()
-                    real_obs = self.obs_to_tensors(infos['obs_before_reset'][id])
-                    last_values[id] = self.get_values(real_obs)
-                    if self.normalize_input:
-                        self.actor_model.running_mean_std.train()
-
-            if (last_values > 1e6).sum() > 0 or (last_values < -1e6).sum() > 0:
-                print('next value error')
-                raise ValueError
 
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
             accumulated_rewards[n + 1, :] = accumulated_rewards[n, :] + gamma * shaped_rewards.squeeze(1)
             if n < self.horizon_length - 1:
                 actor_loss = actor_loss - (
-                            accumulated_rewards[n + 1, env_done_indices] + self.gamma * gamma[env_done_indices] *
-                            last_values.squeeze(1)[env_done_indices]).sum()
+                            accumulated_rewards[n + 1, env_done_indices]).sum()
             else:
                 actor_loss = actor_loss - (
-                            accumulated_rewards[n + 1, :] + self.gamma * gamma * last_values.squeeze()).sum()
+                            accumulated_rewards[n + 1, :] + self.gamma * gamma * last_values.squeeze() * (1.0-episode_ended.float()) * not_dones).sum()
         gamma = gamma * self.gamma
         gamma[env_done_indices] = 1.0
         accumulated_rewards[n + 1, env_done_indices] = 0.0
