@@ -39,7 +39,7 @@ class SHACAgent(ContinuousA2CBase):
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        self.critic_lr = self.config.get('critic_learning_rate', 0.0001)
+        self.critic_lr = float(self.config.get('critic_learning_rate', 0.0001))
         self.use_target_critic = self.config.get('use_target_critic', True)
         self.target_critic_alpha = self.config.get('target_critic_alpha', 0.4)
 
@@ -62,17 +62,24 @@ class SHACAgent(ContinuousA2CBase):
         self.model = self.actor_model
         self.init_rnn_from_model(self.actor_model)
 
-        self.last_lr = float(self.last_lr)
+        self.actor_lr = float(self.last_lr)
         self.betas = self.config.get('betas',[0.9, 0.999])
-        self.optimizer = self.actor_optimizer = optim.Adam(self.actor_model.parameters(), float(self.last_lr), betas=self.betas, eps=1e-08,
+        self.optimizer = self.actor_optimizer = optim.Adam(self.actor_model.parameters(), float(self.actor_lr), betas=self.betas, eps=1e-08,
                                     weight_decay=self.weight_decay)
         # self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.critic_lr), betas=self.betas, eps=1e-08,
         #                                    weight_decay=self.weight_decay)
-        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.last_lr), betas=self.betas, eps=1e-08,
+        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), self.critic_lr, betas=self.betas, eps=1e-08,
                                     weight_decay=self.weight_decay)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
                                            self.ppo_device, self.seq_len)
+        if self.linear_lr:
+            self.critic_scheduler = schedulers.LinearScheduler(self.critic_lr,
+                                                    max_steps=self.max_epochs,
+                                                    apply_to_entropy=0,
+                                                    start_entropy_coef=0)
+        else:
+            self.critic_scheduler = schedulers.IdentityScheduler()
         if self.normalize_value:
             self.value_mean_std = self.critic_model.value_mean_std
 
@@ -90,12 +97,14 @@ class SHACAgent(ContinuousA2CBase):
         self.actor_model.train()
         if self.normalize_input:
             self.actor_model.running_mean_std.train()
+        if self.normalize_value:
+            self.value_mean_std.eval()
         obs = self.initialize_trajectory()
         last_values = None
         for n in range(self.horizon_length):
             res_dict = self.get_actions(obs)
             if last_values is None:
-                res_dict['values'] = self.get_values(obs)
+                last_values = res_dict['values'] = self.get_values(obs)
             else:
                 res_dict['values'] = last_values
 
@@ -113,8 +122,18 @@ class SHACAgent(ContinuousA2CBase):
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-            real_obs = self.obs_to_tensors(infos['obs_before_reset'])
-            shaped_rewards += self.gamma * self.get_values(real_obs) * episode_ended.unsqueeze(1).float()
+
+            real_obs = infos['obs_before_reset']
+            if torch.isnan(real_obs).sum() > 0 \
+                    or torch.isinf(real_obs).sum() > 0 \
+                    or (torch.abs(real_obs) > 1e6).sum() > 0:  # ugly fix for nan values
+                print('KTOTO NOOB')
+                last_obs_vals = last_values.detach()
+            else:
+                real_obs = self.obs_to_tensors(real_obs)
+                last_obs_vals = self.get_values(real_obs)
+
+            shaped_rewards += last_obs_vals * episode_ended.unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards.detach())
 
             self.current_rewards += rewards.detach()
@@ -332,8 +351,8 @@ class SHACAgent(ContinuousA2CBase):
                 param_targ.data.mul_(alpha)
                 param_targ.data.add_((1. - alpha) * param.data)
         self.last_lr, _ = self.scheduler.update(self.last_lr, 0, self.epoch_num,   0, None)
-        #self.critic_lr, _ = self.scheduler.update(self.critic_lr, 0, self.epoch_num, 0, None)
-        self.update_lr(self.last_lr, self.last_lr)
+        self.critic_lr, _ = self.critic_scheduler.update(self.critic_lr, 0, self.epoch_num, 0, None)
+        self.update_lr(self.last_lr, self.critic_lr)
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -432,7 +451,8 @@ class SHACAgent(ContinuousA2CBase):
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
-        self.writer.add_scalar('info/last_lr/frame', self.last_lr, frame)
-        self.writer.add_scalar('info/last_lr/epoch_num', self.last_lr, epoch_num)
-
+        self.writer.add_scalar('info/actor_lr/frame', self.last_lr, frame)
+        self.writer.add_scalar('info/actor_lr/epoch_num', self.last_lr, epoch_num)
+        self.writer.add_scalar('info/critic_lr/frame', self.critic_lr, frame)
+        self.writer.add_scalar('info/critic_lr/epoch_num', self.critic_lr, epoch_num)
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
