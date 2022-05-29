@@ -39,9 +39,11 @@ class SHACAgent(ContinuousA2CBase):
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        self.critic_lr = self.config.get('critic_learning_rate', 0.0001)
+        self.critic_lr = float(self.config.get('critic_learning_rate', 0.0001))
         self.use_target_critic = self.config.get('use_target_critic', True)
         self.target_critic_alpha = self.config.get('target_critic_alpha', 0.4)
+
+        self.critic_scheduler = schedulers.LinearScheduler(self.critic_lr, min_lr=1e-4, max_steps=self.max_epochs)
 
         self.max_episode_length = 1000 # temporary hardcoded
         self.actor_model = self.network.build(build_config)
@@ -66,9 +68,7 @@ class SHACAgent(ContinuousA2CBase):
         self.betas = self.config.get('betas',[0.9, 0.999])
         self.optimizer = self.actor_optimizer = optim.Adam(self.actor_model.parameters(), float(self.last_lr), betas=self.betas, eps=1e-08,
                                     weight_decay=self.weight_decay)
-        # self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.critic_lr), betas=self.betas, eps=1e-08,
-        #                                    weight_decay=self.weight_decay)
-        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.last_lr), betas=self.betas, eps=1e-08,
+        self.critic_optimizer = optim.Adam(self.critic_model.parameters(), float(self.critic_lr), betas=self.betas, eps=1e-08,
                                     weight_decay=self.weight_decay)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
@@ -88,10 +88,12 @@ class SHACAgent(ContinuousA2CBase):
         self.critic_model.eval()
         self.target_critic.eval()
         self.actor_model.train()
+
         if self.normalize_input:
             self.actor_model.running_mean_std.train()
         obs = self.initialize_trajectory()
         last_values = None
+
         for n in range(self.horizon_length):
             res_dict = self.get_actions(obs)
             if last_values is None:
@@ -141,6 +143,7 @@ class SHACAgent(ContinuousA2CBase):
             else:
                 actor_loss = actor_loss - (
                             accumulated_rewards[n + 1, :] + self.gamma * gamma * last_values.squeeze() * (1.0-episode_ended.float()) * not_dones).sum()
+
         gamma = gamma * self.gamma
         gamma[env_done_indices] = 1.0
         accumulated_rewards[n + 1, env_done_indices] = 0.0
@@ -235,8 +238,6 @@ class SHACAgent(ContinuousA2CBase):
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
 
-
-
         dataset_dict = {}
         dataset_dict['old_values'] = values
         dataset_dict['returns'] = returns
@@ -293,11 +294,6 @@ class SHACAgent(ContinuousA2CBase):
         return critic_loss.detach()
 
     def update_lr(self, actor_lr, critic_lr):
-        if self.multi_gpu:
-            lr_tensor = torch.tensor([lr])
-            self.hvd.broadcast_value(lr_tensor, 'learning_rate')
-            lr = lr_tensor.item()
-
         for param_group in self.actor_optimizer.param_groups:
             param_group['lr'] = actor_lr
 
@@ -331,9 +327,10 @@ class SHACAgent(ContinuousA2CBase):
             for param, param_targ in zip(self.critic_model.parameters(), self.target_critic.parameters()):
                 param_targ.data.mul_(alpha)
                 param_targ.data.add_((1. - alpha) * param.data)
-        self.last_lr, _ = self.scheduler.update(self.last_lr, 0, self.epoch_num,   0, None)
-        #self.critic_lr, _ = self.scheduler.update(self.critic_lr, 0, self.epoch_num, 0, None)
-        self.update_lr(self.last_lr, self.last_lr)
+        self.last_lr, _ = self.scheduler.update(self.last_lr, 0, self.epoch_num, 0, None)
+        self.critic_lr, _ = self.critic_scheduler.update(self.critic_lr, 0, self.epoch_num, 0, None)
+
+        self.update_lr(self.last_lr, self.critic_lr)
         update_time_end = time.time()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -351,7 +348,7 @@ class SHACAgent(ContinuousA2CBase):
 
         while True:
             epoch_num = self.update_epoch()
-            step_time, play_time, update_time, sum_time, a_losses, c_losses  = self.train_epoch()
+            step_time, play_time, update_time, sum_time, a_losses, c_losses = self.train_epoch()
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
