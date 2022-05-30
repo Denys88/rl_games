@@ -24,10 +24,11 @@ params:
       units: 128
       layers: 1
       layer_norm: True
+
   config:
     name: 5m_vs_6m_rnn_cv
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
@@ -36,8 +37,7 @@ params:
     entropy_coef: 0.02
     truncate_grads: True
     grad_norm: 10
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -45,7 +45,7 @@ params:
     minibatch_size: 2560 # 5 * 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     normalize_value: False
@@ -64,7 +64,6 @@ params:
       games_num: 200
       n_game_life: 1
       determenistic: True
-
 
     central_value_config:
       minibatch_size: 512
@@ -91,6 +90,5 @@ params:
           units: 128
           layers: 1
           layer_norm: True
-
       
       #reward_negative_scale: 0.1

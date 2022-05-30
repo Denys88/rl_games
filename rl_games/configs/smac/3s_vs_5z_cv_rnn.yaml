@@ -26,7 +26,7 @@ params:
   config:
     name: 3s_vs_5z_cv_rnn
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
@@ -35,8 +35,7 @@ params:
     truncate_grads: True
     grad_norm: 0.5
     entropy_coef: 0.005
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: False
     num_actors: 8

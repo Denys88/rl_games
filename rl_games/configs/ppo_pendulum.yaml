@@ -33,31 +33,30 @@ params:
   load_path: path
 
   config:
-      reward_shaper:
-        scale_value: 0.01
-      normalize_advantage: True
-      gamma: 0.99
-      tau: 0.9
+    env_name: Pendulum-v0
+    reward_shaper:
+      scale_value: 0.01
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
 
-      learning_rate: 1e-4
-      name: test
-      score_to_win: 300
+    learning_rate: 1e-4
+    lr_schedule:  adaptive
+    kl_threshold: 0.008
+    name: test
+    score_to_win: 300
 
-      grad_norm: 0.5
-      entropy_coef: 0.0
-      truncate_grads: True
-      env_name:  Pendulum-v0
-      ppo: True
-      e_clip: 0.2
-      clip_value: True
-      num_actors: 16
-      horizon_length: 128
-      minibatch_size: 1024
-      mini_epochs: 4
-      critic_coef: 1
-      lr_schedule:  adaptive
-      kl_threshold: 0.008
+    grad_norm: 0.5
+    entropy_coef: 0.0
+    truncate_grads: True 
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 16
+    horizon_length: 128
+    minibatch_size: 1024
+    mini_epochs: 4
+    critic_coef: 1
 
-      normalize_input: False
-      seq_length: 8
-      bounds_loss_coef: 0
+    normalize_input: False
+    seq_length: 8
+    bounds_loss_coef: 0

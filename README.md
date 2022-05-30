@@ -60,9 +60,10 @@ Then:
 
 ```pip install rl-games```
 
+To run CPU-based environments either Ray or envpool are required ```pip install envpool``` or ```pip install ray```
 To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
-To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
+To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
 
 
 # Development setup
@@ -194,16 +195,15 @@ poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_t
 |   entropy_coef         | 0                                         |          | Entropy coefficient. Good value for continuous space is 0. For discrete is 0.02                                              |
 |   truncate_grads       | True                                      |          | Apply truncate grads or not. It stabilizes training.                                                  |
 |   env_name             | BipedalWalker-v3                          |          | Envinronment name.            |
-|   ppo                  | True                                      | True     | Use ppo loss or actor critic. Should be always true.                                    |
 |   e_clip               | 0.2                                       |          | clip parameter for ppo loss.                                                                                 |
 |   clip_value           | False                                     |          | Apply clip to the value loss. If you are using normalize_value you don't need it.                                                                                 |
-|   num_actors           | 16                                        |          | Number of running actors.                           |
+|   num_actors           | 16                                        |          | Number of running actors/environments.                           |
 |   horizon_length       | 4096                                      |          | Horizon length per each actor. Total number of steps will be num_actors*horizon_length * num_agents (if env is not MA num_agents==1).                          |
-|   minibatch_size       | 8192                                      |          | Minibatch size. total number number of steps must be divisible by minibatch size.                                                           |
+|   minibatch_size       | 8192                                      |          | Minibatch size. Total number number of steps must be divisible by minibatch size.                                                           |
+|   minibatch_size_per_env | 8                                       |          | Minibatch size per env. If specified will overwrite total number number the default minibatch size with minibatch_size_per_env * nume_envs value.                                                           |
 |   mini_epochs          | 4                                         |          | Number of miniepochs. Good value is in [1,10]                                                                            |
-|   critic_coef          | 2                                         |          | Critic coef. by default critic_loss= critic_coef * 1/2 * MSE.                                                                                    |
-|   lr_schedule          | adaptive                                  | None     | Scheduler type. Could be None, linear or adaptive. Adaptive is the best for continuous.                                     |
-|   schedule_type        | standard                                  |          | if schedule is adaptive there are a few places where we can change LR based on KL. If you standard it will be changed every miniepoch.                                                                                          |
+|   critic_coef          | 2                                         |          | Critic coef. by default critic_loss = critic_coef * 1/2 * MSE.                                                                                    |
+|   lr_schedule          | adaptive                                  | None     | Scheduler type. Could be None, linear or adaptive. Adaptive is the best for continuous control tasks. Learning rate is changed changed every miniepoch  |
 |   kl_threshold         | 0.008                                     |          | KL threshould for adaptive schedule. if KL < kl_threshold/2 lr = lr * 1.5 and opposite.                                            |
 |   normalize_input      | True                                      |          | Apply running mean std for input.                                                                           |
 |   bounds_loss_coef     | 0.0                                       |          | Coefficient to the auxiary loss for continuous space.    |

@@ -55,8 +55,7 @@ params:
     grad_norm: 10
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  PongNoFrameskip-v4
-    ppo: true
+    env_name: PongNoFrameskip-v4
     e_clip: 0.2
     clip_value: False
     num_actors: 24
@@ -64,9 +63,7 @@ params:
     minibatch_size: 768
     mini_epochs: 3
     critic_coef: 1
-    lr_schedule:  none
-    #kl_threshold: 0.008
-    #schedule_entropy : True
+    lr_schedule: None
     normalize_value: True
     normalize_input: True
     max_epochs: 1500

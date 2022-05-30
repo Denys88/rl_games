@@ -20,7 +20,7 @@ params:
         name: glorot_normal_initializer
         gain: 1.4142 
       regularizer:
-        name: 'None'
+        name: None
       convs:    
         - filters: 32
           kernel_size: 8
@@ -39,7 +39,7 @@ params:
       units: [512]
       activation: relu
       regularizer:
-        name: 'None'
+        name: None
       initializer:
         name: glorot_normal_initializer
         gain: 1.4142 
@@ -48,7 +48,9 @@ params:
       units: 256
       layers: 1
       #layer_norm: True
+
   config:
+    env_name: BreakoutNoFrameskip-v4
     reward_shaper:
       min_val: -1
       max_val: 1
@@ -62,8 +64,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: BreakoutNoFrameskip-v4
-    ppo: true
+
     e_clip: 0.2
     clip_value: True
     num_actors: 16
@@ -71,13 +72,11 @@ params:
     minibatch_size: 512
     mini_epochs: 3
     critic_coef: 1
-    lr_schedule:  None # adaptive
+    lr_schedule:  None
     kl_threshold: 0.01
     normalize_input: False
     seq_length: 8
-    #lr_schedule:  adaptive
-    # kl_threshold: 0.008
-    # bounds_loss_coef: 0.5
+
     # max_epochs: 5000
 
     player:

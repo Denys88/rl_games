@@ -17,12 +17,12 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
 
   config:
     name: corridor_cv
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.995
     tau: 0.95
@@ -31,8 +31,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -40,7 +39,7 @@ params:
     minibatch_size: 3072 # 6 * 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     use_action_masks: True
@@ -72,4 +71,4 @@ params:
             name: default
             scale: 2 
           regularizer:
-            name:  'None'
+            name: None

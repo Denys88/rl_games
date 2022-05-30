@@ -17,7 +17,7 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
     rnn:
       name: lstm
       units: 128
@@ -36,8 +36,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -45,11 +44,11 @@ params:
     minibatch_size: 3072 # 6 * 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     use_action_masks: True
-    ignore_dead_batches : False
+    ignore_dead_batches: False
 
     env_config:
       name: 6h_vs_8z
@@ -76,7 +75,7 @@ params:
           initializer:
             name: default 
           regularizer:
-            name:  'None'
+            name: None
         rnn:
           name: lstm
           units: 128

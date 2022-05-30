@@ -60,8 +60,7 @@ params:
 
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  minigrid_env
-    ppo: true
+    env_name: minigrid_env
     e_clip: 0.2
     clip_value: True
     num_actors: 16
@@ -69,7 +68,7 @@ params:
     minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.008
     normalize_input: False
     seq_length: 32

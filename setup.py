@@ -27,6 +27,8 @@ setup(name='rl-games',
             "License :: OSI Approved :: MIT License",
             "Programming Language :: Python :: 3",
             "Programming Language :: Python :: 3.7",
+            "Programming Language :: Python :: 3.8",
+            "Programming Language :: Python :: 3.9"
       ],
       #packages=["rlg"],
       include_package_data=True,
@@ -34,8 +36,6 @@ setup(name='rl-games',
             # this setup is only for pytorch
             # 
             'gym>=0.17.2',
-            # 'gym[atari]',
-            # 'gym[box2d]',
             'torch>=1.7.0',
             'numpy>=1.16.0',
             'ray>=1.1.0',
@@ -45,12 +45,6 @@ setup(name='rl-games',
             'psutil',
             'pyyaml'
             # Optional dependencies
-            # 'opencv-python>=4.1.0.25',
-            # 'tensorflow-gpu==1.14.0',
-            # 'gym-super-mario-bros==7.1.6',
-            # 'pybullet>=2.5.0',
-            # 'smac',
-            # 'dm_control',
-            # 'dm2gym',
+            # 'ray>=1.1.0',
       ],
       )

@@ -123,12 +123,11 @@ class A2CBase(BaseAlgorithm):
         self.rnn_states = None
         self.name = base_name
 
-        self.ppo = config['ppo']
+        self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', 1e6)
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
-        self.schedule_type = config.get('schedule_type', 'legacy')
 
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
@@ -1038,30 +1037,19 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset.update_mu_sigma(cmu, csigma)   
-
-                if self.schedule_type == 'legacy':  
-                    if self.multi_gpu:
-                        kl = self.hvd.average_value(kl, 'ep_kls')
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,kl.item())
-                    self.update_lr(self.last_lr)
+                self.dataset.update_mu_sigma(cmu, csigma)
 
             av_kls = torch_ext.mean_list(ep_kls)
 
-            if self.schedule_type == 'standard':
-                if self.multi_gpu:
-                    av_kls = self.hvd.average_value(av_kls, 'ep_kls')
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
-                self.update_lr(self.last_lr)
+            if self.multi_gpu:
+                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+            self.update_lr(self.last_lr)
+
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
-        if self.schedule_type == 'standard_epoch':
-            if self.multi_gpu:
-                av_kls = self.hvd.average_value(torch_ext.mean_list(kls), 'ep_kls')
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0,av_kls.item())
-            self.update_lr(self.last_lr)
 
         update_time_end = time.time()
         play_time = play_time_end - play_time_start

@@ -26,10 +26,8 @@ params:
         name: default
 
   config:
-    name: Walker2d-v3
-    env_name:  openai_gym
-    score_to_win: 20000
-    ppo: True
+    name: Walker2d-v4
+    env_name: openai_gym
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -42,7 +40,6 @@ params:
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.008
-    schedule_type: standard
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
@@ -56,9 +53,9 @@ params:
     use_smooth_clamp: True
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0005
-    max_epochs: 2000
+    max_epochs: 1000
     env_config:
-      name: Walker2d-v3
+      name: Walker2d-v4
       seed: 5
 
     player:

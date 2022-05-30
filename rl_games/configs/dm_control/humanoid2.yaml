@@ -29,36 +29,35 @@ params:
         #scale: 0.001
 
   config:
-      reward_shaper:
-        scale_value: 0.1
-      normalize_advantage: True
-      gamma: 0.99
-      tau: 0.9
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
 
-      learning_rate: 3e-4
-      name: dm_humanoid
-      score_to_win: 10000
+    learning_rate: 3e-4
+    name: dm_humanoid
+    score_to_win: 10000
 
-      grad_norm: 0.5
-      entropy_coef: 0.0
-      truncate_grads: True
-      env_name:  dm_control
-      ppo: true
-      e_clip: 0.2
-      clip_value: True
-      num_actors: 4
-      horizon_length: 4096
-      minibatch_size: 4096
-      mini_epochs: 15
-      critic_coef: 1
-      lr_schedule:  adaptive
-      kl_threshold: 0.008
+    grad_norm: 0.5
+    entropy_coef: 0.0
+    truncate_grads: True
+    env_name: dm_control
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 4
+    horizon_length: 4096
+    minibatch_size: 4096
+    mini_epochs: 15
+    critic_coef: 1
+    lr_schedule: adaptive
+    kl_threshold: 0.008
 
-      normalize_input: False
-      seq_length: 8
-      bounds_loss_coef: 0.0
+    normalize_input: False
+    seq_length: 8
+    bounds_loss_coef: 0.0
 
-      env_config:
-        name: Humanoid2Run-v0
-        flat_observation: True
+    env_config:
+      name: Humanoid2Run-v0
+      flat_observation: True
       

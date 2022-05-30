@@ -35,6 +35,7 @@ params:
       layer_norm: True
 
   config:
+    env_name: CartPoleMaskedVelocity-v1
     reward_shaper:
         scale_value: 0.1
     normalize_advantage: True
@@ -46,8 +47,6 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: CartPoleMaskedVelocity-v1
-    ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 16

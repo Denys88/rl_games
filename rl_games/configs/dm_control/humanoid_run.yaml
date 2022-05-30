@@ -29,38 +29,36 @@ params:
         #scale: 0.001
 
   config:
-      reward_shaper:
-        scale_value: 0.1
-      normalize_advantage: True
-      gamma: 0.995
-      tau: 0.95
-      learning_rate: 3e-4
-      name: dm_humanoid_run
-      score_to_win: 1000
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3e-4
+    name: dm_humanoid_run
+    score_to_win: 1000
 
-      grad_norm: 10.5
-      entropy_coef: 0.0
-      truncate_grads: True
-      env_name:  dm_control
-      ppo: true
-      e_clip: 0.2
-      clip_value: False
-      num_actors: 24
-      horizon_length: 1024
-      minibatch_size: 4096
-      mini_epochs: 4
-      critic_coef: 1
-      lr_schedule:  adaptive
-      kl_threshold: 0.008
-      schedule_type: 'standard'
-      value_bootstrap: True
-      normalize_input: True
-      normalize_value: True
-      bound_loss_type: 'regularisation' #'bound'
-      bounds_loss_coef: 0.001
+    grad_norm: 10.5
+    entropy_coef: 0.0
+    truncate_grads: True
+    env_name: dm_control
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 24
+    horizon_length: 1024
+    minibatch_size: 4096
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule:  adaptive
+    kl_threshold: 0.008
+    value_bootstrap: True
+    normalize_input: True
+    normalize_value: True
+    bound_loss_type: regularisation #'bound'
+    bounds_loss_coef: 0.001
 
-      env_config:
-        name: HumanoidRun-v0
-        flat_observation: True
-      player:
-        render: True
+    env_config:
+      name: HumanoidRun-v0
+      flat_observation: True
+    player:
+      render: True
