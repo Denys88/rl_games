@@ -20,10 +20,11 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
+      units: [128, 64, 32]
       activation: elu
       initializer:
-        name: default
+        name: variance_scaling_initializer
+        scale: 2.0
 
   config:
     name: HalfCheetah-v4

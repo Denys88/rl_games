@@ -35,6 +35,7 @@ params:
     reward_shaper:
       scale_value: 0.1
     normalize_advantage: True
+    use_smooth_clamp: True
     gamma: 0.99
     tau: 0.95
 
@@ -51,7 +52,6 @@ params:
     minibatch_size: 2048
     mini_epochs: 5
     critic_coef: 2
-    use_smooth_clamp: True
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     max_epochs: 1000
