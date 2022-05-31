@@ -95,6 +95,7 @@ class SHACAgent(ContinuousA2CBase):
         self.critic_model.eval()
         self.target_critic.eval()
         self.actor_model.train()
+        #torch.autograd.set_detect_anomaly(True)
 
         if self.normalize_input:
             self.actor_model.running_mean_std.train()
@@ -121,20 +122,28 @@ class SHACAgent(ContinuousA2CBase):
             obs, rewards, self.dones, infos = self.env_step(actions)
             step_time_end = time.time()
             episode_ended = self.current_lengths == self.max_episode_length - 1
+            episode_ended_indices = episode_ended.nonzero(as_tuple=False)
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
 
+            if self.normalize_input:
+                self.actor_model.running_mean_std.eval()
             real_obs = infos['obs_before_reset']
-            if torch.isnan(real_obs).sum() > 0 \
-                    or torch.isinf(real_obs).sum() > 0 \
-                    or (torch.abs(real_obs) > 1e6).sum() > 0:  # ugly fix for nan values
-                print('KTOTO NOOB')
-                last_obs_vals = last_values.detach()
-            else:
-                real_obs = self.obs_to_tensors(real_obs)
-                last_obs_vals = self.get_values(real_obs)
+            last_obs_vals = last_values.clone() #.detach()
+            for ind in episode_ended_indices:
+                if torch.isnan(real_obs[ind]).sum() > 0 \
+                        or torch.isinf(real_obs[ind]).sum() > 0 \
+                        or (torch.abs(real_obs[ind]) > 1e6).sum() > 0:  # ugly fix for nan values
+                    print('KTOTO NOOB:', ind)
+                else:
+                    print('VSE OK:', ind)
+                    curr_real_obs = self.obs_to_tensors(real_obs[ind])
+                    val = self.get_values(curr_real_obs)
+                    last_obs_vals[ind] = val
 
+            if self.normalize_input:
+                self.actor_model.running_mean_std.train()
             shaped_rewards += last_obs_vals * episode_ended.unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards.detach())
 
