@@ -65,9 +65,24 @@ To run Mujoco, Atari games or Box2d based environments training they need to be 
 
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
 
+## Citing
 
-# Development setup
+If you use rl-games in your research please use the following citation:
 
+```bibtex
+@misc{rl-games2022,
+title = {rl-games: A High-performance Framework for Reinforcement Learning},
+author = {Makoviichuk, Denys and Makoviychuk, Viktor},
+month = {May},
+year = {2022},
+publisher = {GitHub},
+journal = {GitHub repository},
+howpublished = {\url{https://github.com/Denys88/rl_games}},
+}
+```
+
+
+## Development setup
 
 ```bash
 poetry install
@@ -75,7 +90,7 @@ poetry install
 poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 ```
 
-# Training
+## Training
 **NVIDIA Isaac Gym**
 
 Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
