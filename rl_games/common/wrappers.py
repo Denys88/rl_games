@@ -596,8 +596,8 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
         return  observation * self.mask
 
 
-def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
-    env = gym.make(env_id)
+def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None, **kwargs):
+    env = gym.make(env_id, **kwargs)
     if 'Montezuma' in env_id:
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
@@ -647,7 +647,7 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True):
-    env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
+def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, **kwargs):
+    env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
     return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False)
 

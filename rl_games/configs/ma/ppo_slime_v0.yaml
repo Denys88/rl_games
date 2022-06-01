@@ -46,14 +46,13 @@ params:
     seq_length: 4
     use_action_masks: False
     ignore_dead_batches : False
-
+    device: cpu
 
     env_config:
       name: SlimeVolleyDiscrete-v0
 
-
     player:
-      render: True
+      render: False
       games_num: 200
       n_game_life: 1
       determenistic: True

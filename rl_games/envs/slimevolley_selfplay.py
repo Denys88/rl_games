@@ -34,7 +34,7 @@ class SlimeVolleySelfplay(gym.Env):
             from rl_games.common.env_configurations import get_env_info
             config['params']['config']['env_info'] = get_env_info(self)
             runner.load(config)
-        config = runner.get_prebuilt_config()
+        config = runner.default_config
 
         'RAYLIB has bug here, CUDA_VISIBLE_DEVICES become unset'
         os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -46,7 +46,7 @@ class SlimeVolleySelfplay(gym.Env):
         op_obs = self.agent.obs_to_torch(self.opponent_obs)
         
         opponent_action = self.agent.get_action(op_obs, self.is_determenistic).item()
-        obs, reward, done, info = self.env.step(action, opponent_action)
+        obs, reward, done, info = self.env.step((action, opponent_action))
         self.sum_rewards += reward
         if reward < 0:
             reward = reward * self.neg_scale

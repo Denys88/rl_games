@@ -44,7 +44,7 @@ params:
     kl_threshold: 0.05
     normalize_input: False
     games_to_track: 500
-
+    device: cpu
     self_play_config:
       update_score: 1
       games_to_check: 200
@@ -55,7 +55,7 @@ params:
       #neg_scale: 1 #0.5
       self_play: True
       config_path: 'rl_games/configs/ma/ppo_slime_self_play.yaml'
-
+      seed: 5
     player:
       render: True
       games_num: 200
