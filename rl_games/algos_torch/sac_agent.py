@@ -1,4 +1,3 @@
-from turtle import shape
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
