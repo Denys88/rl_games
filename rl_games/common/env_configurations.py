@@ -2,6 +2,7 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
 from rl_games.envs.brax import create_brax_env
+from rl_games.envs.bidexhands_env import create_bidex_env
 from rl_games.envs.envpool import create_envpool
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
@@ -408,6 +409,10 @@ configurations = {
     'envpool': {
         'env_creator': lambda **kwargs: create_envpool(**kwargs),
         'vecenv_type': 'ENVPOOL'
+    },
+    'bidex': {
+        'env_creator': lambda **kwargs: create_bidex_env(**kwargs),
+        'vecenv_type': 'BIDEX'
     },
 }
 
