@@ -143,6 +143,14 @@ poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_t
 ```
 
 
+## Multi GPU
+
+We use `torchrun` to orchestrate any multi-gpu runs.
+
+```bash
+torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
+```
+
 ## Config Parameters
 
 | Field                  | Example Value                             | Default  | Description                                                                                            |
