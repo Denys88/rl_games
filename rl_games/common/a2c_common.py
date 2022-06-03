@@ -901,7 +901,7 @@ class DiscreteA2CBase(A2CBase):
         self.obs = self.env_reset()
 
         if self.multi_gpu:
-            # 
+            torch.cuda.set_device(self.rank)
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
             dist.broadcast_object_list(model_params, 0)

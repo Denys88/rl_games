@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import torch.distributed as dist
 import gym
 import numpy as np
 from rl_games.algos_torch import torch_ext
@@ -9,7 +10,7 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu, hvd):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
@@ -19,7 +20,6 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self.hvd = hvd
         self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
@@ -77,8 +77,8 @@ class CentralValueTrain(nn.Module):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr])
-            self.hvd.broadcast_value(lr_tensor, 'cv_learning_rate')
+            lr_tensor = torch.tensor([lr], device=self.device)
+            dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
         for param_group in self.optimizer.param_groups:
