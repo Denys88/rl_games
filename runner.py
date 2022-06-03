@@ -52,7 +52,8 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    if args["track"]:
+    rank = int(os.getenv("LOCAL_RANK", "0"))
+    if args["track"] and rank == 0:
         import wandb
 
         wandb.init(
@@ -67,4 +68,6 @@ if __name__ == '__main__':
     runner.run(args)
 
     ray.shutdown()
-        
+    
+    if args["track"] and rank == 0:
+        wandb.finish()

@@ -20,6 +20,7 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 import torch 
 from torch import nn
+import torch.distributed as dist
  
 from time import sleep
 
@@ -68,11 +69,15 @@ class A2CBase(BaseAlgorithm):
         self.rank_size = 1
         self.curr_frames = 0
         if self.multi_gpu:
-            from rl_games.distributed.hvd_wrapper import HorovodWrapper
-            self.hvd = HorovodWrapper()
-            self.config = self.hvd.update_algo_config(config)
-            self.rank = self.hvd.rank
-            self.rank_size = self.hvd.rank_size
+            self.rank = int(os.getenv("LOCAL_RANK", "0"))
+            self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
+            dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
+
+            self.device_name = 'cuda:' + str(self.rank)
+            config['device'] = self.device_name
+            if self.rank != 0:
+                config['print_stats'] = False
+                config['lr_schedule'] = None
 
         self.use_diagnostics = config.get('use_diagnostics', False)
 
@@ -251,19 +256,27 @@ class A2CBase(BaseAlgorithm):
 
     def trancate_gradients_and_step(self):
         if self.multi_gpu:
-            self.optimizer.synchronize()
+            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
+            all_grads_list = []
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    all_grads_list.append(param.grad.view(-1))
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
+                    )
+                    offset += param.numel()
         
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        if self.multi_gpu:
-            with self.optimizer.skip_synchronize():
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-        else:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -308,8 +321,8 @@ class A2CBase(BaseAlgorithm):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr])
-            self.hvd.broadcast_value(lr_tensor, 'learning_rate')
+            lr_tensor = torch.tensor([lr], device=self.device)
+            dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
         for param_group in self.optimizer.param_groups:
@@ -802,7 +815,8 @@ class DiscreteA2CBase(A2CBase):
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
-                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+                dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
+                av_kls /= self.rank_size
 
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
@@ -887,19 +901,20 @@ class DiscreteA2CBase(A2CBase):
         self.obs = self.env_reset()
 
         if self.multi_gpu:
-            self.hvd.setup_algo(self)
+            torch.cuda.set_device(self.rank)
+            print("====================broadcasting parameters")
+            model_params = [self.model.state_dict()]
+            dist.broadcast_object_list(model_params, 0)
+            self.model.load_state_dict(model_params[0])
 
         while True:
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
 
-            if self.multi_gpu:
-                self.hvd.sync_stats(self)
-
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             total_time += sum_time
-            curr_frames = self.curr_frames
+            curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
             self.frame += curr_frames
             should_exit = False
             if self.rank == 0:
@@ -959,9 +974,9 @@ class DiscreteA2CBase(A2CBase):
                     should_exit = True                              
                 update_time = 0
             if self.multi_gpu:
-                    should_exit_t = torch.tensor(should_exit).float()
-                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
-                    should_exit = should_exit_t.bool().item()
+                should_exit_t = torch.tensor(should_exit).float()
+                dist.broadcast(should_exit_t, 0)
+                should_exit = should_exit_t.bool().item()
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
@@ -1040,9 +1055,10 @@ class ContinuousA2CBase(A2CBase):
                 self.dataset.update_mu_sigma(cmu, csigma)
 
             av_kls = torch_ext.mean_list(ep_kls)
-
             if self.multi_gpu:
-                av_kls = self.hvd.average_value(av_kls, 'ep_kls')
+                dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
+                av_kls /= self.rank_size
+
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
 
@@ -1128,7 +1144,11 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = self.batch_size_envs
 
         if self.multi_gpu:
-            self.hvd.setup_algo(self)
+            # 
+            print("====================broadcasting parameters")
+            model_params = [self.model.state_dict()]
+            dist.broadcast_object_list(model_params, 0)
+            self.model.load_state_dict(model_params[0])
 
         while True:
             epoch_num = self.update_epoch()
@@ -1136,8 +1156,6 @@ class ContinuousA2CBase(A2CBase):
             total_time += sum_time
             frame = self.frame // self.num_agents
 
-            if self.multi_gpu:
-                self.hvd.sync_stats(self)
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             should_exit = False
@@ -1147,7 +1165,7 @@ class ContinuousA2CBase(A2CBase):
                 # do we need scaled_time?
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
-                curr_frames = self.curr_frames
+                curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
                 self.frame += curr_frames
                 if self.print_stats:
                     fps_step = curr_frames / step_time
@@ -1204,9 +1222,9 @@ class ContinuousA2CBase(A2CBase):
 
                 update_time = 0
             if self.multi_gpu:
-                    should_exit_t = torch.tensor(should_exit).float()
-                    self.hvd.broadcast_value(should_exit_t, 'should_exit')
-                    should_exit = should_exit_t.float().item()
+                should_exit_t = torch.tensor(should_exit).float()
+                dist.broadcast(should_exit_t, 0)
+                should_exit = should_exit_t.float().item()
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
