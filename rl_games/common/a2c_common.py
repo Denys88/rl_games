@@ -974,7 +974,7 @@ class DiscreteA2CBase(A2CBase):
                     should_exit = True                              
                 update_time = 0
             if self.multi_gpu:
-                should_exit_t = torch.tensor(should_exit).float()
+                should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.bool().item()
             if should_exit:
@@ -1222,7 +1222,7 @@ class ContinuousA2CBase(A2CBase):
 
                 update_time = 0
             if self.multi_gpu:
-                should_exit_t = torch.tensor(should_exit).float()
+                should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
             if should_exit:
