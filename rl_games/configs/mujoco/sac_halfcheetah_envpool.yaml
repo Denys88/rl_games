@@ -26,7 +26,7 @@ params:
     reward_shaper:
       scale_value: 1.0
 
-    max_epochs: 25000
+    max_epochs: 100000
     num_steps_per_episode: 8
     save_best_after: 500
     save_frequency: 1000
@@ -38,7 +38,7 @@ params:
     critic_tau: 0.005
     batch_size: 2048
     learnable_temperature: True
-    num_seed_steps: 5
+    num_warmup_steps: 5
     replay_buffer_size: 1000000
     num_actors: 32
 

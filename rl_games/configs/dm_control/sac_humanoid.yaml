@@ -38,7 +38,7 @@ params:
     critic_tau: 0.005
     batch_size: 1024
     learnable_temperature: true
-    num_seed_steps: 16 # total steps: num_actors * num_steps_per_episode * num_seed_steps
+    num_warmup_steps: 16
     replay_buffer_size: 1000000
     num_actors: 32
 

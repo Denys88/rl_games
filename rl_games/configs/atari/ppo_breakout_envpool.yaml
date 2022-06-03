@@ -40,7 +40,7 @@ params:
         gain: 1.41421356237
 
   config:
-    name: breakout_ppo
+    name: Breakout_envpool
     env_name: envpool
     normalize_value: True
     normalize_input: False

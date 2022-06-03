@@ -228,7 +228,7 @@ class A2CBase(BaseAlgorithm):
             self.actor_loss_func = common_losses.actor_loss
 
         if self.normalize_advantage and self.normalize_rms_advantage:
-            momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
+            momentum = self.config.get('adv_rms_momentum', 0.5) #'0.25'
             self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
@@ -252,7 +252,7 @@ class A2CBase(BaseAlgorithm):
     def trancate_gradients_and_step(self):
         if self.multi_gpu:
             self.optimizer.synchronize()
-        
+
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
@@ -798,7 +798,7 @@ class DiscreteA2CBase(A2CBase):
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
-                entropies.append(entropy)   
+                entropies.append(entropy)
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
@@ -828,7 +828,7 @@ class DiscreteA2CBase(A2CBase):
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-        
+   
         obses = batch_dict['obses']
         if self.normalize_value:
             self.value_mean_std.train()
@@ -837,7 +837,7 @@ class DiscreteA2CBase(A2CBase):
             self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
- 
+
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -910,10 +910,11 @@ class DiscreteA2CBase(A2CBase):
                 frame = self.frame // self.num_agents
 
                 if self.print_stats:
+                    step_time = max(step_time, 1e-6)
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
@@ -1149,11 +1150,13 @@ class ContinuousA2CBase(A2CBase):
                 scaled_play_time = self.num_agents * play_time
                 curr_frames = self.curr_frames
                 self.frame += curr_frames
+
                 if self.print_stats:
+                    step_time = max(step_time, 1e-6)
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
                 if len(b_losses) > 0:
@@ -1162,7 +1165,6 @@ class ContinuousA2CBase(A2CBase):
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
-                
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
@@ -1195,18 +1197,18 @@ class ContinuousA2CBase(A2CBase):
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
                             should_exit = True
-                            
-
+                   
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     should_exit = True
 
                 update_time = 0
+
             if self.multi_gpu:
                     should_exit_t = torch.tensor(should_exit).float()
                     self.hvd.broadcast_value(should_exit_t, 'should_exit')
                     should_exit = should_exit_t.float().item()
+
             if should_exit:
                 return self.last_mean_rewards, epoch_num
-
