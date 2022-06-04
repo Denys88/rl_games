@@ -69,15 +69,15 @@ class SACAgent(BaseAlgorithm):
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
         self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
-                                                lr=self.config['actor_lr'],
+                                                lr=float(self.config['actor_lr']),
                                                 betas=self.config.get("actor_betas", [0.9, 0.999]))
 
         self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
-                                                 lr=self.config["critic_lr"],
+                                                 lr=float(self.config["critic_lr"]),
                                                  betas=self.config.get("critic_betas", [0.9, 0.999]))
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=self.config["alpha_lr"],
+                                                    lr=float(self.config["alpha_lr"]),
                                                     betas=self.config.get("alphas_betas", [0.9, 0.999]))
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
@@ -391,7 +391,7 @@ class SACAgent(BaseAlgorithm):
         self.mean_rewards = self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
 
-    def play_steps(self):
+    def play_steps(self, random_exploration = False):
         total_time_start = time.time()
         total_update_time = 0
         total_time = 0
@@ -405,8 +405,6 @@ class SACAgent(BaseAlgorithm):
 
         obs = self.obs
         for s in range(self.num_steps_per_episode):
-
-            random_exploration = s < self.num_warmup_steps
             self.set_eval()
             if random_exploration:
                 action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device) * 2.0 - 1.0
@@ -423,8 +421,7 @@ class SACAgent(BaseAlgorithm):
             self.current_rewards += rewards
             self.current_lengths += 1
 
-            total_time += step_end - step_start
-
+            total_time += (step_end - step_start)
             step_time += (step_end - step_start)
 
             all_done_indices = dones.nonzero(as_tuple=False)
@@ -454,7 +451,7 @@ class SACAgent(BaseAlgorithm):
             self.obs = obs = next_obs.clone()
 
             if not random_exploration:
-                self.set_train() 
+                self.set_train()
                 update_time_start = time.time()
                 actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
                 update_time_end = time.time()
@@ -475,7 +472,8 @@ class SACAgent(BaseAlgorithm):
         return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train_epoch(self):
-        return self.play_steps()
+        random_exploration = self.epoch_num < self.num_warmup_steps
+        return self.play_steps(random_exploration)
 
     def train(self):
         self.init_tensors()
@@ -498,7 +496,7 @@ class SACAgent(BaseAlgorithm):
             fps_step = curr_frames / step_time
             fps_step_inference = curr_frames / play_time
             fps_total = curr_frames / epoch_total_time
-            
+
             if self.print_stats:
                 print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {self.epoch_num}/{self.max_epochs}')
 
