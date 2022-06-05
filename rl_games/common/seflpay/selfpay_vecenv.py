@@ -36,11 +36,10 @@ class SelfPlayEnv(vecenv.IVecEnv):
         self.vec_env = vec_env
         self.networks_rate = kwargs.pop('networks_rate', 2)
         self.current_game = 0
-        self.net_path = 'nn/'
+        self.net_path = kwargs.pop('net_path', 'nn')
         self.networks = NetworksFolder(self.net_path)
 
     def _get_obs(self, obs, last_actions=None):
-        obs = self.obs_processor.process_obs(obs, last_actions)
         if self.eval_mode:
             return obs
         else:
@@ -69,11 +68,6 @@ class SelfPlayEnv(vecenv.IVecEnv):
         if self.use_reward_diff:
             my_reward = reward[:self.n_agents // 2] - reward[self.n_agents // 2:]
 
-        if dones[0] == True:
-            obs = self.reset()
-            dones = np.ones(self.n_arenas * self.n_agents_per_team).astype(np.bool)
-        else:
-            dones = np.zeros(self.n_arenas * self.n_agents_per_team).astype(np.bool)
         return obs, my_reward, dones, info
 
     def reset(self):
@@ -137,7 +131,7 @@ class SelfPlayEnv(vecenv.IVecEnv):
         return op_action
 
     def get_number_of_agents(self):
-        return self.vec_env.get_number_of_agents()
+        return self.vec_env.get_number_of_agents() // 2
 
     def get_env_info(self):
         info = {}

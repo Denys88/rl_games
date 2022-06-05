@@ -212,6 +212,9 @@ class RayVecEnv(IVecEnv):
             ret_obs = newobsdict
         return ret_obs
 
+    def get_number_of_agents(self):
+        return self.num_agents
+
 vecenv_config = {}
 
 def register(config_name, func):
@@ -228,3 +231,6 @@ register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, 
 
 from rl_games.envs.envpool import Envpool
 register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))
+
+from rl_games.envs.self_play import dm_soccer
+register('SelfPlaySoccerVecEnv', lambda config_name, num_actors, **kwargs: dm_soccer.SelfPlaySoccerEnv(config_name, num_actors, **kwargs))

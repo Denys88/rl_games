@@ -1,6 +1,7 @@
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
+from rl_games.envs.self_play import dm_soccer
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
 import gym
@@ -409,6 +410,10 @@ configurations = {
         'env_creator': lambda **kwargs: create_envpool(**kwargs),
         'vecenv_type': 'ENVPOOL'
     },
+    'SelfPlaySoccerVecEnv': {
+        'env_creator': lambda **kwargs: dm_soccer.create_dm_soccer(**kwargs),
+        'vecenv_type': 'SelfPlaySoccerVecEnv'
+    },
 }
 
 def get_env_info(env):
@@ -442,3 +447,4 @@ def get_obs_and_action_spaces_from_config(config):
 
 def register(name, config):
     configurations[name] = config
+
