@@ -97,6 +97,8 @@ class A2CBase(BaseAlgorithm):
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
             self.env_info = self.vec_env.get_env_info()
+        else:
+            self.vec_env = config.get('vec_env', None)
 
         self.ppo_device = config.get('device', 'cuda:0')
         self.value_size = self.env_info.get('value_size',1)
