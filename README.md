@@ -143,6 +143,14 @@ poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_t
 ```
 
 
+## Multi GPU
+
+We use `torchrun` to orchestrate any multi-gpu runs.
+
+```bash
+torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
+```
+
 ## Config Parameters
 
 | Field                  | Example Value                             | Default  | Description                                                                                            |
@@ -270,6 +278,7 @@ Additional environment supported properties and functions
 * Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
 * Added Brax and Mujoco colab training examples.
 * Added 'seed' command line parameter. Will override seed in config in case it's > 0.
+* Deprecated `horovod` in favor of `torch.distributed` ([#171](https://github.com/Denys88/rl_games/pull/171)).
 
 1.4.0
 
