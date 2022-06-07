@@ -491,7 +491,7 @@ class A2CBuilder(NetworkBuilder):
                 self.is_discrete = False
                 self.is_continuous = False
                 self.is_multi_discrete = False
-     
+
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
@@ -529,7 +529,7 @@ class ConvBlock(nn.Module):
         x = self.conv(x)
         if self.use_bn:
             x = self.bn(x)
-        return x       
+        return x
 
 
 class ResidualBlock(nn.Module):
@@ -547,7 +547,7 @@ class ResidualBlock(nn.Module):
         if use_attention:
             self.ca = ChannelAttention(channels)
             self.sa = SpatialAttention()
-    
+
     def forward(self, x):
         residual = x
         x = self.activate1(x)
@@ -566,12 +566,12 @@ class ResidualBlock(nn.Module):
 
 class ImpalaSequential(nn.Module):
     def __init__(self, in_channels, out_channels, activation='elu', use_bn=True, use_zero_init=False):
-        super().__init__()    
+        super().__init__()
         self.conv = ConvBlock(in_channels, out_channels, use_bn)
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.res_block1 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
         self.res_block2 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
-    
+
     def forward(self, x):
         x = self.conv(x)
         x = self.max_pool(x)
@@ -597,12 +597,12 @@ class A2CResnetBuilder(NetworkBuilder):
 
             NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
             self.load(params)
-  
+
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
 
             in_mlp_shape = mlp_input_shape
-            
+
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -617,7 +617,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     in_mlp_shape = self.rnn_units
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
-                    
+
             mlp_args = {
                 'input_size' : in_mlp_shape, 
                 'units' :self.units, 
@@ -646,7 +646,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
-            
+
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
                     nn.init.kaiming_normal_(m.weight, mode='fan_out')
@@ -654,7 +654,7 @@ class A2CResnetBuilder(NetworkBuilder):
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
-            
+
             if self.is_discrete:
                 mlp_init(self.logits.weight)
             if self.is_continuous:
@@ -675,7 +675,7 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
-                
+
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     out = self.mlp(out)
@@ -765,6 +765,7 @@ class A2CResnetBuilder(NetworkBuilder):
         net = A2CResnetBuilder.Network(self.params, **kwargs)
         return net
 
+
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of an diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
@@ -793,6 +794,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         # Modify to only return mu and std
         return dist
 
+
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
     """Critic network, employes double Q-learning."""
     def __init__(self, output_dim, **mlp_args):
@@ -805,7 +807,6 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         self.Q2 = self._build_mlp(**mlp_args)
         last_layer = list(self.Q2.children())[-2].out_features
         self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
-
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
@@ -823,11 +824,11 @@ class SACBuilder(NetworkBuilder):
 
     def load(self, params):
         self.params = params
-    
+
     def build(self, name, **kwargs):
         net = SACBuilder.Network(self.params, **kwargs)
         return net
-    
+
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
             actions_num = kwargs.pop('actions_num')
@@ -839,7 +840,6 @@ class SACBuilder(NetworkBuilder):
             self.load(params)
 
             mlp_input_shape = input_shape
-
 
             actor_mlp_args = {
                 'input_size' : obs_dim, 
@@ -862,7 +862,7 @@ class SACBuilder(NetworkBuilder):
             }
             print("Building Actor")
             self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
-            
+
             if self.separate:
                 print("Building Critic")
                 self.critic = self._build_critic(1, **critic_mlp_args)
@@ -871,7 +871,7 @@ class SACBuilder(NetworkBuilder):
                 self.critic_target.load_state_dict(self.critic.state_dict())  
 
             mlp_init = self.init_factory.create(**self.initializer)
-            for m in self.modules():         
+            for m in self.modules():
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
                     if getattr(m, "bias", None) is not None:
@@ -879,8 +879,7 @@ class SACBuilder(NetworkBuilder):
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
                     if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)    
-
+                        torch.nn.init.zeros_(m.bias)
 
         def _build_critic(self, output_dim, **mlp_args):
             return DoubleQCritic(output_dim, **mlp_args)
@@ -893,8 +892,7 @@ class SACBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             mu, sigma = self.actor(obs)
             return mu, sigma
-        
-                    
+ 
         def is_separate_critic(self):
             return self.separate
 
@@ -923,5 +921,3 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
-
-            

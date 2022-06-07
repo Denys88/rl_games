@@ -1197,7 +1197,7 @@ class ContinuousA2CBase(A2CBase):
                             print('Network won!')
                             self.save(os.path.join(self.nn_dir, checkpoint_name))
                             should_exit = True
-                   
+     
                 if epoch_num > self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
