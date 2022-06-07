@@ -33,12 +33,12 @@ class DMSoccerEnv(gym.Env):
         from dm_control.locomotion import soccer as dm_soccer
 
         from dm2gym.envs.dm_suite_env import convert_dm_control_to_gym_space
-        self.team_size = kwargs.pop('team_size', 1)
+        self.team_size = kwargs.pop('team_size', 2)
         self.num_agents = self.team_size * 2
         self.env = dm_soccer.load(team_size=self.team_size,
                              time_limit=kwargs.pop('time_limit', 60),
-                             disable_walker_contacts=kwargs.pop('disable_walker_contacts', False),
-                             enable_field_box=kwargs.pop('enable_field_box', True),
+                             disable_walker_contacts=kwargs.pop('disable_walker_contacts', True),
+                             enable_field_box=kwargs.pop('enable_field_box', False),
                              terminate_on_goal=kwargs.pop('terminate_on_goal', False),
                              walker_type=dm_soccer.WalkerType.BOXHEAD)
         self.observation_space = get_observation_space(self.env.observation_spec()[0])
@@ -47,7 +47,7 @@ class DMSoccerEnv(gym.Env):
 
         print('DMSoccerEnv:')
         print(self.observation_space)
-        print(self.action_space)
+        print(self.env.action_spec()[0])
 
 
     def get_number_of_agents(self):
@@ -69,7 +69,9 @@ class DMSoccerEnv(gym.Env):
         obs = self._parse_obs(observation)
         reward = np.array(reward)
         for i in range(self.num_agents):
-            reward[i] += np.where(observation[i]['stats_vel_ball_to_goal'] > 0, observation[i]['stats_vel_ball_to_goal'], observation[i]['stats_vel_ball_to_goal'] * 0.1) / 1000 + observation[i]['stats_vel_to_ball'] / 10000 + observation[i]['stats_veloc_forward'] / 20000
+            reward[i] *= 10.0
+            reward[i] += np.where(observation[i]['stats_vel_ball_to_goal'] > 0, observation[i]['stats_vel_ball_to_goal'], observation[i]['stats_vel_ball_to_goal'] * 0.1) / 1000
+            reward[i] += observation[i]['stats_vel_to_ball'] / 5000 + observation[i]['stats_veloc_forward'] / 10000
 
         return obs, reward, np.array([done] * self.num_agents), info
 
@@ -139,7 +141,7 @@ class SelfPlaySoccerEnv(ivecenv.IVecEnv):
         ivecenv.IVecEnv.__init__(self)
         from rl_games.common.vecenv import RayVecEnv
         self.num_actors = num_actors
-        self.networks_rate = kwargs.pop('networks_rate', 100)
+        self.networks_rate = kwargs.pop('networks_rate', 100//num_actors)
         self.current_game = 0
         self.net_path = kwargs.pop('net_path', 'nn')
         self.op_bot = kwargs.pop('op_bot', 'random')

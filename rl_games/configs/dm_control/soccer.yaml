@@ -20,10 +20,16 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [512, 256]
       activation: elu
       initializer:
         name: default
+    rnn:
+      name: gru
+      units: 128
+      layers: 1
+      layer_norm: False
+
 
   config:
       name: DMSoccerEnv-v0
@@ -36,7 +42,7 @@ params:
       reward_shaper:
         scale_value: 1
       normalize_advantage: True
-      gamma: 0.99
+      gamma: 0.995
       tau: 0.95
 
       learning_rate: 3e-4
@@ -55,14 +61,14 @@ params:
 
       max_epochs: 25000
       num_actors: 16
-      horizon_length: 64
-      minibatch_size: 512
+      horizon_length: 256
+      minibatch_size: 1024
       mini_epochs: 5
       critic_coef: 2
       save_frequency: 400
       full_experiment_name: 'soccer_sp'
       env_config:
-        op_bot: 'random' #'runs/soccer_sp/nn/last_DMSoccerEnv-v0_ep_1800_rew_0.36018568.pth'
+        op_bot: 'random'  # 'runs/soccer_sp/nn/last_DMSoccerEnv-v0_ep_400_rew_2.144349.pth'
         net_path: 'runs/soccer_sp/nn/'
         config_path: 'rl_games/configs/dm_control/soccer.yaml'
         use_reward_diff: True
