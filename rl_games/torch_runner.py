@@ -91,7 +91,7 @@ class Runner:
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
-        self.load_config(params=copy.deepcopy(self.default_config))
+        self.load_config(params=self.default_config)
 
     def run_train(self, args):
         print('Started to train')
