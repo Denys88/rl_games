@@ -123,7 +123,8 @@ class CentralValueTrain(nn.Module):
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
-        if isinstance(obs_batch, dict):
+        if type(obs_batch) is dict:
+            obs_batch = copy.copy(obs_batch)
             for k,v in obs_batch.items():
                 if v.dtype == torch.uint8:
                     obs_batch[k] = v.float() / 255.0

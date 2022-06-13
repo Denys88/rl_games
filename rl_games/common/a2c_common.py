@@ -1,3 +1,4 @@
+import copy
 import os
 
 from rl_games.common import tr_helpers
@@ -419,8 +420,8 @@ class A2CBase(BaseAlgorithm):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
-            assert(self.observation_space.dtype != np.int8)
-            if self.observation_space.dtype == np.uint8:
+            assert(obs.dtype != np.int8)
+            if obs.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self.ppo_device)
             else:
                 obs = torch.FloatTensor(obs).to(self.ppo_device)
@@ -601,9 +602,10 @@ class A2CBase(BaseAlgorithm):
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
+            obs_batch = copy.copy(obs_batch)
             for k,v in obs_batch.items():
                 if v.dtype == torch.uint8:
-                    obs_batch[k] = v.float() / 255.
+                    obs_batch[k] = v.float() / 255.0
                 else:
                     obs_batch[k] = v
         else:
@@ -622,7 +624,6 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
-
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
 

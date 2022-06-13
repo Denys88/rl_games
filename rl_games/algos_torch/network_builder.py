@@ -508,6 +508,7 @@ class A2CBuilder(NetworkBuilder):
                 self.has_cnn = False
 
     def build(self, name, **kwargs):
+        print('A2CBuilder kwargs:', kwargs)
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
 
@@ -533,7 +534,7 @@ class ConvBlock(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=True, use_attention=False):
+    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=False, use_attention=False):
         super().__init__()
         self.use_zero_init=use_zero_init
         self.use_attention = use_attention
@@ -542,8 +543,8 @@ class ResidualBlock(nn.Module):
         self.activation = activation
         self.conv1 = ConvBlock(channels, channels, use_bn)
         self.conv2 = ConvBlock(channels, channels, use_bn)
-        self.activate1 = nn.ELU()
-        self.activate2 = nn.ELU()
+        self.activate1 = nn.ReLU()
+        self.activate2 = nn.ReLU()
         if use_attention:
             self.ca = ChannelAttention(channels)
             self.sa = SpatialAttention()
@@ -565,7 +566,7 @@ class ResidualBlock(nn.Module):
 
 
 class ImpalaSequential(nn.Module):
-    def __init__(self, in_channels, out_channels, activation='elu', use_bn=True, use_zero_init=False):
+    def __init__(self, in_channels, out_channels, activation='relu', use_bn=False, use_zero_init=False):
         super().__init__()    
         self.conv = ConvBlock(in_channels, out_channels, use_bn)
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -589,20 +590,22 @@ class A2CResnetBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num')
+            self.actions_num = actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            input_shape = torch_ext.shape_whc_to_cwh(input_shape)
+            if type(input_shape) is dict:
+                input_shape = input_shape['observation']
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
-            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
+            NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
-  
+            if self.permute_input:
+                input_shape = torch_ext.shape_whc_to_cwh(input_shape)
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
 
             in_mlp_shape = mlp_input_shape
-            
+
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -615,6 +618,10 @@ class A2CResnetBuilder(NetworkBuilder):
                 else:
                     rnn_in_size =  in_mlp_shape
                     in_mlp_shape = self.rnn_units
+                if self.require_rewards:
+                    rnn_in_size += 1
+                if self.require_last_actions:
+                    rnn_in_size += actions_num
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
                     
@@ -649,8 +656,8 @@ class A2CResnetBuilder(NetworkBuilder):
             
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                    #nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('elu'))
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    #nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
@@ -667,36 +674,62 @@ class A2CResnetBuilder(NetworkBuilder):
             mlp_init(self.value.weight)     
 
         def forward(self, obs_dict):
-            obs = obs_dict['obs']
-            obs = obs.permute((0, 3, 1, 2))
+            if self.require_rewards or self.require_last_actions:
+                obs = obs_dict['obs']['observation']
+                reward = obs_dict['obs']['reward']
+                last_action = obs_dict['obs']['last_action']
+                if self.is_discrete:
+                    last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+            else:
+                obs = obs_dict['obs']
+
+            if self.permute_input:
+                obs = obs.permute((0, 3, 1, 2))
+
+            dones = obs_dict.get('dones', None)
+            bptt_len = obs_dict.get('bptt_len', 0)
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
             out = obs
             out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
-                
+
             if self.has_rnn:
+                out_in = out
                 if not self.is_rnn_before_mlp:
+                    out_in = out
                     out = self.mlp(out)
 
+                obs_list = [out]
+                if self.require_rewards:
+                    obs_list.append(reward.unsqueeze(1))
+                if self.require_last_actions:
+                    obs_list.append(last_action)
+                out = torch.cat(obs_list, dim=1)
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length
                 out = out.reshape(num_seqs, seq_length, -1)
+
                 if len(states) == 1:
                     states = states[0]
-                out, states = self.rnn(out, states)
+
+                out = out.transpose(0, 1)
+                if dones is not None:
+                    dones = dones.reshape(num_seqs, seq_length, -1)
+                    dones = dones.transpose(0, 1)
+                out, states = self.rnn(out, states, dones, bptt_len)
+                out = out.transpose(0, 1)
                 out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
-                #out = self.layer_norm(out)
+
+                if self.rnn_ln:
+                    out = self.layer_norm(out)
+                if self.is_rnn_before_mlp:
+                    out = self.mlp(out)
                 if type(states) is not tuple:
                     states = (states,)
-
-                if self.is_rnn_before_mlp:
-                        for l in self.mlp:
-                            out = l(out)
             else:
-                for l in self.mlp:
-                    out = l(out)
+                out = self.mlp(out)
 
             value = self.value_act(self.value(out))
 
@@ -713,7 +746,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 return mu, mu*0 + sigma, value, states
 
         def load(self, params):
-            self.separate = params['separate']
+            self.separate = False
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
@@ -735,9 +768,12 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
-
+                self.rnn_ln = params['rnn'].get('layer_norm', False)
             self.has_cnn = True
+            self.permute_input = params['cnn'].get('permute_input', True)
             self.conv_depths = params['cnn']['conv_depths']
+            self.require_rewards = params.get('require_rewards')
+            self.require_last_actions = params.get('require_last_actions')
 
         def _build_impala(self, input_shape, depths):
             in_channels = input_shape[0]
