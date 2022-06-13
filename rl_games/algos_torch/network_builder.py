@@ -1,7 +1,6 @@
 from rl_games.common import object_factory
 from rl_games.algos_torch import torch_ext
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,11 +10,11 @@ import math
 import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
+from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 
 
 def _create_initializer(func, **kwargs):
-    return lambda v : func(v, **kwargs)   
-
+    return lambda v : func(v, **kwargs)
 
 class NetworkBuilder:
     def __init__(self, **kwargs):
@@ -40,6 +39,8 @@ class NetworkBuilder:
             self.activations_factory.register_builder('sigmoid', lambda **kwargs : nn.Sigmoid(**kwargs))
             self.activations_factory.register_builder('elu', lambda  **kwargs : nn.ELU(**kwargs))
             self.activations_factory.register_builder('selu', lambda **kwargs : nn.SELU(**kwargs))
+            self.activations_factory.register_builder('swish', lambda **kwargs : nn.SiLU(**kwargs))
+            self.activations_factory.register_builder('gelu', lambda **kwargs: nn.GELU(**kwargs))
             self.activations_factory.register_builder('softplus', lambda **kwargs : nn.Softplus(**kwargs))
             self.activations_factory.register_builder('None', lambda **kwargs : nn.Identity())
 
@@ -78,12 +79,9 @@ class NetworkBuilder:
             if name == 'identity':
                 return torch_ext.IdentityRNN(input, units)
             if name == 'lstm':
-                return torch.nn.LSTM(input, units, layers, batch_first=True)
+                return LSTMWithDones(input_size=input, hidden_size=units, num_layers=layers)
             if name == 'gru':
-                return torch.nn.GRU(input, units, layers, batch_first=True)
-            if name == 'sru':
-                from sru import SRU
-                return SRU(input, units, layers, dropout=0, layer_norm=False)
+                return GRUWithDones(input_size=input, hidden_size=units, num_layers=layers)
 
         def _build_sequential_mlp(self, 
         input_size, 
@@ -191,7 +189,8 @@ class A2CBuilder(NetworkBuilder):
             self.critic_mlp = nn.Sequential()
             
             if self.has_cnn:
-                input_shape = torch_ext.shape_whc_to_cwh(input_shape)
+                if self.permute_input:
+                    input_shape = torch_ext.shape_whc_to_cwh(input_shape)
                 cnn_args = {
                     'ctype' : self.cnn['type'], 
                     'input_shape' : input_shape, 
@@ -263,7 +262,7 @@ class A2CBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
@@ -284,7 +283,7 @@ class A2CBuilder(NetworkBuilder):
 
             if self.is_continuous:
                 mu_init(self.mu.weight)
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
                     sigma_init(self.sigma.weight)  
@@ -293,11 +292,13 @@ class A2CBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
+            dones = obs_dict.get('dones', None)
+            bptt_len = obs_dict.get('bptt_len', 0)
             if self.has_cnn:
                 # for obs shape 4
                 # input expected shape (B, W, H, C)
                 # convert to (B, C, W, H)
-                if len(obs.shape) == 4:
+                if self.permute_input and len(obs.shape) == 4:
                     obs = obs.permute((0, 3, 1, 2))
 
             if self.separate:
@@ -324,9 +325,11 @@ class A2CBuilder(NetworkBuilder):
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
 
-                    if self.rnn_name == 'sru':
-                        a_out =a_out.transpose(0,1)
-                        c_out =c_out.transpose(0,1)
+                    a_out = a_out.transpose(0,1)
+                    c_out = c_out.transpose(0,1)
+                    if dones is not None:
+                        dones = dones.reshape(num_seqs, seq_length, -1)
+                        dones = dones.transpose(0,1)
 
                     if len(states) == 2:
                         a_states = states[0]
@@ -334,19 +337,16 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         a_states = states[:2]
                         c_states = states[2:]                        
-                    a_out, a_states = self.a_rnn(a_out, a_states)
-                    c_out, c_states = self.c_rnn(c_out, c_states)
-         
-                    if self.rnn_name == 'sru':
-                        a_out = a_out.transpose(0,1)
-                        c_out = c_out.transpose(0,1)
-                    else:
-                        if self.rnn_ln:
-                            a_out = self.a_layer_norm(a_out)
-                            c_out = self.c_layer_norm(c_out)
+                    a_out, a_states = self.a_rnn(a_out, a_states, dones, bptt_len)
+                    c_out, c_states = self.c_rnn(c_out, c_states, dones, bptt_len)
+
+                    a_out = a_out.transpose(0,1)
+                    c_out = c_out.transpose(0,1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
-
+                    if self.rnn_ln:
+                        a_out = self.a_layer_norm(a_out)
+                        c_out = self.c_layer_norm(c_out)
                     if type(a_states) is not tuple:
                         a_states = (a_states,)
                         c_states = (c_states,)
@@ -371,7 +371,7 @@ class A2CBuilder(NetworkBuilder):
 
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(a_out))
-                    if self.space_config['fixed_sigma']:
+                    if self.fixed_sigma:
                         sigma = mu * 0.0 + self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(a_out))
@@ -397,14 +397,14 @@ class A2CBuilder(NetworkBuilder):
                     if len(states) == 1:
                         states = states[0]
 
-                    if self.rnn_name == 'sru':
-                        out = out.transpose(0,1)
-
-                    out, states = self.rnn(out, states)
+                    out = out.transpose(0, 1)
+                    if dones is not None:
+                        dones = dones.reshape(num_seqs, seq_length, -1)
+                        dones = dones.transpose(0, 1)
+                    out, states = self.rnn(out, states, dones, bptt_len)
+                    out = out.transpose(0, 1)
                     out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
 
-                    if self.rnn_name == 'sru':
-                        out = out.transpose(0,1)
                     if self.rnn_ln:
                         out = self.layer_norm(out)
                     if self.is_rnn_before_mlp:
@@ -426,7 +426,7 @@ class A2CBuilder(NetworkBuilder):
                     return logits, value, states
                 if self.is_continuous:
                     mu = self.mu_act(self.mu(out))
-                    if self.space_config['fixed_sigma']:
+                    if self.fixed_sigma:
                         sigma = self.sigma_act(self.sigma)
                     else:
                         sigma = self.sigma_act(self.sigma(out))
@@ -482,6 +482,7 @@ class A2CBuilder(NetworkBuilder):
                 self.is_continuous = 'continuous'in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
+                    self.fixed_sigma = self.space_config['fixed_sigma']
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
                 elif self.is_multi_discrete:
@@ -502,6 +503,7 @@ class A2CBuilder(NetworkBuilder):
             if 'cnn' in params:
                 self.has_cnn = True
                 self.cnn = params['cnn']
+                self.permute_input = self.cnn.get('permute_input', True)
             else:
                 self.has_cnn = False
 
@@ -638,7 +640,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
@@ -657,7 +659,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 mlp_init(self.logits.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
                     sigma_init(self.sigma.weight)
@@ -704,7 +706,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_continuous:
                 mu = self.mu_act(self.mu(out))
-                if self.space_config['fixed_sigma']:
+                if self.fixed_sigma:
                     sigma = self.sigma_act(self.sigma)
                 else:
                     sigma = self.sigma_act(self.sigma(out))
@@ -722,6 +724,7 @@ class A2CResnetBuilder(NetworkBuilder):
             self.normalization = params.get('normalization', None)
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
+                self.fixed_sigma = self.space_config['fixed_sigma']
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
             elif self.is_multi_discrete:
@@ -920,89 +923,5 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
-
-
-    
-        
-'''
-class DQNBuilder(NetworkBuilder):
-    def __init__(self, **kwargs):
-        NetworkBuilder.__init__(self)
-
-    def load(self, params):
-        self.units = params['mlp']['units']
-        self.activation = params['mlp']['activation']
-        self.initializer = params['mlp']['initializer']
-        self.regularizer = params['mlp']['regularizer']         
-        self.is_dueling = params['dueling']
-        self.atoms = params['atoms']
-        self.is_noisy = params['noisy']
-        self.normalization = params.get('normalization', None)
-        if 'cnn' in params:
-            self.has_cnn = True
-            self.cnn = params['cnn']
-        else:
-            self.has_cnn = False
-
-    def build(self, name, **kwargs):
-        actions_num = kwargs.pop('actions_num')
-        input = kwargs.pop('inputs')
-        reuse = kwargs.pop('reuse')
-        is_train = kwargs.pop('is_train', True)
-        if self.is_noisy:
-            dense_layer = self._noisy_dense
-        else:
-            dense_layer = torch.nn.Linear
-        with tf.variable_scope(name, reuse=reuse):   
-            out = input
-            if self.has_cnn:
-                cnn_args = {
-                    'name' :'dqn_cnn',
-                    'ctype' : self.cnn['type'], 
-                    'input' : input, 
-                    'convs' :self.cnn['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'initializer' : self.cnn['initializer'], 
-                    'regularizer' : self.cnn['regularizer'],
-                    'norm_func_name' : self.normalization,
-                    'is_train' : is_train
-                }
-                out = self._build_conv(**cnn_args)
-                out = tf.contrib.layers.flatten(out)
-
-            mlp_args = {
-                'name' :'dqn_mlp',  
-                'input' : out, 
-                'activation' : self.activation, 
-                'initializer' : self.initializer, 
-                'regularizer' : self.regularizer,
-                'norm_func_name' : self.normalization,
-                'is_train' : is_train,
-                'dense_func' : dense_layer
-            }
-            if self.is_dueling:
-                if len(self.units) > 1:
-                    mlp_args['units'] = self.units[:-1]
-                    out = self._build_mlp(**mlp_args)
-                hidden_value = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_val')
-                hidden_advantage = dense_layer(inputs=out, units=self.units[-1], kernel_initializer = self.init_factory.create(**self.initializer), activation=self.activations_factory.create(self.activation), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='hidden_adv')
-
-                value = dense_layer(inputs=hidden_value, units=self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), activation=tf.identity, kernel_regularizer = self.regularizer_factory.create(**self.regularizer), name='value')
-                advantage = dense_layer(inputs=hidden_advantage, units= actions_num * self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='advantage')
-                advantage = tf.reshape(advantage, shape = [-1, actions_num, self.atoms])
-                value = tf.reshape(value, shape = [-1, 1, self.atoms])
-                q_values = value + advantage - tf.reduce_mean(advantage, reduction_indices=1, keepdims=True)
-            else:
-                mlp_args['units'] = self.units
-                out = self._build_mlp('dqn_mlp', out, self.units, self.activation, self.initializer, self.regularizer)
-                q_values = dense_layer(inputs=out, units=actions_num *self.atoms, kernel_initializer = self.init_factory.create(**self.initializer), kernel_regularizer = self.regularizer_factory.create(**self.regularizer), activation=tf.identity, name='q_vals')
-                q_values = tf.reshape(q_values, shape = [-1, actions_num, self.atoms])
-
-            if self.atoms == 1:
-                return tf.squeeze(q_values)
-            else:
-                return q_values
-
-'''
 
             

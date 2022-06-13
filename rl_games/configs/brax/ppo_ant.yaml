@@ -33,20 +33,18 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Ant_brax.pth
-
   config:
-    name: 'Ant_brax'
+    name: Ant_brax
+    full_experiment_name: Ant_brax
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True
+    normalize_advantage: True
+    use_smooth_clamp: True
     reward_shaper:
       scale_value: 1.0
-    normalize_advantage: True
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -61,12 +59,12 @@ params:
     truncate_grads: True
     e_clip: 0.2
     horizon_length: 8
-    num_actors: 8192
+    num_actors: 4096
     minibatch_size: 32768
-    mini_epochs: 4
+    mini_epochs: 5
     critic_coef: 2
     clip_value: False
     bounds_loss_coef: 0.0001
 
     env_config:
-      env_name: 'ant'
+      env_name: ant

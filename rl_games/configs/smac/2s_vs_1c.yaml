@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c_lstm
 
-  load_checkpoint: False
-  load_path: 'nn/2s_vs_1c_lstm'
-
   network:
     name: actor_critic
     separate: True
@@ -36,8 +33,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8

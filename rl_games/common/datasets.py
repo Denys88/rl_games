@@ -40,14 +40,17 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:
-                if v is dict:
-                    v_dict = { kd:vd[start:end] for kd, vd in v.items() }
+                if isinstance(v, dict):
+                    v_dict = {kd:vd[start:end] for kd, vd in v.items()}
                     input_dict[k] = v_dict
                 else:
-                    input_dict[k] = v[start:end]
+                    if v is not None:
+                        input_dict[k] = v[start:end]
+                    else:
+                        input_dict[k] = None
         
         rnn_states = self.values_dict['rnn_states']
-        input_dict['rnn_states'] = [s[:,gstart:gend,:] for s in rnn_states]
+        input_dict['rnn_states'] = [s[:, gstart:gend, :].contiguous() for s in rnn_states]
 
         return input_dict
 

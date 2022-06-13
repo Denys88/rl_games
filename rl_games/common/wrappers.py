@@ -1,4 +1,6 @@
 import numpy as np
+from numpy.random import randint
+
 import os
 os.environ.setdefault('PATH', '')
 from collections import deque
@@ -6,6 +8,8 @@ from collections import deque
 import gym
 from gym import spaces
 from copy import copy
+
+
 
 class InfoWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -41,7 +45,7 @@ class NoopResetEnv(gym.Wrapper):
         if self.override_num_noops is not None:
             noops = self.override_num_noops
         else:
-            noops = self.unwrapped.np_random.randint(1, self.noop_max + 1) #pylint: disable=E1101
+            noops = randint(1, self.noop_max + 1)
         assert noops > 0
         obs = None
         for _ in range(noops):

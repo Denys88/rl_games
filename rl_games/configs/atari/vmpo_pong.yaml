@@ -20,10 +20,10 @@ params:
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
+        gain: 1.4142
       regularizer:
         name: 'None'
-      convs:    
+      convs:
         - filters: 32
           kernel_size: 8
           strides: 4
@@ -36,13 +36,13 @@ params:
           kernel_size: 3
           strides: 1
           padding: 0
-      
+
     mlp:
       units: [512]
       activation: elu
       initializer:
         name: glorot_normal_initializer
-        gain: 1.4142 
+        gain: 1.4142
   config:
     reward_shaper:
       min_val: -1
@@ -68,7 +68,7 @@ params:
     lr_schedule:  none
     #kl_threshold: 0.008
     #schedule_entropy : True
-    normalize_value: False 
+    normalize_value: False
     normalize_input: False
     max_epochs: 3000
     player:

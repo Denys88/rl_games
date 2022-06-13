@@ -8,9 +8,9 @@ class Experiment:
         self.experiment_config = experiment_config
         self.best_results = -100500, 0
         self.use_best_prev_result = self.experiment_config.get('use_best_prev_result', True)
-        
+
         self.experiments = self.experiment_config['experiments']
-        
+
         self.last_exp_idx = self.experiment_config.get('start_exp', 0)
         self.sub_idx = self.experiment_config.get('start_sub_exp', 0)
 
@@ -39,7 +39,7 @@ class Experiment:
         self.current_config['config']['name'] += '_' + str(self.last_exp_idx) + '_' + str(self.sub_idx)
         print('Experiment name: ' + self.current_config['config']['name'])
         for key in self.experiments[self.last_exp_idx]['exp']:
-            self._set_parameter(self.current_config, key['path'],  key['value'][self.sub_idx])
+            self._set_parameter(self.current_config, key['path'], key['value'][self.sub_idx])
 
         with open('data.yml', 'w') as outfile:
             yaml.dump(self.current_config, outfile, default_flow_style=False)

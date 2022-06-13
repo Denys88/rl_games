@@ -26,9 +26,6 @@ params:
       initializer:
         name: default
         scale: 2         
-      
-  load_checkpoint: False
-  load_path: './nn/walker_truncated_step_1000.pth'
 
   config:
     name: walker_truncated_step_1000
@@ -44,7 +41,6 @@ params:
     tau: 0.95
 
     learning_rate: 3e-4
-    schedule_type: standard
     lr_schedule: adaptive
     kl_threshold: 0.005
 
@@ -53,7 +49,6 @@ params:
     entropy_coef: 0
     truncate_grads: True
     env_name: BipedalWalker-v3
-    ppo: True
     e_clip: 0.2
     clip_value: False
     num_actors: 16

@@ -47,7 +47,6 @@ params:
       entropy_coef: 0.0
       truncate_grads: True
       env_name:  LunarLanderContinuous-v2
-      ppo: true
       e_clip: 0.2
       clip_value: True
       num_actors: 16
@@ -57,7 +56,5 @@ params:
       critic_coef: 1
       lr_schedule:  adaptive
       kl_threshold: 0.008
-
       normalize_input: False
-      seq_length: 8
       bounds_loss_coef: 0
