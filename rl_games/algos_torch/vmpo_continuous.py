@@ -5,7 +5,6 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-from rl_games.algos_torch import ppg_aux
 
 from torch import optim
 import torch 
@@ -14,8 +13,8 @@ import numpy as np
 import gym
 
 class VMPOAgent(a2c_common.ContinuousA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.ContinuousA2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,

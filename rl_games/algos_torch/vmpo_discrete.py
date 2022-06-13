@@ -13,8 +13,8 @@ import numpy as np
 import gym
 
 class VMPOAgent(a2c_common.DiscreteA2CBase):
-    def __init__(self, base_name, config):
-        a2c_common.DiscreteA2CBase.__init__(self, base_name, config)
+    def __init__(self, base_name, params):
+        a2c_common.DiscreteA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         
         config = {
@@ -191,8 +191,7 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
-        if self.has_phasic_policy_gradients:
-            c_loss = self.ppg_aux_loss.train_value(self,input_dict)
+
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
 
     def train_actor_critic(self, input_dict):
