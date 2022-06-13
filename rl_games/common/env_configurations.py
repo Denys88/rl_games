@@ -102,7 +102,7 @@ def create_atari_gym_env(**kwargs):
     skip = kwargs.pop('skip',4)
     episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
-    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala)
+    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
     return env    
 
 def create_dm_control_env(**kwargs):
