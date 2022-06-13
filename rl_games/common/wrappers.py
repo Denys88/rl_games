@@ -573,6 +573,35 @@ class TimeLimit(gym.Wrapper):
         self._elapsed_steps = 0
         return self.env.reset(**kwargs)
 
+class ImpalaEnvWrapper(gym.Wrapper):
+    def __init__(self, env):
+        """Make end-of-life == end-of-episode, but only reset on True game over.
+        Done by DeepMind for the DQN and co. since it helps value estimation.
+        """
+        gym.Wrapper.__init__(self, env)
+
+        self.observation_space = gym.spaces.Dict({
+            'observation': self.env.observation_space,
+            'reward': gym.spaces.Box(low=0, high=1, shape=( ), dtype=np.float32),
+            'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=np.long)
+        })
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        obs = {
+            'observation': obs,
+            'reward': np.clip(reward, -1, 1),
+            'last_action': action
+        }
+        return obs, reward, done, info
+
+    def reset(self):
+        obs = self.env.reset()
+        obs = {
+            'observation': obs,
+            'reward': 0.0,
+            'last_action': 0
+        }
+        return obs
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
@@ -615,7 +644,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     #env = EpisodeStackedEnv(env)
     return env
 
-def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False):
+def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False, wrap_impala=False):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
@@ -629,6 +658,8 @@ def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, 
         env = ClipRewardEnv(env)
     if frame_stack:
         env = FrameStack(env, 4)
+    if wrap_impala:
+        env = ImpalaEnvWrapper(env)
     return env
 
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
@@ -647,7 +678,7 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True):
+def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
-    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False)
+    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala)
 
