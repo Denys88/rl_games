@@ -575,9 +575,6 @@ class TimeLimit(gym.Wrapper):
 
 class ImpalaEnvWrapper(gym.Wrapper):
     def __init__(self, env):
-        """Make end-of-life == end-of-episode, but only reset on True game over.
-        Done by DeepMind for the DQN and co. since it helps value estimation.
-        """
         gym.Wrapper.__init__(self, env)
 
         self.observation_space = gym.spaces.Dict({
@@ -586,10 +583,12 @@ class ImpalaEnvWrapper(gym.Wrapper):
             'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=np.long)
         })
     def step(self, action):
+        if not np.isscalar(action):
+            action = action.item()
         obs, reward, done, info = self.env.step(action)
         obs = {
             'observation': obs,
-            'reward': np.clip(reward, -1, 1),
+            'reward':np.clip(reward, -1, 1),
             'last_action': action
         }
         return obs, reward, done, info
@@ -626,7 +625,7 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None):
-    env = gym.make(env_id)
+    env = gym.make(env_id, render_mode='human')
     if 'Montezuma' in env_id:
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
@@ -680,5 +679,5 @@ def make_car_racing(env_id, skip=4):
 
 def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky)
-    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala)
+    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
 

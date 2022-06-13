@@ -141,6 +141,7 @@ class PpoPlayerDiscrete(BasePlayer):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
+
         self.model.eval()
         input_dict = {
             'is_train': False,

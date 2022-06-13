@@ -5,52 +5,38 @@ params:
   model:
     name: discrete_a2c
 
-
-
   network:
-    name: actor_critic
+    name: resnet_actor_critic
+    require_rewards: True
+    require_last_actions: True
     separate: False
-    space: 
+    value_shape: 1
+    space:
       discrete:
 
     cnn:
-      type: conv2d
+      permute_input: True
+      conv_depths: [16, 32, 32]
       activation: relu
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142 
+        name: default
       regularizer:
-        name: None
-      convs:    
-        - filters: 32
-          kernel_size: 8
-          strides: 4
-          padding: 0
-        - filters: 64
-          kernel_size: 4
-          strides: 2
-          padding: 0
-        - filters: 64
-          kernel_size: 3
-          strides: 1
-          padding: 0
-      
+        name: 'None'
+
     mlp:
       units: [512]
       activation: relu
       regularizer:
-        name: None
+        name: 'None'
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142 
+        name: default
     rnn:
       name: lstm
       units: 256
       layers: 1
-      #layer_norm: True
 
   config:
-    env_name: BreakoutNoFrameskip-v4
+    env_name: atari_gym
     reward_shaper:
       min_val: -1
       max_val: 1
@@ -59,7 +45,7 @@ params:
     gamma: 0.99
     tau: 0.95
     learning_rate: 5e-4
-    name: breakout_lstm
+    name: breakout_impala_lstm
     score_to_win: 900
     grad_norm: 0.5
     entropy_coef: 0.01
@@ -78,9 +64,13 @@ params:
     seq_length: 8
 
     # max_epochs: 5000
-
+    env_config:
+      skip: 4
+      name: 'BreakoutNoFrameskip-v4'
+      episode_life: True
+      wrap_impala: True
     player:
-      render: True
+      render: False
       games_num: 100
       n_game_life: 5
       determenistic: False

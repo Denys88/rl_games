@@ -682,7 +682,6 @@ class A2CResnetBuilder(NetworkBuilder):
                     last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
             else:
                 obs = obs_dict['obs']
-
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 

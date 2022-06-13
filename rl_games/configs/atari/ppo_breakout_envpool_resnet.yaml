@@ -70,8 +70,8 @@ params:
       use_dict_obs_space: True
 
     player:
-        render: True
-        games_num: 10
-        n_game_life: 1
+        render: False
+        games_num: 20
+        n_game_life: 5
         determenistic: True
 
