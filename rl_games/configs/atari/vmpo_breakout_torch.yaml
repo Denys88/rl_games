@@ -1,11 +1,12 @@
 params:  
   algo:
-    name: a2c_discrete
+    name: vmpo_discrete
 
   model:
     name: discrete_a2c
 
-
+  load_checkpoint: False
+  load_path: 
 
   network:
     name: actor_critic
@@ -41,42 +42,42 @@ params:
         gain: 1.41421356237
   config:
     reward_shaper:
-      min_val: -1
-      max_val: 1
+      #min_val: -1
+      #max_val: 1
       scale_value: 1
         
     normalize_advantage: True
-    gamma: 0.999
+    gamma: 0.997
     tau: 0.95
-    learning_rate: 5e-4
-    name: breakout_ppo
+    learning_rate: 1e-4
+    name: breakout_vmpo
     score_to_win: 900
     grad_norm: 10
-    entropy_coef: 0.01
+    entropy_coef: 0.0
     truncate_grads: True
     env_name: atari_gym
+    ppo: true
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    horizon_length: 256
+    horizon_length: 128
     minibatch_size: 512
-    mini_epochs: 3
+    mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None #adaptive
+    lr_schedule:  None
     kl_threshold: 0.008
     #lr_schedule:  linear
     #schedule_entropy: True
     normalize_value: True
     normalize_input: False
-    max_epochs: 3000
+    max_epochs: 10000
     env_config:
       skip: 4
-      name: BreakoutNoFrameskip-v4
+      name: 'BreakoutNoFrameskip-v4'
       episode_life: True
-      seed: 5
+
     player:
-      render: False
+      render: True
       games_num: 200
       n_game_life: 5
-      determenistic: False
-
+      determenistic: True

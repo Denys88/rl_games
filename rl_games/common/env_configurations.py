@@ -2,11 +2,13 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 import rl_games.envs.test
 from rl_games.envs.brax import create_brax_env
-from rl_games.envs.envpool import create_envpool
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
+
+#FLEX_PATH = '/home/viktor/Documents/rl/FlexRobotics'
+FLEX_PATH = '/home/trrrrr/Documents/FlexRobotics-master'
 
 
 
@@ -18,21 +20,34 @@ class HCRewardEnv(gym.RewardWrapper):
         return np.max([-10, reward])
 
 
-class DMControlWrapper(gym.Wrapper):
+class DMControlReward(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        self.observation_space = self.env.observation_space['observations']
-        self.observation_space.dtype = np.dtype('float32')
+        
+        self.num_stops = 0
+        self.max_stops = 1000
+        self.reward_threshold = 0.001
 
     def reset(self, **kwargs):
         self.num_stops = 0
+ 
         return self.env.reset(**kwargs)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
-        return observation, reward, done, info
+        if reward < self.reward_threshold:
+            self.num_stops += 1
+        else:
+            self.num_stops = max(0, self.num_stops-1)
+        if self.num_stops > self.max_stops:
+            #print('too many stops!')
+            reward = -10
+            observation = self.reset()
+            done = True
+        return observation, self.reward(reward), done, info
 
-
+    def reward(self, reward):
+        return reward
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -108,9 +123,9 @@ def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = 'dm2gym:'+ kwargs.pop('name')
     env = gym.make(name, environment_kwargs=kwargs)
-    env = DMControlWrapper(env)
+    env = DMControlReward(env)
     env = DMControlObsWrapper(env)
-    env = wrappers.TimeLimit(env, 1000)
+
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
     return env
@@ -198,27 +213,67 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
+    class GlobalStateWrapper(gym.core.ObservationWrapper):
+        """
+        Wrapper to use fully observable RGB image as the only observation output,
+        no language/mission. This can be used to have the agent to solve the
+        gridworld in pixel space.
+        """
+
+        def __init__(self, env, tile_size=8):
+            super().__init__(env)
+            self.use_central_value = True
+            self.tile_size = tile_size
+
+            self.observation_space = gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(self.env.width * tile_size, self.env.height * tile_size, 3),
+                dtype='uint8'
+            )
+
+
+            self.state_space = gym.spaces.Box(
+                low=0,
+                high=255,
+                shape=(self.env.width * tile_size, self.env.height * tile_size, 3),
+                dtype='uint8'
+            )
+
+        def observation(self, obs):
+            env = self.unwrapped
+            obs = env.get_obs_render(
+                obs['image'],
+                tile_size=self.tile_size
+            )
+
+            state = env.render(
+                mode='rgb_array',
+                highlight=False,
+                tile_size=self.tile_size
+            )
+  
+            return {
+                'obs': obs,
+                'state': state
+            }
 
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
-    rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
-    rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
-    view_size = kwargs.pop('view_size', 3)
+    fully_obs = kwargs.pop('fully_obs', False)
+    flat_obs = kwargs.pop('flat_obs', False)
+    global_state = kwargs.pop('global_state', False)
     env = gym.make(name, **kwargs)
-
-
+    env = gym_minigrid.wrappers.ViewSizeWrapper(env,3)
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
     if action_bonus:
         env = gym_minigrid.wrappers.ActionBonus(env)
 
-    if rgb_fully_obs:
-        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
-    elif rgb_partial_obs:
-        env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
-        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=84//view_size) # Get pixel observations
 
+    env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=28) # Get pixel observations
     env = gym_minigrid.wrappers.ImgObsWrapper(env)
+    
     print('minigird_env observation space shape:', env.observation_space)
     return env
 
@@ -355,11 +410,11 @@ configurations = {
     },
     'smac' : {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'RAY_SMAC'
     },
     'smac_cnn' : {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'RAY_SMAC'
     },
     'dm_control' : {
         'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
@@ -405,10 +460,6 @@ configurations = {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
         'vecenv_type': 'BRAX' 
     },
-    'envpool': {
-        'env_creator': lambda **kwargs: create_envpool(**kwargs),
-        'vecenv_type': 'ENVPOOL'
-    },
 }
 
 def get_env_info(env):
@@ -422,7 +473,6 @@ def get_env_info(env):
     '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
-    
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
