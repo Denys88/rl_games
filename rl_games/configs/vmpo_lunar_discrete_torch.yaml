@@ -20,7 +20,7 @@ params:
   config:
       reward_shaper:
         scale_value: 0.1
-      normalize_advantage: False
+      normalize_advantage: True
       gamma: 0.99
       tau: 0.95
 
