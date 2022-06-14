@@ -122,29 +122,30 @@ class VMPOAgent(a2c_common.ContinuousA2CBase):
             
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
-            action_log_probs = res_dict['prev_neglogp']
+            action_neglog_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            advprobs = torch.stack((advantage,action_log_probs))
+            advprobs = torch.stack((advantage,action_neglog_probs))
             
             advprobs = advprobs[:,torch.sort(advprobs[0],descending=True).indices]
             good_advantages = advprobs[0,:current_batch_size//2]
             good_logprobs = advprobs[1,:current_batch_size//2]
-            
-            # Get losses
-            phis = torch.nn.functional.softmax(good_advantages/self.eta.detach(), dim=-1)
-            L_pi = torch.mean(phis*good_logprobs)
-            L_eta = self.eta*self.eps_eta+self.eta*torch.log(torch.mean(torch.exp(good_advantages/self.eta)))
-            
-            KL = torch_ext.policy_kl(mu, sigma, old_mu_batch, old_sigma_batch, False)
-            
-            L_alpha = torch.mean(self.alpha*(self.eps_alpha-KL.detach())+self.alpha.detach()*KL)
-            
-            a_loss = L_pi + L_eta + L_alpha
-            
+
+            pi_loss = torch.exp(good_advantages / self.eta.detach()) / torch.sum(
+                torch.exp(good_advantages / self.eta.detach())) * good_neglogprobs
+            pi_loss = pi_loss.mean()
+            eta_loss = self.eta * self.eps_eta + self.eta * (good_advantages / self.eta).exp().mean().log()
+            kl = self.model.kl(input_dict, res_dict)
+            if self.is_const_eps_alpha:
+                coef_alpha = self.eps_alpha
+            else:
+                coef_alpha = torch.distributions.Uniform(self.eps_alpha[0], self.eps_alpha[1]).sample().exp()
+            alpha_loss = torch.mean(self.alpha * (coef_alpha - kl.detach()) + self.alpha.detach() * kl)
+
+            a_loss = pi_loss + eta_loss + alpha_loss
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:

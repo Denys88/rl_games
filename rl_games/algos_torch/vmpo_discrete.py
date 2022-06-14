@@ -21,7 +21,9 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1)
+            'value_size': self.env_info.get('value_size',1),
+            'normalize_value': self.normalize_value,
+            'normalize_input': self.normalize_input,
         }
 
         self.model = self.network.build(config)
@@ -30,14 +32,18 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
 
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
-
-        self.eta = torch.tensor(1.0).float().to(self.device)
-        self.alpha = torch.tensor(1.0).float().to(self.device)
+        self.eta = config.get('eta', 1.0)
+        self.alpha = config.get('alpha', 0.1)
+        self.eta = torch.tensor(self.eta).float().to(self.device)
+        self.alpha = torch.tensor(self.alpha).float().to(self.device)
         self.eta.requires_grad = True
         self.alpha.requires_grad = True
+
         self.eps_eta = config.get('eps_eta', 0.02)
         self.eps_alpha = config.get('eps_alpha', [0.005, 0.01])
-        self.eps_alpha = [torch.tensor(self.eps_alpha[0]).float().to(self.device).log() \
+        self.is_const_eps_alpha = np.isscalar(self.eps_alpha)
+        if not self.is_const_eps_alpha:
+            self.eps_alpha = [torch.tensor(self.eps_alpha[0]).float().to(self.device).log() \
                             ,torch.tensor(self.eps_alpha[1]).float().to(self.device).log()]
         params = [
                 {'params': self.model.parameters()},
@@ -46,11 +52,7 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             ]
         self.optimizer = optim.Adam(params, float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
-        if self.normalize_input:
-            if isinstance(self.observation_space,gym.spaces.Dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape).to(self.ppo_device)
-            else:
-                self.running_mean_std = RunningMeanStd(obs_shape).to(self.ppo_device)
+
 
         if self.has_central_value:
             cv_config = {
@@ -72,7 +74,8 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', True)
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
-        
+        if self.normalize_value:
+            self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
   
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                             or (not self.has_central_value) 
@@ -95,7 +98,7 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
 
     def calc_gradients(self, input_dict):
         value_preds_batch = input_dict['old_values']
-        old_action_log_probs_batch = input_dict['old_logp_actions']
+        old_action_neglog_probs_batch = input_dict['old_logp_actions']
         advantage = input_dict['advantages']
         return_batch = input_dict['returns']
         actions_batch = input_dict['actions']
@@ -121,27 +124,33 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
-            action_log_probs = res_dict['prev_neglogp']
+            action_neglog_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
 
 
-            advprobs = torch.stack((advantage,action_log_probs))
+            advprobs = torch.stack((advantage,action_neglog_probs))
             advprobs = advprobs[:,torch.sort(advprobs[0],descending=True).indices]
             good_advantages = advprobs[0,:current_batch_size//2]
-            good_logprobs = advprobs[1,:current_batch_size//2]
+            good_neglogprobs = advprobs[1,:current_batch_size//2]
 
             # Get losses
-            with torch.no_grad():
+            '''
+           with torch.no_grad():
                 aug_adv_max = (good_advantages / self.eta).max()
                 aug_adv = (good_advantages / self.eta.detach() - aug_adv_max).exp()
-                norm_aug_adv = aug_adv / aug_adv.sum()
-            pi_loss = (norm_aug_adv * good_logprobs).sum()
-            # loss_eta (dual func.)
-            eta_loss = self.eta * self.eps_eta + aug_adv_max + self.eta * (good_advantages / self.eta - aug_adv_max).exp().mean().log()
-            
+                norm_aug_adv = aug_adv / aug_adv.sum()            
+            '''
+
+            #pi_loss2 = (norm_aug_adv * good_logprobs).sum()
+            pi_loss = torch.exp(good_advantages / self.eta.detach()) / torch.sum(torch.exp(good_advantages / self.eta.detach()))*good_neglogprobs
+            pi_loss = pi_loss.mean()
+            eta_loss = self.eta * self.eps_eta + self.eta * (good_advantages / self.eta).exp().mean().log()
             kl = self.model.kl({'logits' : input_dict['old_logits']}, res_dict)
-            coef_alpha  = torch.distributions.Uniform(self.eps_alpha[0], self.eps_alpha[1]).sample().exp()
+            if self.is_const_eps_alpha:
+                coef_alpha = self.eps_alpha
+            else:
+                coef_alpha = torch.distributions.Uniform(self.eps_alpha[0], self.eps_alpha[1]).sample().exp()
             alpha_loss = torch.mean(self.alpha*(coef_alpha-kl.detach())+self.alpha.detach()*kl)
             
             a_loss = pi_loss + eta_loss + alpha_loss
@@ -182,17 +191,23 @@ class VMPOAgent(a2c_common.DiscreteA2CBase):
             self.scaler.update()
 
         with torch.no_grad():
-            self.eta.copy_(torch.clamp(self.eta,min=1e-5))
-            self.alpha.copy_(torch.clamp(self.alpha,min=1e-5)) 
+            self.eta.copy_(torch.clamp(self.eta,min=1e-8))
+            self.alpha.copy_(torch.clamp(self.alpha,min=1e-8))
 
         with torch.no_grad():
-            kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
+            kl_dist = 0.5 * ((old_action_neglog_probs_batch - action_neglog_probs)**2)
             if self.is_rnn:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
 
         self.train_result =  (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
+
+    def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames):
+        a2c_common.DiscreteA2CBase.write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
+        if self.writer:
+            self.writer.add_scalar('info/eta', self.eta, frame)
+            self.writer.add_scalar('info/alpha', self.alpha, frame)
 
     def train_actor_critic(self, input_dict):
         self.calc_gradients(input_dict)
