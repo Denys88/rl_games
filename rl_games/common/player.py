@@ -17,7 +17,8 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
-
+        else:
+            self.env = config.get('vec_env')
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
