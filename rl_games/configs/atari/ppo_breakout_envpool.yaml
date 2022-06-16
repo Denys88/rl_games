@@ -42,6 +42,7 @@ params:
   config:
     name: Breakout_envpool
     env_name: envpool
+    score_to_win: 900
     normalize_value: True
     normalize_input: False
     reward_shaper:
@@ -55,11 +56,9 @@ params:
     lr_schedule: None
     kl_threshold: 0.01
 
-    score_to_win: 900
-    grad_norm: 1
+    grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
-
     e_clip: 0.2
     clip_value: False
     num_actors: 64

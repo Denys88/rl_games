@@ -6,8 +6,6 @@ params:
   model:
     name: discrete_a2c
 
-
-
   network:
     name: actor_critic
     separate: False
@@ -15,13 +13,15 @@ params:
       discrete:
 
     cnn:
+      #permute_input: False
       type: conv2d
       activation: elu
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142 
+        name: default
+        #name: glorot_normal_initializer
+        #gain: 1.4142
       regularizer:
-        name: 'None'
+        name: None
       convs:    
         - filters: 32
           kernel_size: 8
@@ -40,12 +40,12 @@ params:
       units: [512]
       activation: elu
       initializer:
-        name: glorot_normal_initializer
-        gain: 1.4142
-  
+        name: orthogonal_initializer
+        gain: 1.41421356237
+
   config:
+    name: PongNoFrameskip_ray_64env
     env_name: PongNoFrameskip-v4
-    name: PongNoFrameskip
     score_to_win: 200.0
     normalize_value: True
     normalize_input: True
@@ -55,23 +55,28 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: True
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.01
     grad_norm: 1.0
     entropy_coef: 0.01
-    grad_norm: 1.0
-    entropy_coef: 0.01
-    truncate_grads: True 
+    truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 16
-    horizon_length: 512
+    num_actors: 64
+    horizon_length: 128
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 2
     max_epochs: 500
     use_diagnostics: False
+
+    env_config:
+      env_name: PongNoFrameskip-v4
+      has_lives: False
 
     player:
       render: True

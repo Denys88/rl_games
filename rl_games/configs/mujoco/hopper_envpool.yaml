@@ -26,7 +26,7 @@ params:
         name: default
 
   config:
-    name: Hopper-v4_envpool
+    name: Hopper-v4_envpool_32env
     env_name: envpool
     score_to_win: 20000
     normalize_input: True
