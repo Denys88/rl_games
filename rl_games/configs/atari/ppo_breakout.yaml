@@ -73,8 +73,7 @@ params:
     env_config:
       skip: 4
       name: BreakoutNoFrameskip-v4
-      episodic_life: True
-      has_lives: True
+      episode_life: True
       seed: 5
 
     player:

@@ -44,7 +44,7 @@ params:
         gain: 1.41421356237
 
   config:
-    name: PongNoFrameskip_ray_64env
+    name: PongNoFrameskip_ray
     env_name: PongNoFrameskip-v4
     score_to_win: 20.0
     normalize_value: True
