@@ -26,7 +26,7 @@ params:
         name: default
 
   config:
-      name: Humanoid-v4
+      name: Humanoid-v4_ray
       env_name: openai_gym
       score_to_win: 20000
       normalize_input: True
@@ -49,10 +49,9 @@ params:
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
-
       max_epochs: 2000
-      num_actors: 32
-      horizon_length: 256
+      num_actors: 64
+      horizon_length: 128
       minibatch_size: 2048
       mini_epochs: 5
       critic_coef: 4

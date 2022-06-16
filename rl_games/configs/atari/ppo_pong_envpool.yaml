@@ -21,7 +21,7 @@ params:
         #name: glorot_normal_initializer
         #gain: 1.4142
       regularizer:
-        name: 'None'
+        name: None
       convs:    
         - filters: 32
           kernel_size: 8
@@ -44,7 +44,7 @@ params:
         gain: 1.41421356237
 
   config:
-    name: Pong_envpool_64
+    name: Pong-v5_envpool
     env_name: envpool
     score_to_win: 20.0
     normalize_value: True 
@@ -58,7 +58,6 @@ params:
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.01
-
     grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
@@ -71,7 +70,6 @@ params:
     critic_coef: 2
     #schedule_entropy: True
     #update_norm_in_train: True
-
     max_epochs: 500
     use_diagnostics: False
 
