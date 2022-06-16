@@ -26,7 +26,7 @@ params:
         name: default
 
   config:
-    name: Walker2d-v4_envpool_32env
+    name: Walker2d-v4_envpool
     env_name: envpool
     score_to_win: 20000
     normalize_input: True
@@ -46,8 +46,8 @@ params:
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 32 #64
-    horizon_length: 256 #128
+    num_actors: 64
+    horizon_length: 128
     minibatch_size: 2048
     mini_epochs: 5
     critic_coef: 2

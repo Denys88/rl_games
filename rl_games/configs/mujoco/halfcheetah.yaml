@@ -27,7 +27,7 @@ params:
         scale: 2.0
 
   config:
-    name: HalfCheetah-v4_ray_64env
+    name: HalfCheetah-v4_ray
     env_name: openai_gym
     score_to_win: 20000
     normalize_input: True

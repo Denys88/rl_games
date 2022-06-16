@@ -46,7 +46,7 @@ params:
   config:
     name: Pong-v5_envpool
     env_name: envpool
-    score_to_win: 200.0
+    score_to_win: 20.0
     normalize_value: True 
     normalize_input: True
     reward_shaper:
