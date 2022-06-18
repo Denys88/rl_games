@@ -14,7 +14,7 @@ params:
     mlp:
       units: [256, 128, 64]
       activation: relu
-      
+
       initializer:
         name: default
     log_std_bounds: [-5, 2]
@@ -26,19 +26,19 @@ params:
     reward_shaper:
       scale_value: 1.0
 
-    max_epochs: 25000
-    num_steps_per_episode: 8
+    max_epochs: 40000
+    num_steps_per_episode: 2
     save_best_after: 500
     save_frequency: 1000
     gamma: 0.99
-    init_alpha: 1
-    alpha_lr: 0.005
-    actor_lr: 0.0005
-    critic_lr: 0.0005
+    init_alpha: 1.0
+    alpha_lr: 5e-3
+    actor_lr: 5e-4
+    critic_lr: 5e-4
     critic_tau: 0.005
     batch_size: 2048
     learnable_temperature: True
-    num_seed_steps: 5
+    num_warmup_steps: 50
     replay_buffer_size: 1000000
     num_actors: 32
 
