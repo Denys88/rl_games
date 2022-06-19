@@ -508,7 +508,6 @@ class A2CBuilder(NetworkBuilder):
                 self.has_cnn = False
 
     def build(self, name, **kwargs):
-        print('A2CBuilder kwargs:', kwargs)
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
 
