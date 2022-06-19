@@ -975,9 +975,15 @@ class DiscreteA2CBase(A2CBase):
                                 should_exit = True
 
                 if epoch_num >= self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max epochs reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+
+                    self.save(os.path.join(self.nn_dir,
+                                               'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(
+                                                   mean_rewards)))
                     print('MAX EPOCHS NUM!')
-                    should_exit = True                         
+                    should_exit = True
                 update_time = 0
 
             if self.multi_gpu:
@@ -1223,7 +1229,10 @@ class ContinuousA2CBase(A2CBase):
                                 should_exit = True
 
                 if epoch_num >= self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(self.game_rewards.get_mean())))
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max epochs reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     should_exit = True
 
