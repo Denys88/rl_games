@@ -1,6 +1,6 @@
+import rl_games.envs.test
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
-import rl_games.envs.test
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
 import gym
