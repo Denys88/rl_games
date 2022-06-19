@@ -2,6 +2,7 @@ import time
 import gym
 import numpy as np
 import torch
+import copy
 from rl_games.common import env_configurations
 from rl_games.algos_torch import  model_builder
 
@@ -54,8 +55,12 @@ class BasePlayer(object):
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
-            for k, v in obs_batch.items():
-                obs_batch[k] = self._preproc_obs(v)
+            obs_batch = copy.copy(obs_batch)
+            for k,v in obs_batch.items():
+                if v.dtype == torch.uint8:
+                    obs_batch[k] = v.float() / 255.0
+                else:
+                    obs_batch[k] = v
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
@@ -65,7 +70,6 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-
         if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
@@ -105,11 +109,13 @@ class BasePlayer(object):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
-            assert(self.observation_space.dtype != np.int8)
-            if self.observation_space.dtype == np.uint8:
+            assert(obs.dtype != np.int8)
+            if obs.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self.device)
             else:
                 obs = torch.FloatTensor(obs).to(self.device)
+        elif np.isscalar(obs):
+            obs = torch.FloatTensor([obs]).to(self.device)
         return obs
 
     def preprocess_actions(self, actions):
@@ -200,6 +206,7 @@ class BasePlayer(object):
                         obses, masks, is_determenistic)
                 else:
                     action = self.get_action(obses, is_determenistic)
+
                 obses, r, done, info = self.env_step(self.env, action)
                 cr += r
                 steps += 1
@@ -262,7 +269,10 @@ class BasePlayer(object):
                 obses = obses['obs']
             keys_view = self.obs_shape.keys()
             keys_iterator = iter(keys_view)
-            first_key = next(keys_iterator)
+            if 'observation' in obses:
+                first_key = 'observation'
+            else:
+                first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
             obses = obses[first_key]
 

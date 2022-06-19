@@ -65,7 +65,8 @@ def unsqueeze_obs(obs):
         for k,v in obs.items():
             obs[k] = unsqueeze_obs(v)
     else:
-        obs = obs.unsqueeze(0)
+        if len(obs.size()) > 1 or obs.size()[0] > 1:
+            obs = obs.unsqueeze(0)
     return obs
 
 def flatten_first_two_dims(arr):
