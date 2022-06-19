@@ -48,7 +48,6 @@ params:
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
-
     e_clip: 0.2
     clip_value: False
     num_actors: 64

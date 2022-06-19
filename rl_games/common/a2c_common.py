@@ -1,9 +1,8 @@
 import copy
 import os
 
-from rl_games.common import tr_helpers
 from rl_games.common import vecenv
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
+
 from rl_games.algos_torch.moving_mean_std import MovingMeanStd
 from rl_games.algos_torch.self_play_manager import SelfPlayManager
 from rl_games.algos_torch import torch_ext
@@ -26,6 +25,7 @@ import torch.distributed as dist
 from time import sleep
 
 from rl_games.common import common_losses
+
 
 def swap_and_flatten01(arr):
     """
@@ -69,6 +69,7 @@ class A2CBase(BaseAlgorithm):
         self.rank = 0
         self.rank_size = 1
         self.curr_frames = 0
+
         if self.multi_gpu:
             self.rank = int(os.getenv("LOCAL_RANK", "0"))
             self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
@@ -169,7 +170,7 @@ class A2CBase(BaseAlgorithm):
                 self.obs_shape[k] = v.shape
         else:
             self.obs_shape = self.observation_space.shape
-        
+ 
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -227,7 +228,6 @@ class A2CBase(BaseAlgorithm):
             self.writer = None
 
         self.value_bootstrap = self.config.get('value_bootstrap')
-
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
         if self.use_smooth_clamp:
@@ -236,7 +236,7 @@ class A2CBase(BaseAlgorithm):
             self.actor_loss_func = common_losses.actor_loss
 
         if self.normalize_advantage and self.normalize_rms_advantage:
-            momentum = self.config.get('adv_rms_momentum',0.5 ) #'0.25'
+            momentum = self.config.get('adv_rms_momentum', 0.5) #'0.25'
             self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
@@ -273,7 +273,7 @@ class A2CBase(BaseAlgorithm):
                         all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
                     )
                     offset += param.numel()
-        
+
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
@@ -514,7 +514,7 @@ class A2CBase(BaseAlgorithm):
     def update_epoch(self):
         pass
 
-    def train(self):       
+    def train(self):
         pass
 
     def prepare_dataset(self, batch_dict):
@@ -524,7 +524,7 @@ class A2CBase(BaseAlgorithm):
         self.vec_env.set_train_info(self.frame, self)
 
     def train_actor_critic(self, obs_dict, opt_step=True):
-        pass 
+        pass
 
     def calc_gradients(self):
         pass
@@ -813,7 +813,7 @@ class DiscreteA2CBase(A2CBase):
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
-                entropies.append(entropy)   
+                entropies.append(entropy)
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
@@ -836,7 +836,7 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-        
+
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
@@ -844,7 +844,7 @@ class DiscreteA2CBase(A2CBase):
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
         advantages = returns - values
-        
+
         obses = batch_dict['obses']
         if self.normalize_value:
             self.value_mean_std.train()
@@ -853,7 +853,7 @@ class DiscreteA2CBase(A2CBase):
             self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
- 
+
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -919,6 +919,7 @@ class DiscreteA2CBase(A2CBase):
             curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
             self.frame += curr_frames
             should_exit = False
+
             if self.rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
                 scaled_time = self.num_agents * sum_time
@@ -927,10 +928,11 @@ class DiscreteA2CBase(A2CBase):
                 frame = self.frame // self.num_agents
 
                 if self.print_stats:
+                    step_time = max(step_time, 1e-6)
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
 
@@ -965,16 +967,19 @@ class DiscreteA2CBase(A2CBase):
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
                         self.save(os.path.join(self.nn_dir, self.config['name']))
-                        if self.last_mean_rewards > self.config['score_to_win']:
-                            print('Network won!')
-                            self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            should_exit = True
 
-                if epoch_num > self.max_epochs:
+                        if 'score_to_win' in self.config:
+                            if self.last_mean_rewards > self.config['score_to_win']:
+                                print('Network won!')
+                                self.save(os.path.join(self.nn_dir, checkpoint_name))
+                                should_exit = True
+
+                if epoch_num >= self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
                     print('MAX EPOCHS NUM!')
-                    should_exit = True                              
+                    should_exit = True                         
                 update_time = 0
+
             if self.multi_gpu:
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
@@ -1041,7 +1046,6 @@ class ContinuousA2CBase(A2CBase):
         b_losses = []
         entropies = []
         kls = []
-
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
@@ -1146,7 +1150,6 @@ class ContinuousA2CBase(A2CBase):
         self.curr_frames = self.batch_size_envs
 
         if self.multi_gpu:
-            # 
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
             dist.broadcast_object_list(model_params, 0)
@@ -1169,11 +1172,13 @@ class ContinuousA2CBase(A2CBase):
                 scaled_play_time = self.num_agents * play_time
                 curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
                 self.frame += curr_frames
+
                 if self.print_stats:
+                    step_time = max(step_time, 1e-6)
                     fps_step = curr_frames / step_time
                     fps_step_inference = curr_frames / scaled_play_time
                     fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.1f} fps step and policy inference: {fps_step_inference:.1f} fps total: {fps_total:.1f} epoch: {epoch_num}/{self.max_epochs}')
+                    print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num}/{self.max_epochs}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, scaled_time, scaled_play_time, curr_frames)
                 if len(b_losses) > 0:
@@ -1182,7 +1187,6 @@ class ContinuousA2CBase(A2CBase):
                 if self.has_soft_aug:
                     self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
-                
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
@@ -1211,18 +1215,20 @@ class ContinuousA2CBase(A2CBase):
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
                         self.save(os.path.join(self.nn_dir, self.config['name']))
-                        if self.last_mean_rewards > self.config['score_to_win']:
-                            print('Network won!')
-                            self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            should_exit = True
-                            
 
-                if epoch_num > self.max_epochs:
+                        if 'score_to_win' in self.config:
+                            if self.last_mean_rewards > self.config['score_to_win']:
+                                print('Network won!')
+                                self.save(os.path.join(self.nn_dir, checkpoint_name))
+                                should_exit = True
+
+                if epoch_num >= self.max_epochs:
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     should_exit = True
 
                 update_time = 0
+
             if self.multi_gpu:
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
@@ -1230,3 +1236,5 @@ class ContinuousA2CBase(A2CBase):
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
+            if should_exit:
+                return self.last_mean_rewards, epoch_num
