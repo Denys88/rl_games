@@ -272,9 +272,12 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
-1.5.0 (in progress)
+1.5.0
 
 * Added wandb support.
+* Added poetry support.
+* Fixed various bugs.
+* Fixed cnn input was not divided by 255 in case of the dictionary obs.
 * Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
 * Added Brax and Mujoco colab training examples.
 * Added 'seed' command line parameter. Will override seed in config in case it's > 0.

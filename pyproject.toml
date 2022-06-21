@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "rl_games"
-version = "1.4.0"
+version = "1.5.0"
 description = ""
 authors = [
     "Denys Makoviichuk <trrrrr97@gmail.com>",
