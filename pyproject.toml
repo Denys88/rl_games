@@ -1,7 +1,8 @@
 [tool.poetry]
 name = "rl_games"
-version = "1.5.0"
+version = "1.5.1"
 description = ""
+readme = "README.md"
 authors = [
     "Denys Makoviichuk <trrrrr97@gmail.com>",
     "Viktor Makoviichuk <victor.makoviychuk@gmail.com>"
