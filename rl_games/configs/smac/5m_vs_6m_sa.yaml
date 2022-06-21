@@ -1,0 +1,60 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: multi_discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      multi_discrete:
+
+    mlp:
+      units: [512, 256, 128]
+      activation: relu
+      initializer:
+        name: default 
+
+  config:
+    name: 5m_vs_6m_sa
+    reward_shaper:
+      scale_value: 1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    score_to_win: 20
+    entropy_coef: 0.02
+    truncate_grads: True
+    grad_norm: 1
+    env_name: smac
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 8
+    horizon_length: 256
+    minibatch_size: 1024
+    mini_epochs: 4
+    critic_coef: 2
+    lr_schedule: None
+    kl_threshold: 0.05
+    normalize_input: True
+    normalize_value: False
+    use_action_masks: True
+    use_diagnostics: True
+    seq_length: 8
+    max_epochs: 10000
+    env_config:
+      name: 5m_vs_6m
+      central_value: True
+      reward_only_positive: True
+      obs_last_action: False
+      apply_agent_ids: False
+      as_single_agent: True
+
+    player:
+      render: False
+      games_num: 200
+      n_game_life: 1
+      determenistic: True

@@ -101,3 +101,37 @@ class SMACEnv(gym.Env):
     def has_action_mask(self):
         return not self.random_invalid_step
 
+    def seed(self, seed):
+        pass
+        #self.env.seed(seed)
+
+class MultiDiscreteSmacWrapper(gym.Env):
+    def __init__(self, env):
+        gym.Env.__init__(self)
+        self.env = env
+        self.observation_space = self.env.state_space
+        self.action_space = gym.spaces.Tuple([self.env.action_space] * self.env.get_number_of_agents())
+
+    def step(self, actions):
+        fixed_rewards = None
+        obses, reward, done, info = self.env.step(actions)
+        return obses['state'], reward[0], done[0], info
+
+    def reset(self):
+        obses = self.env.reset()
+        return obses['state']
+
+    def has_action_mask(self):
+        return self.env.has_action_mask()
+
+    def get_action_mask(self):
+        action_maks = self.env.get_action_mask()
+        action_maks = action_maks.flatten()
+        return np.expand_dims(action_maks, axis=0)
+
+    def get_number_of_agents(self):
+        return 1
+
+    def seed(self, seed):
+        pass
+        #self.env.seed(seed)
