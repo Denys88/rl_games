@@ -139,6 +139,7 @@ class A2CBase(BaseAlgorithm):
         self.linear_lr = config['lr_schedule'] == 'linear'
 
         if self.is_adaptive_lr:
+            self.schedule_type = config.get('schedule_type', 'legacy')
             self.kl_threshold = config['kl_threshold']
             self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
         elif self.linear_lr:
@@ -1065,14 +1066,21 @@ class ContinuousA2CBase(A2CBase):
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)
+                if self.schedule_type == 'legacy':
+                    av_kls = kl
+                    if self.multi_gpu:
+                        dist.all_reduce(kl, op=dist.ReduceOp.SUM)
+                        av_kls /= self.rank_size
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                    self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.rank_size
-
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
-            self.update_lr(self.last_lr)
+            if self.schedule_type == 'standard':
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                self.update_lr(self.last_lr)
 
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
