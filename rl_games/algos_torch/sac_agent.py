@@ -84,7 +84,7 @@ class SACAgent(BaseAlgorithm):
         self.env_info['action_space'].shape,
         self.replay_buffer_size,
         self._device)
-        self.target_entropy_coef = config.get("target_entropy_coef", 0.5)
+        self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
 
@@ -196,8 +196,9 @@ class SACAgent(BaseAlgorithm):
         return state
 
     def save(self, fn):
-        state = self.get_full_state_weights()
-        torch_ext.save_checkpoint(fn, state)
+        pass
+        #state = self.get_full_state_weights()
+        #torch_ext.save_checkpoint(fn, state)
 
     def set_weights(self, weights):
         self.model.sac_network.actor.load_state_dict(weights['actor'])
@@ -258,7 +259,7 @@ class SACAgent(BaseAlgorithm):
         dist = self.model.actor(obs)
         action = dist.rsample()
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        entropy = dist.entropy().sum(-1, keepdim=True).mean()
+        entropy = -log_prob.mean() #dist.entropy().sum(-1, keepdim=True).mean()
         actor_Q1, actor_Q2 = self.model.critic(obs, action)
         actor_Q = torch.min(actor_Q1, actor_Q2)
 
@@ -294,7 +295,6 @@ class SACAgent(BaseAlgorithm):
 
         obs = self.preproc_obs(obs)
         next_obs = self.preproc_obs(next_obs)
-
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
 
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
@@ -307,6 +307,7 @@ class SACAgent(BaseAlgorithm):
     def preproc_obs(self, obs):
         if isinstance(obs, dict):
             obs = obs['obs']
+        obs = self.model.norm_obs(obs)
         return obs
 
     def cast_obs(self, obs):
