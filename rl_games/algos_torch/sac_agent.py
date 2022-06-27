@@ -16,7 +16,7 @@ from torch import nn
 import torch.nn.functional as F
 import numpy as np
 import time
-
+import os
 
 class SACAgent(BaseAlgorithm):
 
@@ -150,6 +150,31 @@ class SACAgent(BaseAlgorithm):
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
+        # TODO: put it into the separate class
+        pbt_str = ''
+        self.population_based_training = config.get('population_based_training', False)
+        if self.population_based_training:
+            # in PBT, make sure experiment name contains a unique id of the policy within a population
+            pbt_str = f'_pbt_{config["pbt_idx"]:02d}'
+        full_experiment_name = config.get('full_experiment_name', None)
+        if full_experiment_name:
+            print(f'Exact experiment name requested from command line: {full_experiment_name}')
+            self.experiment_name = full_experiment_name
+        else:
+            self.experiment_name = config['name'] + pbt_str + datetime.now().strftime("_%d-%H-%M-%S")
+        self.train_dir = config.get('train_dir', 'runs')
+
+        # a folder inside of train_dir containing everything related to a particular experiment
+        self.experiment_dir = os.path.join(self.train_dir, self.experiment_name)
+
+        # folders inside <train_dir>/<experiment_dir> for a specific purpose
+        self.nn_dir = os.path.join(self.experiment_dir, 'nn')
+        self.summaries_dir = os.path.join(self.experiment_dir, 'summaries')
+
+        os.makedirs(self.train_dir, exist_ok=True)
+        os.makedirs(self.experiment_dir, exist_ok=True)
+        os.makedirs(self.nn_dir, exist_ok=True)
+        os.makedirs(self.summaries_dir, exist_ok=True)
 
         self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
         print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
@@ -528,18 +553,18 @@ class SACAgent(BaseAlgorithm):
                 self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                 self.writer.add_scalar('episode_lengths/step', mean_lengths, self.frame)
                 self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-
+                checkpoint_name = self.config['name'] + '_ep_' + str(self.epoch_num) + '_rew_' + str(mean_rewards)
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
                     print('saving next best rewards: ', mean_rewards)
                     self.last_mean_rewards = mean_rewards
-                    self.save("./nn/" + self.config['name'])
+                    self.save(os.path.join(self.nn_dir, self.config['name']))
                     if self.last_mean_rewards > self.config.get('score_to_win', float('inf')):
                         print('Network won!')
-                        self.save("./nn/" + self.config['name'] + 'ep=' + str(self.epoch_num) + 'rew=' + str(mean_rewards))
+                        self.save(os.path.join(self.nn_dir, checkpoint_name))
                         return self.last_mean_rewards, self.epoch_num
 
                 if self.epoch_num >= self.max_epochs:
-                    self.save("./nn/" + 'last_' + self.config['name'] + 'ep=' + str(self.epoch_num) + 'rew=' + str(mean_rewards))
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(self.epoch_num) + 'rew' + str(mean_rewards)))
                     print('MAX EPOCHS NUM!')
                     return self.last_mean_rewards, self.epoch_num
 
