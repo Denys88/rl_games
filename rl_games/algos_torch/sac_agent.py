@@ -196,9 +196,8 @@ class SACAgent(BaseAlgorithm):
         return state
 
     def save(self, fn):
-        pass
-        #state = self.get_full_state_weights()
-        #torch_ext.save_checkpoint(fn, state)
+        state = self.get_full_state_weights()
+        torch_ext.save_checkpoint(fn, state)
 
     def set_weights(self, weights):
         self.model.sac_network.actor.load_state_dict(weights['actor'])
