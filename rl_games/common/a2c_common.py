@@ -137,9 +137,8 @@ class A2CBase(BaseAlgorithm):
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
-
+        self.schedule_type = config.get('schedule_type', 'legacy')
         if self.is_adaptive_lr:
-            self.schedule_type = config.get('schedule_type', 'legacy')
             self.kl_threshold = config['kl_threshold']
             self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
         elif self.linear_lr:
