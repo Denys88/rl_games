@@ -272,6 +272,11 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.5.2
+
+* Added observation normalization to the SAC.
+* Returned back adaptive KL legacy mode.
+
 1.5.1
 
 * Fixed build package issue.
