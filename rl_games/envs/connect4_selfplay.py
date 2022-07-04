@@ -10,7 +10,7 @@ class ConnectFourSelfPlay(gym.Env):
     def __init__(self, name="connect_four_v0",  **kwargs):
         gym.Env.__init__(self)
         self.name = name
-        self.is_determenistic = kwargs.pop('is_determenistic', False)
+        self.is_determenistic = kwargs.pop('is_deterministic', False)
         self.is_human = kwargs.pop('is_human', False)
         self.random_agent = kwargs.pop('random_agent', False)
         self.config_path = kwargs.pop('config_path')
@@ -62,7 +62,7 @@ class ConnectFourSelfPlay(gym.Env):
                 if self.random_agent:
                     opponent_action = np.random.choice(ids, 1)[0]
                 else:
-                    opponent_action = self.agent.get_masked_action(op_obs, mask, self.is_determenistic).item()
+                    opponent_action = self.agent.get_masked_action(op_obs, mask, self.is_deterministic).item()
                     
 
             obs, _, _, _ = self.env_step(opponent_action)
@@ -107,7 +107,7 @@ class ConnectFourSelfPlay(gym.Env):
             if self.random_agent:
                 opponent_action = np.random.choice(ids, 1)[0]
             else:
-                opponent_action = self.agent.get_masked_action(op_obs, mask, self.is_determenistic).item()
+                opponent_action = self.agent.get_masked_action(op_obs, mask, self.is_deterministic).item()
         obs, reward, done,_ = self.env_step(opponent_action)
         if done:
             if reward == -1:
