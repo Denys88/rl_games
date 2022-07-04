@@ -42,7 +42,10 @@ class BasePlayer(object):
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
-        self.is_determenistic = self.player_config.get('determenistic', True)
+        if 'deterministic' in self.player_config:
+            self.is_deterministic = self.player_config['deterministic']
+        else:
+            self.is_deterministic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
@@ -162,7 +165,7 @@ class BasePlayer(object):
         n_games = self.games_num
         render = self.render_env
         n_game_life = self.n_game_life
-        is_determenistic = self.is_determenistic
+        is_deterministic = self.is_deterministic
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
