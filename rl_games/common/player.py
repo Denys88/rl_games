@@ -146,10 +146,10 @@ class BasePlayer(object):
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
 
-    def get_action(self, obs, is_determenistic=False):
+    def get_action(self, obs, is_deterministic=False):
         raise NotImplementedError('step')
 
-    def get_masked_action(self, obs, mask, is_determenistic=False):
+    def get_masked_action(self, obs, mask, is_deterministic=False):
         raise NotImplementedError('step')
 
     def reset(self):
@@ -206,9 +206,9 @@ class BasePlayer(object):
                 if has_masks:
                     masks = self.env.get_action_mask()
                     action = self.get_masked_action(
-                        obses, masks, is_determenistic)
+                        obses, masks, is_deterministic)
                 else:
-                    action = self.get_action(obses, is_determenistic)
+                    action = self.get_action(obses, is_deterministic)
 
                 obses, r, done, info = self.env_step(self.env, action)
                 cr += r
