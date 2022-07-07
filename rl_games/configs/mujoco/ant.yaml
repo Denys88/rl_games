@@ -26,39 +26,39 @@ params:
         name: default
 
   config:
-      env_name: openai_gym
-      normalize_input: True
-      normalize_value: True
-      value_bootstrap: True
-      reward_shaper:
-        scale_value: 0.1
-      normalize_advantage: True
-      gamma: 0.995
-      tau: 0.95
+    name: Ant-v4_ray
+    env_name: openai_gym
+    score_to_win: 20000
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
 
-      learning_rate: 3e-4
-      name: Ant-v3
-      score_to_win: 10000
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    max_epochs: 2000
+    num_actors: 64
+    horizon_length: 64
+    minibatch_size: 2048
+    mini_epochs: 4
+    critic_coef: 2
+    clip_value: True
+    use_smooth_clamp: True
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
 
-      grad_norm: 0.5
-      entropy_coef: 0.0
-      truncate_grads: True
-      ppo: true
-      e_clip: 0.2
-      clip_value: False
-      num_actors: 16
-      horizon_length: 128
-      minibatch_size: 512
-      mini_epochs: 4
-      critic_coef: 1
-      lr_schedule:  adaptive
-      kl_threshold: 0.008
-      schedule_type: standard
-      bounds_loss_coef: 0.0
-      max_epochs: 5000
-      env_config:
-        name: Ant-v3
-        seed: 5
+    env_config:
+      name: Ant-v4
+      seed: 5
 
-      player:
-        render: True
+    player:
+      render: True

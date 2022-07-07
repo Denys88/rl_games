@@ -18,7 +18,7 @@ params:
       initializer:
         name: default
       regularizer:
-        name: 'None'
+        name: None
       convs:    
         - filters: 256
           kernel_size: 3
@@ -42,7 +42,7 @@ params:
   config:
     name: 27m
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
@@ -51,8 +51,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac_cnn
-    ppo: true
+    env_name: smac_cnn
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -60,11 +59,12 @@ params:
     minibatch_size: 3456
     mini_epochs: 4
     critic_coef: 2
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     seq_length: 2
     use_action_masks: True
+
     env_config:
       name: 27m_vs_30m
       frames: 4

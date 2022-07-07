@@ -54,8 +54,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac_cnn
-    ppo: True
+    env_name: smac_cnn
     e_clip: 0.2
     clip_value: True
     num_actors: 8

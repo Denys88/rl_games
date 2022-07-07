@@ -11,7 +11,7 @@
 * Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 * OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation: https://cremebrule.github.io/oscar-web/ https://arxiv.org/abs/2110.00704
 
-## Some results on interesting environments  
+## Some results on the different environments  
 
 * [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
 
@@ -23,8 +23,8 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-* [MUJOCO](docs/MUJOCO.md) 
-* [ATARI ENVPOOL](docs/ATARI_ENVPOOL.md) 
+* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
+* [Atari Envpool](docs/ATARI_ENVPOOL.md) 
 * [Random Envs](docs/OTHER.md)  
 
 
@@ -42,7 +42,14 @@ Implemented in Pytorch:
 * A2C
 * PPO
 
-# Installation
+## Quickstart: Colab in the Cloud
+
+Explore RL Games quick and easily in colab notebooks:
+
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example.
+* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+
+## Installation
 
 For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1+ is highly recommended:
 
@@ -53,12 +60,37 @@ Then:
 
 ```pip install rl-games```
 
-To run Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
+To run CPU-based environments either Ray or envpool are required ```pip install envpool``` or ```pip install ray```
+To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
-To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum perf is highly recommended: ```pip install envpool```
+To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
+
+## Citing
+
+If you use rl-games in your research please use the following citation:
+
+```bibtex
+@misc{rl-games2022,
+title = {rl-games: A High-performance Framework for Reinforcement Learning},
+author = {Makoviichuk, Denys and Makoviychuk, Viktor},
+month = {May},
+year = {2022},
+publisher = {GitHub},
+journal = {GitHub repository},
+howpublished = {\url{https://github.com/Denys88/rl_games}},
+}
+```
 
 
-# Training
+## Development setup
+
+```bash
+poetry install
+# install cuda related dependencies
+poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+```
+
+## Training
 **NVIDIA Isaac Gym**
 
 Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
@@ -83,16 +115,43 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
 *Atari Pong*
 
-```python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml```
-```python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth```
+```bash
+poetry install -E atari
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+```
 
 *Brax Ant*
 
-```python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml```
-```python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth```
+```bash
+poetry install -E brax
+poetry run pip install --upgrade "jax[cuda]==0.3.13" -f https://storage.googleapis.com/jax-releases/jax_releases.html
+poetry run python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
+poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
+```
+
+## Experiment tracking
+
+rl_games support experiment tracking with [Weights and Biases](https://wandb.ai).
+
+```bash
+poetry install -E atari
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+WANDB_API_KEY=xxxx poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test --track
+poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
+```
 
 
-# Config Parameters
+## Multi GPU
+
+We use `torchrun` to orchestrate any multi-gpu runs.
+
+```bash
+torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
+```
+
+## Config Parameters
 
 | Field                  | Example Value                             | Default  | Description                                                                                            |
 |------------------------|-------------------------------------------|----------|--------------------------------------------------------------------------------------------------------|
@@ -159,16 +218,15 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 |   entropy_coef         | 0                                         |          | Entropy coefficient. Good value for continuous space is 0. For discrete is 0.02                                              |
 |   truncate_grads       | True                                      |          | Apply truncate grads or not. It stabilizes training.                                                  |
 |   env_name             | BipedalWalker-v3                          |          | Envinronment name.            |
-|   ppo                  | True                                      | True     | Use ppo loss or actor critic. Should be always true.                                    |
 |   e_clip               | 0.2                                       |          | clip parameter for ppo loss.                                                                                 |
 |   clip_value           | False                                     |          | Apply clip to the value loss. If you are using normalize_value you don't need it.                                                                                 |
-|   num_actors           | 16                                        |          | Number of running actors.                           |
+|   num_actors           | 16                                        |          | Number of running actors/environments.                           |
 |   horizon_length       | 4096                                      |          | Horizon length per each actor. Total number of steps will be num_actors*horizon_length * num_agents (if env is not MA num_agents==1).                          |
-|   minibatch_size       | 8192                                      |          | Minibatch size. total number number of steps must be divisible by minibatch size.                                                           |
+|   minibatch_size       | 8192                                      |          | Minibatch size. Total number number of steps must be divisible by minibatch size.                                                           |
+|   minibatch_size_per_env | 8                                       |          | Minibatch size per env. If specified will overwrite total number number the default minibatch size with minibatch_size_per_env * nume_envs value.                                                           |
 |   mini_epochs          | 4                                         |          | Number of miniepochs. Good value is in [1,10]                                                                            |
-|   critic_coef          | 2                                         |          | Critic coef. by default critic_loss= critic_coef * 1/2 * MSE.                                                                                    |
-|   lr_schedule          | adaptive                                  | None     | Scheduler type. Could be None, linear or adaptive. Adaptive is the best for continuous.                                     |
-|   schedule_type        | standard                                  |          | if schedule is adaptive there are a few places where we can change LR based on KL. If you standard it will be changed every miniepoch.                                                                                          |
+|   critic_coef          | 2                                         |          | Critic coef. by default critic_loss = critic_coef * 1/2 * MSE.                                                                                    |
+|   lr_schedule          | adaptive                                  | None     | Scheduler type. Could be None, linear or adaptive. Adaptive is the best for continuous control tasks. Learning rate is changed changed every miniepoch  |
 |   kl_threshold         | 0.008                                     |          | KL threshould for adaptive schedule. if KL < kl_threshold/2 lr = lr * 1.5 and opposite.                                            |
 |   normalize_input      | True                                      |          | Apply running mean std for input.                                                                           |
 |   bounds_loss_coef     | 0.0                                       |          | Coefficient to the auxiary loss for continuous space.    |
@@ -204,7 +262,7 @@ Additional environment supported properties and functions
 
 | Field                       | Default Value   | Description                         |
 |-----------------------------|-----------------|-------------------------------------|
-| use_central_value           | 200             | If true than returned obs is expected to be dict with 'obs' and 'state'                                    |
+| use_central_value           | False             | If true than returned obs is expected to be dict with 'obs' and 'state'                                    |
 | value_size                  | 1               | Shape of the returned rewards. Network wil support multihead value automatically.                                    |
 | concat_infos                | False           | Should default vecenv convert list of dicts to the dicts of lists. Very usefull if you want to use value_boostrapping. in this case you need to always return 'time_outs' : True or False, from the env.                                    |
 | get_number_of_agents(self)  | 1               | Returns number of agents in the environment                                    |
@@ -214,18 +272,40 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.5.2
+
+* Added observation normalization to the SAC.
+* Returned back adaptive KL legacy mode.
+
+1.5.1
+
+* Fixed build package issue.
+
+1.5.0
+
+* Added wandb support.
+* Added poetry support.
+* Fixed various bugs.
+* Fixed cnn input was not divided by 255 in case of the dictionary obs.
+* Added more envpool mujoco and atari training examples. Some of the results: 15 min Mujoco humanoid training, 2 min atari pong.
+* Added Brax and Mujoco colab training examples.
+* Added 'seed' command line parameter. Will override seed in config in case it's > 0.
+* Deprecated `horovod` in favor of `torch.distributed` ([#171](https://github.com/Denys88/rl_games/pull/171)).
+
 1.4.0
+
 * Added discord channel https://discord.gg/hnYRq7DsQh :)
 * Added envpool support with a few atari examples. Works 3-4x time faster than ray.
 * Added mujoco results. Much better than openai spinning up ppo results.
 * Added tcnn(https://github.com/NVlabs/tiny-cuda-nn) support. Reduces 5-10% of training time in the IsaacGym envs. 
 * Various fixes and improvements.
 
-
 1.3.2
-* Added 'sigma' command line parameter. You can override sigma for continuous space in case if fixed_sigma is True.
+
+* Added 'sigma' command line parameter. Will override sigma for continuous space in case if fixed_sigma is True.
 
 1.3.1
+
 * Fixed SAC not working
 
 1.3.0
@@ -259,14 +339,13 @@ Additional environment supported properties and functions
 
 
 
-
-# Troubleshouting
+## Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
 * Starting from rl-games 1.1.0 old yaml configs won't be compatible with the new version: 
     * ```steps_num``` should be changed to ```horizon_length``` amd ```lr_threshold``` to ```kl_threshold```
 
-# Known issues
+## Known issues
 
 * Running a single environment with Isaac Gym can cause crash, if it happens switch to at least 2 environments simulated in parallel
     

@@ -531,11 +531,11 @@ class ConvBlock(nn.Module):
         x = self.conv(x)
         if self.use_bn:
             x = self.bn(x)
-        return x       
+        return x
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=True, use_attention=False):
+    def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=False, use_attention=False):
         super().__init__()
         self.use_zero_init=use_zero_init
         self.use_attention = use_attention
@@ -544,8 +544,8 @@ class ResidualBlock(nn.Module):
         self.activation = activation
         self.conv1 = ConvBlock(channels, channels, use_bn)
         self.conv2 = ConvBlock(channels, channels, use_bn)
-        self.activate1 = nn.ELU()
-        self.activate2 = nn.ELU()
+        self.activate1 = nn.ReLU()
+        self.activate2 = nn.ReLU()
         if use_attention:
             self.ca = ChannelAttention(channels)
             self.sa = SpatialAttention()
@@ -567,20 +567,19 @@ class ResidualBlock(nn.Module):
 
 
 class ImpalaSequential(nn.Module):
-    def __init__(self, in_channels, out_channels, activation='elu', use_bn=True, use_zero_init=False):
+    def __init__(self, in_channels, out_channels, activation='relu', use_bn=False, use_zero_init=False):
         super().__init__()    
         self.conv = ConvBlock(in_channels, out_channels, use_bn)
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.res_block1 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
         self.res_block2 = ResidualBlock(out_channels, activation=activation, use_bn=use_bn, use_zero_init=use_zero_init)
-    
+
     def forward(self, x):
         x = self.conv(x)
         x = self.max_pool(x)
         x = self.res_block1(x)
         x = self.res_block2(x)
         return x
-
 
 class A2CResnetBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -591,20 +590,22 @@ class A2CResnetBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num')
+            self.actions_num = actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
-            input_shape = torch_ext.shape_whc_to_cwh(input_shape)
-            self.num_seqs = kwargs.pop('num_seqs', 1)
+            if type(input_shape) is dict:
+                input_shape = input_shape['observation']
+            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
-            NetworkBuilder.BaseNetwork.__init__(self, **kwargs)
+            NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
+            if self.permute_input:
+                input_shape = torch_ext.shape_whc_to_cwh(input_shape)
 
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
 
             in_mlp_shape = mlp_input_shape
-    
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -617,9 +618,12 @@ class A2CResnetBuilder(NetworkBuilder):
                 else:
                     rnn_in_size =  in_mlp_shape
                     in_mlp_shape = self.rnn_units
+                if self.require_rewards:
+                    rnn_in_size += 1
+                if self.require_last_actions:
+                    rnn_in_size += actions_num
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
-         
             mlp_args = {
                 'input_size' : in_mlp_shape, 
                 'units' :self.units, 
@@ -651,8 +655,8 @@ class A2CResnetBuilder(NetworkBuilder):
 
             for m in self.modules():
                 if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                    #nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('elu'))
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    #nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
             for m in self.mlp:
                 if isinstance(m, nn.Linear):    
                     mlp_init(m.weight)
@@ -669,8 +673,19 @@ class A2CResnetBuilder(NetworkBuilder):
             mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
-            obs = obs_dict['obs']
-            obs = obs.permute((0, 3, 1, 2))
+            if self.require_rewards or self.require_last_actions:
+                obs = obs_dict['obs']['observation']
+                reward = obs_dict['obs']['reward']
+                last_action = obs_dict['obs']['last_action']
+                if self.is_discrete:
+                    last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+            else:
+                obs = obs_dict['obs']
+            if self.permute_input:
+                obs = obs.permute((0, 3, 1, 2))
+
+            dones = obs_dict.get('dones', None)
+            bptt_len = obs_dict.get('bptt_len', 0)
             states = obs_dict.get('rnn_states', None)
             seq_length = obs_dict.get('seq_length', 1)
             out = obs
@@ -679,26 +694,40 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             if self.has_rnn:
+                out_in = out
                 if not self.is_rnn_before_mlp:
+                    out_in = out
                     out = self.mlp(out)
 
+                obs_list = [out]
+                if self.require_rewards:
+                    obs_list.append(reward.unsqueeze(1))
+                if self.require_last_actions:
+                    obs_list.append(last_action)
+                out = torch.cat(obs_list, dim=1)
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length
                 out = out.reshape(num_seqs, seq_length, -1)
+
                 if len(states) == 1:
                     states = states[0]
-                out, states = self.rnn(out, states)
+
+                out = out.transpose(0, 1)
+                if dones is not None:
+                    dones = dones.reshape(num_seqs, seq_length, -1)
+                    dones = dones.transpose(0, 1)
+                out, states = self.rnn(out, states, dones, bptt_len)
+                out = out.transpose(0, 1)
                 out = out.contiguous().reshape(out.size()[0] * out.size()[1], -1)
-                #out = self.layer_norm(out)
+
+                if self.rnn_ln:
+                    out = self.layer_norm(out)
+                if self.is_rnn_before_mlp:
+                    out = self.mlp(out)
                 if type(states) is not tuple:
                     states = (states,)
-
-                if self.is_rnn_before_mlp:
-                        for l in self.mlp:
-                            out = l(out)
             else:
-                for l in self.mlp:
-                    out = l(out)
+                out = self.mlp(out)
 
             value = self.value_act(self.value(out))
 
@@ -715,7 +744,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 return mu, mu*0 + sigma, value, states
 
         def load(self, params):
-            self.separate = params['separate']
+            self.separate = False
             self.units = params['mlp']['units']
             self.activation = params['mlp']['activation']
             self.initializer = params['mlp']['initializer']
@@ -737,9 +766,12 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
-
+                self.rnn_ln = params['rnn'].get('layer_norm', False)
             self.has_cnn = True
+            self.permute_input = params['cnn'].get('permute_input', True)
             self.conv_depths = params['cnn']['conv_depths']
+            self.require_rewards = params.get('require_rewards')
+            self.require_last_actions = params.get('require_last_actions')
 
         def _build_impala(self, input_shape, depths):
             in_channels = input_shape[0]
@@ -864,111 +896,6 @@ class SACBuilder(NetworkBuilder):
             }
             print("Building Actor")
             self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
-            
-            if self.separate:
-                print("Building Critic")
-                self.critic = self._build_critic(1, **critic_mlp_args)
-                print("Building Critic Target")
-                self.critic_target = self._build_critic(1, **critic_mlp_args)
-                self.critic_target.load_state_dict(self.critic.state_dict())  
-
-            mlp_init = self.init_factory.create(**self.initializer)
-            for m in self.modules():         
-                if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
-                    cnn_init(m.weight)
-                    if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)
-                if isinstance(m, nn.Linear):
-                    mlp_init(m.weight)
-                    if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)    
-
-        def _build_critic(self, output_dim, **mlp_args):
-            return DoubleQCritic(output_dim, **mlp_args)
-
-        def _build_actor(self, output_dim, log_std_bounds, **mlp_args):
-            return DiagGaussianActor(output_dim, log_std_bounds, **mlp_args)
-
-        def forward(self, obs_dict):
-            """TODO"""
-            obs = obs_dict['obs']
-            mu, sigma = self.actor(obs)
-            return mu, sigma
-
-        def is_separate_critic(self):
-            return self.separate
-
-        def load(self, params):
-            self.separate = params.get('separate', True)
-            self.units = params['mlp']['units']
-            self.activation = params['mlp']['activation']
-            self.initializer = params['mlp']['initializer']
-            self.is_d2rl = params['mlp'].get('d2rl', False)
-            self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
-            self.value_activation = params.get('value_activation', 'None')
-            self.normalization = params.get('normalization', None)
-            self.has_space = 'space' in params
-            self.value_shape = params.get('value_shape', 1)
-            self.central_value = params.get('central_value', False)
-            self.joint_obs_actions_config = params.get('joint_obs_actions', None)
-            self.log_std_bounds = params.get('log_std_bounds', None)
-
-            if self.has_space:
-                self.is_discrete = 'discrete' in params['space']
-                self.is_continuous = 'continuous'in params['space']
-                if self.is_continuous:
-                    self.space_config = params['space']['continuous']
-                elif self.is_discrete:
-                    self.space_config = params['space']['discrete']
-            else:
-                self.is_discrete = False
-                self.is_continuous = False
-
-
-class SACBuilder(NetworkBuilder):
-    def __init__(self, **kwargs):
-        NetworkBuilder.__init__(self)
-
-    def load(self, params):
-        self.params = params
-
-    def build(self, name, **kwargs):
-        net = SHACBuilder.Network(self.params, **kwargs)
-        return net
-
-    class Network(NetworkBuilder.BaseNetwork):
-        def __init__(self, params, **kwargs):
-            actions_num = kwargs.pop('actions_num')
-            input_shape = kwargs.pop('input_shape')
-            obs_dim = kwargs.pop('obs_dim')
-            action_dim = kwargs.pop('action_dim')
-            self.num_seqs = kwargs.pop('num_seqs', 1)
-            NetworkBuilder.BaseNetwork.__init__(self)
-            self.load(params)
-
-            mlp_input_shape = input_shape
-
-            actor_mlp_args = {
-                'input_size' : obs_dim, 
-                'units' : self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear,
-                'd2rl' : self.is_d2rl,
-                'norm_only_first_layer' : self.norm_only_first_layer
-            }
-
-            critic_mlp_args = {
-                'input_size' : obs_dim + action_dim, 
-                'units' : self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear,
-                'd2rl' : self.is_d2rl,
-                'norm_only_first_layer' : self.norm_only_first_layer
-            }
-            print("Building Actor")
-            self.actor = self._build_actor(2*action_dim, self.log_std_bounds, **actor_mlp_args)
 
             if self.separate:
                 print("Building Critic")
@@ -978,7 +905,7 @@ class SACBuilder(NetworkBuilder):
                 self.critic_target.load_state_dict(self.critic.state_dict())  
 
             mlp_init = self.init_factory.create(**self.initializer)
-            for m in self.modules():         
+            for m in self.modules():
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
                     if getattr(m, "bias", None) is not None:
@@ -986,7 +913,7 @@ class SACBuilder(NetworkBuilder):
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
                     if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)    
+                        torch.nn.init.zeros_(m.bias)
 
         def _build_critic(self, output_dim, **mlp_args):
             return DoubleQCritic(output_dim, **mlp_args)
@@ -1018,7 +945,6 @@ class SACBuilder(NetworkBuilder):
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
             self.log_std_bounds = params.get('log_std_bounds', None)
 
-            # todo: add assert if discrete, there is no discrete action space for SHAC
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']
                 self.is_continuous = 'continuous'in params['space']
@@ -1029,3 +955,4 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
+

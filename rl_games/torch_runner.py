@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 import random
@@ -58,10 +59,7 @@ class Runner:
             self.seed = int(time.time())
         
         if params["config"].get('multi_gpu', False):
-            import horovod.torch as hvd
-
-            hvd.init()
-            self.seed += hvd.rank()
+            self.seed += int(os.getenv("LOCAL_RANK", "0"))
         print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
@@ -79,7 +77,7 @@ class Runner:
                     params['config']['env_config']['seed'] = self.seed
                 else:
                     if params["config"].get('multi_gpu', False):
-                        params['config']['env_config']['seed'] += hvd.rank()
+                        params['config']['env_config']['seed'] += int(os.getenv("LOCAL_RANK", "0"))
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
@@ -90,7 +88,7 @@ class Runner:
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
-        self.load_config(params=copy.deepcopy(self.default_config))
+        self.load_config(params=self.default_config)
 
     def run_train(self, args):
         print('Started to train')

@@ -59,8 +59,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: 'atari_gym' 
-    ppo: true
+    env_name: atari_gym
     e_clip: 0.2
     clip_value: False
     num_actors: 16
@@ -68,15 +67,17 @@ params:
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  linear
+    lr_schedule: linear
     schedule_entropy: True
     normalize_input: False
     normalize_value: True
     max_epochs: 50000
+
     env_config:
       skip: 4
       name: 'GopherNoFrameskip-v4'
       episode_life: False
+
     player:
         render: True
         games_num: 10

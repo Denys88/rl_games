@@ -26,9 +26,8 @@ params:
         name: default
 
   config:
-      name: Humanoid-v4
+      name: Humanoid-v4_envpool
       env_name: envpool
-      ppo: True
       score_to_win: 20000
       normalize_input: True
       normalize_value: True
@@ -42,7 +41,6 @@ params:
       learning_rate: 3e-4
       lr_schedule: adaptive
       kl_threshold: 0.008
-      schedule_type: standard
       grad_norm: 1.0
       entropy_coef: 0.0
       truncate_grads: True
@@ -51,7 +49,6 @@ params:
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
-
       max_epochs: 2000
       num_actors: 64
       horizon_length: 128

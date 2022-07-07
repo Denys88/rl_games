@@ -37,7 +37,6 @@ params:
     entropy_coef: 0.01
     truncate_grads: True
     env_name: CartPole-v1
-    ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 16
