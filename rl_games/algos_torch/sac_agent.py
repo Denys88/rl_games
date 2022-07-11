@@ -8,6 +8,7 @@ from rl_games.common import experience
 
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.summary import hparams
 from datetime import datetime
 from rl_games.algos_torch import  model_builder
 from torch import optim
@@ -95,6 +96,32 @@ class SACAgent(BaseAlgorithm):
         self.max_episodes = torch.ones(self.num_actors, device=self._device)*self.num_steps_per_episode
         # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
 
+        # tensorboard hparams & metrics
+        self._hparams = {
+            'gamma': self.gamma,
+            'critic_tau': self.critic_tau,
+            'batch_size': self.batch_size,
+            'init_alpha': self.init_alpha,
+            'learnable_temperature': self.learnable_temperature,
+            'replay_buffer_size': self.replay_buffer_size,
+            'num_steps_per_episode': self.num_steps_per_episode,
+            'normalize_input': self.normalize_input,
+            'max_env_steps': self.max_env_steps,
+            'actor_lr': self.config['actor_lr'],
+            'critic_lr': self.config['critic_lr'],
+            'alpha_lr': self.config['alpha_lr'],
+            'target_entropy_coef': self.target_entropy_coef,
+        }
+
+        self._metrics = {
+            "rewards/step": 0,
+            "losses/a_loss": 0,
+            "losses/c1_loss": 0,
+            "losses/c2_loss": 0,
+            "losses/entropy": 0,
+            "losses/alpha_loss": 0,
+        }
+
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
@@ -176,8 +203,8 @@ class SACAgent(BaseAlgorithm):
         os.makedirs(self.nn_dir, exist_ok=True)
         os.makedirs(self.summaries_dir, exist_ok=True)
 
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
+        self.writer = SummaryWriter(self.experiment_dir)
+        print("Run Directory:", self.experiment_name)
 
         self.is_tensor_obses = False
         self.is_rnn = False
@@ -508,6 +535,12 @@ class SACAgent(BaseAlgorithm):
         # rep_count = 0
         self.frame = 0
         self.obs = self.env_reset()
+
+        # tensorboard hparams
+        exp, ssi, sei = hparams(self._hparams, metric_dict=self._metrics)
+        self.writer.file_writer.add_summary(exp)
+        self.writer.file_writer.add_summary(ssi)
+        self.writer.file_writer.add_summary(sei)
 
         while True:
             self.epoch_num += 1
