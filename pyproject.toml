@@ -28,7 +28,7 @@ mujoco-py = {version = "^2.1.2", optional = true}
 envpool = {version = "^0.6.1", optional = true}
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["setuptools", "poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.extras]
