@@ -243,20 +243,21 @@ class CentralValueTrain(nn.Module):
                 param.grad = None
         loss.backward()
 
-        # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
-        all_grads_list = []
-        for param in self.model.parameters():
-            if param.grad is not None:
-                all_grads_list.append(param.grad.view(-1))
-        all_grads = torch.cat(all_grads_list)
-        dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-        offset = 0
-        for param in self.model.parameters():
-            if param.grad is not None:
-                param.grad.data.copy_(
-                    all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
-                )
-                offset += param.numel()
+        if self.multi_gpu:
+            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
+            all_grads_list = []
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    all_grads_list.append(param.grad.view(-1))
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
+                    )
+                    offset += param.numel()
 
         if self.truncate_grads:
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
