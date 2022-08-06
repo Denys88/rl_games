@@ -165,6 +165,8 @@ class A2CBase(BaseAlgorithm):
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
+        # flag to force interval writer to reduce sisze of summary files
+        self.force_interval_writer = self.config.get('force_interval_writer', False)
         self.has_phasic_policy_gradients = False
 
         if isinstance(self.observation_space, gym.spaces.Dict):
@@ -223,7 +225,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.rank == 0:
             writer = SummaryWriter(self.summaries_dir)
-            if self.population_based_training:
+            if self.population_based_training or self.force_interval_writer:
                 self.writer = IntervalSummaryWriter(writer, self.config)
             else:
                 self.writer = writer
