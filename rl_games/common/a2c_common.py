@@ -110,6 +110,9 @@ class A2CBase(BaseAlgorithm):
         self.is_train = config.get('is_train', True)
 
         self.central_value_config = self.config.get('central_value_config', None)
+        # flag to allow disabling of loading central value config weights.
+        # useful if you want to change the critic without changing the actor.
+        self.central_value_load_weights = self.config.get('central_value_load_weights', True)
         self.has_central_value = self.central_value_config is not None
         self.truncate_grads = self.config.get('truncate_grads', False)
 
@@ -556,7 +559,7 @@ class A2CBase(BaseAlgorithm):
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
         self.epoch_num = weights['epoch']
-        if self.has_central_value:
+        if self.has_central_value and self.central_value_load_weights:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
         self.optimizer.load_state_dict(weights['optimizer'])
         self.frame = weights.get('frame', 0)
