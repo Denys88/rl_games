@@ -73,6 +73,8 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if 'env_state' in checkpoint:
+            self.env.set_env_state(checkpoint['env_state'])
 
     def reset(self):
         self.init_rnn()
@@ -171,6 +173,8 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+        if 'env_state' in checkpoint:
+            self.env.set_env_state(checkpoint['env_state'])
 
     def reset(self):
         self.init_rnn()
