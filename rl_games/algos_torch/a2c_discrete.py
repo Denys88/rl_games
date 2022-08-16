@@ -126,9 +126,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
-        rnn_masks = None
+        env_masks = None
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
+            env_masks = input_dict['env_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
             batch_dict['bptt_len'] = self.bptt_len
@@ -147,7 +147,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 c_loss = torch.zeros(1, device=self.ppo_device)
 
             
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], env_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
             loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
 
@@ -162,8 +162,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
-            if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
+            if env_masks is not None:
+                kl_dist = (kl_dist * env_masks).sum() / env_masks.numel() # / sum_mask
             else:
                 kl_dist = kl_dist.mean()
 
@@ -173,7 +173,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'returns' : return_batch,
             'new_neglogp' : action_log_probs,
             'old_neglogp' : old_action_log_probs_batch,
-            'masks' : rnn_masks
+            'masks' : env_masks
         }, curr_e_clip, 0) 
 
         self.train_result = (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)

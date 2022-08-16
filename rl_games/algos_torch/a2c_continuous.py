@@ -95,9 +95,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs' : obs_batch,
         }
 
-        rnn_masks = None
+        env_masks = None
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
+            env_masks = input_dict['env_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
             
@@ -121,7 +121,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 b_loss = self.bound_loss(mu)
             else:
                 b_loss = torch.zeros(1, device=self.ppo_device)
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], env_masks)
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
@@ -137,10 +137,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.trancate_gradients_and_step()
 
         with torch.no_grad():
-            reduce_kl = rnn_masks is None
+            reduce_kl = env_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
-            if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+            if env_masks is not None:
+                kl_dist = (kl_dist * env_masks).sum() / env_masks.numel()  #/ sum_mask
 
         self.diagnostics.mini_batch(self,
         {
@@ -148,7 +148,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'returns' : return_batch,
             'new_neglogp' : action_log_probs,
             'old_neglogp' : old_action_log_probs_batch,
-            'masks' : rnn_masks
+            'masks' : env_masks
         }, curr_e_clip, 0)      
 
         self.train_result = (a_loss, c_loss, entropy, \

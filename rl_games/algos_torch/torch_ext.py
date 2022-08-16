@@ -36,7 +36,7 @@ def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce=True):
         return kl
 
 def mean_mask(input, mask, sum_mask):
-    return (input * rnn_masks).sum() / sum_mask
+    return (input * mask).sum() / sum_mask
 
 def shape_whc_to_cwh(shape):
     if len(shape) == 3:
