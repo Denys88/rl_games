@@ -107,6 +107,7 @@ class A2CBase(BaseAlgorithm):
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
+        
         self.has_env_masks = self.env_info.get('env_masks', False)
         self.is_train = config.get('is_train', True)
 
@@ -455,10 +456,17 @@ class A2CBase(BaseAlgorithm):
         return actions
 
     def get_env_masks(self):
+        '''
+        returns env masks from vectorised env.
+        For example return torch.ones((self.num_actors,), device=self.device, dtype=torch.uint8)
+        '''
         if self.is_tensor_obses:
             return self.vec_env.get_env_masks()
         else:
-            return torch.from_numpy(self.vec_env.get_env_masks())
+            return torch.from_numpy(self.vec_env.get_env_masks(), device=self.device)        
+        
+
+
 
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
@@ -1126,7 +1134,6 @@ class ContinuousA2CBase(A2CBase):
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
             if self.normalize_rms_advantage:
                 advantages = self.advantage_mean_std(advantages, mask=env_masks)
             else:

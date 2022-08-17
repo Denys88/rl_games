@@ -31,6 +31,12 @@ class IVecEnv:
         Can be used for stateful training sessions, i.e. with adaptive curriculums.
         """
         return None
+    
+    def get_env_masks(self):
+        """
+        Return env masks to prevent training in particular states or envs.
+        """
+        return None
 
     def set_env_state(self, env_state):
         pass

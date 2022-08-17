@@ -294,12 +294,13 @@ class ExperienceBuffer:
 
         self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
-        
+        self.has_env_masks = env_info.get('env_masks', False)
+        print('self.has_env_masks', env_info )
         self.num_actors = algo_info['num_actors']
         self.horizon_length = algo_info['horizon_length']
         self.has_central_value = algo_info['has_central_value']
         self.use_action_masks = algo_info.get('use_action_masks', False)
-        self.has_env_masks = algo_info.get('has_env_masks', False)
+        
         batch_size = self.num_actors * self.num_agents
         self.is_discrete = False
         self.is_multi_discrete = False
