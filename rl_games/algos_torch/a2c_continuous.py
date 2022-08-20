@@ -100,6 +100,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
+            batch_dict['dones'] = input_dict['dones']
             
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
@@ -138,6 +139,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         with torch.no_grad():
             reduce_kl = rnn_masks is None
+            print(torch.abs(mu-old_mu_batch).max())
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if rnn_masks is not None:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
