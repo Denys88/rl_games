@@ -11,7 +11,8 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, 
+                seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
         nn.Module.__init__(self)
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
@@ -24,6 +25,8 @@ class CentralValueTrain(nn.Module):
         self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
+        self.zero_rnn_on_done = zero_rnn_on_done
+
         state_config = {
             'value_size' : value_size,
             'input_shape' : state_shape,
@@ -154,8 +157,10 @@ class CentralValueTrain(nn.Module):
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
                 mb_s[n // self.seq_len,:,:,:] = s
 
-    def post_step_rnn(self, all_done_indices):
+    def post_step_rnn(self, all_done_indices, zero_rnn_on_done=True):
         if not self.is_rnn:
+            return
+        if not self.zero_rnn_on_done:
             return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
