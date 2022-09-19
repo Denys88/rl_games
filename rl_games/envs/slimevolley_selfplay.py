@@ -9,7 +9,7 @@ class SlimeVolleySelfplay(gym.Env):
     def __init__(self, name="SlimeVolleyDiscrete-v0",  **kwargs):
         gym.Env.__init__(self)
         self.name = name
-        self.is_determenistic = kwargs.pop('is_determenistic', False)
+        self.is_deterministic = kwargs.pop('is_deterministic', False)
         self.config_path = kwargs.pop('config_path')
         self.agent = None
         self.pos_scale = 1
@@ -45,7 +45,7 @@ class SlimeVolleySelfplay(gym.Env):
     def step(self, action):
         op_obs = self.agent.obs_to_torch(self.opponent_obs)
         
-        opponent_action = self.agent.get_action(op_obs, self.is_determenistic).item()
+        opponent_action = self.agent.get_action(op_obs, self.is_deterministic).item()
         obs, reward, done, info = self.env.step(action, opponent_action)
         self.sum_rewards += reward
         if reward < 0:

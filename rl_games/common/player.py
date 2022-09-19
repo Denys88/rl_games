@@ -2,6 +2,7 @@ import time
 import gym
 import numpy as np
 import torch
+import copy
 from rl_games.common import env_configurations
 from rl_games.algos_torch import  model_builder
 
@@ -17,7 +18,8 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
-
+        else:
+            self.env = config.get('vec_env')
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
@@ -40,7 +42,10 @@ class BasePlayer(object):
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
-        self.is_determenistic = self.player_config.get('determenistic', True)
+        if 'deterministic' in self.player_config:
+            self.is_deterministic = self.player_config['deterministic']
+        else:
+            self.is_deterministic = self.player_config.get('determenistic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
@@ -53,8 +58,12 @@ class BasePlayer(object):
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
-            for k, v in obs_batch.items():
-                obs_batch[k] = self._preproc_obs(v)
+            obs_batch = copy.copy(obs_batch)
+            for k,v in obs_batch.items():
+                if v.dtype == torch.uint8:
+                    obs_batch[k] = v.float() / 255.0
+                else:
+                    obs_batch[k] = v
         else:
             if obs_batch.dtype == torch.uint8:
                 obs_batch = obs_batch.float() / 255.0
@@ -64,7 +73,6 @@ class BasePlayer(object):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
         obs, rewards, dones, infos = env.step(actions)
-
         if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
@@ -104,11 +112,13 @@ class BasePlayer(object):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
-            assert(self.observation_space.dtype != np.int8)
-            if self.observation_space.dtype == np.uint8:
+            assert(obs.dtype != np.int8)
+            if obs.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self.device)
             else:
                 obs = torch.FloatTensor(obs).to(self.device)
+        elif np.isscalar(obs):
+            obs = torch.FloatTensor([obs]).to(self.device)
         return obs
 
     def preprocess_actions(self, actions):
@@ -136,10 +146,10 @@ class BasePlayer(object):
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
 
-    def get_action(self, obs, is_determenistic=False):
+    def get_action(self, obs, is_deterministic=False):
         raise NotImplementedError('step')
 
-    def get_masked_action(self, obs, mask, is_determenistic=False):
+    def get_masked_action(self, obs, mask, is_deterministic=False):
         raise NotImplementedError('step')
 
     def reset(self):
@@ -155,7 +165,7 @@ class BasePlayer(object):
         n_games = self.games_num
         render = self.render_env
         n_game_life = self.n_game_life
-        is_determenistic = self.is_determenistic
+        is_deterministic = self.is_deterministic
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
@@ -196,9 +206,10 @@ class BasePlayer(object):
                 if has_masks:
                     masks = self.env.get_action_mask()
                     action = self.get_masked_action(
-                        obses, masks, is_determenistic)
+                        obses, masks, is_deterministic)
                 else:
-                    action = self.get_action(obses, is_determenistic)
+                    action = self.get_action(obses, is_deterministic)
+
                 obses, r, done, info = self.env_step(self.env, action)
                 cr += r
                 steps += 1
@@ -261,7 +272,10 @@ class BasePlayer(object):
                 obses = obses['obs']
             keys_view = self.obs_shape.keys()
             keys_iterator = iter(keys_view)
-            first_key = next(keys_iterator)
+            if 'observation' in obses:
+                first_key = 'observation'
+            else:
+                first_key = next(keys_iterator)
             obs_shape = self.obs_shape[first_key]
             obses = obses[first_key]
 

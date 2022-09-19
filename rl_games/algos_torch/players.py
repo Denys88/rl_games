@@ -41,7 +41,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
@@ -56,7 +56,7 @@ class PpoPlayerContinuous(BasePlayer):
         mu = res_dict['mus']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
-        if is_determenistic:
+        if is_deterministic:
             current_action = mu
         else:
             current_action = action
@@ -106,7 +106,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
 
-    def get_masked_action(self, obs, action_masks, is_determenistic = True):
+    def get_masked_action(self, obs, action_masks, is_deterministic = True):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
@@ -126,21 +126,22 @@ class PpoPlayerDiscrete(BasePlayer):
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
-            if is_determenistic:
+            if is_deterministic:
                 action = [torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits]
                 return torch.stack(action,dim=-1)
             else:    
                 return action.squeeze().detach()
         else:
-            if is_determenistic:
+            if is_deterministic:
                 return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
+
         self.model.eval()
         input_dict = {
             'is_train': False,
@@ -154,13 +155,13 @@ class PpoPlayerDiscrete(BasePlayer):
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
-            if is_determenistic:
+            if is_deterministic:
                 action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
                 return torch.stack(action,dim=-1)
             else:    
                 return action.squeeze().detach()
         else:
-            if is_determenistic:
+            if is_deterministic:
                 return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
@@ -209,11 +210,11 @@ class SACPlayer(BasePlayer):
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
-    def get_action(self, obs, is_determenistic=False):
+    def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         dist = self.model.actor(obs)
-        actions = dist.sample() if is_determenistic else dist.mean
+        actions = dist.sample() if is_deterministic else dist.mean
         actions = actions.clamp(*self.action_range).to(self.device)
         if self.has_batch_dimension == False:
             actions = torch.squeeze(actions.detach())

@@ -1,3 +1,5 @@
+import os
+import time
 import numpy as np
 import random
 import copy
@@ -57,20 +59,30 @@ class Runner:
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
+        if self.seed is None:
+            self.seed = int(time.time())
+        
+        if params["config"].get('multi_gpu', False):
+            self.seed += int(os.getenv("LOCAL_RANK", "0"))
+        print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
         self.exp_config = None
-
         if self.seed:
 
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
             random.seed(self.seed)
+            
+            # deal with environment specific seed if applicable
             if 'env_config' in params['config']:
                 if not 'seed' in params['config']['env_config']:
                     params['config']['env_config']['seed'] = self.seed
+                else:
+                    if params["config"].get('multi_gpu', False):
+                        params['config']['env_config']['seed'] += int(os.getenv("LOCAL_RANK", "0"))
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
@@ -81,7 +93,7 @@ class Runner:
 
     def load(self, yaml_conf):
         self.default_config = yaml_conf['params']
-        self.load_config(params=copy.deepcopy(self.default_config))
+        self.load_config(params=self.default_config)
 
     def run_train(self, args):
         print('Started to train')

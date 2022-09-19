@@ -5,8 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-
-
   network:
     name: actor_critic
     separate: False
@@ -20,12 +18,13 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
     rnn:
       name: lstm
       units: 128
       layers: 1
       layer_norm: True
+
   config:
     name: 27m_vs_30m_cv
     reward_shaper:
@@ -38,8 +37,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -47,7 +45,7 @@ params:
     minibatch_size: 3456
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     seq_length: 8
@@ -71,12 +69,13 @@ params:
             name: default
             scale: 2 
           regularizer:
-            name:  'None'
+            name: None
         rnn:
           name: lstm
           units: 128
           layers: 1
           layer_norm: True
+
     env_config:
       name: 27m_vs_30m
       transpose: False

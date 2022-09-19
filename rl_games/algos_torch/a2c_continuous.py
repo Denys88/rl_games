@@ -48,7 +48,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
                 'multi_gpu' : self.multi_gpu,
-                'hvd': self.hvd if self.multi_gpu else None
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -101,6 +100,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
+            batch_dict['dones'] = input_dict['dones']
             
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
@@ -135,7 +135,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         #TODO: Refactor this ugliest code of they year
-        self.trancate_gradients()
+        self.trancate_gradients_and_step()
 
         with torch.no_grad():
             reduce_kl = rnn_masks is None

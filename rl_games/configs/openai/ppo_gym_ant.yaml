@@ -42,8 +42,7 @@ params:
       grad_norm: 1.0
       entropy_coef: 0.0
       truncate_grads: True
-      env_name:  openai_gym
-      ppo: true
+      env_name: openai_gym
       e_clip: 0.2
       clip_value: True
       num_actors: 16
@@ -51,7 +50,7 @@ params:
       minibatch_size: 2048
       mini_epochs: 12
       critic_coef: 2
-      lr_schedule:  adaptive
+      lr_schedule: adaptive
       kl_threshold: 0.008
       normalize_input: False
       seq_length: 4

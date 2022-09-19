@@ -2,6 +2,7 @@ from torch import optim
 import torch
 from torch import nn
 import numpy as np
+
 from rl_games.common.datasets import ReplayBufferDataset
 class ModelTrainer():
     def __init__(self, model, learning_rate, weight_decay, minibatch_size, mini_epochs, hold_out):
@@ -12,14 +13,19 @@ class ModelTrainer():
         self.mini_epochs_num = mini_epochs
         self.hold_out = hold_out
         self.use_kl_loss = True
+        self.use_done_loss = True
         self.optimizer = optim.Adam(self.model.parameters(), self.lr, weight_decay=self.weight_decay)
         self.epoch = 0
+        self.bce_loss = torch.BCELoss()
 
     def observation_loss(self, next_obs_out, next_obs_target):
         return ((next_obs_target - next_obs_out)**2).sum(-1).mean()
 
     def reward_loss(self, reward_out, reward_target):
         return ((reward_target - reward_out) ** 2).sum(-1).mean()
+
+    def done_loss(self, done_out, done_target):
+        return self.bce_loss(done_out, done_target)
 
     def policy_loss(self, policy, pred_next_obs, next_obs):
         policy_dict = {
@@ -58,18 +64,23 @@ class ModelTrainer():
         }
         next_obs = batch_dict['next_obses']
         reward = batch_dict['rewards']
+        dones = batch_dict['dones']
+
         model_out = self.model(model_dict)
         pred_next_obs = model_out['obs']
         pred_rewards = model_out['reward']
+        pred_dones = model_out['done']
         obs_loss = self.observation_loss(pred_next_obs, next_obs)
         reward_loss = self.reward_loss(pred_rewards, reward)
+        done_loss = self.done_loss(pred_dones, dones)
         #kl_loss, val_loss = self.policy_loss(policy, pred_next_obs, next_obs)
         kl_loss, val_loss = torch.zeros_like(reward_loss),torch.zeros_like(reward_loss)
         total_loss = obs_loss + 5.0*reward_loss + 0.0*(kl_loss + val_loss)
         self.optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
         self.optimizer.step()
-        return obs_loss.detach().cpu().numpy(), reward_loss.detach().cpu().numpy(), kl_loss.detach().cpu().numpy(), val_loss.detach().cpu().numpy()
+        return obs_loss.detach().cpu().numpy(), reward_loss.detach().cpu().numpy(),\
+                kl_loss.detach().cpu().numpy(), val_loss.detach().cpu().numpy(), done_loss.detach().cpu().numpy()
 
 
 
@@ -82,7 +93,8 @@ class ModelTrainer():
         reward_losses = []
         kl_losses = []
         val_losses = []
-        for mini_ep in range(0, self.mini_epochs_num):
+        done_losses = []
+        for _ in range(0, self.mini_epochs_num):
             for i in range(len(dataset)):
                 obs, action, reward, next_obs, done = dataset[i]
                 train_dict = {
@@ -92,11 +104,12 @@ class ModelTrainer():
                     'actions' : action,
                     'dones' : done,
                 }
-                obs_loss, reward_loss, kl_loss, val_loss = self.train_model(algo, train_dict)
+                obs_loss, reward_loss, kl_loss, val_loss, done_loss = self.train_model(algo, train_dict)
                 obs_losses.append(obs_loss)
                 reward_losses.append(reward_loss)
                 kl_losses.append(kl_loss)
                 val_losses.append(val_loss)
+                done_losses.append(done_loss)
 
 
         if algo.writer:
@@ -104,3 +117,5 @@ class ModelTrainer():
             algo.writer.add_scalar('model/reward_loss', np.mean(reward_losses), self.epoch)
             algo.writer.add_scalar('model/kl_loss', np.mean(kl_losses), self.epoch)
             algo.writer.add_scalar('model/val_loss', np.mean(val_losses), self.epoch)
+            algo.writer.add_scalar('model/done_loss', np.mean(done_losses), self.epoch)
+
