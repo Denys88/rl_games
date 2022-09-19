@@ -21,7 +21,7 @@ class ModelEnvironment(torch.nn.Module):
         }
         with torch.no_grad():
             res = self.model(input_dict)
-        done = self.dones if not self.has_done else torch.floor(res['done'] + 0.5).long()
+        done = self.dones if not self.has_done else torch.floor(res['done'] + 0.5).squeeze(1).long()
         reward = res['reward']
         self.current_obs = res['obs']
         return self.current_obs, reward.squeeze(1), done, {}

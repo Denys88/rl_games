@@ -16,7 +16,7 @@ class ModelTrainer():
         self.use_done_loss = True
         self.optimizer = optim.Adam(self.model.parameters(), self.lr, weight_decay=self.weight_decay)
         self.epoch = 0
-        self.bce_loss = torch.BCELoss()
+        self.bce_loss = torch.nn.BCELoss()
 
     def observation_loss(self, next_obs_out, next_obs_target):
         return ((next_obs_target - next_obs_out)**2).sum(-1).mean()
@@ -25,7 +25,7 @@ class ModelTrainer():
         return ((reward_target - reward_out) ** 2).sum(-1).mean()
 
     def done_loss(self, done_out, done_target):
-        return self.bce_loss(done_out, done_target)
+        return self.bce_loss(done_out, done_target.float())
 
     def policy_loss(self, policy, pred_next_obs, next_obs):
         policy_dict = {
@@ -72,10 +72,11 @@ class ModelTrainer():
         pred_dones = model_out['done']
         obs_loss = self.observation_loss(pred_next_obs, next_obs)
         reward_loss = self.reward_loss(pred_rewards, reward)
+
         done_loss = self.done_loss(pred_dones, dones)
         #kl_loss, val_loss = self.policy_loss(policy, pred_next_obs, next_obs)
         kl_loss, val_loss = torch.zeros_like(reward_loss),torch.zeros_like(reward_loss)
-        total_loss = obs_loss + 5.0*reward_loss + 0.0*(kl_loss + val_loss)
+        total_loss = obs_loss + 2.0*reward_loss + done_loss + 0.0*(kl_loss + val_loss)
         self.optimizer.zero_grad(set_to_none=True)
         total_loss.backward()
         self.optimizer.step()

@@ -51,7 +51,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.0
       truncate_grads: True
-      env_name:  LunarLanderContinuous-v2
+      env_name: envpool
       ppo: true
       e_clip: 0.2
       clip_value: True
@@ -66,6 +66,15 @@ params:
       normalize_input: False
       seq_length: 4
       bounds_loss_coef: 0
-
+      env_config:
+        env_name: LunarLanderContinuous-v2
       player:
         render: True
+
+  model_training_config:
+      minibatch_size: 2048
+      mini_epochs: 4
+      learning_rate: 1e-4
+      replay_buffer_size: 8192 #1048576 # 1024 * 1024
+      weight_decay: 1e-5
+      hold_out: 0.1

@@ -60,7 +60,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
         self.model_horizon_length = self.horizon_length
-        self.max_model_horizon = 16
+        self.max_model_horizon = 64
         self.original_horizon_length = self.horizon_length
 
         model_info = {
@@ -91,8 +91,8 @@ class MBAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.model.value_mean_std
         self.has_value_loss = True
 
-        self.dataset_list = datasets.DatasetList([self.dataset] + self.model_datasets) #
-        #self.dataset_list = datasets.DatasetList([self.dataset])
+        #self.dataset_list = datasets.DatasetList([self.dataset] + self.model_datasets) #
+        self.dataset_list = datasets.DatasetList([self.dataset])
         self.algo_observer.after_init(self)
 
 
@@ -181,7 +181,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         # TODO: Refactor this ugliest code of they year
-        self.trancate_gradients()
+        self.trancate_gradients_and_step()
 
         with torch.no_grad():
             reduce_kl = not self.is_rnn
@@ -204,7 +204,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
     def prepare_model_env(self):
         start_obs = []
-        for _ in range(self.horizon_length // self.max_model_horizon):
+        for _ in range(self.model_horizon_length // self.max_model_horizon):
             start_obs_idx = np.random.randint(0, self.original_horizon_length)
             start_obs.append(self.original_experience_buffer.tensor_dict['obses'][start_obs_idx])
         start_obs = torch.cat(start_obs)
@@ -421,7 +421,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
             #    shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
             #self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
-
+    
             all_done_indices = self.dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
             not_dones = 1.0 - self.dones.float()
