@@ -195,7 +195,7 @@ class ModelA2CContinuous(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, sigma, value, states = self.a2c_network(input_dict)
-            distr = torch.distributions.Normal(mu, sigma)
+            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
 
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
@@ -246,7 +246,7 @@ class ModelA2CContinuousLogStd(BaseModel):
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
-            distr = torch.distributions.Normal(mu, sigma)
+            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
