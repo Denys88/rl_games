@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/MMM2_cnn.pth'
-
   network:
     name: actor_critic
     separate: True
@@ -21,7 +18,7 @@ params:
       initializer:
         name: default
       regularizer:
-        name: 'None'
+        name: None
       convs:    
             - filters: 128
               kernel_size: 3
@@ -41,7 +38,8 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
+
   config:
     name: MMM2_cnn
     reward_shaper:
@@ -54,17 +52,16 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  smac_cnn
-    ppo: true
+    env_name: smac_cnn
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 2560
     mini_epochs: 4
     critic_coef: 2
-    lr_schedule:  None
-    lr_threshold: 0.05
+    lr_schedule: None
+    kl_threshold: 0.05
     normalize_input: True
     use_action_masks: True
 
@@ -79,7 +76,7 @@ params:
     central_value_config1:
       minibatch_size: 512
       mini_epochs: 2
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       network:
@@ -92,7 +89,7 @@ params:
             name: default
             scale: 2
           regularizer:
-            name: 'None'
+            name: None
           convs:    
             - filters: 128
               kernel_size: 3
@@ -113,4 +110,4 @@ params:
             name: default
             scale: 2 
           regularizer:
-            name:  'None'
+            name: None

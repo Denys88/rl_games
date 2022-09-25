@@ -5,10 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/invaders_resnet.pth'
-
-
   network:
     name: resnet_actor_critic
     separate: False
@@ -49,17 +45,16 @@ params:
     grad_norm: 1.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: 'atari_gym' #'openai_gym' #'PongNoFrameskip-v4' #
-    ppo: true
+    env_name: atari_gym #'openai_gym' #'PongNoFrameskip-v4' #
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    steps_num: 256
+    horizon_length: 256
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  none
-    lr_threshold: 0.01
+    lr_schedule: None
+    kl_threshold: 0.01
     normalize_input: False
     seq_length: 4
     max_epochs: 200000
@@ -73,5 +68,5 @@ params:
         render: True
         games_num: 10
         n_game_life: 1
-        is_determenistic: True
+        determenistic: True
 

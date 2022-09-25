@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/6h_vs_8z_cnnsmac_cnn'
-
   network:
     name: actor_critic
     separate: True
@@ -35,17 +32,16 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: False
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1536
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
     seq_length: 2
     use_action_masks: True
@@ -65,7 +61,7 @@ params:
         gamma: 0.99
         mini_epochs: 2
         minibatch_size: 1536
-        lr: 5e-4
+        learning_rate: 5e-4
         network:
           name: rnd_curiosity
           mlp:

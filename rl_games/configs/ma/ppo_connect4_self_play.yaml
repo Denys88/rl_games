@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/connect4.pth'
-
   network:
     name: actor_critic
     separate: False
@@ -55,17 +52,16 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  connect4_env
-    ppo: true
+    env_name: connect4_env
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.05
+    lr_schedule: None
+    kl_threshold: 0.05
     normalize_input: False
     games_to_track: 1000
     use_action_masks: True
@@ -80,4 +76,4 @@ params:
       self_play: True
       is_human: False
       random_agent: False
-      config_path: 'rl_games/configs/ma/ppo_connect4_self_play.yaml'
+      config_path: rl_games/configs/ma/ppo_connect4_self_play.yaml

@@ -33,14 +33,10 @@ params:
       regularizer:
         name: None
 
-  load_checkpoint: False
-  load_path: nn/Ur5e_brax.pth
-
   config:
-    name: 'Ur5e_brax'
+    name: Ur5e_brax
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True
@@ -51,7 +47,7 @@ params:
     tau: 0.95
     learning_rate: 3e-4
     lr_schedule: adaptive
-    lr_threshold: 0.008
+    kl_threshold: 0.008
     score_to_win: 20000
     max_epochs: 2000
     save_best_after: 100
@@ -60,7 +56,7 @@ params:
     entropy_coef: 0.00
     truncate_grads: True
     e_clip: 0.2
-    steps_num: 16
+    horizon_length: 16
     num_actors: 8192
     minibatch_size: 32768
     mini_epochs: 5

@@ -20,7 +20,7 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
 
   config:
     name: bane_vs_bane_neg
@@ -34,17 +34,16 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.002
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
-    steps_num: 64
+    horizon_length: 64
     minibatch_size: 3072 # 6 * 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.05
+    lr_schedule: None
+    kl_threshold: 0.05
     normalize_input: True
     use_action_masks: True
 
@@ -61,7 +60,7 @@ params:
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      lr: 5e-4
+      learning_rate: 5e-4
       clip_value: False
       normalize_input: True
       network:
@@ -74,4 +73,4 @@ params:
             name: default
             scale: 2 
           regularizer:
-            name:  'None'
+            name: None

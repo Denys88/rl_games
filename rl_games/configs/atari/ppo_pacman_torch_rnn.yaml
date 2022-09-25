@@ -5,8 +5,7 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/pacman_ff.pth'
+
 
   network:
     name: actor_critic
@@ -65,12 +64,11 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: 'atari_gym' 
-    ppo: true
+    env_name: atari_gym
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 256
+    horizon_length: 256
     minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 1
@@ -88,5 +86,5 @@ params:
         render: True
         games_num: 10
         n_game_life: 3
-        determenistic: True
+        determenistic: False
         render_sleep: 0.05

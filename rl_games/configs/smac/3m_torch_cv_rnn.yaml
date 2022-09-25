@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: 'nn/3m'
-
   network:
     name: actor_critic
     separate: False
@@ -29,7 +26,7 @@ params:
   config:
     name: 3m_cv_rnn
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
@@ -38,17 +35,16 @@ params:
     truncate_grads: True
     grad_norm: 0.5
     entropy_coef: 0.001
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: False
     num_actors: 8
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 1536 # 3 * 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: True
     normalize_value: False
     use_action_masks: True
@@ -64,7 +60,7 @@ params:
     central_value_config:
       minibatch_size: 512
       mini_epochs: 4
-      lr: 1e-4
+      learning_rate: 1e-4
       clip_value: False
       normalize_input: True
       truncate_grads: True

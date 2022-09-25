@@ -296,15 +296,15 @@ class ExperienceBuffer:
         self.action_space = env_info['action_space']
         
         self.num_actors = algo_info['num_actors']
-        self.steps_num = algo_info['steps_num']
+        self.horizon_length = algo_info['horizon_length']
         self.has_central_value = algo_info['has_central_value']
         self.use_action_masks = algo_info.get('use_action_masks', False)
         batch_size = self.num_actors * self.num_agents
         self.is_discrete = False
         self.is_multi_discrete = False
         self.is_continuous = False
-        self.obs_base_shape = (self.steps_num, self.num_agents * self.num_actors)
-        self.state_base_shape = (self.steps_num, self.num_actors)
+        self.obs_base_shape = (self.horizon_length, self.num_agents * self.num_actors)
+        self.state_base_shape = (self.horizon_length, self.num_actors)
         if type(self.action_space) is gym.spaces.Discrete:
             self.actions_shape = ()
             self.actions_num = self.action_space.n

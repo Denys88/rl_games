@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: True
-  load_path: 'nn/connect4_rn.pth'
-
   network:
     name: connect4net
     blocks: 5
@@ -24,17 +21,16 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  connect4_env
-    ppo: true
+    env_name: connect4_env
     e_clip: 0.2
     clip_value: True
     num_actors: 4
-    steps_num: 128
+    horizon_length: 128
     minibatch_size: 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule:  None
-    lr_threshold: 0.05
+    kl_threshold: 0.05
     normalize_input: False
     games_to_track: 1000
     use_action_masks: True

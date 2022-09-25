@@ -5,9 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-  load_checkpoint: False
-  load_path: path
-
   network:
     name: actor_critic
     separate: True
@@ -21,7 +18,8 @@ params:
       initializer:
         name: default
       regularizer:
-        name: 'None'
+        name: None
+
   config:
     reward_shaper:
         scale_value: 1
@@ -34,18 +32,17 @@ params:
     grad_norm: 10.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  test_env
-    ppo: true
+    env_name: test_env
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    steps_num: 512
+    horizon_length: 512
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
-    lr_threshold: 0.008
-    normalize_input: False
+    lr_schedule: None
+    kl_threshold: 0.008
+    normalize_input: True
     weight_decay: 0.0000
     max_epochs: 10000
 
@@ -55,10 +52,10 @@ params:
       apply_dist_reward: True
       min_dist: 2
       max_dist: 8
-      use_central_value: False
+      use_central_value: True
       multi_discrete_space: False
       multi_head_value: False
     player:
         games_num: 100
-        is_determenistic: True
+        determenistic: True
 
