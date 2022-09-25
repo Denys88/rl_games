@@ -25,6 +25,13 @@ def swap_and_flatten01(arr):
     s = arr.size()
     return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
 
+
+def rescale_actions(low, high, action):
+    d = (high - low) / 2.0
+    m = (high + low) / 2.0
+    scaled_action = action * d + m
+    return scaled_action
+
 class MBAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
@@ -60,11 +67,12 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08,
                                     weight_decay=self.weight_decay)
         self.model_horizon_length = self.horizon_length
-        self.max_model_horizon = 64
+        
         self.original_horizon_length = self.horizon_length
-
+        self.max_model_horizon = 32
+        self.fake_num_actors = 32 * self.num_actors
         model_info = {
-            'num_actors' : self.num_actors * self.model_horizon_length//self.max_model_horizon,
+            'num_actors' : self.fake_num_actors,
             'horizon_length' : self.max_model_horizon,
             'has_central_value' : False,
             'use_action_masks' : False,
@@ -72,12 +80,13 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
         self.replay_buffer = VectorizedReplayBuffer(self.env_info['observation_space'].shape,
                                                                self.env_info['action_space'].shape,
-                                                               self.replay_buffer_size,
+                                                               self.num_agents * self.num_actors * self.horizon_length,
+                                                               #self.replay_buffer_size,
                                                                self.device)
 
         self.model_experience_buffer = ExperienceBuffer(self.env_info, model_info, self.ppo_device)
-        self.model_datasets = [datasets.PPODataset(self.num_agents * self.num_actors*  self.model_horizon_length, self.minibatch_size, False, False,
-                                           self.ppo_device, self.seq_len)]
+        self.model_datasets = datasets.PPODataset(self.num_agents * self.fake_num_actors*  self.max_model_horizon, self.minibatch_size, False, False,
+                                           self.ppo_device, self.seq_len)
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
                                            self.ppo_device, self.seq_len)
@@ -91,8 +100,8 @@ class MBAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.model.value_mean_std
         self.has_value_loss = True
 
-        #self.dataset_list = datasets.DatasetList([self.dataset] + self.model_datasets) #
-        self.dataset_list = datasets.DatasetList([self.dataset])
+        #self.dataset_list = datasets.DatasetList([self.dataset] + [self.model_datasets]) #
+        self.dataset_list = datasets.DatasetList([self.model_datasets])
         self.algo_observer.after_init(self)
 
 
@@ -204,7 +213,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
 
     def prepare_model_env(self):
         start_obs = []
-        for _ in range(self.model_horizon_length // self.max_model_horizon):
+        for _ in range(self.fake_num_actors // self.num_actors):
             start_obs_idx = np.random.randint(0, self.original_horizon_length)
             start_obs.append(self.original_experience_buffer.tensor_dict['obses'][start_obs_idx])
         start_obs = torch.cat(start_obs)
@@ -213,7 +222,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         self.obs['obs'] = start_obs
         self.fake_env.reset(start_obs)
         self.horizon_length = self.max_model_horizon
-        self.dataset = self.model_datasets[0]
+        self.dataset = self.model_datasets
         self.experience_buffer = self.model_experience_buffer
         self.vec_env = self.fake_env
         self.original_dones = copy.deepcopy(self.dones)
@@ -274,12 +283,12 @@ class MBAgent(a2c_common.ContinuousA2CBase):
         b_losses = []
         entropies = []
         kls = []
-
+        dataset = self.model_datasets
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
-            for i in range(len(self.dataset_list)):
+            for i in range(len(dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(
-                    self.dataset_list[i])
+                    dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
@@ -287,7 +296,7 @@ class MBAgent(a2c_common.ContinuousA2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset_list.update_mu_sigma(cmu, csigma)
+                dataset.update_mu_sigma(cmu, csigma)
 
                 if self.schedule_type == 'legacy':
                     if self.multi_gpu:
@@ -356,8 +365,10 @@ class MBAgent(a2c_common.ContinuousA2CBase):
                 shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
             self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
+            clamped_actions = torch.clamp(res_dict['actions'], -1.0, 1.0)
+            rescaled_actions = rescale_actions(self.actions_low, self.actions_high, clamped_actions)
             self.replay_buffer.add(last_obs['obs'],
-                                   res_dict['actions'],
+                                   rescaled_actions,
                                    shaped_rewards,
                                    self.obs['obs'],
                                    last_dones.unsqueeze(1))
@@ -410,21 +421,16 @@ class MBAgent(a2c_common.ContinuousA2CBase):
                 self.experience_buffer.update_data(k, n, res_dict[k])
 
             step_time_start = time.time()
-            self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            self.obs, rewards, self.dones, _ = self.env_step(res_dict['actions'])
             step_time_end = time.time()
 
             step_time += (step_time_end - step_time_start)
 
-            #shaped_rewards = self.rewards_shaper(rewards)
             shaped_rewards = rewards
-            #if self.value_bootstrap and 'time_outs' in infos:
-            #    shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
-            #self.experience_buffer.update_data('next_obses', n, self.obs['obs'])
     
             all_done_indices = self.dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-            not_dones = 1.0 - self.dones.float()
+
 
         last_values = self.get_values(self.obs)
 

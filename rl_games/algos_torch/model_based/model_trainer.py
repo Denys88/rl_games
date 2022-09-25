@@ -71,6 +71,7 @@ class ModelTrainer():
         pred_rewards = model_out['reward']
         pred_dones = model_out['done']
         obs_loss = self.observation_loss(pred_next_obs, next_obs)
+        print(pred_next_obs[0], next_obs[0])
         reward_loss = self.reward_loss(pred_rewards, reward)
 
         done_loss = self.done_loss(pred_dones, dones)

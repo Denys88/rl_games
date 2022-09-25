@@ -1,5 +1,5 @@
 import torch
-
+import copy
 
 class ModelEnvironment(torch.nn.Module):
     def __init__(self, model, env_info, has_done=True):
@@ -21,10 +21,11 @@ class ModelEnvironment(torch.nn.Module):
         }
         with torch.no_grad():
             res = self.model(input_dict)
+
         done = self.dones if not self.has_done else torch.floor(res['done'] + 0.5).squeeze(1).long()
         reward = res['reward']
-        self.current_obs = res['obs']
-        return self.current_obs, reward.squeeze(1), done, {}
+        self.current_obs = copy.deepcopy(res['obs'])
+        return res['obs'], reward.squeeze(1), done, {}
 
     def get_env_info(self):
         return self.env_info
