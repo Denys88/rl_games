@@ -1,7 +1,7 @@
 from distutils.util import strtobool
 import numpy as np
 import argparse, copy, os, yaml
-import ray, signal
+import ray
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 #import warnings
@@ -44,7 +44,6 @@ if __name__ == '__main__':
         from rl_games.torch_runner import Runner
 
         ray.init(object_store_memory=1024*1024*1000)
-        #signal.signal(signal.SIGINT, exit_gracefully)
 
         runner = Runner()
         try:
