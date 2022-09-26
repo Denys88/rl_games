@@ -6,6 +6,7 @@ import ray
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 #import warnings
 #warnings.filterwarnings("error")
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=0, required=False, 
@@ -15,7 +16,7 @@ if __name__ == '__main__':
     ap.add_argument("-p", "--play", required=False, help="play(test) network", action='store_true')
     ap.add_argument("-c", "--checkpoint", required=False, help="path to checkpoint")
     ap.add_argument("-f", "--file", required=True, help="path to config")
-    ap.add_argument("-na", "--num_actors", type=int, default=0, required=False, 
+    ap.add_argument("-na", "--num_actors", type=int, default=0, required=False,
                     help="number of envs running in parallel, if larger than 0 will overwrite the value in yaml config")
     ap.add_argument("-s", "--sigma", type=float, required=False, help="sets new sigma value in case if 'fixed_sigma: True' in yaml config")
     ap.add_argument("--track", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
@@ -29,14 +30,14 @@ if __name__ == '__main__':
 
     args = vars(ap.parse_args())
     config_name = args['file']
-    
+
     print('Loading config: ', config_name)
     with open(config_name, 'r') as stream:
         config = yaml.safe_load(stream)
 
         if args['num_actors'] > 0:
             config['params']['config']['num_actors'] = args['num_actors']
-        
+
         if args['seed'] > 0:
             config['params']['seed'] = args['seed']
             config['params']['config']['env_config']['seed'] = args['seed']
@@ -67,6 +68,6 @@ if __name__ == '__main__':
     runner.run(args)
 
     ray.shutdown()
-    
+
     if args["track"] and rank == 0:
         wandb.finish()

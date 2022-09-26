@@ -89,8 +89,9 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
-    def load(self, yaml_conf):
-        self.default_config = deepcopy(yaml_conf['params'])
+    def load(self, yaml_config):
+        config = deepcopy(yaml_config)
+        self.default_config = deepcopy(config['params'])
         self.load_config(params=self.default_config)
 
     def run_train(self, args):
