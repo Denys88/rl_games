@@ -2,23 +2,20 @@ import os
 import time
 import numpy as np
 import random
-import copy
+from copy import deepcopy
 import torch
-import yaml
+#import yaml
 
-from rl_games import envs
+#from rl_games import envs
 from rl_games.common import object_factory
-from rl_games.common import env_configurations
-from rl_games.common import experiment
 from rl_games.common import tr_helpers
 
-from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
-import rl_games.networks
+
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
@@ -33,6 +30,8 @@ def _override_sigma(agent, args):
                     net.sigma.fill_(float(args['sigma']))
             else:
                 print('Print cannot set new sigma because fixed_sigma is False')
+
+
 class Runner:
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
@@ -52,6 +51,7 @@ class Runner:
         ### it didnot help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
+
     def reset(self):
         pass
 
@@ -59,7 +59,7 @@ class Runner:
         self.seed = params.get('seed', None)
         if self.seed is None:
             self.seed = int(time.time())
-        
+
         if params["config"].get('multi_gpu', False):
             self.seed += int(os.getenv("LOCAL_RANK", "0"))
         print(f"self.seed = {self.seed}")
@@ -67,13 +67,13 @@ class Runner:
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
         self.exp_config = None
-        if self.seed:
 
+        if self.seed:
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
             random.seed(self.seed)
-            
+
             # deal with environment specific seed if applicable
             if 'env_config' in params['config']:
                 if not 'seed' in params['config']['env_config']:
@@ -89,8 +89,9 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
-    def load(self, yaml_conf):
-        self.default_config = yaml_conf['params']
+    def load(self, yaml_config):
+        config = deepcopy(yaml_config)
+        self.default_config = deepcopy(config['params'])
         self.load_config(params=self.default_config)
 
     def run_train(self, args):
