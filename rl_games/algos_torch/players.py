@@ -75,6 +75,10 @@ class PpoPlayerContinuous(BasePlayer):
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
+
     def reset(self):
         self.init_rnn()
 
@@ -175,6 +179,10 @@ class PpoPlayerDiscrete(BasePlayer):
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
+
     def reset(self):
         self.init_rnn()
 
@@ -213,6 +221,10 @@ class SACPlayer(BasePlayer):
         self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
 
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
