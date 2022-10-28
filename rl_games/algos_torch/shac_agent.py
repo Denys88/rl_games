@@ -135,10 +135,9 @@ class SHACAgent(ContinuousA2CBase):
                 if torch.isnan(real_obs[ind]).sum() > 0 \
                         or torch.isinf(real_obs[ind]).sum() > 0 \
                         or (torch.abs(real_obs[ind]) > 1e6).sum() > 0:  # ugly fix for nan values
-                    print('KTOTO NOOB:', ind)
+                    print('Nan gradients: ', ind)
                     last_obs_vals[ind] = 0
                 else:
-                    print('VSE OK:', ind)
                     curr_real_obs = self.obs_to_tensors(real_obs[ind])
                     val = self.get_values(curr_real_obs)
                     last_obs_vals[ind] = val
