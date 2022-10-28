@@ -2,16 +2,15 @@ import os
 import time
 import numpy as np
 import random
-import copy
+from copy import deepcopy
 import torch
 
 from rl_games.common import object_factory, tr_helpers
 
-from rl_games.algos_torch import a2c_continuous
-from rl_games.algos_torch import a2c_discrete
+from rl_games.algos_torch import a2c_continuous, a2c_discrete
 from rl_games.algos_torch import players
-from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent, shac_agent
+from rl_games.common.algo_observer import DefaultAlgoObserver
 
 
 def _restore(agent, args):
@@ -32,7 +31,7 @@ class Runner:
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
-        self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
+        self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs))
         self.algo_factory.register_builder('sac', lambda **kwargs: sac_agent.SACAgent(**kwargs))
         self.algo_factory.register_builder('shac', lambda **kwargs: shac_agent.SHACAgent(**kwargs))
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
@@ -57,7 +56,7 @@ class Runner:
         self.seed = params.get('seed', None)
         if self.seed is None:
             self.seed = int(time.time())
-        
+
         if params["config"].get('multi_gpu', False):
             self.seed += int(os.getenv("LOCAL_RANK", "0"))
         print(f"self.seed = {self.seed}")
@@ -70,7 +69,7 @@ class Runner:
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
             random.seed(self.seed)
-            
+
             # deal with environment specific seed if applicable
             if 'env_config' in params['config']:
                 if not 'seed' in params['config']['env_config']:
@@ -86,8 +85,9 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
-    def load(self, yaml_conf):
-        self.default_config = yaml_conf['params']
+    def load(self, yaml_config):
+        config = deepcopy(yaml_config)
+        self.default_config = deepcopy(config['params'])
         self.load_config(params=self.default_config)
 
     def run_train(self, args):

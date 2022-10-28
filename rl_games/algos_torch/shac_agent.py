@@ -39,6 +39,9 @@ class SHACAgent(ContinuousA2CBase):
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
+
+        # apply tanh to actions
+        self.apply_tanh = params['config'].get('apply_tanh', True)
         self.critic_lr = float(self.config.get('critic_learning_rate', 0.0001))
         self.use_target_critic = self.config.get('use_target_critic', True)
         self.target_critic_alpha = self.config.get('target_critic_alpha', 0.4)
@@ -90,8 +93,9 @@ class SHACAgent(ContinuousA2CBase):
         accumulated_rewards = torch.zeros((self.horizon_length + 1, self.num_actors), dtype=torch.float32, device=self.device)
         actor_loss = torch.tensor(0., dtype=torch.float32, device=self.device)
         mb_values = self.experience_buffer.tensor_dict['values']
-        gamma = torch.ones(self.num_actors, dtype = torch.float32, device = self.device)
+        gamma = torch.ones(self.num_actors, dtype=torch.float32, device=self.device)
         step_time = 0.0
+
         self.critic_model.eval()
         self.target_critic.eval()
         self.actor_model.train()
@@ -101,6 +105,7 @@ class SHACAgent(ContinuousA2CBase):
             self.actor_model.running_mean_std.train()
         if self.normalize_value:
             self.value_mean_std.eval()
+
         obs = self.initialize_trajectory()
         last_values = None
 
@@ -118,7 +123,9 @@ class SHACAgent(ContinuousA2CBase):
                 self.experience_buffer.update_data('values', n, res_dict['values'].detach())
 
             step_time_start = time.time()
-            actions = torch.tanh(res_dict['actions'])
+            if self.apply_tanh:
+                actions = torch.tanh(res_dict['actions'])
+
             obs, rewards, self.dones, infos = self.env_step(actions)
             step_time_end = time.time()
             episode_ended = self.current_lengths == self.max_episode_length - 1

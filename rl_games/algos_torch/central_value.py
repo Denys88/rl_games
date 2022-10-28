@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 import torch.distributed as dist
@@ -73,11 +74,22 @@ class CentralValueTrain(nn.Module):
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
+        if self.multi_gpu:
+            self.rank = int(os.getenv("LOCAL_RANK", "0"))
+            self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
+            # dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
+
+            self.device_name = 'cuda:' + str(self.rank)
+            config['device'] = self.device_name
+            if self.rank != 0:
+                config['print_stats'] = False
+                config['lr_schedule'] = None
+
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device)
+            lr_tensor = torch.tensor([lr], device=self.device_name)
             dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
@@ -232,19 +244,25 @@ class CentralValueTrain(nn.Module):
                 param.grad = None
         loss.backward()
 
-        #TODO: Refactor this ugliest code of they year
+        if self.multi_gpu:
+            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
+            all_grads_list = []
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    all_grads_list.append(param.grad.view(-1))
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
+                    )
+                    offset += param.numel()
+
         if self.truncate_grads:
-            if self.multi_gpu:
-                self.optimizer.synchronize()
-                #self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                with self.optimizer.skip_synchronize():
-                    self.optimizer.step()
-            else:
-                #self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.optimizer.step()    
-        else:
-            self.optimizer.step()
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+
+        self.optimizer.step()
         
         return loss
