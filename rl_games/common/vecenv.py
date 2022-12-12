@@ -107,7 +107,7 @@ class RayVecEnv(IVecEnv):
         if self.seed is not None:
             seeds = range(self.seed, self.seed + self.num_actors)
             seed_set = []
-            for (seed, worker) in zip(seeds, self.workers):	        
+            for (seed, worker) in zip(seeds, self.workers):
                 seed_set.append(worker.seed.remote(seed))
             ray.get(seed_set)
 

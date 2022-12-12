@@ -29,6 +29,7 @@ class NetworkBuilder:
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
 
+
     class BaseNetwork(nn.Module):
         def __init__(self, **kwargs):
             nn.Module.__init__(self, **kwargs)
@@ -508,7 +509,12 @@ class A2CBuilder(NetworkBuilder):
                 self.has_cnn = False
 
     def build(self, name, **kwargs):
+        #import torch._dynamo as dynamo
         net = A2CBuilder.Network(self.params, **kwargs)
+        #opt_net = dynamo.optimize("inductor")(net)
+
+        print("Created not optimized NN!")
+
         return net
 
 class Conv2dAuto(nn.Conv2d):
