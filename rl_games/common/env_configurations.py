@@ -242,6 +242,28 @@ def create_env(name, **kwargs):
         env = wrappers.TimeLimit(env, steps_limit)
     return env
 
+def create_godot_env(name, **kwargs):
+    '''
+    1) install git-lfs
+    2) git install lfs
+    3) gdrl.env_from_hub -r edbeeching/godot_rl_BallChase
+    4) chmod +x examples/godot_rl_BallChase/bin/BallChase.x86_64 
+
+    '''
+    from godot_rl.core.godot_env import GodotEnv
+    '''
+            env_path=env_path,
+            port=port,
+            seed=seed,
+            show_window=show_window,
+            framerate=framerate,
+            action_repeat=action_repeat,
+    '''
+    env =GodotEnv(
+        **kwargs
+        )
+    return env
+
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -414,6 +436,10 @@ configurations = {
     'cule': {
         'env_creator': lambda **kwargs: create_cule(**kwargs),
         'vecenv_type': 'CULE'
+    },
+    'godot': {
+        'env_creator': lambda **kwargs: create_godot_env(**kwargs),
+        'vecenv_type': 'RAY'
     },
 }
 

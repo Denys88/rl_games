@@ -165,7 +165,7 @@ class RayVecEnv(IVecEnv):
             ret_obs = newobsdict
         if self.concat_infos:
             newinfos = dicts_to_dict_with_arrays(newinfos, False)
-        return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
+        return ret_obs, self.concat_func(newrewards).astype(np.float32), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
