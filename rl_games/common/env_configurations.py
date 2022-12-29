@@ -169,8 +169,7 @@ def create_smac(name, **kwargs):
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
     env = SMACEnv(name, **kwargs)
-    
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -188,7 +187,7 @@ def create_smac_cnn(name, **kwargs):
         env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=transpose)
     else:
         env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
-        
+
     return env
 
 def create_test_env(name, **kwargs):
@@ -200,14 +199,12 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
-
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
     rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
     rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
-
 
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
@@ -226,7 +223,7 @@ def create_minigrid_env(name, **kwargs):
 
 def create_multiwalker_env(**kwargs):
     from rl_games.envs.multiwalker import MultiWalker
-    env = MultiWalker('', **kwargs) 
+    env = MultiWalker('', **kwargs)
 
     return env
 
@@ -242,15 +239,16 @@ def create_env(name, **kwargs):
         env = wrappers.TimeLimit(env, steps_limit)
     return env
 
-def create_godot_env(name, **kwargs):
+def create_godot_env(**kwargs):
     '''
     1) install git-lfs
     2) git install lfs
     3) gdrl.env_from_hub -r edbeeching/godot_rl_BallChase
-    4) chmod +x examples/godot_rl_BallChase/bin/BallChase.x86_64 
+    4) chmod +x examples/godot_rl_BallChase/bin/BallChase.x86_64
 
     '''
     from godot_rl.core.godot_env import GodotEnv
+    import random
     '''
             env_path=env_path,
             port=port,
@@ -259,7 +257,11 @@ def create_godot_env(name, **kwargs):
             framerate=framerate,
             action_repeat=action_repeat,
     '''
-    env =GodotEnv(
+
+    # temporary fix
+    port = 1000 + random.randrange(0, 1000)
+    env = GodotEnv(
+        port=port,
         **kwargs
         )
     return env
