@@ -7,7 +7,7 @@ NETWORK_REGISTRY = {}
 MODEL_REGISTRY = {}
 
 def register_network(name, target_class):
-    NETWORK_REGISTRY[name] = lambda **kwargs: target_class()
+    NETWORK_REGISTRY[name] = lambda **kwargs: target_class(**kwargs)
 
 def register_model(name, target_class):
     MODEL_REGISTRY[name] = lambda  network, **kwargs: target_class(network)
@@ -17,11 +17,10 @@ class NetworkBuilder:
     def __init__(self):
         self.network_factory = object_factory.ObjectFactory()
         self.network_factory.set_builders(NETWORK_REGISTRY)
-        self.network_factory.register_builder('actor_critic', lambda **kwargs: network_builder.A2CBuilder())
+        self.network_factory.register_builder('actor_critic', lambda **kwargs: network_builder.A2CBuilder(**kwargs))
         self.network_factory.register_builder('resnet_actor_critic',
-                                              lambda **kwargs: network_builder.A2CResnetBuilder())
-        self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
-        self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
+                                              lambda **kwargs: network_builder.A2CResnetBuilder(**kwargs))
+        self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder(**kwargs))
 
     def load(self, params):
         network_name = params['name']

@@ -285,7 +285,7 @@ class A2CBase(BaseAlgorithm):
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
-        has_central_value_net = self.config.get('central_value_config') is not  None
+        has_central_value_net = self.config.get('central_value_config', False)
         if has_central_value_net:
             print('Adding Central Value Network')
             if 'model' not in params['config']['central_value_config']:
