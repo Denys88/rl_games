@@ -10,9 +10,13 @@ from rl_games.common  import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
 
+
 class CentralValueTrain(nn.Module):
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, seq_len, normalize_value,network, config, writter, max_epochs, multi_gpu):
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, \
+                horizon_length, num_actors, num_actions, seq_len, \
+                normalize_value,network, config, writter, max_epochs, multi_gpu):
         nn.Module.__init__(self)
+
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
         self.normalize_value = normalize_value
@@ -39,9 +43,9 @@ class CentralValueTrain(nn.Module):
         self.linear_lr = config.get('lr_schedule') == 'linear'
         if self.linear_lr:
             self.scheduler = schedulers.LinearScheduler(self.lr, 
-                max_steps=self.max_epochs, 
-                apply_to_entropy=False,
-                start_entropy_coef=0)
+                max_steps = self.max_epochs, 
+                apply_to_entropy = False,
+                start_entropy_coef = 0)
         else:
             self.scheduler = schedulers.IdentityScheduler()
         
