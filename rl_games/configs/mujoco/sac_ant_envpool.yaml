@@ -32,14 +32,13 @@ params:
     save_frequency: 10000
     gamma: 0.99
     init_alpha: 1
-    alpha_lr: 0.005
-    actor_lr: 0.0005
-    critic_lr: 0.0005
-    critic_tau: 0.005
+    alpha_lr: 5e-3
+    actor_lr: 5e-4
+    critic_lr: 5e-4
+    critic_tau: 5e-3
     batch_size: 2048
     learnable_temperature: True
-    num_seed_steps: 5
-    num_warmup_steps: 10 # total number of warmup steps: num_actors * num_steps_per_episode * num_seed_steps
+    num_warmup_steps: 10 # total number of warmup steps: num_actors * num_steps_per_episode * num_warmup_steps
     replay_buffer_size: 1000000
     num_actors: 64
 
