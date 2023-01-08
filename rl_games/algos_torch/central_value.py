@@ -12,6 +12,7 @@ from rl_games.common import schedulers
 
 
 class CentralValueTrain(nn.Module):
+
     def __init__(self, state_shape, value_size, ppo_device, num_agents, \
                 horizon_length, num_actors, num_actions, seq_len, \
                 normalize_value,network, config, writter, max_epochs, multi_gpu):
@@ -41,6 +42,8 @@ class CentralValueTrain(nn.Module):
         self.model = network.build(state_config)
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
+
+        # todo: support max frames as well
         if self.linear_lr:
             self.scheduler = schedulers.LinearScheduler(self.lr, 
                 max_steps = self.max_epochs, 
@@ -51,6 +54,7 @@ class CentralValueTrain(nn.Module):
         
         self.mini_epoch = config['mini_epochs']
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
         self.num_minibatches = self.horizon_length * self.num_actors // self.minibatch_size

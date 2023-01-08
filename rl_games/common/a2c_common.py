@@ -61,7 +61,9 @@ def print_statistics(print_stats, curr_frames, step_time, step_inference_time, t
 
 
 class A2CBase(BaseAlgorithm):
+
     def __init__(self, base_name, params):
+
         self.config = config = params['config']
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
@@ -157,15 +159,29 @@ class A2CBase(BaseAlgorithm):
         self.linear_lr = config['lr_schedule'] == 'linear'
         self.schedule_type = config.get('schedule_type', 'legacy')
 
-        # todo: add warning for linear schedule
+        # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
             self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
+
         elif self.linear_lr:
-            self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
-                max_steps=self.max_epochs, 
-                apply_to_entropy=config.get('schedule_entropy', False),
-                start_entropy_coef=config.get('entropy_coef'))
+            
+            if self.max_epochs == -1 and self.max_frames != -1:
+                print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
+                self.scheduler = schedulers.IdentityScheduler()
+            else:
+                use_epochs = True
+                max_steps = self.max_epochs
+
+                if self.max_epochs == -1:
+                    use_epochs = False
+                    max_steps = self.max_frames
+
+                self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
+                    max_steps = max_steps,
+                    use_epochs = use_epochs, 
+                    apply_to_entropy = config.get('schedule_entropy', False),
+                    start_entropy_coef = config.get('entropy_coef'))
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
@@ -575,9 +591,10 @@ class A2CBase(BaseAlgorithm):
 
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
-        self.epoch_num = weights['epoch']
+        self.epoch_num = weights['epoch'] # frames as well?
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+
         self.optimizer.load_state_dict(weights['optimizer'])
         self.frame = weights.get('frame', 0)
         self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
@@ -776,8 +793,10 @@ class A2CBase(BaseAlgorithm):
 
 
 class DiscreteA2CBase(A2CBase):
+
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
+    
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
         if type(action_space) is gym.spaces.Discrete:
@@ -941,7 +960,7 @@ class DiscreteA2CBase(A2CBase):
             should_exit = False
 
             if self.rank == 0:
-                self.diagnostics.epoch(self, current_epoch=epoch_num)
+                self.diagnostics.epoch(self, current_epoch = epoch_num)
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
 
@@ -988,7 +1007,7 @@ class DiscreteA2CBase(A2CBase):
 
                         if 'score_to_win' in self.config:
                             if self.last_mean_rewards > self.config['score_to_win']:
-                                print('Network won!')
+                                print('Maximum reward achieved. Network won!')
                                 self.save(os.path.join(self.nn_dir, checkpoint_name))
                                 should_exit = True
 
@@ -1024,8 +1043,10 @@ class DiscreteA2CBase(A2CBase):
 
 
 class ContinuousA2CBase(A2CBase):
+
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
+
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
@@ -1208,7 +1229,7 @@ class ContinuousA2CBase(A2CBase):
             should_exit = False
 
             if self.rank == 0:
-                self.diagnostics.epoch(self, current_epoch=epoch_num)
+                self.diagnostics.epoch(self, current_epoch = epoch_num)
                 # do we need scaled_time?
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
@@ -1259,7 +1280,7 @@ class ContinuousA2CBase(A2CBase):
 
                         if 'score_to_win' in self.config:
                             if self.last_mean_rewards > self.config['score_to_win']:
-                                print('Network won!')
+                                print('Maximum reward achieved. Network won!')
                                 self.save(os.path.join(self.nn_dir, checkpoint_name))
                                 should_exit = True
 
