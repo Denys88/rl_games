@@ -13,6 +13,7 @@ import torch
 import time
 import os
 import copy
+import numpy as np
 
 
 def swap_and_flatten01(arr):
@@ -61,7 +62,7 @@ class SHACAgent(ContinuousA2CBase):
         self.target_critic = copy.deepcopy(self.critic_model)
 
         if self.linear_lr:
-            if self.max_epochs == -1 and self.max_frames != -1:
+            if self.max_epochs == -1 and self.max_frames == -1:
                 print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
                 self.critic_scheduler = schedulers.IdentityScheduler()
             else:
@@ -400,7 +401,6 @@ class SHACAgent(ContinuousA2CBase):
         start_time = time.time()
         total_time = 0
         rep_count = 0
-        # self.frame = 0  # loading from checkpoint
 
         while True:
             epoch_num = self.update_epoch()
@@ -425,10 +425,9 @@ class SHACAgent(ContinuousA2CBase):
                             epoch_num, self.max_epochs, self.frame, self.max_frames)
 
                 if self.print_stats:
-                    #print('actor loss:', a_losses[0].item())
                     print(f'actor loss: {a_losses[0].item():.2f}')
 
-                self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, curr_frames)
+                self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, self.last_lr, curr_frames)
 
                 self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
@@ -458,14 +457,31 @@ class SHACAgent(ContinuousA2CBase):
                         print('saving next best rewards: ', mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
                         self.save(os.path.join(self.nn_dir, self.config['name']))
-                        if self.last_mean_rewards > self.config['score_to_win']:
-                            print('Network won!')
-                            self.save(os.path.join(self.nn_dir, checkpoint_name))
-                            should_exit = True
 
-                if epoch_num > self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
+                        if 'score_to_win' in self.config:
+                            if self.last_mean_rewards > self.config['score_to_win']:
+                                print('Maximum reward achieved. Network won!')
+                                self.save(os.path.join(self.nn_dir, checkpoint_name))
+                                should_exit = True
+
+                if epoch_num >= self.max_epochs and self.max_epochs != -1:
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max epochs reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
+                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX EPOCHS NUM!')
+                    should_exit = True
+
+                if self.frame >= self.max_frames and self.max_frames != -1:
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max frames reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
+                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
+                    print('MAX FRAMES NUM!')
                     should_exit = True
 
                 update_time = 0
@@ -473,7 +489,7 @@ class SHACAgent(ContinuousA2CBase):
             if should_exit:
                 return self.last_mean_rewards, epoch_num
 
-    def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, curr_frames):
+    def write_stats(self, total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, last_lr, curr_frames):
         # do we need scaled time?
         frame = self.frame
         self.diagnostics.send_info(self.writer)
@@ -486,8 +502,8 @@ class SHACAgent(ContinuousA2CBase):
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
-        self.writer.add_scalar('info/actor_lr/frame', self.last_lr, frame)
-        self.writer.add_scalar('info/actor_lr/epoch_num', self.last_lr, epoch_num)
+        self.writer.add_scalar('info/actor_lr/frame', last_lr, frame)
+        self.writer.add_scalar('info/actor_lr/epoch_num', last_lr, epoch_num)
         self.writer.add_scalar('info/critic_lr/frame', self.critic_lr, frame)
         self.writer.add_scalar('info/critic_lr/epoch_num', self.critic_lr, epoch_num)
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
