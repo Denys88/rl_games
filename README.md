@@ -76,7 +76,7 @@ If you use rl-games in your research please use the following citation:
 title = {rl-games: A High-performance Framework for Reinforcement Learning},
 author = {Makoviichuk, Denys and Makoviychuk, Viktor},
 month = {May},
-year = {2022},
+year = {2021},
 publisher = {GitHub},
 journal = {GitHub repository},
 howpublished = {\url{https://github.com/Denys88/rl_games}},
@@ -273,6 +273,11 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+
+1.6.0
+* Implemented SHAC algorithm: [Accelerated Policy Learning with Parallel Differentiable Simulation](https://short-horizon-actor-critic.github.io/) (ICLR 2022)
+* Fixed various bugs related to num_frames/num_epochs interaction.
+* Fixed a few SAC training configs, and improved SAC implementation.
 
 1.5.2
 
