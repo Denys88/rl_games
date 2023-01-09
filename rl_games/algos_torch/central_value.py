@@ -2,7 +2,6 @@ import os
 import torch
 from torch import nn
 import torch.distributed as dist
-import gym
 import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
@@ -172,7 +171,6 @@ class CentralValueTrain(nn.Module):
     def forward(self, input_dict):
         return self.model(input_dict)
 
-
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
@@ -216,7 +214,7 @@ class CentralValueTrain(nn.Module):
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
-        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
+        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, self.frame, 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
         if self.writter != None:

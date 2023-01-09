@@ -237,7 +237,7 @@ class A2CBase(BaseAlgorithm):
         self.mixed_precision = self.config.get('mixed_precision', False)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
-        self.last_lr = self.config['learning_rate']
+        self.last_lr = float(self.config['learning_rate'])
         self.frame = 0
         self.update_time = 0
         self.mean_rewards = self.last_mean_rewards = -100500
@@ -870,7 +870,7 @@ class DiscreteA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.rank_size
 
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
@@ -1131,7 +1131,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.rank_size
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
@@ -1139,7 +1139,7 @@ class ContinuousA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.rank_size
             if self.schedule_type == 'standard':
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                 self.update_lr(self.last_lr)
 
             kls.append(av_kls)
