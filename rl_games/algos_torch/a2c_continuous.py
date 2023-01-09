@@ -47,6 +47,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
+                'max_frames' : self.max_frames,
                 'multi_gpu' : self.multi_gpu,
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
