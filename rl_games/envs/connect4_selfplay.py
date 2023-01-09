@@ -6,11 +6,14 @@ from rl_games.torch_runner import Runner
 import os
 from collections import deque
 
+
 class ConnectFourSelfPlay(gym.Env):
+
     def __init__(self, name="connect_four_v0",  **kwargs):
         gym.Env.__init__(self)
+
         self.name = name
-        self.is_determenistic = kwargs.pop('is_deterministic', False)
+        self.is_determenistic = kwargs.pop('deterministic', False)
         self.is_human = kwargs.pop('is_human', False)
         self.random_agent = kwargs.pop('random_agent', False)
         self.config_path = kwargs.pop('config_path')
@@ -63,7 +66,6 @@ class ConnectFourSelfPlay(gym.Env):
                     opponent_action = np.random.choice(ids, 1)[0]
                 else:
                     opponent_action = self.agent.get_masked_action(op_obs, mask, self.is_deterministic).item()
-                    
 
             obs, _, _, _ = self.env_step(opponent_action)
             
@@ -83,9 +85,7 @@ class ConnectFourSelfPlay(gym.Env):
         self.agent = runner.create_player()
         self.agent.model.eval()
 
-
     def step(self, action):
-        
         obs, reward, done, info = self.env_step(action)
         self.obs_deque.append(obs)
 

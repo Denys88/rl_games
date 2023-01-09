@@ -1,14 +1,13 @@
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
-from rl_games.common import vecenv, schedulers, experience
+from rl_games.common import schedulers
+from rl_games.common.a2c_common import print_statistics
 
-from rl_games.common.a2c_common import  ContinuousA2CBase
-from rl_games.common import a2c_common
+from rl_games.common.a2c_common import ContinuousA2CBase
 from rl_games.algos_torch import torch_ext
 
 from rl_games.algos_torch import central_value
-from rl_games.common import common_losses
-from rl_games.common import datasets
-from rl_games.algos_torch import  model_builder
+from rl_games.common import common_losses, datasets
+from rl_games.algos_torch import model_builder
+
 from torch import optim
 import torch
 import time
@@ -30,6 +29,7 @@ class SHACAgent(ContinuousA2CBase):
 
     def __init__(self, base_name, params):
         ContinuousA2CBase.__init__(self, base_name, params)
+
         obs_shape = self.obs_shape
         build_config = {
             'actions_num': self.actions_num,
@@ -41,20 +41,46 @@ class SHACAgent(ContinuousA2CBase):
         }
 
         # apply tanh to actions
-        self.apply_tanh = params['config'].get('apply_tanh', True)
-        self.critic_lr = float(self.config.get('critic_learning_rate', 0.0001))
+        self.apply_tanh = self.config.get('apply_tanh', False)
+
+        if self.apply_tanh:
+            print("tanh activation is applied to actions")
+
+        self.critic_lr = float(self.config.get('critic_learning_rate', 1e-4))
         self.use_target_critic = self.config.get('use_target_critic', True)
         self.target_critic_alpha = self.config.get('target_critic_alpha', 0.4)
 
-        self.critic_scheduler = schedulers.LinearScheduler(self.critic_lr, min_lr=1e-4, max_steps=self.max_epochs)
-
-        self.max_episode_length = 1000 # temporary hardcoded
+        # to work with shac/diffrl repo
+        # update when warp/brax envs with truncated infor are supported
+        self.max_episode_length = params['diff_env'].get('episode_length', 1000)
         self.actor_model = self.network.build(build_config)
         self.critic_model = self.critic_network.build(build_config)
 
         self.actor_model.to(self.ppo_device)
         self.critic_model.to(self.ppo_device)
         self.target_critic = copy.deepcopy(self.critic_model)
+
+        if self.linear_lr:
+            if self.max_epochs == -1 and self.max_frames != -1:
+                print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
+                self.critic_scheduler = schedulers.IdentityScheduler()
+            else:
+                print("Linear lr schedule. Min lr = ", self.min_lr)
+                use_epochs = True
+                max_steps = self.max_epochs
+
+                if self.max_epochs == -1:
+                    use_epochs = False
+                    max_steps = self.max_frames
+
+                self.critic_scheduler = schedulers.LinearScheduler(self.critic_lr,
+                                                                min_lr = self.min_lr, 
+                                                                max_steps = max_steps,
+                                                                use_epochs = use_epochs, 
+                                                                apply_to_entropy = False,
+                                                                start_entropy_coef = 0.0)
+        else:
+            self.critic_scheduler = schedulers.IdentityScheduler()
 
         if self.normalize_input:
             self.critic_model.running_mean_std = self.actor_model.running_mean_std
@@ -76,13 +102,7 @@ class SHACAgent(ContinuousA2CBase):
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn,
                                            self.ppo_device, self.seq_len)
-        if self.linear_lr:
-            self.critic_scheduler = schedulers.LinearScheduler(self.critic_lr,
-                                                    max_steps=self.max_epochs,
-                                                    apply_to_entropy=0,
-                                                    start_entropy_coef=0)
-        else:
-            self.critic_scheduler = schedulers.IdentityScheduler()
+
         if self.normalize_value:
             self.value_mean_std = self.critic_model.value_mean_std
 
@@ -400,12 +420,13 @@ class SHACAgent(ContinuousA2CBase):
 
                 frame = self.frame // self.num_agents
 
+                print_statistics(self.print_stats, curr_frames, 
+                            step_time, scaled_play_time, scaled_time, 
+                            epoch_num, self.max_epochs, self.frame, self.max_frames)
+
                 if self.print_stats:
-                    fps_step = curr_frames / step_time
-                    fps_step_inference = curr_frames / scaled_play_time
-                    fps_total = curr_frames / scaled_time
-                    print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num}/{self.max_epochs}')
-                    print('actor loss:', a_losses[0].item())
+                    #print('actor loss:', a_losses[0].item())
+                    print(f'actor loss: {a_losses[0].item():.2f}')
 
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time, a_losses, c_losses, curr_frames)
 

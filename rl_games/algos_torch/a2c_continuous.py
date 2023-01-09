@@ -10,8 +10,10 @@ import torch
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
+
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
+
         obs_shape = self.obs_shape
         build_config = {
             'actions_num' : self.actions_num,

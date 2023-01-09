@@ -15,10 +15,11 @@ class IdentityScheduler(RLScheduler):
 
 
 class AdaptiveScheduler(RLScheduler):
-    def __init__(self, kl_threshold = 0.008):
+    def __init__(self, kl_threshold=0.008, min_lr=1e-6, max_lr=1e-2):
         super().__init__()
-        self.min_lr = 1e-6
-        self.max_lr = 1e-2
+
+        self.min_lr = min_lr
+        self.max_lr = max_lr
         self.kl_threshold = kl_threshold
 
     def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
@@ -33,8 +34,9 @@ class AdaptiveScheduler(RLScheduler):
 
 
 class LinearScheduler(RLScheduler):
-    def __init__(self, start_lr, min_lr=1e-5, max_steps = 1000000, use_epochs=True, apply_to_entropy=False, **kwargs):
+    def __init__(self, start_lr, min_lr=1e-6, max_steps=1000000, use_epochs=True, apply_to_entropy=False, **kwargs):
         super().__init__()
+
         self.start_lr = start_lr
         self.min_lr = min_lr
         self.max_steps = max_steps
@@ -56,4 +58,4 @@ class LinearScheduler(RLScheduler):
         if self.apply_to_entropy:
             entropy_coef = self.min_entropy_coef + (self.start_entropy_coef - self.min_entropy_coef) * mul
 
-        return lr, entropy_coef
+        return lr, entropy_coef     

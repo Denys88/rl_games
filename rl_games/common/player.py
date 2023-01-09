@@ -4,10 +4,13 @@ import numpy as np
 import torch
 import copy
 from rl_games.common import env_configurations
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
+
 
 class BasePlayer(object):
+
     def __init__(self, params):
+
         self.config = config = params['config']
         self.load_networks(params)
         self.env_name = self.config['env_name']
@@ -15,11 +18,13 @@ class BasePlayer(object):
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
         self.seed = self.env_config.pop('seed', None)
+
         if self.env_info is None:
             self.env = self.create_env()
             self.env_info = env_configurations.get_env_info(self.env)
         else:
             self.env = config.get('vec_env')
+
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
         self.num_agents = self.env_info['agents']
@@ -42,10 +47,9 @@ class BasePlayer(object):
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
-        if 'deterministic' in self.player_config:
-            self.is_deterministic = self.player_config['deterministic']
-        else:
-            self.is_deterministic = self.player_config.get('determenistic', True)
+
+        self.is_deterministic = self.player_config.get('determenistic', True)
+
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
