@@ -5,13 +5,13 @@
 
 ## Papers and related links
 
-* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
-* Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
-* Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
-* Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
-* OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation: https://cremebrule.github.io/oscar-web/ https://arxiv.org/abs/2110.00704
-* EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine: https://github.com/sail-sg/envpool https://arxiv.org/abs/2206.10558
-* TimeChamber: A Massively Parallel Large Scale Self-Play Framework: https://github.com/inspirai/TimeChamber
+* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning. Paper: https://arxiv.org/abs/2108.10470
+* Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger. Site: https://s2r2-ig.github.io/ Paper: https://arxiv.org/abs/2108.09779
+* Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? Paper: https://arxiv.org/abs/2011.09533
+* Superfast Adversarial Motion Priors (AMP) implementation. Twitter: https://twitter.com/xbpeng4/status/1506317490766303235 Repo: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
+* OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation. Site: https://cremebrule.github.io/oscar-web/ Paper: https://arxiv.org/abs/2110.00704
+* EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine. Paper: https://arxiv.org/abs/2206.10558 Repo: https://github.com/sail-sg/envpool 
+* TimeChamber: A Massively Parallel Large Scale Self-Play Framework. Repo: https://github.com/inspirai/TimeChamber
 
 ## Some results on the different environments  
 
