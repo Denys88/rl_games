@@ -5,12 +5,12 @@ from rl_games.common import schedulers
 from rl_games.common import experience
 from rl_games.common.a2c_common import print_statistics
 
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
 from torch import optim
-import torch 
+import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
@@ -28,6 +28,7 @@ class SACAgent(BaseAlgorithm):
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
+
         self.num_warmup_steps = config["num_warmup_steps"]
         self.gamma = config["gamma"]
         self.critic_tau = config["critic_tau"]
@@ -38,7 +39,7 @@ class SACAgent(BaseAlgorithm):
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
 
-        self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
+        self.max_env_steps = config.get("max_env_steps", 1000)  # temporary, in future we will use other approach
 
         print(self.batch_size, self.num_actors, self.num_agents)
 
@@ -58,9 +59,8 @@ class SACAgent(BaseAlgorithm):
         net_config = {
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
-            'actions_num' : self.actions_num,
-            'input_shape' : obs_shape,
-            'normalize_input' : self.normalize_input,
+            'actions_num': self.actions_num,
+            'input_shape': obs_shape,
             'normalize_input': self.normalize_input,
         }
         self.model = self.network.build(net_config)
@@ -120,7 +120,7 @@ class SACAgent(BaseAlgorithm):
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
-        #self.use_action_masks = config.get('use_action_masks', False)
+        # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
         self.c_loss = nn.MSELoss()
@@ -212,14 +212,14 @@ class SACAgent(BaseAlgorithm):
         state['steps'] = self.step
         state['actor_optimizer'] = self.actor_optimizer.state_dict()
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()        
+        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
 
         return state
 
     def get_weights(self):
         state = {'actor': self.model.sac_network.actor.state_dict(),
-         'critic': self.model.sac_network.critic.state_dict(), 
-         'critic_target': self.model.sac_network.critic_target.state_dict()}
+                 'critic': self.model.sac_network.critic.state_dict(),
+                 'critic_target': self.model.sac_network.critic_target.state_dict()}
         return state
 
     def save(self, fn):
@@ -271,7 +271,7 @@ class SACAgent(BaseAlgorithm):
 
         critic1_loss = self.c_loss(current_Q1, target_Q)
         critic2_loss = self.c_loss(current_Q2, target_Q)
-        critic_loss = critic1_loss + critic2_loss 
+        critic_loss = critic1_loss + critic2_loss
         self.critic_optimizer.zero_grad(set_to_none=True)
         critic_loss.backward()
         self.critic_optimizer.step()
@@ -308,7 +308,7 @@ class SACAgent(BaseAlgorithm):
         else:
             alpha_loss = None
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss  # TODO: maybe not self.alpha
 
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
@@ -327,7 +327,7 @@ class SACAgent(BaseAlgorithm):
 
         actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         self.soft_update_params(self.model.sac_network.critic, self.model.sac_network.critic_target,
-                                     self.critic_tau)
+                                self.critic_tau)
         return actor_loss_info, critic1_loss, critic2_loss
 
     def preproc_obs(self, obs):
@@ -340,7 +340,7 @@ class SACAgent(BaseAlgorithm):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
-            assert(self.observation_space.dtype != np.int8)
+            assert (self.observation_space.dtype != np.int8)
             if self.observation_space.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self._device)
             else:
@@ -357,8 +357,8 @@ class SACAgent(BaseAlgorithm):
                 upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
-        if not obs_is_dict or 'obs' not in obs:    
-            upd_obs = {'obs' : upd_obs}
+        if not obs_is_dict or 'obs' not in obs:
+            upd_obs = {'obs': upd_obs}
         return upd_obs
 
     def _obs_to_tensors_internal(self, obs):
@@ -377,7 +377,7 @@ class SACAgent(BaseAlgorithm):
 
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
-        obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
+        obs, rewards, dones, infos = self.vec_env.step(actions)  # (obs_space) -> (n, obs_space)
 
         self.step += self.num_actors
         if self.is_tensor_obses:
@@ -468,7 +468,7 @@ class SACAgent(BaseAlgorithm):
 
             if isinstance(obs, dict):
                 obs = obs['obs']
-            if isinstance(next_obs, dict):    
+            if isinstance(next_obs, dict):
                 next_obs = next_obs['obs']
 
             rewards = self.rewards_shaper(rewards)

@@ -11,7 +11,7 @@ from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
 from rl_games.algos_torch import  model_builder
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 import numpy as np
 import time
 import gym
@@ -157,16 +157,22 @@ class A2CBase(BaseAlgorithm):
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
+
+        # min learning rate used with linear and adaptive schedules
+        self.min_lr = float(config.get('min_learning_rate', 1e-6))
+        # max learning rate used with adaptive schedule
+        self.max_lr = float(config.get('max_learning_rate', 1e-2))
+
         self.schedule_type = config.get('schedule_type', 'legacy')
 
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
-            self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
+            self.scheduler = schedulers.AdaptiveScheduler(kl_threshold = self.kl_threshold,
+                min_lr = self.min_lr, max_lr = self.max_lr)
 
         elif self.linear_lr:
-            
-            if self.max_epochs == -1 and self.max_frames != -1:
+            if self.max_epochs == -1 and self.max_frames == -1:
                 print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
                 self.scheduler = schedulers.IdentityScheduler()
             else:
@@ -177,7 +183,8 @@ class A2CBase(BaseAlgorithm):
                     use_epochs = False
                     max_steps = self.max_frames
 
-                self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
+                self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
+                    min_lr = self.min_lr,
                     max_steps = max_steps,
                     use_epochs = use_epochs, 
                     apply_to_entropy = config.get('schedule_entropy', False),
@@ -230,7 +237,7 @@ class A2CBase(BaseAlgorithm):
         self.mixed_precision = self.config.get('mixed_precision', False)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
 
-        self.last_lr = self.config['learning_rate']
+        self.last_lr = float(self.config['learning_rate'])
         self.frame = 0
         self.update_time = 0
         self.mean_rewards = self.last_mean_rewards = -100500
@@ -339,7 +346,7 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('performance/step_time', step_time, frame)
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
-                
+
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
@@ -437,7 +444,7 @@ class A2CBase(BaseAlgorithm):
         val_shape = (self.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self.ppo_device)
         self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
 
         if self.is_rnn:
@@ -522,6 +529,7 @@ class A2CBase(BaseAlgorithm):
 
             delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t]
             mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
+
         return mb_advs
 
     def discount_values_masks(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_masks):
@@ -538,6 +546,7 @@ class A2CBase(BaseAlgorithm):
             masks_t = mb_masks[t].unsqueeze(1)
             delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t])
             mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
+
         return mb_advs
 
     def clear_stats(self):
@@ -755,6 +764,7 @@ class A2CBase(BaseAlgorithm):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
+
             if len(all_done_indices) > 0:
                 for s in self.rnn_states:
                     s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
@@ -789,6 +799,7 @@ class A2CBase(BaseAlgorithm):
             states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
         batch_dict['rnn_states'] = states
         batch_dict['step_time'] = step_time
+
         return batch_dict
 
 
@@ -859,7 +870,7 @@ class DiscreteA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.rank_size
 
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
@@ -1120,7 +1131,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.rank_size
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
@@ -1128,7 +1139,7 @@ class ContinuousA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.rank_size
             if self.schedule_type == 'standard':
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                 self.update_lr(self.last_lr)
 
             kls.append(av_kls)
@@ -1310,8 +1321,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num

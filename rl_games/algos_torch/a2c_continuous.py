@@ -6,14 +6,14 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
-from torch import nn
-import numpy as np
-import gym
+import torch
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
+
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
+
         obs_shape = self.obs_shape
         build_config = {
             'actions_num' : self.actions_num,
@@ -23,7 +23,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -47,6 +47,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
+                'max_frames' : self.max_frames,
                 'multi_gpu' : self.multi_gpu,
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)

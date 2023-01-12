@@ -2,7 +2,6 @@ import os
 import torch
 from torch import nn
 import torch.distributed as dist
-import gym
 import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
@@ -14,8 +13,8 @@ from rl_games.common import schedulers
 class CentralValueTrain(nn.Module):
 
     def __init__(self, state_shape, value_size, ppo_device, num_agents, \
-                horizon_length, num_actors, num_actions, seq_len, \
-                normalize_value,network, config, writter, max_epochs, multi_gpu):
+                horizon_length, num_actors, num_actions, seq_len, normalize_value, \
+                network, config, writter, max_epochs, max_frames, multi_gpu):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
@@ -25,6 +24,7 @@ class CentralValueTrain(nn.Module):
         self.state_shape = state_shape
         self.value_size = value_size
         self.max_epochs = max_epochs
+        self.max_frames = max_frames
         self.multi_gpu = multi_gpu
         self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
@@ -43,14 +43,28 @@ class CentralValueTrain(nn.Module):
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
 
-        # todo: support max frames as well
         if self.linear_lr:
-            self.scheduler = schedulers.LinearScheduler(self.lr, 
-                max_steps = self.max_epochs, 
-                apply_to_entropy = False,
-                start_entropy_coef = 0)
+            if self.max_epochs == -1 and self.max_frames == -1:
+                print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
+                self.scheduler = schedulers.IdentityScheduler()
+            else:
+                print("Linear lr schedule. Min lr = ", self.min_lr)
+                use_epochs = True
+                max_steps = self.max_epochs
+
+                if self.max_epochs == -1:
+                    use_epochs = False
+                    max_steps = self.max_frames
+
+                self.scheduler = schedulers.LinearScheduler(self.lr,
+                                                            min_lr = self.min_lr, 
+                                                            max_steps = max_steps,
+                                                            use_epochs = use_epochs, 
+                                                            apply_to_entropy = False,
+                                                            start_entropy_coef = 0.0)
         else:
             self.scheduler = schedulers.IdentityScheduler()
+
         
         self.mini_epoch = config['mini_epochs']
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
@@ -172,7 +186,6 @@ class CentralValueTrain(nn.Module):
     def forward(self, input_dict):
         return self.model(input_dict)
 
-
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
@@ -197,8 +210,8 @@ class CentralValueTrain(nn.Module):
     def update_multiagent_tensors(self, value_preds, returns, actions, dones):
         batch_size = self.batch_size
         ma_batch_size = self.num_actors * self.num_agents * self.horizon_length
-        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
-        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
+        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
@@ -216,12 +229,13 @@ class CentralValueTrain(nn.Module):
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
-        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
+        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, self.frame, 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
         if self.writter != None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
+
         return avg_loss
 
     def calc_gradients(self, batch):

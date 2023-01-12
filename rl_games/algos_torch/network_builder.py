@@ -180,14 +180,14 @@ class A2CBuilder(NetworkBuilder):
             actions_num = kwargs.pop('actions_num')
             input_shape = kwargs.pop('input_shape')
             self.value_size = kwargs.pop('value_size', 1)
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-            
+
             if self.has_cnn:
                 if self.permute_input:
                     input_shape = torch_ext.shape_whc_to_cwh(input_shape)
@@ -344,6 +344,7 @@ class A2CBuilder(NetworkBuilder):
                     c_out = c_out.transpose(0,1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
+
                     if self.rnn_ln:
                         a_out = self.a_layer_norm(a_out)
                         c_out = self.c_layer_norm(c_out)
@@ -358,7 +359,7 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     a_out = self.actor_mlp(a_out)
                     c_out = self.critic_mlp(c_out)
-                            
+
                 value = self.value_act(self.value(c_out))
 
                 if self.is_discrete:
@@ -431,7 +432,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, mu*0 + sigma, value, states
-                    
+
         def is_separate_critic(self):
             return self.separate
 
@@ -510,6 +511,7 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
+
 
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
@@ -604,7 +606,6 @@ class A2CResnetBuilder(NetworkBuilder):
             mlp_input_shape = self._calc_input_size(input_shape, self.cnn)
 
             in_mlp_shape = mlp_input_shape
-
             if len(self.units) == 0:
                 out_size = mlp_input_shape
             else:
@@ -623,7 +624,6 @@ class A2CResnetBuilder(NetworkBuilder):
                     rnn_in_size += actions_num
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
-
             mlp_args = {
                 'input_size' : in_mlp_shape, 
                 'units' :self.units, 
@@ -641,9 +641,9 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
-                self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
+                self.mu_act = self.activations_factory.create(self.space_config['mu_activation'])
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
-                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
+                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation'])
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
@@ -670,7 +670,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 else:
                     sigma_init(self.sigma.weight)
 
-            mlp_init(self.value.weight)     
+            mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
             if self.require_rewards or self.require_last_actions:
@@ -869,7 +869,7 @@ class SACBuilder(NetworkBuilder):
             input_shape = kwargs.pop('input_shape')
             obs_dim = kwargs.pop('obs_dim')
             action_dim = kwargs.pop('action_dim')
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
 
