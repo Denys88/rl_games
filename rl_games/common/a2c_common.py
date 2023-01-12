@@ -166,7 +166,7 @@ class A2CBase(BaseAlgorithm):
 
         elif self.linear_lr:
             
-            if self.max_epochs == -1 and self.max_frames != -1:
+            if self.max_epochs == -1 and self.max_frames == -1:
                 print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
                 self.scheduler = schedulers.IdentityScheduler()
             else:
