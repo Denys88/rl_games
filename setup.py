@@ -44,6 +44,7 @@ setup(name='rl-games',
             'setproctitle',
             'psutil',
             'pyyaml'
+            'watchdog>=2.1.9,<3.0.0',  # for evaluation process (IsaacGymEnvs 1.4.0 feature)
             # Optional dependencies
             # 'ray>=1.1.0',
       ],
