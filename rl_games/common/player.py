@@ -22,11 +22,10 @@ class BasePlayer(object):
         if self.env_info is None:
             self.env = vecenv.create_vec_env(self.env_name, self.config['num_actors'], **self.env_config)
             self.env_info = self.env.get_env_info()
-            self.num_agents = 1
         else:
-            # is there any way 'self.env' can be used in this scenario?
-            # self.env = config.get('vec_env')
-            self.num_agents = self.env_info['agents']
+            self.env = config.get('vec_env')
+        
+        self.num_agents = self.env_info.get('agents', 1)
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
 
