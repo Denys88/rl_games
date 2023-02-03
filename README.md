@@ -6,6 +6,7 @@
 ## Papers and related links
 
 * Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
+* DeXtreme: Transfer of Agile In-Hand Manipulation from Simulation to Reality: https://dextreme.org/ https://arxiv.org/abs/2210.13702
 * Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
 * Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 * Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
@@ -23,6 +24,8 @@
 
 ![Allegro_Hand_400](https://user-images.githubusercontent.com/463063/125261559-38373700-e2b6-11eb-80eb-b250a0693f0b.gif)
 ![Shadow_Hand_OpenAI](https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif)
+
+* [Dextreme]()
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
@@ -75,11 +78,11 @@ To run Atari also ```pip install opencv-python``` is required. In addition insta
 If you use rl-games in your research please use the following citation:
 
 ```bibtex
-@misc{rl-games2022,
+@misc{rl-games2021,
 title = {rl-games: A High-performance Framework for Reinforcement Learning},
 author = {Makoviichuk, Denys and Makoviychuk, Viktor},
 month = {May},
-year = {2022},
+year = {2021},
 publisher = {GitHub},
 journal = {GitHub repository},
 howpublished = {\url{https://github.com/Denys88/rl_games}},
@@ -276,6 +279,16 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+
+1.5.3
+
+* Added ONNX export colab example.
+* Added NVIDIA CuLE support: https://github.com/NVlabs/cule
+* Fixed multi-gpu training with central value.
+* Fixed max_frames termination condition, and it's interaction with the linear learning rate: https://github.com/Denys88/rl_games/issues/212
+* Fixed "deterministic" misspelling issue.
+* Fixed Mujoco and Brax SAC configs.
+* Improved RNNs training in continuous space, fixed issue with dones.
 
 1.5.2
 
