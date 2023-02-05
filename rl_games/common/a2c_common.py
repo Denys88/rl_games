@@ -126,6 +126,8 @@ class A2CBase(BaseAlgorithm):
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
+        
+        self.has_env_masks = self.env_info.get('env_masks', False)
         self.is_train = config.get('is_train', True)
 
         self.central_value_config = self.config.get('central_value_config', None)
@@ -489,6 +491,19 @@ class A2CBase(BaseAlgorithm):
             actions = actions.cpu().numpy()
         return actions
 
+    def get_env_masks(self):
+        '''
+        returns env masks from vectorised env.
+        For example return torch.ones((self.num_actors,), device=self.device, dtype=torch.uint8)
+        '''
+        if self.is_tensor_obses:
+            return self.vec_env.get_env_masks()
+        else:
+            return torch.from_numpy(self.vec_env.get_env_masks(), device=self.device)        
+        
+
+
+
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
         obs, rewards, dones, infos = self.vec_env.step(actions)
@@ -661,6 +676,9 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+            if self.has_env_masks:
+                env_masks = self.get_env_masks()
+                self.experience_buffer.update_data('env_masks', n, env_masks)
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
 
@@ -729,6 +747,9 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+            if self.has_env_masks:
+                env_masks = self.get_env_masks()
+                self.experience_buffer.update_data('env_masks', n, env_masks)
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
@@ -832,7 +853,7 @@ class DiscreteA2CBase(A2CBase):
 
         play_time_end = time.time()
         update_time_start = time.time()
-        rnn_masks = batch_dict.get('rnn_masks', None)
+        env_masks = batch_dict.get('env_masks', None)
 
         self.curr_frames = batch_dict.pop('played_frames')
         self.prepare_dataset(batch_dict)
@@ -874,7 +895,7 @@ class DiscreteA2CBase(A2CBase):
         return batch_dict['step_time'], play_time, update_time, total_time, a_losses, c_losses, entropies, kls, last_lr, lr_mul
 
     def prepare_dataset(self, batch_dict):
-        rnn_masks = batch_dict.get('rnn_masks', None)
+        env_masks = batch_dict.get('env_masks', None)
 
         returns = batch_dict['returns']
         values = batch_dict['values']
@@ -894,16 +915,11 @@ class DiscreteA2CBase(A2CBase):
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
-                if self.normalize_rms_advantage:
-                    advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
-                else:
-                    advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+            if self.normalize_rms_advantage:
+                advantages = self.advantage_mean_std(advantages, mask=env_masks)
             else:
-                if self.normalize_rms_advantage:
-                    advantages = self.advantage_mean_std(advantages)
-                else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                advantages = torch_ext.normalization_with_masks(advantages, env_masks)
+
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -914,7 +930,7 @@ class DiscreteA2CBase(A2CBase):
         dataset_dict['obs'] = obses
         dataset_dict['dones'] = dones
         dataset_dict['rnn_states'] = rnn_states
-        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['env_masks'] = env_masks
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
@@ -929,7 +945,7 @@ class DiscreteA2CBase(A2CBase):
             dataset_dict['actions'] = actions
             dataset_dict['dones'] = dones
             dataset_dict['obs'] = batch_dict['states'] 
-            dataset_dict['rnn_masks'] = rnn_masks
+            dataset_dict['env_masks'] = env_masks
             self.central_value_net.update_dataset(dataset_dict)
 
     def train(self):
@@ -1074,6 +1090,8 @@ class ContinuousA2CBase(A2CBase):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
+        if self.has_env_masks:
+            self.tensor_list += ['env_masks']
 
     def train_epoch(self):
         super().train_epoch()
@@ -1088,7 +1106,7 @@ class ContinuousA2CBase(A2CBase):
 
         play_time_end = time.time()
         update_time_start = time.time()
-        rnn_masks = batch_dict.get('rnn_masks', None)
+        env_masks = batch_dict.get('env_masks', None)
 
         self.set_train()
         self.curr_frames = batch_dict.pop('played_frames')
@@ -1153,7 +1171,7 @@ class ContinuousA2CBase(A2CBase):
         mus = batch_dict['mus']
         sigmas = batch_dict['sigmas']
         rnn_states = batch_dict.get('rnn_states', None)
-        rnn_masks = batch_dict.get('rnn_masks', None)
+        env_masks = batch_dict.get('env_masks', None)
 
         advantages = returns - values
 
@@ -1166,16 +1184,10 @@ class ContinuousA2CBase(A2CBase):
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
-                if self.normalize_rms_advantage:
-                    advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
-                else:
-                    advantages = torch_ext.normalization_with_masks(advantages, rnn_masks)
+            if self.normalize_rms_advantage:
+                advantages = self.advantage_mean_std(advantages, mask=env_masks)
             else:
-                if self.normalize_rms_advantage:
-                    advantages = self.advantage_mean_std(advantages)
-                else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                advantages = torch_ext.normalization_with_masks(advantages, env_masks)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1186,7 +1198,7 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['obs'] = obses
         dataset_dict['dones'] = dones
         dataset_dict['rnn_states'] = rnn_states
-        dataset_dict['rnn_masks'] = rnn_masks
+        dataset_dict['env_masks'] = env_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
 
@@ -1200,7 +1212,7 @@ class ContinuousA2CBase(A2CBase):
             dataset_dict['actions'] = actions
             dataset_dict['obs'] = batch_dict['states']
             dataset_dict['dones'] = dones
-            dataset_dict['rnn_masks'] = rnn_masks
+            dataset_dict['env_masks'] = env_masks
             self.central_value_net.update_dataset(dataset_dict)
 
     def train(self):

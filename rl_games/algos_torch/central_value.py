@@ -121,7 +121,7 @@ class CentralValueTrain(nn.Module):
         returns = batch_dict['returns']   
         actions = batch_dict['actions']
         dones = batch_dict['dones']
-        rnn_masks = batch_dict['rnn_masks']
+        env_masks = batch_dict['env_masks']
         if self.num_agents > 1:
             res = self.update_multiagent_tensors(value_preds, returns, actions, dones)
             batch_dict['old_values'] = res[0]
@@ -138,8 +138,8 @@ class CentralValueTrain(nn.Module):
 
             batch_dict['rnn_states'] = states
             if self.num_agents > 1:
-                rnn_masks = res[3]
-            batch_dict['rnn_masks'] = rnn_masks
+                env_masks = res[3]
+            batch_dict['env_masks'] = env_masks
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
@@ -230,7 +230,7 @@ class CentralValueTrain(nn.Module):
         returns_batch = batch['returns']
         actions_batch = batch['actions']
         dones_batch = batch['dones']
-        rnn_masks_batch = batch.get('rnn_masks')
+        env_masks_batch = batch.get('env_masks')
 
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
@@ -242,7 +242,7 @@ class CentralValueTrain(nn.Module):
         res_dict = self.model(batch_dict)
         values = res_dict['values']
         loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
-        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
+        losses, _ = torch_ext.apply_masks([loss], env_masks_batch)
         loss = losses[0]
         if self.multi_gpu:
             self.optimizer.zero_grad()
