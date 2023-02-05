@@ -247,6 +247,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 |   bound_loss_type      | 'regularisation'                          | None     | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                                              |
 |   bounds_loss_coef     | 0.0005                                    | 0        | Regularisation coefficient               |
 |   use_smooth_clamp     | False                                     |          | Use smooth clamp instead of regular for cliping               |
+|   zero_rnn_on_done     | False                                     | True     | If False RNN internal state is not reset (set to 0) when an environment is rest. Could improve training in some cases, for example for robotics environments with domain randomization |
 |   player               |                                           |          | Player configuration block.                                                                                |
 |     render             | True                                      | False    | Render environment                                                                            |
 |     determenistic      | True                                      | True     | Use deterministic policy ( argmax or mu) or stochastic.                                                                                |
@@ -290,7 +291,7 @@ Additional environment supported properties and functions
 * Fixed max_frames termination condition, and it's interaction with the linear learning rate: https://github.com/Denys88/rl_games/issues/212
 * Fixed "deterministic" misspelling issue.
 * Fixed Mujoco and Brax SAC configs.
-* Improved RNNs training in continuous space, fixed issue with dones.
+* Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
 
 1.5.2
 
