@@ -1,7 +1,6 @@
 from rl_games.common.ivecenv import IVecEnv
 import gym
 import numpy as np
-import torch.utils.dlpack as tpack
 
 class Envpool(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):

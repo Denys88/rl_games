@@ -84,7 +84,7 @@ def load_checkpoint(filename):
     return state
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
-    normal = torch.distributions.normal.Normal(0, 1)
+    normal = torch.distributions.normal.Normal(0, 1, validate_args=False)
 
     alpha = (a - mu) / sigma
     beta = (b - mu) / sigma
