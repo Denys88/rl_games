@@ -67,7 +67,9 @@ class ModelBuilder:
 
     def load_and_build(self, params, env_config):
         model_name = params['model']['name']
-        network = self.network_builder.load(params['network'])
-        model = self.model_factory.create(model_name, network=network)
+        if self.model_factory.find(model_name):
+            network = self.network_builder.load(params['network'])
+            model = self.model_factory.create(model_name, network=network)
+        else:
 
-        return model.build(env_config)
+        return model.build(params, env_config)
