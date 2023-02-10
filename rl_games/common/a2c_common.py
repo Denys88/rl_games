@@ -1182,7 +1182,7 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict = {}
         dataset_dict['old_values'] = values
         dataset_dict['old_logp_actions'] = neglogpacs
-        dataset_dict['advantages'] = advantages
+        dataset_dict['advantages'] = torch.nn.functional.elu(advantages)
         dataset_dict['returns'] = returns
         dataset_dict['actions'] = actions
         dataset_dict['obs'] = obses
