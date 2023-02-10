@@ -286,12 +286,14 @@ Additional environment supported properties and functions
 1.5.3
 
 * Added ONNX export colab example.
+* Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
 * Added NVIDIA CuLE support: https://github.com/NVlabs/cule
+* Added player config everride. Vecenv is used for inference.
 * Fixed multi-gpu training with central value.
 * Fixed max_frames termination condition, and it's interaction with the linear learning rate: https://github.com/Denys88/rl_games/issues/212
 * Fixed "deterministic" misspelling issue.
 * Fixed Mujoco and Brax SAC configs.
-* Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
+
 
 1.5.2
 
