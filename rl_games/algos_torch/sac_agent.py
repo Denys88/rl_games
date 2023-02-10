@@ -93,7 +93,6 @@ class SACAgent(BaseAlgorithm):
 
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self._device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
