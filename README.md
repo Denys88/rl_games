@@ -294,7 +294,6 @@ Additional environment supported properties and functions
 * Fixed "deterministic" misspelling issue.
 * Fixed Mujoco and Brax SAC configs.
 
-
 1.5.2
 
 * Added observation normalization to the SAC.
