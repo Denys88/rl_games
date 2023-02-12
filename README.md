@@ -241,12 +241,14 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | normalize_input        | True                      |         | Apply running mean std for input.                                                                                                                            |
 | bounds_loss_coef       | 0.0                       |         | Coefficient to the auxiary loss for continuous space.                                                                                                        |
 | max_epochs             | 10000                     |         | Maximum number of epochs to run.                                                                                                                             |
+| max_frames             | 5000000                   |         | Maximum number of frames (env steps) to run.                                                                                                                             |
 | normalize_value        | True                      |         | Use value running mean std normalization.                                                                                                                    |
 | use_diagnostics        | True                      |         | Adds more information into the tensorboard.                                                                                                                  |
 | value_bootstrap        | True                      |         | Bootstraping value when episode is finished. Very useful for different locomotion envs.                                                                      |
-| bound_loss_type        | 'regularisation'          | None    | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                            |
+| bound_loss_type        | regularisation          | None    | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                            |
 | bounds_loss_coef       | 0.0005                    | 0       | Regularisation coefficient                                                                                                                                   |
 | use_smooth_clamp       | False                     |         | Use smooth clamp instead of regular for cliping                                                                                                              |
+| zero_rnn_on_done       | False                     | True    | If False RNN internal state is not reset (set to 0) when an environment is rest. Could improve training in some cases, for example when domain randomization is on |
 | player                 |                           |         | Player configuration block.                                                                                                                                  |
 | render                 | True                      | False   | Render environment                                                                                                                                           |
 | deterministic          | True                      | True    | Use deterministic policy ( argmax or mu) or stochastic.                                                                                                      |
@@ -254,7 +256,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | games_num              | 200                       |         | Number of games to run in the player mode.                                                                                                                   |
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |
-| name                   | 'BreakoutNoFrameskip-v4'  |         | Name of exact atari env. Of course depending on your env this parameters may be different.                                                                   |
+| name                   | BreakoutNoFrameskip-v4    |         | The exact name of an (atari) gym env. An example, depends on the training env this parameters can be different.                                                                   |
 
 ## Custom network example: 
 [simple test network](rl_games/envs/test_network.py)  
