@@ -259,6 +259,7 @@ class SACAgent(BaseAlgorithm):
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
 
