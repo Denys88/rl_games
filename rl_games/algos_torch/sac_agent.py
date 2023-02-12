@@ -572,9 +572,9 @@ class SACAgent(BaseAlgorithm):
                         print('WARNING: Max epochs reached before any env terminated at least once')
                         mean_rewards = -np.inf
 
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(self.epoch_num) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
-                    print('MAX EPOCHS NUM!')  
+                    print('MAX EPOCHS NUM!')
                     should_exit = True
 
                 if self.frame >= self.max_frames and self.max_frames != -1:
