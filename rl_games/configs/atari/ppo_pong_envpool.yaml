@@ -81,4 +81,4 @@ params:
       render: False
       games_num: 100
       n_game_life: 1
-      determenistic: True
+      deterministic: True
