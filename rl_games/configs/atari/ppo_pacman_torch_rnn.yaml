@@ -86,5 +86,5 @@ params:
         render: True
         games_num: 10
         n_game_life: 3
-        determenistic: False
+        deterministic: False
         render_sleep: 0.05

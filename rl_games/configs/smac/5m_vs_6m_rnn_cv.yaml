@@ -63,7 +63,7 @@ params:
       render: False
       games_num: 200
       n_game_life: 1
-      determenistic: True
+      deterministic: True
 
     central_value_config:
       minibatch_size: 512

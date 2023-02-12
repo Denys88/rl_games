@@ -81,4 +81,4 @@ params:
     player:
       games_num: 100
       render: True
-      determenistic: False
+      deterministic: False
