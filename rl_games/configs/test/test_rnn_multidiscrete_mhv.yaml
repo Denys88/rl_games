@@ -66,5 +66,5 @@ params:
       multi_head_value: True
     player:
         games_num: 100
-        determenistic: True
+        deterministic: True
 

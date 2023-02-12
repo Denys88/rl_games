@@ -60,7 +60,7 @@ class BasePlayer(object):
             self.is_deterministic = self.player_config['deterministic']
         else:
             self.is_deterministic = self.player_config.get(
-                'determenistic', True)
+                'deterministic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
@@ -242,7 +242,8 @@ class BasePlayer(object):
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
-                            s[:, all_done_indices, :] = s[:,all_done_indices, :] * 0.0
+                            s[:, all_done_indices, :] = s[:,
+                                                          all_done_indices, :] * 0.0
 
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()

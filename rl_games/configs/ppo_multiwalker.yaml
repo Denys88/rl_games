@@ -60,7 +60,7 @@ params:
     player:
       render: True
       games_num: 200
-      determenistic: False
+      deterministic: False
 
     env_config:
       central_value: True
