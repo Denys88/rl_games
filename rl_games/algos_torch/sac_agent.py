@@ -30,7 +30,7 @@ class SACAgent(BaseAlgorithm):
         self.base_init(base_name, config)
         self.num_warmup_steps = config["num_warmup_steps"]
         self.gamma = config["gamma"]
-        self.critic_tau = config["critic_tau"]
+        self.critic_tau = float(config["critic_tau"])
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
@@ -313,7 +313,7 @@ class SACAgent(BaseAlgorithm):
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(tau * param.data +
-                                    (1 - tau) * target_param.data)
+                                    (1.0 - tau) * target_param.data)
 
     def update(self, step):
         obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
