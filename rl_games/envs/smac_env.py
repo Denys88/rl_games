@@ -101,3 +101,6 @@ class SMACEnv(gym.Env):
     def has_action_mask(self):
         return not self.random_invalid_step
 
+    def seed(self, val):
+        pass
+
