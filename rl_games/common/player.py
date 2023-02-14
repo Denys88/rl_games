@@ -9,7 +9,6 @@ from rl_games.algos_torch import model_builder
 
 
 class BasePlayer(object):
-
     def __init__(self, params):
         self.config = config = params['config']
         self.load_networks(params)
@@ -264,12 +263,12 @@ class BasePlayer(object):
                             game_res = info.get('scores', 0.5)
 
                     if self.print_stats:
-                        cur_rewards_done = cur_rewards/done_count
-                        cur_steps_done = cur_steps/done_count
                         if print_game_res:
-                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1} w: {game_res:.1}')
+                            print('reward:', cur_rewards/done_count,
+                                  'steps:', cur_steps/done_count, 'w:', game_res)
                         else:
-                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1f}')
+                            print('reward:', cur_rewards/done_count,
+                                  'steps:', cur_steps/done_count)
 
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:

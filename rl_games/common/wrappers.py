@@ -573,7 +573,6 @@ class TimeLimit(gym.Wrapper):
         self._elapsed_steps = 0
         return self.env.reset(**kwargs)
 
-
 class ImpalaEnvWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.Wrapper.__init__(self, env)
@@ -581,9 +580,8 @@ class ImpalaEnvWrapper(gym.Wrapper):
         self.observation_space = gym.spaces.Dict({
             'observation': self.env.observation_space,
             'reward': gym.spaces.Box(low=0, high=1, shape=( ), dtype=np.float32),
-            'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=int)
+            'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=np.long)
         })
-
     def step(self, action):
         if not np.isscalar(action):
             action = action.item()
@@ -603,7 +601,6 @@ class ImpalaEnvWrapper(gym.Wrapper):
             'last_action': 0
         }
         return obs
-
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
     """
