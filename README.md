@@ -285,7 +285,7 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
-1.5.3
+1.6.0
 
 * Added ONNX export colab example.
 * Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
