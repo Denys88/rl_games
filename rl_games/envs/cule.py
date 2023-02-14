@@ -20,7 +20,7 @@ class CuleEnv(IVecEnv):
             self.observation_space= gym.spaces.Dict({
                 'observation' : self.env.observation_space,
                 'reward' : gym.spaces.Box(low=0, high=1, shape=( ), dtype=np.float32),
-                'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=np.long)
+                'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=int)
             })
         else:
             self.observation_space = gym.spaces.Box(0, 255, (84, 84, 1), np.uint8) #self.env.observation_space
