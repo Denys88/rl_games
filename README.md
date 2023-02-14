@@ -6,6 +6,7 @@
 ## Papers and related links
 
 * Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
+* DeXtreme: Transfer of Agile In-Hand Manipulation from Simulation to Reality: https://dextreme.org/ https://arxiv.org/abs/2210.13702
 * Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
 * Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 * Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
@@ -23,6 +24,10 @@
 
 ![Allegro_Hand_400](https://user-images.githubusercontent.com/463063/125261559-38373700-e2b6-11eb-80eb-b250a0693f0b.gif)
 ![Shadow_Hand_OpenAI](https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif)
+
+* [Dextreme](https://dextreme.org/)
+
+![Allegro_Hand_real_world](https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
@@ -75,11 +80,11 @@ To run Atari also ```pip install opencv-python``` is required. In addition insta
 If you use rl-games in your research please use the following citation:
 
 ```bibtex
-@misc{rl-games2022,
+@misc{rl-games2021,
 title = {rl-games: A High-performance Framework for Reinforcement Learning},
 author = {Makoviichuk, Denys and Makoviychuk, Viktor},
 month = {May},
-year = {2022},
+year = {2021},
 publisher = {GitHub},
 journal = {GitHub repository},
 howpublished = {\url{https://github.com/Denys88/rl_games}},
@@ -236,12 +241,14 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | normalize_input        | True                      |         | Apply running mean std for input.                                                                                                                            |
 | bounds_loss_coef       | 0.0                       |         | Coefficient to the auxiary loss for continuous space.                                                                                                        |
 | max_epochs             | 10000                     |         | Maximum number of epochs to run.                                                                                                                             |
+| max_frames             | 5000000                   |         | Maximum number of frames (env steps) to run.                                                                                                                             |
 | normalize_value        | True                      |         | Use value running mean std normalization.                                                                                                                    |
 | use_diagnostics        | True                      |         | Adds more information into the tensorboard.                                                                                                                  |
 | value_bootstrap        | True                      |         | Bootstraping value when episode is finished. Very useful for different locomotion envs.                                                                      |
-| bound_loss_type        | 'regularisation'          | None    | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sam of actions higher than 1.1.                            |
+| bound_loss_type        | regularisation            | None    | Adds aux loss for continuous case. 'regularisation' is the sum of sqaured actions. 'bound' is the sum of actions higher than 1.1.                            |
 | bounds_loss_coef       | 0.0005                    | 0       | Regularisation coefficient                                                                                                                                   |
 | use_smooth_clamp       | False                     |         | Use smooth clamp instead of regular for cliping                                                                                                              |
+| zero_rnn_on_done       | False                     | True    | If False RNN internal state is not reset (set to 0) when an environment is rest. Could improve training in some cases, for example when domain randomization is on |
 | player                 |                           |         | Player configuration block.                                                                                                                                  |
 | render                 | True                      | False   | Render environment                                                                                                                                           |
 | deterministic          | True                      | True    | Use deterministic policy ( argmax or mu) or stochastic.                                                                                                      |
@@ -249,7 +256,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | games_num              | 200                       |         | Number of games to run in the player mode.                                                                                                                   |
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |
-| name                   | 'BreakoutNoFrameskip-v4'  |         | Name of exact atari env. Of course depending on your env this parameters may be different.                                                                   |
+| name                   | BreakoutNoFrameskip-v4    |         | The exact name of an (atari) gym env. An example, depends on the training env this parameters can be different.                                                                   |
 
 ## Custom network example: 
 [simple test network](rl_games/envs/test_network.py)  
@@ -277,6 +284,17 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+
+1.6.0
+
+* Added ONNX export colab example.
+* Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
+* Added NVIDIA CuLE support: https://github.com/NVlabs/cule
+* Added player config everride. Vecenv is used for inference.
+* Fixed multi-gpu training with central value.
+* Fixed max_frames termination condition, and it's interaction with the linear learning rate: https://github.com/Denys88/rl_games/issues/212
+* Fixed "deterministic" misspelling issue.
+* Fixed Mujoco and Brax SAC configs.
 
 1.5.2
 

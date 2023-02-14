@@ -30,7 +30,7 @@ class SACAgent(BaseAlgorithm):
         self.base_init(base_name, config)
         self.num_warmup_steps = config["num_warmup_steps"]
         self.gamma = config["gamma"]
-        self.critic_tau = config["critic_tau"]
+        self.critic_tau = float(config["critic_tau"])
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
@@ -93,7 +93,6 @@ class SACAgent(BaseAlgorithm):
 
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self._device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -260,6 +259,7 @@ class SACAgent(BaseAlgorithm):
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
 
@@ -313,7 +313,7 @@ class SACAgent(BaseAlgorithm):
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(tau * param.data +
-                                    (1 - tau) * target_param.data)
+                                    (1.0 - tau) * target_param.data)
 
     def update(self, step):
         obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
@@ -573,9 +573,9 @@ class SACAgent(BaseAlgorithm):
                         print('WARNING: Max epochs reached before any env terminated at least once')
                         mean_rewards = -np.inf
 
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(self.epoch_num) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
-                    print('MAX EPOCHS NUM!')  
+                    print('MAX EPOCHS NUM!')
                     should_exit = True
 
                 if self.frame >= self.max_frames and self.max_frames != -1:
