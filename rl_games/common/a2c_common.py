@@ -685,8 +685,8 @@ class A2CBase(BaseAlgorithm):
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
-            env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
-
+            env_done_indices = all_done_indices[::self.num_agents]
+     
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
@@ -755,7 +755,8 @@ class A2CBase(BaseAlgorithm):
             self.current_rewards += rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
-            env_done_indices = self.dones.view(self.num_actors, self.num_agents).all(dim=1).nonzero(as_tuple=False)
+            env_done_indices = all_done_indices[::self.num_agents]
+
             if len(all_done_indices) > 0:
                 if self.zero_rnn_on_done:
                     for s in self.rnn_states:

@@ -49,7 +49,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
-                'max_frames' : self.max_frames,
                 'multi_gpu' : self.multi_gpu,
                 'zero_rnn_on_done' : self.zero_rnn_on_done
             }
