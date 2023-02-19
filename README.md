@@ -287,7 +287,7 @@ Additional environment supported properties and functions
 
 1.6.0
 
-* Added ONNX export colab example for discrete and continious action spaces. For continuous case RNN example is provided as well.
+* Added ONNX export colab example for discrete and continious action spaces. For continuous case LSTM policy example is provided as well.
 * Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
 * Added NVIDIA CuLE support: https://github.com/NVlabs/cule
 * Added player config everride. Vecenv is used for inference.
