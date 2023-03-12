@@ -11,7 +11,7 @@ import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
-
+from rl_games.common.layers.value import  TwoHotEncodedValue
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
@@ -58,6 +58,9 @@ class NetworkBuilder:
 
         def is_separate_critic(self):
             return False
+
+        def get_value_layer(self):
+            return self.value
 
         def is_rnn(self):
             return False
@@ -166,6 +169,15 @@ class NetworkBuilder:
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm2d(in_channels))  
             return nn.Sequential(*layers)
+
+        def _build_value_layer(self, input_size, output_size, value_type):
+            if value_type == 'legacy':
+                return torch.nn.Linear(input_size, output_size)
+            
+            if value_type == 'twohot_encoded':
+                return TwoHotEncodedValue(input_size, output_size)
+
+
 
 
 class A2CBuilder(NetworkBuilder):

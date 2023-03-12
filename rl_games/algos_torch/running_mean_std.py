@@ -42,7 +42,7 @@ class RunningMeanStd(nn.Module):
         new_count = tot_count
         return new_mean, new_var, new_count
 
-    def forward(self, input, unnorm=False, mask=None):
+    def forward(self, input, denorm=False, mask=None):
         if self.training:
             if mask is not None:
                 mean, var = torch_ext.get_mean_std_with_masks(input, mask)
@@ -69,7 +69,7 @@ class RunningMeanStd(nn.Module):
         # get output
 
 
-        if unnorm:
+        if denorm:
             y = torch.clamp(input, min=-5.0, max=5.0)
             y = torch.sqrt(current_var.float() + self.epsilon)*y + current_mean.float()
         else:
@@ -88,6 +88,6 @@ class RunningMeanStdObs(nn.Module):
             k : RunningMeanStd(v, epsilon, per_channel, norm_only) for k,v in insize.items()
         })
     
-    def forward(self, input, unnorm=False):
-        res = {k : self.running_mean_std[k](v, unnorm) for k,v in input.items()}
+    def forward(self, input, denorm=False):
+        res = {k : self.running_mean_std[k](v, denorm) for k,v in input.items()}
         return res

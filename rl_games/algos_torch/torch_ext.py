@@ -278,47 +278,6 @@ def get_mean(v):
     return mean
 
 
-class CategoricalMaskedNaive(torch.distributions.Categorical):
-    def __init__(self, probs=None, logits=None, validate_args=None, masks=None):
-        self.masks = masks
-        if self.masks is None:
-            super(CategoricalMasked, self).__init__(probs, logits, validate_args)
-        else:
-            inf_mask = torch.log(masks.float())
-            logits = logits + inf_mask
-            super(CategoricalMasked, self).__init__(probs, logits, validate_args)
-    
-    def entropy(self):
-        if self.masks is None:
-            return super(CategoricalMasked, self).entropy()
-        p_log_p = self.logits * self.probs
-        p_log_p[p_log_p != p_log_p] = 0
-        return -p_log_p.sum(-1)
-
-
-class CategoricalMasked(torch.distributions.Categorical):
-    def __init__(self, probs=None, logits=None, validate_args=None, masks=None):
-        self.masks = masks
-        if masks is None:
-            super(CategoricalMasked, self).__init__(probs, logits, validate_args)
-        else:
-            self.device = self.masks.device
-            logits = torch.where(self.masks, logits, torch.tensor(-1e+8).to(self.device))
-            super(CategoricalMasked, self).__init__(probs, logits, validate_args)
-    
-    def rsample(self):
-        u = torch.distributions.Uniform(low=torch.zeros_like(self.logits, device = self.logits.device), high=torch.ones_like(self.logits, device = self.logits.device)).sample()
-        #print(u.size(), self.logits.size())
-        rand_logits = self.logits -(-u.log()).log()
-        return torch.max(rand_logits, axis=-1)[1]
-
-    def entropy(self):
-        if self.masks is None:
-            return super(CategoricalMasked, self).entropy()
-        p_log_p = self.logits * self.probs
-        p_log_p = torch.where(self.masks, p_log_p, torch.tensor(0.0).to(self.device))
-        return -p_log_p.sum(-1)
-
 class AverageMeter(nn.Module):
     def __init__(self, in_shape, max_size):
         super(AverageMeter, self).__init__()

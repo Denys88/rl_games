@@ -3,7 +3,7 @@ import os
 
 from rl_games.common import vecenv
 
-from rl_games.algos_torch.moving_mean_std import MovingMeanStd
+from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
 from rl_games.algos_torch.self_play_manager import SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
@@ -199,7 +199,6 @@ class A2CBase(BaseAlgorithm):
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
-        self.has_phasic_policy_gradients = False
 
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
@@ -274,7 +273,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5) #'0.25'
-            self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
+            self.advantage_mean_std = GeneralizedMovingStats((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
@@ -885,7 +884,7 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
-        advantages = returns - values
+        
 
         obses = batch_dict['obses']
         if self.normalize_value:
@@ -893,7 +892,8 @@ class DiscreteA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-
+            
+        advantages = returns - values
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
@@ -1158,13 +1158,15 @@ class ContinuousA2CBase(A2CBase):
         rnn_states = batch_dict.get('rnn_states', None)
         rnn_masks = batch_dict.get('rnn_masks', None)
 
-        advantages = returns - values
+        
 
         if self.normalize_value:
             self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
+
+        advantages = returns - values
 
         advantages = torch.sum(advantages, axis=1)
 

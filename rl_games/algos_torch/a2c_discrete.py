@@ -59,8 +59,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
-        self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
-                            or (not self.has_phasic_policy_gradients and not self.has_central_value)
+        self.has_value_loss = self.use_experimental_cv or not self.has_central_value
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
