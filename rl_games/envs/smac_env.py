@@ -6,14 +6,14 @@ from smac.env import MultiAgentEnv
 class SMACEnv(gym.Env):
     def __init__(self, name="3m",  **kwargs):
         gym.Env.__init__(self)
-        self.seed = kwargs.pop('seed', None)
+        self._seed = kwargs.pop('seed', None)
         self.reward_sparse = kwargs.get('reward_sparse', False)
         self.use_central_value = kwargs.pop('central_value', False)
         self.concat_infos = True
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
         self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
-        self.apply_agent_ids = kwargs.pop('apply_agent_ids', False)
-        self.env = StarCraft2Env(map_name=name, seed=self.seed, **kwargs)
+        self.apply_agent_ids = kwargs.pop('apply_agent_ids', True)
+        self.env = StarCraft2Env(map_name=name, seed=self._seed, **kwargs)
         self.env_info = self.env.get_env_info()
 
         self._game_num = 0
@@ -100,4 +100,7 @@ class SMACEnv(gym.Env):
     
     def has_action_mask(self):
         return not self.random_invalid_step
+
+    def seed(self, _):
+        pass
 

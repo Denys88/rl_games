@@ -62,6 +62,6 @@ params:
       render: False
       games_num: 200
       n_game_life: 1
-      determenistic: True
+      deterministic: True
       
       #reward_negative_scale: 0.1

@@ -3,26 +3,40 @@ import gym
 import numpy as np
 import torch
 import copy
+from rl_games.common import vecenv
 from rl_games.common import env_configurations
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
+
 
 class BasePlayer(object):
+
     def __init__(self, params):
         self.config = config = params['config']
         self.load_networks(params)
         self.env_name = self.config['env_name']
+        self.player_config = self.config.get('player', {})
         self.env_config = self.config.get('env_config', {})
+        self.env_config = self.player_config.get('env_config', self.env_config)
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
         self.seed = self.env_config.pop('seed', None)
         if self.env_info is None:
-            self.env = self.create_env()
-            self.env_info = env_configurations.get_env_info(self.env)
+            use_vecenv = self.player_config.get('use_vecenv', False)
+            if use_vecenv:
+                print('[BasePlayer] Creating vecenv: ', self.env_name)
+                self.env = vecenv.create_vec_env(
+                    self.env_name, self.config['num_actors'], **self.env_config)
+                self.env_info = self.env.get_env_info()
+            else:
+                print('[BasePlayer] Creating regular env: ', self.env_name)
+                self.env = self.create_env()
+                self.env_info = env_configurations.get_env_info(self.env)
         else:
             self.env = config.get('vec_env')
+
+        self.num_agents = self.env_info.get('agents', 1)
         self.value_size = self.env_info.get('value_size', 1)
         self.action_space = self.env_info['action_space']
-        self.num_agents = self.env_info['agents']
 
         self.observation_space = self.env_info['observation_space']
         if isinstance(self.observation_space, gym.spaces.Dict):
@@ -38,14 +52,16 @@ class BasePlayer(object):
         self.use_cuda = True
         self.batch_size = 1
         self.has_batch_dimension = False
-        self.has_central_value = self.config.get('central_value_config') is not None
+        self.has_central_value = self.config.get(
+            'central_value_config') is not None
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
         self.games_num = self.player_config.get('games_num', 2000)
         if 'deterministic' in self.player_config:
             self.is_deterministic = self.player_config['deterministic']
         else:
-            self.is_deterministic = self.player_config.get('determenistic', True)
+            self.is_deterministic = self.player_config.get(
+                'deterministic', True)
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
@@ -59,7 +75,7 @@ class BasePlayer(object):
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
             obs_batch = copy.copy(obs_batch)
-            for k,v in obs_batch.items():
+            for k, v in obs_batch.items():
                 if v.dtype == torch.uint8:
                     obs_batch[k] = v.float() / 255.0
                 else:
@@ -112,7 +128,7 @@ class BasePlayer(object):
         if isinstance(obs, torch.Tensor):
             self.is_tensor_obses = True
         elif isinstance(obs, np.ndarray):
-            assert(obs.dtype != np.int8)
+            assert (obs.dtype != np.int8)
             if obs.dtype == np.uint8:
                 obs = torch.ByteTensor(obs).to(self.device)
             else:
@@ -141,7 +157,8 @@ class BasePlayer(object):
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         if self.normalize_input and 'running_mean_std' in weights:
-            self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
+            self.model.running_mean_std.load_state_dict(
+                weights['running_mean_std'])
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
@@ -177,7 +194,7 @@ class BasePlayer(object):
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
             agent_inited = True
-            #print('setting agent weights for selfplay')
+            # print('setting agent weights for selfplay')
             # self.env.create_agent(self.env.config)
             # self.env.set_weights(range(8),self.get_weights())
 
@@ -226,7 +243,8 @@ class BasePlayer(object):
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
-                            s[:, all_done_indices, :] = s[:,all_done_indices, :] * 0.0
+                            s[:, all_done_indices, :] = s[:,
+                                                          all_done_indices, :] * 0.0
 
                     cur_rewards = cr[done_indices].sum().item()
                     cur_steps = steps[done_indices].sum().item()
@@ -246,12 +264,12 @@ class BasePlayer(object):
                             game_res = info.get('scores', 0.5)
 
                     if self.print_stats:
+                        cur_rewards_done = cur_rewards/done_count
+                        cur_steps_done = cur_steps/done_count
                         if print_game_res:
-                            print('reward:', cur_rewards/done_count,
-                                  'steps:', cur_steps/done_count, 'w:', game_res)
+                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1} w: {game_res:.1}')
                         else:
-                            print('reward:', cur_rewards/done_count,
-                                  'steps:', cur_steps/done_count)
+                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1f}')
 
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:

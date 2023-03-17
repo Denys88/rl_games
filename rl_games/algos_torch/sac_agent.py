@@ -1,10 +1,9 @@
 from rl_games.algos_torch import torch_ext
 
-from rl_games.algos_torch.running_mean_std import RunningMeanStd
-
 from rl_games.common import vecenv
 from rl_games.common import schedulers
 from rl_games.common import experience
+from rl_games.common.a2c_common import print_statistics
 
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
@@ -18,6 +17,7 @@ import numpy as np
 import time
 import os
 
+
 class SACAgent(BaseAlgorithm):
 
     def __init__(self, base_name, params):
@@ -30,7 +30,7 @@ class SACAgent(BaseAlgorithm):
         self.base_init(base_name, config)
         self.num_warmup_steps = config["num_warmup_steps"]
         self.gamma = config["gamma"]
-        self.critic_tau = config["critic_tau"]
+        self.critic_tau = float(config["critic_tau"])
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
@@ -93,7 +93,6 @@ class SACAgent(BaseAlgorithm):
 
         # TODO: Is there a better way to get the maximum number of episodes?
         self.max_episodes = torch.ones(self.num_actors, device=self._device)*self.num_steps_per_episode
-        # self.episode_lengths = np.zeros(self.num_actors, dtype=int)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -131,7 +130,8 @@ class SACAgent(BaseAlgorithm):
         self.rnn_states = None
         self.name = base_name
 
-        self.max_epochs = self.config.get('max_epochs', 1e6)
+        self.max_epochs = self.config.get('max_epochs', -1)
+        self.max_frames = self.config.get('max_frames', -1)
 
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
@@ -150,6 +150,7 @@ class SACAgent(BaseAlgorithm):
         self.last_mean_rewards = -100500
         self.play_time = 0
         self.epoch_num = 0
+
         # TODO: put it into the separate class
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
@@ -258,6 +259,7 @@ class SACAgent(BaseAlgorithm):
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
 
@@ -311,7 +313,7 @@ class SACAgent(BaseAlgorithm):
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(tau * param.data +
-                                    (1 - tau) * target_param.data)
+                                    (1.0 - tau) * target_param.data)
 
     def update(self, step):
         obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
@@ -522,8 +524,8 @@ class SACAgent(BaseAlgorithm):
             fps_step_inference = curr_frames / play_time
             fps_total = curr_frames / epoch_total_time
 
-            if self.print_stats:
-                print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {self.epoch_num}/{self.max_epochs}')
+            print_statistics(self.print_stats, curr_frames, step_time, play_time, epoch_total_time, 
+                self.epoch_num, self.max_epochs, self.frame, self.max_frames)
 
             self.writer.add_scalar('performance/step_inference_rl_update_fps', fps_total, self.frame)
             self.writer.add_scalar('performance/step_inference_fps', fps_step_inference, self.frame)
@@ -554,18 +556,39 @@ class SACAgent(BaseAlgorithm):
                 self.writer.add_scalar('episode_lengths/step', mean_lengths, self.frame)
                 self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
                 checkpoint_name = self.config['name'] + '_ep_' + str(self.epoch_num) + '_rew_' + str(mean_rewards)
+
+                should_exit = False
+
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
                     print('saving next best rewards: ', mean_rewards)
                     self.last_mean_rewards = mean_rewards
                     self.save(os.path.join(self.nn_dir, self.config['name']))
                     if self.last_mean_rewards > self.config.get('score_to_win', float('inf')):
-                        print('Network won!')
+                        print('Maximum reward achieved. Network won!')
                         self.save(os.path.join(self.nn_dir, checkpoint_name))
-                        return self.last_mean_rewards, self.epoch_num
+                        should_exit = True
 
-                if self.epoch_num >= self.max_epochs:
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + 'ep' + str(self.epoch_num) + 'rew' + str(mean_rewards)))
+                if self.epoch_num >= self.max_epochs and self.max_epochs != -1:
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max epochs reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(self.epoch_num) \
+                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX EPOCHS NUM!')
-                    return self.last_mean_rewards, self.epoch_num
+                    should_exit = True
+
+                if self.frame >= self.max_frames and self.max_frames != -1:
+                    if self.game_rewards.current_size == 0:
+                        print('WARNING: Max frames reached before any env terminated at least once')
+                        mean_rewards = -np.inf
+
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
+                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
+                    print('MAX FRAMES NUM!')
+                    should_exit = True
 
                 update_time = 0
+
+                if should_exit:
+                    return self.last_mean_rewards, self.epoch_num

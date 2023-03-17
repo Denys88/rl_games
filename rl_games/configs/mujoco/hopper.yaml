@@ -62,4 +62,4 @@ params:
 
     player:
       render: True
-      determenistic: True
+      deterministic: True
