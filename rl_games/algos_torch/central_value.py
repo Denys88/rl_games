@@ -137,9 +137,11 @@ class CentralValueTrain(nn.Module):
                 states.append(mb_s.permute(1,2,0,3).reshape(-1, t_size, h_size))
 
             batch_dict['rnn_states'] = states
+            '''
             if self.num_agents > 1:
                 rnn_masks = res[3]
             batch_dict['rnn_masks'] = rnn_masks
+            '''
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
@@ -243,9 +245,11 @@ class CentralValueTrain(nn.Module):
 
         res_dict = self.model(batch_dict)
         values = res_dict['values']
-        loss = common_losses.critic_loss(value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
+        loss = common_losses.critic_loss(self.model, value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
+        #print(loss.min(), loss.max(), loss.size(), rnn_masks_batch)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
+        #6print('aaa', loss.min(), loss.max(), loss.size())
         if self.multi_gpu:
             self.optimizer.zero_grad()
         else:

@@ -48,10 +48,11 @@ params:
     lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
-    normalize_value: True
+    normalize_value: False
     use_action_masks: True
     seq_length: 16
     #max_epochs: 10000
+    
     env_config:
       name: 5m_vs_6m
       central_value: True

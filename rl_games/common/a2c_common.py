@@ -877,7 +877,6 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
@@ -885,7 +884,6 @@ class DiscreteA2CBase(A2CBase):
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
         
-
         obses = batch_dict['obses']
         if self.normalize_value:
             self.value_mean_std.train()
@@ -923,7 +921,6 @@ class DiscreteA2CBase(A2CBase):
             dataset_dict['action_masks'] = batch_dict['action_masks']
 
         self.dataset.update_values_dict(dataset_dict)
-
         if self.has_central_value:
             dataset_dict = {}
             dataset_dict['old_values'] = values

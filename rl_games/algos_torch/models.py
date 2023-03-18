@@ -20,6 +20,9 @@ class BaseModel():
     def is_separate_critic(self):
         return False
 
+    def get_value_layer(self):
+        return None
+
     def build(self, config):
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
@@ -67,6 +70,9 @@ class ModelA2C(BaseModel):
         
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()            
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -120,6 +126,9 @@ class ModelA2CMultiDiscrete(BaseModel):
         
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -185,6 +194,9 @@ class ModelA2CContinuous(BaseModel):
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
+
         def kl(self, p_dict, q_dict):
             p = p_dict['mu'], p_dict['sigma']
             q = q_dict['mu'], q_dict['sigma']
@@ -236,7 +248,10 @@ class ModelA2CContinuousLogStd(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-            
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
@@ -290,6 +305,9 @@ class ModelCentralValue(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
