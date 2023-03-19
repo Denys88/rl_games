@@ -189,7 +189,7 @@ class A2CBuilder(NetworkBuilder):
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-  
+
             if self.has_cnn:
                 if self.permute_input:
                     input_shape = torch_ext.shape_whc_to_cwh(input_shape)
@@ -434,7 +434,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, mu*0 + sigma, value, states
-             
+
         def is_separate_critic(self):
             return self.separate
 
@@ -513,13 +513,13 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         #import torch._dynamo as dynamo
         net = A2CBuilder.Network(self.params, **kwargs)
-        compiled_net = torch.compile(net, mode="reduce-overhead")
+        #net = torch.compile(net, mode="reduce-overhead")
         #compiled_net = torch.compile(net, mode="max-autotune")
         #opt_net = dynamo.optimize("inductor")(net)
 
-        print("Created optimized NN!")
+        #print("Created optimized NN!")
 
-        return compiled_net
+        return net
 
 
 class Conv2dAuto(nn.Conv2d):

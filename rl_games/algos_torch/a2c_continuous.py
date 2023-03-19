@@ -6,9 +6,9 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
-from torch import nn
-import numpy as np
+import torch
+
+from typing import Optional, Tuple
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -65,7 +65,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-  
+
     def save(self, fn):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
@@ -76,6 +76,70 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         assert False
+        
+    @torch.jit.script
+    def forward_for_gradients(smooth:bool, ppo:bool, has_value_loss:bool, bound_loss_type:str,
+                              old_action_log_probs_batch, action_log_probs, advantage,
+                              value_preds_batch, values, return_batch, mu, entropy,
+                              curr_e_clip:float, clip_value:float, critic_coef:float, entropy_coef:float, bounds_loss_coef:float,
+                              rnn_masks:Optional[torch.Tensor], sum_rnn_masks:int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if smooth:
+            a_loss = common_losses.smoothed_actor_loss(old_action_log_probs_batch, action_log_probs, advantage, ppo, curr_e_clip)
+        else:
+            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, ppo, curr_e_clip)
+
+        if has_value_loss:
+            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
+        else:
+            c_loss = torch.zeros(1)
+
+        if bound_loss_type == 'regularisation':
+            b_loss = (mu*mu).sum(dim=-1, keepdim=True)
+        elif bound_loss_type == 'bound':
+            soft_bound = 1.1
+            mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(dim=-1, keepdim=True)
+        else:
+            b_loss = torch.zeros(1)
+
+        losses = torch_ext.apply_masks_compilable([a_loss, c_loss, entropy, b_loss], rnn_masks, sum_rnn_masks)
+        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+
+        loss = a_loss + 0.5 * c_loss * critic_coef - entropy * entropy_coef + b_loss * bounds_loss_coef
+
+        return loss, a_loss, c_loss, entropy, b_loss
+
+    @torch.jit.script
+    def forward_for_gradients(smooth:bool, ppo:bool, has_value_loss:bool, bound_loss_type:str,
+                              old_action_log_probs_batch, action_log_probs, advantage,
+                              value_preds_batch, values, return_batch, mu, entropy,
+                              curr_e_clip:float, clip_value:float, critic_coef:float, entropy_coef:float, bounds_loss_coef:float,
+                              rnn_masks:Optional[torch.Tensor], sum_rnn_masks:int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if smooth:
+            a_loss = common_losses.smoothed_actor_loss(old_action_log_probs_batch, action_log_probs, advantage, ppo, curr_e_clip)
+        else:
+            a_loss = common_losses.actor_loss(old_action_log_probs_batch, action_log_probs, advantage, ppo, curr_e_clip)
+
+        if has_value_loss:
+            c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
+        else:
+            c_loss = torch.zeros(1)
+        if bound_loss_type == 'regularisation':
+            b_loss = (mu*mu).sum(dim=-1, keepdim=True)
+        elif bound_loss_type == 'bound':
+            soft_bound = 1.1
+            mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0)**2
+            mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
+            b_loss = (mu_loss_low + mu_loss_high).sum(dim=-1, keepdim=True)
+        else:
+            b_loss = torch.zeros(1)
+        losses = torch_ext.apply_masks_compilable([a_loss, c_loss, entropy, b_loss], rnn_masks, sum_rnn_masks)
+        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+
+        loss = a_loss + 0.5 * c_loss * critic_coef - entropy * entropy_coef + b_loss * bounds_loss_coef
+
+        return loss, a_loss, c_loss, entropy, b_loss
 
     def calc_gradients(self, input_dict):
         value_preds_batch = input_dict['old_values']
@@ -114,22 +178,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-            if self.has_value_loss:
-                c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-            else:
-                c_loss = torch.zeros(1, device=self.ppo_device)
-            if self.bound_loss_type == 'regularisation':
-                b_loss = self.reg_loss(mu)
-            elif self.bound_loss_type == 'bound':
-                b_loss = self.bound_loss(mu)
-            else:
-                b_loss = torch.zeros(1, device=self.ppo_device)
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            loss, a_loss, c_loss, entropy, b_loss = \
+                A2CAgent.forward_for_gradients(self.actor_loss_func == common_losses.smoothed_actor_loss,
+                                               self.ppo, self.has_value_loss, self.bound_loss_type,
+                                               old_action_log_probs_batch, action_log_probs, advantage,
+                                               value_preds_batch, values, return_batch, mu, entropy.unsqueeze(1),
+                                               curr_e_clip, self.clip_value, self.critic_coef, self.entropy_coef, self.bounds_loss_coef,
+                                               None if rnn_masks is None else rnn_masks.unsqueeze(1), 0 if rnn_masks is None else rnn_masks.numel())
 
             if self.multi_gpu:
                 self.optimizer.zero_grad()

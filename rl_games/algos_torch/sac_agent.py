@@ -261,7 +261,7 @@ class SACAgent(BaseAlgorithm):
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
 
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
-            target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
+            target_V = torch.minimum(target_Q1, target_Q2) - self.alpha * log_prob
 
             target_Q = reward + (not_done * self.gamma * target_V)
             target_Q = target_Q.detach()
@@ -287,9 +287,9 @@ class SACAgent(BaseAlgorithm):
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
         entropy = -log_prob.mean() #dist.entropy().sum(-1, keepdim=True).mean()
         actor_Q1, actor_Q2 = self.model.critic(obs, action)
-        actor_Q = torch.min(actor_Q1, actor_Q2)
+        actor_Q = torch.minimum(actor_Q1, actor_Q2)
 
-        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
+        actor_loss = (torch.maximum(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
         self.actor_optimizer.zero_grad(set_to_none=True)
