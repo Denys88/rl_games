@@ -1,7 +1,10 @@
 from rl_games.algos_torch import torch_ext
 import torch
 import torch.nn as nn
-import numpy as np
+
+from typing import Optional, Tuple
+
+
 '''
 updates statistic from a full data
 '''
@@ -26,11 +29,12 @@ class RunningMeanStd(nn.Module):
             self.axis = [0]
             in_size = insize
 
+        # why do we need float64?
         self.register_buffer("running_mean", torch.zeros(in_size, dtype = torch.float64))
         self.register_buffer("running_var", torch.ones(in_size, dtype = torch.float64))
         self.register_buffer("count", torch.ones((), dtype = torch.float64))
 
-    def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count):
+    def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count:int):
         delta = batch_mean - mean
         tot_count = count + batch_count
 
@@ -42,34 +46,36 @@ class RunningMeanStd(nn.Module):
         new_count = tot_count
         return new_mean, new_var, new_count
 
-    def forward(self, input, unnorm=False, mask=None):
+    def _change_shape(self, input) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.per_channel:
+            if len(self.insize) == 3:
+                return self.running_mean.view([1, self.insize[0], 1, 1]).expand_as(input), \
+                    self.running_var.view([1, self.insize[0], 1, 1]).expand_as(input)
+            if len(self.insize) == 2:
+                return self.running_mean.view([1, self.insize[0], 1]).expand_as(input), \
+                    self.running_var.view([1, self.insize[0], 1]).expand_as(input)
+            if len(self.insize) == 1:
+                return self.running_mean.view([1, self.insize[0]]).expand_as(input), \
+                    self.running_var.view([1, self.insize[0]]).expand_as(input)
+
+        return self.running_mean, self.running_var
+
+    def forward(self, input, unnorm:bool=False, mask:Optional[torch.Tensor]=None):
         if self.training:
             if mask is not None:
                 mean, var = torch_ext.get_mean_std_with_masks(input, mask)
             else:
                 mean = input.mean(self.axis) # along channel axis
                 var = input.var(self.axis)
-            self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(self.running_mean, self.running_var, self.count, 
+            self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(self.running_mean, self.running_var, self.count,
                                                     mean, var, input.size()[0] )
 
         # change shape
-        if self.per_channel:
-            if len(self.insize) == 3:
-                current_mean = self.running_mean.view([1, self.insize[0], 1, 1]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0], 1, 1]).expand_as(input)
-            if len(self.insize) == 2:
-                current_mean = self.running_mean.view([1, self.insize[0], 1]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0], 1]).expand_as(input)
-            if len(self.insize) == 1:
-                current_mean = self.running_mean.view([1, self.insize[0]]).expand_as(input)
-                current_var = self.running_var.view([1, self.insize[0]]).expand_as(input)        
-        else:
-            current_mean = self.running_mean
-            current_var = self.running_var
+        current_mean, current_var = self._change_shape(input)
+
         # get output
-
-
         if unnorm:
+            # why 5 is hard coded?
             y = torch.clamp(input, min=-5.0, max=5.0)
             y = torch.sqrt(current_var.float() + self.epsilon)*y + current_mean.float()
         else:
@@ -78,16 +84,18 @@ class RunningMeanStd(nn.Module):
             else:
                 y = (input - current_mean.float()) / torch.sqrt(current_var.float() + self.epsilon)
                 y = torch.clamp(y, min=-5.0, max=5.0)
+
         return y
+
 
 class RunningMeanStdObs(nn.Module):
     def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
         assert(isinstance(insize, dict))
         super(RunningMeanStdObs, self).__init__()
         self.running_mean_std = nn.ModuleDict({
-            k : RunningMeanStd(v, epsilon, per_channel, norm_only) for k,v in insize.items()
+            k : torch.jit.script(RunningMeanStd(v, epsilon, per_channel, norm_only)) for k,v in insize.items()
         })
-    
+
     def forward(self, input, unnorm=False):
         res = {k : self.running_mean_std[k](v, unnorm) for k,v in input.items()}
         return res

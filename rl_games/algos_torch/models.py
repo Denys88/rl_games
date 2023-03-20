@@ -25,6 +25,7 @@ class BaseModel():
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
         value_size = config.get('value_size', 1)
+
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
@@ -40,9 +41,9 @@ class BaseModelNetwork(nn.Module):
             self.value_mean_std = RunningMeanStd((self.value_size,))
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
             else:
-                self.running_mean_std = RunningMeanStd(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -221,7 +222,7 @@ class ModelA2CContinuous(BaseModel):
                     'mus' : mu,
                     'sigmas' : sigma
                 }
-                return  result          
+                return  result
 
 
 class ModelA2CContinuousLogStd(BaseModel):
@@ -236,7 +237,7 @@ class ModelA2CContinuousLogStd(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-            
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
@@ -244,9 +245,11 @@ class ModelA2CContinuousLogStd(BaseModel):
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
+
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
+
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
@@ -257,7 +260,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'rnn_states' : states,
                     'mus' : mu,
                     'sigmas' : sigma
-                }                
+                }
                 return result
             else:
                 selected_action = distr.sample()
@@ -312,7 +315,6 @@ class ModelCentralValue(BaseModel):
             return result
 
 
-
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):
@@ -332,7 +334,7 @@ class ModelSACContinuous(BaseModel):
 
         def actor(self, obs):
             return self.sac_network.actor(obs)
-        
+
         def is_rnn(self):
             return False
 
@@ -341,6 +343,3 @@ class ModelSACContinuous(BaseModel):
             mu, sigma = self.sac_network(input_dict)
             dist = SquashedNormal(mu, sigma)
             return dist
-
-
-

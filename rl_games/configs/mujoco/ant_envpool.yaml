@@ -26,10 +26,10 @@ params:
         name: default
 
   config:
-    name: Ant-v4_envpool
+    name: Ant-v4_envpool_torch2_inductor
     env_name: envpool
     score_to_win: 20000
-    normalize_input: True
+    normalize_input: False #True
     normalize_value: True
     value_bootstrap: True
     normalize_advantage: True
@@ -49,7 +49,7 @@ params:
     use_smooth_clamp: True
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
-    max_epochs: 2000
+    max_epochs: 500
     num_actors: 64
     horizon_length: 64
     minibatch_size: 2048

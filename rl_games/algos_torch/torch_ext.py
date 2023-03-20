@@ -136,7 +136,7 @@ def apply_masks(losses, mask=None):
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
-    
+
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
@@ -356,5 +356,3 @@ class IdentityRNN(nn.Module):
 
     def forward(self, x, h):
         return self.identity(x), h
-
- 

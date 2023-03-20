@@ -6,10 +6,8 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
-from torch import nn
-import numpy as np
-import gym
+import torch
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
@@ -23,9 +21,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
+
+        # ['aot_ts_nvfuser', 'cudagraphs', 'inductor', 'ipex', 'nvprims_nvfuser', 'onnxrt', 'tvm']
+        self.model = torch.compile(self.model, backend="inductor")
+        print("Model compiled with backend: inductor")
+
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
@@ -34,12 +37,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         if self.has_central_value:
             cv_config = {
-                'state_shape' : self.state_shape, 
+                'state_shape' : self.state_shape,
                 'value_size' : self.value_size,
-                'ppo_device' : self.ppo_device, 
-                'num_agents' : self.num_agents, 
+                'ppo_device' : self.ppo_device,
+                'num_agents' : self.num_agents,
                 'horizon_length' : self.horizon_length,
-                'num_actors' : self.num_actors, 
+                'num_actors' : self.num_actors,
                 'num_actions' : self.actions_num, 
                 'seq_len' : self.seq_len,
                 'normalize_value' : self.normalize_value,
@@ -58,7 +61,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
-                            or (not self.has_phasic_policy_gradients and not self.has_central_value) 
+                            or (not self.has_phasic_policy_gradients and not self.has_central_value)
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -125,11 +128,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 b_loss = self.bound_loss(mu)
             else:
                 b_loss = torch.zeros(1, device=self.ppo_device)
+
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
-            
+
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:
@@ -179,5 +183,3 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             b_loss = 0
         return b_loss
-
-
