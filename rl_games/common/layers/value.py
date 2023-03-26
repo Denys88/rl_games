@@ -9,16 +9,17 @@ class DefaultValue(nn.Module):
     def __init__(self, in_size, out_size):
         nn.Module.__init__(self)
         self.value_linear = nn.Linear(in_size, out_size)
+        #torch.nn.init.xavier_uniform_(self.value_linear.weight, gain=0.05)
         
     def loss(self, value_preds_batch, values, curr_e_clip, return_batch, clip_value):
-        value_preds_batch = symlog(value_preds_batch)
-        values = symlog(values)
-        return_batch = symlog(return_batch)
+        #value_preds_batch = symlog(value_preds_batch)
+        #values = symlog(values)
+        #return_batch = symlog(return_batch)
         return common_losses.default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
 
     def forward(self, input):
         out = self.value_linear(input)
-        out = symexp(out)
+        #out = symexp(out)
         return out
 
 

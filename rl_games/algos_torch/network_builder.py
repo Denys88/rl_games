@@ -315,7 +315,7 @@ class A2CBuilder(NetworkBuilder):
                 # convert to (B, C, W, H)
                 if self.permute_input and len(obs.shape) == 4:
                     obs = obs.permute((0, 3, 1, 2))
-            #obs = symlog(obs)
+
             if self.separate:
                 a_out = c_out = obs
                 a_out = self.actor_cnn(a_out)
