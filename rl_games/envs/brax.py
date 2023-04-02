@@ -18,15 +18,19 @@ def torch_to_jax(tensor):
 
 class BraxEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
-        from brax import envs    
+        from brax import envs
+    #    import jax.numpy as jnp
 
         self.batch_size = num_actors
-        env_name=kwargs.pop('env_name', 'ant')
-        self.env = envs.create_gym_env(env_name=env_name,
-                   batch_size= self.batch_size,
-                   seed = 0,
-                   backend = 'gpu'
-                   )
+        self.env_name = kwargs.pop('env_name', 'ant')
+        self.sim_backend = kwargs.pop('backend', 'positional') # can be 'generalized', 'positional', 'spring'
+        # self.env = envs.create_gym_env(env_name=self.env_name,
+        #            batch_size= self.batch_size,
+        #            seed = 0,
+        #            backend = 'gpu'
+        #            )
+        
+        self.env = envs.get_environment(env_name=self.env_name, backend=self.sim_backend)
 
         obs_high = np.inf * np.ones(self.env._env.unwrapped.observation_size)
         self.observation_space = gym.spaces.Box(-obs_high, obs_high, dtype=np.float32)
@@ -40,9 +44,11 @@ class BraxEnv(IVecEnv):
         next_obs = jax_to_torch(next_obs)
         reward = jax_to_torch(reward)
         is_done = jax_to_torch(is_done)
+
         return next_obs, reward, is_done, info
 
     def reset(self):
+        # todo add random init like in collab examples?
         obs = self.env.reset()
         return jax_to_torch(obs)
 
@@ -55,6 +61,6 @@ class BraxEnv(IVecEnv):
         info['observation_space'] = self.observation_space
         return info
 
+
 def create_brax_env(**kwargs):
     return BraxEnv("", kwargs.pop('num_actors', 256), **kwargs)
-

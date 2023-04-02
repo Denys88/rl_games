@@ -34,10 +34,9 @@ params:
         name: None
 
   config:
-    name: 'Halfcheetah_brax'
+    name: Halfcheetah_brax
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True
@@ -54,7 +53,7 @@ params:
     save_best_after: 100
     save_frequency: 50
     grad_norm: 1.0
-    entropy_coef: 0.00
+    entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
     horizon_length: 16

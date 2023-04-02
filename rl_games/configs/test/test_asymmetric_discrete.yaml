@@ -18,12 +18,13 @@ params:
       initializer:
         name: default
       regularizer:
-        name: 'None'
+        name: None
     rnn:
       name: 'lstm'
       units: 64
       layers: 1
       layer_norm: True
+
   config:
     reward_shaper:
         scale_value: 1
@@ -36,8 +37,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name:  openai_gym
-    ppo: true
+    env_name: openai_gym
     e_clip: 0.2
     clip_value: False
     num_actors: 16
@@ -45,16 +45,17 @@ params:
     minibatch_size: 2048
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.008
     normalize_input: True
+    normalize_value: True
     seq_length: 4
     weight_decay: 0.0000
-
-
+    multi_gpu: True
+    use_diagnostics: True
     env_config:
       name: TestAsymmetricEnv-v0
-      wrapped_env_name: "LunarLander-v2"
+      wrapped_env_name: LunarLander-v2
       apply_mask: False
       use_central_value: True
 
@@ -75,7 +76,7 @@ params:
           initializer:
             name: default
           regularizer:
-            name:  'None'
+            name: None
         rnn:
           name: lstm
           units: 64

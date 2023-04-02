@@ -1,7 +1,9 @@
+import rl_games.envs.test
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
-import rl_games.envs.test
 from rl_games.envs.brax import create_brax_env
+from rl_games.envs.envpool import create_envpool
+from rl_games.envs.cule import create_cule
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
@@ -100,7 +102,8 @@ def create_atari_gym_env(**kwargs):
     name = kwargs.pop('name')
     skip = kwargs.pop('skip',4)
     episode_life = kwargs.pop('episode_life',True)
-    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life)
+    wrap_impala = kwargs.pop('wrap_impala', False)
+    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
     return env    
 
 def create_dm_control_env(**kwargs):
@@ -403,6 +406,14 @@ configurations = {
     'brax' : {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
         'vecenv_type': 'BRAX' 
+    },
+    'envpool': {
+        'env_creator': lambda **kwargs: create_envpool(**kwargs),
+        'vecenv_type': 'ENVPOOL'
+    },
+    'cule': {
+        'env_creator': lambda **kwargs: create_cule(**kwargs),
+        'vecenv_type': 'CULE'
     },
 }
 

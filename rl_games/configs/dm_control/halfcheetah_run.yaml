@@ -14,7 +14,6 @@ params:
         sigma_activation: None
         mu_init:
           name: default
-          scale: 0.02
         sigma_init:
           name: const_initializer
           val: 0
@@ -25,39 +24,37 @@ params:
       initializer:
         name: default
   config:
-      reward_shaper:
-        scale_value: 0.1
-      normalize_advantage: True
-      gamma: 0.995
-      tau: 0.95
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.995
+    tau: 0.95
 
-      learning_rate: 3e-4
-      name: dm_cheetah_run
-      score_to_win: 950
+    learning_rate: 3e-4
+    name: HalfCheetah-v2
+    score_to_win: 10000
 
-      grad_norm: 0.5
-      entropy_coef: 0.0
-      truncate_grads: True
-      env_name:  dm_control
-      ppo: true
-      e_clip: 0.2
-      clip_value: True
-      num_actors: 16
-      horizon_length: 1024
-      minibatch_size: 4096
-      mini_epochs: 4
-      critic_coef: 1
-      lr_schedule:  adaptive
-      kl_threshold: 0.008
-      schedule_type: 'standard'
-      normalize_input: True
-      normalize_value: True
-      value_bootstrap: True
-      bounds_loss_coef: 0.001
+    grad_norm: 0.5
+    entropy_coef: 0.0
+    truncate_grads: True
+    env_name: openai_gym
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 16
+    horizon_length: 128
+    minibatch_size: 512
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule:  adaptive
+    kl_threshold: 0.008
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    bounds_loss_coef: 0.000
 
-      env_config:
-        name: CheetahRun-v0
-        flat_observation: True
+    env_config:
+      name: HalfCheetah-v2
+      seed: 5
 
-      player:
-        render: True
+    player:
+      render: True

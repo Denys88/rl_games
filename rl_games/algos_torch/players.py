@@ -25,7 +25,8 @@ class PpoPlayerContinuous(BasePlayer):
         self.mask = [False]
 
         self.normalize_input = self.config['normalize_input']
-        self.normalize_value = self.config['normalize_value']
+        self.normalize_value = self.config.get('normalize_value', False)
+
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
@@ -40,7 +41,7 @@ class PpoPlayerContinuous(BasePlayer):
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
@@ -55,7 +56,7 @@ class PpoPlayerContinuous(BasePlayer):
         mu = res_dict['mus']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
-        if is_determenistic:
+        if is_deterministic:
             current_action = mu
         else:
             current_action = action
@@ -73,6 +74,10 @@ class PpoPlayerContinuous(BasePlayer):
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
+
     def reset(self):
         self.init_rnn()
 
@@ -89,7 +94,7 @@ class PpoPlayerDiscrete(BasePlayer):
             self.is_multi_discrete = True
         self.mask = [False]
         self.normalize_input = self.config['normalize_input']
-        self.normalize_value = self.config['normalize_value']
+        self.normalize_value = self.config.get('normalize_value', False)
         obs_shape = self.obs_shape
         config = {
             'actions_num' : self.actions_num,
@@ -105,7 +110,7 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.eval()
         self.is_rnn = self.model.is_rnn()
 
-    def get_masked_action(self, obs, action_masks, is_determenistic = True):
+    def get_masked_action(self, obs, action_masks, is_deterministic = True):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
@@ -125,21 +130,22 @@ class PpoPlayerDiscrete(BasePlayer):
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
-            if is_determenistic:
+            if is_deterministic:
                 action = [torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits]
                 return torch.stack(action,dim=-1)
             else:    
                 return action.squeeze().detach()
         else:
-            if is_determenistic:
+            if is_deterministic:
                 return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
 
-    def get_action(self, obs, is_determenistic = False):
+    def get_action(self, obs, is_deterministic = False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
+
         self.model.eval()
         input_dict = {
             'is_train': False,
@@ -153,13 +159,13 @@ class PpoPlayerDiscrete(BasePlayer):
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
         if self.is_multi_discrete:
-            if is_determenistic:
+            if is_deterministic:
                 action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
                 return torch.stack(action,dim=-1)
             else:    
                 return action.squeeze().detach()
         else:
-            if is_determenistic:
+            if is_deterministic:
                 return torch.argmax(logits.detach(), axis=-1).squeeze()
             else:    
                 return action.squeeze().detach()
@@ -169,6 +175,10 @@ class PpoPlayerDiscrete(BasePlayer):
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
+
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
 
     def reset(self):
         self.init_rnn()
@@ -184,7 +194,7 @@ class SACPlayer(BasePlayer):
             float(self.env_info['action_space'].high.max())
         ]
 
-        obs_shape = torch_ext.shape_whc_to_cwh(self.state_shape)
+        obs_shape = self.obs_shape
         self.normalize_input = False
         config = {
             'obs_dim': self.env_info["observation_space"].shape[0],
@@ -208,11 +218,18 @@ class SACPlayer(BasePlayer):
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
 
-    def get_action(self, obs, sample=False):
+        env_state = checkpoint.get('env_state', None)
+        if self.env is not None and env_state is not None:
+            self.env.set_env_state(env_state)
+
+    def get_action(self, obs, is_deterministic=False):
+        if self.has_batch_dimension == False:
+            obs = unsqueeze_obs(obs)
         dist = self.model.actor(obs)
-        actions = dist.sample() if sample else dist.mean
+        actions = dist.sample() if is_deterministic else dist.mean
         actions = actions.clamp(*self.action_range).to(self.device)
-        assert actions.ndim == 2
+        if self.has_batch_dimension == False:
+            actions = torch.squeeze(actions.detach())
         return actions
 
     def reset(self):

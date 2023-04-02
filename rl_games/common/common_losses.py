@@ -2,6 +2,7 @@ from torch import nn
 import torch
 import math
 
+
 def critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
     if clip_value:
         value_pred_clipped = value_preds_batch + \
@@ -27,7 +28,7 @@ def smoothed_actor_loss(old_action_neglog_probs_batch, action_neglog_probs, adva
         a_loss = torch.max(-surr1, -surr2)
     else:
         a_loss = (action_neglog_probs * advantage)
-    
+
     return a_loss
 
 
@@ -50,5 +51,5 @@ def decoupled_actor_loss(behavior_action_neglog_probs, action_neglog_probs, prox
     clipped_logratio = torch.clamp(logratio, math.log(1.0 - curr_e_clip), math.log(1.0 + curr_e_clip))
     pg_losses2 = -advantage * torch.exp(clipped_logratio - proxy_neglog_probs + behavior_action_neglog_probs)
     pg_losses = torch.max(pg_losses1,pg_losses2)
-    
+
     return pg_losses

@@ -45,10 +45,12 @@ class BaseModelNetwork(nn.Module):
                 self.running_mean_std = RunningMeanStd(obs_shape)
 
     def norm_obs(self, observation):
-        return self.running_mean_std(observation) if self.normalize_input else observation
+        with torch.no_grad():
+            return self.running_mean_std(observation) if self.normalize_input else observation
 
     def unnorm_value(self, value):
-        return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
+        with torch.no_grad():
+            return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -193,7 +195,7 @@ class ModelA2CContinuous(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, sigma, value, states = self.a2c_network(input_dict)
-            distr = torch.distributions.Normal(mu, sigma)
+            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
 
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
@@ -244,7 +246,7 @@ class ModelA2CContinuousLogStd(BaseModel):
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
-            distr = torch.distributions.Normal(mu, sigma)
+            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)

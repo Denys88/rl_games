@@ -40,8 +40,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name: 'openai_gym' #'openai_gym' #'PongNoFrameskip-v4' #
-    ppo: true
+    env_name: openai_gym #'PongNoFrameskip-v4'
     e_clip: 0.2
     clip_value: True
     num_actors: 16
@@ -49,7 +48,7 @@ params:
     minibatch_size: 1024
     mini_epochs: 3
     critic_coef: 1
-    lr_schedule:  polynom_decay
+    lr_schedule: polynom_decay
     kl_threshold: 0.01
     normalize_input: False
     seq_length: 4

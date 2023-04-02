@@ -4,8 +4,6 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
-from rl_games.algos_torch import ppg_aux
-from rl_games.common.ewma_model import EwmaModel
 
 from torch import optim
 import torch 
@@ -29,8 +27,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
-        if self.ewma_ppo:
-            self.ewma_model = EwmaModel(self.model, ewma_decay=0.889)
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
@@ -51,7 +47,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
-                'multi_gpu' : self.multi_gpu
+                'multi_gpu' : self.multi_gpu,
+                'zero_rnn_on_done' : self.zero_rnn_on_done
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -59,12 +56,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
-        if 'phasic_policy_gradients' in self.config:
-            self.has_phasic_policy_gradients = True
-            self.ppg_aux_loss = ppg_aux.PPGAux(self, self.config['phasic_policy_gradients'])
+
         self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
                             or (not self.has_phasic_policy_gradients and not self.has_central_value) 
         self.algo_observer.after_init(self)
+
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
@@ -105,7 +101,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_len
-            
+
+            if self.zero_rnn_on_done:
+                batch_dict['dones'] = input_dict['dones']            
+
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
@@ -114,15 +113,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            if self.ewma_ppo:
-                ewma_dict = self.ewma_model(batch_dict)
-                proxy_neglogp = ewma_dict['prev_neglogp']
-                a_loss = common_losses.decoupled_actor_loss(old_action_log_probs_batch, action_log_probs, proxy_neglogp, advantage, curr_e_clip)
-                old_action_log_probs_batch = proxy_neglogp # to get right statistic later
-                old_mu_batch = ewma_dict['mus']
-                old_sigma_batch = ewma_dict['sigmas']
-            else:
-                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -147,31 +138,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.scaler.scale(loss).backward()
         #TODO: Refactor this ugliest code of they year
-        if self.truncate_grads:
-            if self.multi_gpu:
-                self.optimizer.synchronize()
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                with self.optimizer.skip_synchronize():
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-            else:
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()    
-        else:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+        self.trancate_gradients_and_step()
 
         with torch.no_grad():
             reduce_kl = rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if rnn_masks is not None:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
-
-        if self.ewma_ppo:
-            self.ewma_model.update()                    
 
         self.diagnostics.mini_batch(self,
         {

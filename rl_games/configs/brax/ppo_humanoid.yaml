@@ -1,8 +1,6 @@
 params:
   seed: 7
 
-  #devices: [0, 0]
-
   algo:
     name: a2c_continuous
 
@@ -34,16 +32,17 @@ params:
         name: None
 
   config:
-    name: 'Humanoid_brax'
+    name: Humanoid_brax
+    full_experiment_name: Humanoid_brax
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True
+    normalize_advantage: True
+    use_smooth_clamp: True
     reward_shaper:
       scale_value: 1.0
-    normalize_advantage: True
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -54,16 +53,18 @@ params:
     save_best_after: 100
     save_frequency: 50
     grad_norm: 1.0
-    entropy_coef: 0.00
+    entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 32
+    horizon_length: 16
     num_actors: 4096
     minibatch_size: 32768
     mini_epochs: 5
     critic_coef: 2
-    clip_value: False
-    bounds_loss_coef: 0.0004
+
+    clip_value: True
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
 
     env_config:
-      env_name: 'humanoid'
+      env_name: humanoid

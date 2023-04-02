@@ -1,3 +1,4 @@
+wandb
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -112,3 +113,5 @@ venv.bak/
 
 # pycharm
 /.idea
+
+MUJOCO_LOG.TXT

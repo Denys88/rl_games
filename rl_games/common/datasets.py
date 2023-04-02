@@ -40,7 +40,7 @@ class PPODataset(Dataset):
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:
-                if v is dict:
+                if isinstance(v, dict):
                     v_dict = {kd:vd[start:end] for kd, vd in v.items()}
                     input_dict[k] = v_dict
                 else:

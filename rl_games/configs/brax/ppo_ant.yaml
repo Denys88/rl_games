@@ -34,16 +34,17 @@ params:
         name: None
 
   config:
-    name: 'Ant_brax'
+    name: Ant_brax
+    full_experiment_name: Ant_brax
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True
+    normalize_advantage: True
+    use_smooth_clamp: True
     reward_shaper:
       scale_value: 1.0
-    normalize_advantage: True
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -66,4 +67,4 @@ params:
     bounds_loss_coef: 0.0001
 
     env_config:
-      env_name: 'ant'
+      env_name: ant
