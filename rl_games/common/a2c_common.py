@@ -1312,8 +1312,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num
