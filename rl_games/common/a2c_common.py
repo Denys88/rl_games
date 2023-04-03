@@ -214,16 +214,21 @@ class A2CBase(BaseAlgorithm):
         self.tau = self.config['tau']
 
         self.games_to_track = self.config.get('games_to_track', 100)
+
         print('current training device:', self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
-        self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
+
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
+        assert(self.minibatch_size > 0)
+
+        self.games_num = self.minibatch_size // self.seq_len # it is used only for current rnn implementation
+
         self.mini_epochs_num = self.config['mini_epochs']
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
@@ -1313,8 +1318,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num
