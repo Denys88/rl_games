@@ -65,7 +65,8 @@ class BraxEnv(IVecEnv):
         return next_obs, reward, is_done, self.state.info
 
     def reset(self):
-        self.state = self.env.reset(rng=jax.random.PRNGKey(self.seed))
+        import jax
+        self.state = self.env.reset(rng=jax.random.PRNGKey(seed=self.seed))
 
         return jax_to_torch(self.state.obs)
 
