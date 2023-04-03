@@ -30,6 +30,7 @@ class BraxEnv(IVecEnv):
         print('env_name', self.env_name)
         print('sim_backend', self.sim_backend)
         print('seed', self.seed)
+        print('num_envs', self.num_envs)
 
         # self.env = envs.create_gym_env(env_name=self.env_name,
         #            batch_size= self.batch_size,
