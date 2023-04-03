@@ -25,6 +25,12 @@ class BraxEnv(IVecEnv):
         self.num_envs = num_actors
         self.env_name = kwargs.pop('env_name', 'ant')
         self.sim_backend = kwargs.pop('backend', 'positional') # can be 'generalized', 'positional', 'spring'
+        self.seed = kwargs.pop('seed', 7)
+
+        print('env_name', self.env_name)
+        print('sim_backend', self.sim_backend)
+        print('seed', self.seed)
+
         # self.env = envs.create_gym_env(env_name=self.env_name,
         #            batch_size= self.batch_size,
         #            seed = 0,
@@ -41,7 +47,7 @@ class BraxEnv(IVecEnv):
                                 # batch_size: Optional[int] = None,
                                 # **kwargs)
 
-        self.state = self.env.reset(rng=jax.random.PRNGKey(self.seed))
+        self.state = self.env.reset(rng=jax.random.PRNGKey(seed=self.seed))
 
         obs_high = np.inf * np.ones(self.env.observation_size)
         self.observation_space = gym.spaces.Box(-obs_high, obs_high, dtype=np.float32)
