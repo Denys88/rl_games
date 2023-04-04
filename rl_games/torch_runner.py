@@ -4,9 +4,7 @@ import numpy as np
 import random
 from copy import deepcopy
 import torch
-#import yaml
 
-#from rl_games import envs
 from rl_games.common import object_factory
 from rl_games.common import tr_helpers
 
