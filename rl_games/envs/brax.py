@@ -73,7 +73,7 @@ class BraxEnv(IVecEnv):
 
     def reset(self):
         import jax
-        self.state = self.env.jit_reset(rng=jax.random.PRNGKey(seed=self.seed))
+        self.state = self.jit_reset(rng=jax.random.PRNGKey(seed=self.seed))
 
         #print('reset jax obs device', self.state.obs.device_buffer.device())
 
