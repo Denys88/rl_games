@@ -37,19 +37,16 @@ class BraxEnv(IVecEnv):
         #            seed = 0,
         #            backend = 'gpu'
         #            )
-        
+
         #self.env = envs.get_environment(env_name=self.env_name, backend=self.sim_backend)
 
         self.env = envs.create(env_name=self.env_name, batch_size=self.num_envs, backend=self.sim_backend)
-                                # env_name: str,
-                                # episode_length: int = 1000,
-                                # action_repeat: int = 1,
-                                # auto_reset: bool = True,
-                                # batch_size: Optional[int] = None,
-                                # **kwargs)
 
         self.state = None # will be initilized in reset()
         #self.env.reset(rng=jax.random.PRNGKey(seed=self.seed))
+
+        self.jit_reset = jax.jit(self.env.reset)
+        self.jit_step = jax.jit(self.env.step)
 
         obs_high = np.inf * np.ones(self.env.observation_size)
         self.observation_space = gym.spaces.Box(-obs_high, obs_high, dtype=np.float32)
@@ -58,27 +55,27 @@ class BraxEnv(IVecEnv):
         self.action_space = gym.spaces.Box(-action_high, action_high, dtype=np.float32)
 
     def step(self, action):
-        print('action device', action.device)
-        print('action shape', action.shape)
+        # print('action device', action.device)
+        # print('action shape', action.shape)
 
         action = torch_to_jax(action)
-        self.state = self.env.step(self.state, action)
+        self.state = self.jit_step(self.state, action)
         next_obs = jax_to_torch(self.state.obs)
         reward = jax_to_torch(self.state.reward)
         is_done = jax_to_torch(self.state.done)
 
-        print('jax obs device', self.state.obs.device_buffer.device())
+        # print('jax obs device', self.state.obs.device_buffer.device())
 
-        from jax import numpy as jnp
-        print('jax obs shape', jnp.shape(self.state.obs))
+        # from jax import numpy as jnp
+        # print('jax obs shape', jnp.shape(self.state.obs))
 
         return next_obs, reward, is_done, self.state.info
 
     def reset(self):
         import jax
-        self.state = self.env.reset(rng=jax.random.PRNGKey(seed=self.seed))
+        self.state = self.env.jit_reset(rng=jax.random.PRNGKey(seed=self.seed))
 
-        print('reset jax obs device', self.state.obs.device_buffer.device())
+        #print('reset jax obs device', self.state.obs.device_buffer.device())
 
         return jax_to_torch(self.state.obs)
 
