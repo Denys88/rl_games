@@ -35,7 +35,7 @@ params:
 
   config:
     name: Ant_brax
-    full_experiment_name: Ant_brax
+    full_experiment_name: Ant_brax_generalized
     env_name: brax
     multi_gpu: False
     mixed_precision: True
@@ -68,3 +68,4 @@ params:
 
     env_config:
       env_name: ant
+      backend: generalized
