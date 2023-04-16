@@ -32,6 +32,7 @@
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
 * [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
+* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) 
 * [Atari Envpool](docs/ATARI_ENVPOOL.md) 
 * [Random Envs](docs/OTHER.md)  
 
@@ -285,6 +286,12 @@ Additional environment supported properties and functions
 
 
 ## Release Notes
+
+1.6.1 (Unreleased)
+* Fixed Central Value RNN bug which occurs if you train ma multi agent environment.
+* Added Deepmind Control PPO benchmark.
+* Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
+* New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
 
 1.6.0
 

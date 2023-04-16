@@ -3,7 +3,7 @@ import os
 
 from rl_games.common import vecenv
 
-from rl_games.algos_torch.moving_mean_std import MovingMeanStd
+from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
 from rl_games.algos_torch.self_play_manager import SelfPlayManager
 from rl_games.algos_torch import torch_ext
 from rl_games.common import schedulers
@@ -199,7 +199,6 @@ class A2CBase(BaseAlgorithm):
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
-        self.has_phasic_policy_gradients = False
 
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
@@ -216,6 +215,7 @@ class A2CBase(BaseAlgorithm):
         self.games_to_track = self.config.get('games_to_track', 100)
         print('current training device:', self.ppo_device)
         self.game_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
+        self.game_shaped_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
@@ -274,7 +274,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5) #'0.25'
-            self.advantage_mean_std = MovingMeanStd((1,), momentum=momentum).to(self.ppo_device)
+            self.advantage_mean_std = GeneralizedMovingStats((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
@@ -438,6 +438,7 @@ class A2CBase(BaseAlgorithm):
         val_shape = (self.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
+        self.current_shaped_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
         self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
 
@@ -544,6 +545,7 @@ class A2CBase(BaseAlgorithm):
     def clear_stats(self):
         batch_size = self.num_agents * self.num_actors
         self.game_rewards.clear()
+        self.game_shaped_rewards.clear()
         self.game_lengths.clear()
         self.mean_rewards = self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
@@ -683,17 +685,20 @@ class A2CBase(BaseAlgorithm):
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
             self.current_rewards += rewards
+            self.current_shaped_rewards += shaped_rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
      
             self.game_rewards.update(self.current_rewards[env_done_indices])
+            self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
             not_dones = 1.0 - self.dones.float()
 
             self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
+            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
             self.current_lengths = self.current_lengths * not_dones
 
         last_values = self.get_values(self.obs)
@@ -753,6 +758,7 @@ class A2CBase(BaseAlgorithm):
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
             self.current_rewards += rewards
+            self.current_shaped_rewards += shaped_rewards
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
@@ -765,6 +771,7 @@ class A2CBase(BaseAlgorithm):
                     self.central_value_net.post_step_rnn(all_done_indices)
 
             self.game_rewards.update(self.current_rewards[env_done_indices])
+            self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
@@ -878,22 +885,23 @@ class DiscreteA2CBase(A2CBase):
 
     def prepare_dataset(self, batch_dict):
         rnn_masks = batch_dict.get('rnn_masks', None)
-
         returns = batch_dict['returns']
         values = batch_dict['values']
         actions = batch_dict['actions']
         neglogpacs = batch_dict['neglogpacs']
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
+        
+        obses = batch_dict['obses']
         advantages = returns - values
 
-        obses = batch_dict['obses']
         if self.normalize_value:
             self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-
+            
+        
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
@@ -923,7 +931,6 @@ class DiscreteA2CBase(A2CBase):
             dataset_dict['action_masks'] = batch_dict['action_masks']
 
         self.dataset.update_values_dict(dataset_dict)
-
         if self.has_central_value:
             dataset_dict = {}
             dataset_dict['old_values'] = values
@@ -980,6 +987,7 @@ class DiscreteA2CBase(A2CBase):
 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
+                    mean_shaped_rewards = self.game_shaped_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
                     self.mean_rewards = mean_rewards[0]
 
@@ -988,6 +996,10 @@ class DiscreteA2CBase(A2CBase):
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar(rewards_name + '/iter'.format(i), mean_rewards[i], epoch_num)
                         self.writer.add_scalar(rewards_name + '/time'.format(i), mean_rewards[i], total_time)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/step'.format(i), mean_shaped_rewards[i], frame)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/iter'.format(i), mean_shaped_rewards[i], epoch_num)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/time'.format(i), mean_shaped_rewards[i], total_time)
+
 
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
@@ -1254,6 +1266,7 @@ class ContinuousA2CBase(A2CBase):
 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
+                    mean_shaped_rewards = self.game_shaped_rewards.get_mean()
                     mean_lengths = self.game_lengths.get_mean()
                     self.mean_rewards = mean_rewards[0]
 
@@ -1262,6 +1275,9 @@ class ContinuousA2CBase(A2CBase):
                         self.writer.add_scalar(rewards_name + '/step'.format(i), mean_rewards[i], frame)
                         self.writer.add_scalar(rewards_name + '/iter'.format(i), mean_rewards[i], epoch_num)
                         self.writer.add_scalar(rewards_name + '/time'.format(i), mean_rewards[i], total_time)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/step'.format(i), mean_shaped_rewards[i], frame)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/iter'.format(i), mean_shaped_rewards[i], epoch_num)
+                        self.writer.add_scalar('shaped_' + rewards_name + '/time'.format(i), mean_shaped_rewards[i], total_time)
 
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)

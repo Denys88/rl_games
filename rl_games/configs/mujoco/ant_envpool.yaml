@@ -34,7 +34,7 @@ params:
     value_bootstrap: True
     normalize_advantage: True
     reward_shaper:
-      scale_value: 0.1
+      scale_value: 1
 
     gamma: 0.99
     tau: 0.95
