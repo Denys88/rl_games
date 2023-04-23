@@ -59,6 +59,7 @@ Explore RL Games quick and easily in colab notebooks:
 * [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb) envpool training example.
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb) envpool training example.
+* [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb) envpool training example.
 
 ## Installation
 
@@ -291,11 +292,14 @@ Additional environment supported properties and functions
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
 * New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
+<<<<<<< HEAD
 * Added shaped reward graph to thetensorboard. 
+=======
+>>>>>>> master
 
 1.6.0
 
-* Added ONNX export colab example.
+* Added ONNX export colab example for discrete and continious action spaces. For continuous case LSTM policy example is provided as well.
 * Improved RNNs training in continuous space, added option `zero_rnn_on_done`.
 * Added NVIDIA CuLE support: https://github.com/NVlabs/cule
 * Added player config everride. Vecenv is used for inference.
@@ -303,6 +307,7 @@ Additional environment supported properties and functions
 * Fixed max_frames termination condition, and it's interaction with the linear learning rate: https://github.com/Denys88/rl_games/issues/212
 * Fixed "deterministic" misspelling issue.
 * Fixed Mujoco and Brax SAC configs.
+* Fixed multiagent envs statistics reporting. Fixed Starcraft2 SMAC environments.
 
 1.5.2
 

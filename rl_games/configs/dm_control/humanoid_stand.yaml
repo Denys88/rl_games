@@ -47,11 +47,20 @@ params:
       entropy_coef: 0.0
       truncate_grads: True
       e_clip: 0.2
+<<<<<<< HEAD
       clip_value: True
       use_smooth_clamp: False
       bound_loss_type: regularisation
       bounds_loss_coef: 0.001
       max_epochs: 4000
+=======
+      clip_value: False
+      use_smooth_clamp: False
+      bound_loss_type: regularisation
+      bounds_loss_coef: 0.001
+      #max_epochs: 5000
+      max_frames: 50_000_000
+>>>>>>> master
       num_actors: 64
       horizon_length: 128
       minibatch_size: 2048
