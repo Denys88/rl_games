@@ -292,6 +292,8 @@ Additional environment supported properties and functions
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
 * New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
+* Added shaped reward graph to the tensorboard. 
+
 
 1.6.0
 
