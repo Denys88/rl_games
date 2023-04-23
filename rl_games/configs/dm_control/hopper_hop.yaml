@@ -34,8 +34,8 @@ params:
       value_bootstrap: False
       reward_shaper:
         scale_value: 1
-        shift_value: 1
-        log_val: True
+        #shift_value: 1
+        #log_val: True
       normalize_advantage: True
       gamma: 0.99
       tau: 0.95
@@ -47,7 +47,7 @@ params:
       entropy_coef: 0.0
       truncate_grads: True
       e_clip: 0.2
-      clip_value: False
+      clip_value: True
       use_smooth_clamp: False
       bound_loss_type: regularisation
       bounds_loss_coef: 0.001

@@ -13,7 +13,8 @@ poetry run python runner.py --train --file rl_games/configs/dm_control/humanoid_
 ## Results:
 
 * No tuning. I just run it on a couple of envs.
-* I used 4000 epochs which is ~32M steps for almost all envs except HumanoidRun. But a few millions of stepsa was enough for the most of the envs.
+* It takes near 20 minutes for one run.
+* I used 4000 epochs which is ~32M steps for almost all envs except HumanoidRun. Some of the envs would benefit from longer  training.
 * Deepmind used a pretty strange reward and training rules. A simple reward transformation: log(reward + 1) achieves best scores faster.
 
 | Env           | Rewards       |
