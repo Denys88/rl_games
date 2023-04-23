@@ -51,12 +51,8 @@ params:
       use_smooth_clamp: False
       bound_loss_type: regularisation
       bounds_loss_coef: 0.001
-<<<<<<< HEAD
-      max_epochs: 8000
-=======
       #max_epochs: 10000
       max_frames: 100_000_000
->>>>>>> master
       num_actors: 64
       horizon_length: 128
       minibatch_size: 2048
