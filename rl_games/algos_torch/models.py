@@ -276,7 +276,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                 return result
             else:
                 selected_action = distr.sample()
-                choice = torch.rand_like(selected_action) > 0.02
+                choice = torch.rand_like(selected_action) > 0.1
                 choice = choice.float()
                 selected_action = selected_action * choice + mu * (1 - choice)
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
