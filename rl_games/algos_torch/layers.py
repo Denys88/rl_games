@@ -55,48 +55,28 @@ class NoisyFactorizedLinear(nn.Linear):
         return F.linear(input, self.weight + self.sigma_weight * noise_v, bias)
 
 
-class LSTMWithDones(nn.Module):
-    def __init__(self, input_sz: int, hidden_sz: int):
-        super().__init__()
-        self.input_sz = input_sz
-        self.hidden_size = hidden_sz
-        self.weight_ih = nn.Parameter(torch.Tensor(input_sz, hidden_sz * 4))
-        self.weight_hh = nn.Parameter(torch.Tensor(hidden_sz, hidden_sz * 4))
-        self.bias = nn.Parameter(torch.Tensor(hidden_sz * 4))
-        self.init_weights()
-     
-    def init_weights(self):
-        for p in self.parameters():
-            if p.data.ndimension() >= 2:
-                nn.init.xavier_uniform_(p.data)
-            else:
-                nn.init.zeros_(p.data)
-         
-    def forward(self, x, dones, init_states):
-        """Assumes x is of shape (batch, sequence, feature)"""
-        bs, seq_sz, _ = x.size()
-        hidden_seq = []
-        assert(init_states)
-        h_t, c_t = init_states
-         
-        HS = self.hidden_size
-        for t in range(seq_sz):
-            d = dones[:, t]
-            h_t = h_t * (1 - d)
-            c_t = c_t * (1 - d)
-            x_t = x[:, t, :]
-            # batch the computations into a single matrix multiplication
-            gates = x_t @ self.weight_ih + h_t @ self.weight_hh + self.bias
-            i_t, f_t, g_t, o_t = (
-                torch.sigmoid(gates[:, :HS]), # input
-                torch.sigmoid(gates[:, HS:HS*2]), # forget
-                torch.tanh(gates[:, HS*2:HS*3]),
-                torch.sigmoid(gates[:, HS*3:]), # output
-            )
-            c_t = f_t * c_t + i_t * g_t
-            h_t = o_t * torch.tanh(c_t)
-            hidden_seq.append(h_t.unsqueeze(0))
-        hidden_seq = torch.cat(hidden_seq, dim=1)
-        # reshape from shape (sequence, batch, feature) to (batch, sequence, feature)
-        hidden_seq = hidden_seq.transpose(1, 0).contiguous()
-        return hidden_seq, (h_t, c_t)
+
+def symlog(x):
+    return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
+
+
+def symexp(x):
+    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1.0)
+
+class SymLog(nn.Module):
+
+    def __init__(self):
+
+        super().__init__() 
+
+    def forward(self, input):
+        return symlog(input) 
+
+class SymExp(nn.Module):
+
+    def __init__(self):
+
+        super().__init__() 
+
+    def forward(self, input):
+        return symexp(input) 

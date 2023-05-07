@@ -60,7 +60,7 @@ class RunningMeanStd(nn.Module):
 
         return self.running_mean, self.running_var
 
-    def forward(self, input, unnorm:bool=False, mask:Optional[torch.Tensor]=None):
+    def forward(self, input, denorm:bool=False, mask:Optional[torch.Tensor]=None):
         if self.training:
             if mask is not None:
                 mean, var = torch_ext.get_mean_std_with_masks(input, mask)
@@ -74,7 +74,7 @@ class RunningMeanStd(nn.Module):
         current_mean, current_var = self._change_shape(input)
 
         # get output
-        if unnorm:
+        if denorm:
             y = torch.clamp(input, min=-5.0, max=5.0)
             y = torch.sqrt(current_var.float() + self.epsilon)*y + current_mean.float()
         else:
@@ -94,8 +94,7 @@ class RunningMeanStdObs(nn.Module):
         self.running_mean_std = nn.ModuleDict({
             k : torch.jit.script(RunningMeanStd(v, epsilon, per_channel, norm_only)) for k,v in insize.items()
         })
-
-    def forward(self, input, unnorm=False):
-        res = {k : self.running_mean_std[k](v, unnorm) for k,v in input.items()}
-
+    
+    def forward(self, input, denorm=False):
+        res = {k : self.running_mean_std[k](v, denorm) for k,v in input.items()}
         return res

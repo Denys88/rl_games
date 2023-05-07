@@ -58,8 +58,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
-        self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
-                            or (not self.has_phasic_policy_gradients and not self.has_central_value) 
+        self.has_value_loss = self.use_experimental_cv or not self.has_central_value
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -186,6 +185,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                                                curr_e_clip, self.clip_value, self.critic_coef, self.entropy_coef, self.bounds_loss_coef,
                                                None if rnn_masks is None else rnn_masks.unsqueeze(1), 0 if rnn_masks is None else rnn_masks.numel())
 
+            if self.has_value_loss:
+                c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+            else:
+                c_loss = torch.zeros(1, device=self.ppo_device)
+            if self.bound_loss_type == 'regularisation':
+                b_loss = self.reg_loss(mu)
+            elif self.bound_loss_type == 'bound':
+                b_loss = self.bound_loss(mu)
+            else:
+                b_loss = torch.zeros(1, device=self.ppo_device)
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
+            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:

@@ -4,11 +4,11 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 import rl_games.common.divergence as divergence
-from rl_games.algos_torch.torch_ext import CategoricalMasked
+from rl_games.common.extensions.distributions import CategoricalMasked
 from torch.distributions import Categorical
 from rl_games.algos_torch.sac_helper import SquashedNormal
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
-
+from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
 
 class BaseModel():
     def __init__(self, model_class):
@@ -19,6 +19,9 @@ class BaseModel():
 
     def is_separate_critic(self):
         return False
+
+    def get_value_layer(self):
+        return None
 
     def build(self, config):
         obs_shape = config['input_shape']
@@ -39,8 +42,8 @@ class BaseModelNetwork(nn.Module):
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
-
+            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #
+ 
         if normalize_input:
             if isinstance(obs_shape, dict):
                 self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
@@ -51,9 +54,9 @@ class BaseModelNetwork(nn.Module):
         with torch.no_grad():
             return self.running_mean_std(observation) if self.normalize_input else observation
 
-    def unnorm_value(self, value):
+    def denorm_value(self, value):
         with torch.no_grad():
-            return self.value_mean_std(value, unnorm=True) if self.normalize_value else value
+            return self.value_mean_std(value, denorm=True) if self.normalize_value else value
 
 
 class ModelA2C(BaseModel):
@@ -71,6 +74,9 @@ class ModelA2C(BaseModel):
 
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()            
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -102,7 +108,7 @@ class ModelA2C(BaseModel):
                 neglogp = -categorical.log_prob(selected_action)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.unnorm_value(value),
+                    'values' : self.denorm_value(value),
                     'actions' : selected_action,
                     'logits' : categorical.logits,
                     'rnn_states' : states
@@ -125,6 +131,9 @@ class ModelA2CMultiDiscrete(BaseModel):
 
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['logits']
@@ -168,7 +177,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.unnorm_value(value),
+                    'values' : self.denorm_value(value),
                     'actions' : selected_action,
                     'logits' : [c.logits for c in categorical],
                     'rnn_states' : states
@@ -191,6 +200,9 @@ class ModelA2CContinuous(BaseModel):
 
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
             p = p_dict['mu'], p_dict['sigma']
@@ -221,7 +233,7 @@ class ModelA2CContinuous(BaseModel):
                 neglogp = -distr.log_prob(selected_action).sum(dim=-1)
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.unnorm_value(value),
+                    'values' : self.denorm_value(value),
                     'actions' : selected_action,
                     'entropy' : entropy,
                     'rnn_states' : states,
@@ -243,6 +255,9 @@ class ModelA2CContinuousLogStd(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
 
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
@@ -272,7 +287,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                 selected_action, sigma, neglogp = ModelA2CContinuousLogStd.compute_neglog_infer(mu, logstd, torch.broadcast_shapes(mu.size(), logstd.size())[-1])
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.unnorm_value(value),
+                    'values' : self.denorm_value(value),
                     'actions' : selected_action,
                     'rnn_states' : states,
                     'mus' : mu,
@@ -320,6 +335,9 @@ class ModelCentralValue(BaseModel):
         def is_rnn(self):
             return self.a2c_network.is_rnn()
 
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
@@ -332,7 +350,7 @@ class ModelCentralValue(BaseModel):
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             value, states = self.a2c_network(input_dict)
             if not is_train:
-                value = self.unnorm_value(value)
+                value = self.denorm_value(value)
 
             result = {
                 'values': value,

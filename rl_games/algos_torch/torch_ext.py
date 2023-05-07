@@ -291,6 +291,7 @@ def get_mean(v):
     return mean
 
 
+<<<<<<< HEAD
 class CategoricalMaskedNaive(torch.distributions.Categorical):
     def __init__(self, probs=None, logits=None, validate_args=None, masks=None):
         self.masks = masks
@@ -333,6 +334,8 @@ class CategoricalMasked(torch.distributions.Categorical):
         return -p_log_p.sum(-1)
 
 
+=======
+>>>>>>> master
 class AverageMeter(nn.Module):
     def __init__(self, in_shape, max_size):
         super(AverageMeter, self).__init__()

@@ -3,7 +3,15 @@ import torch
 import math
 
 
+<<<<<<< HEAD
 def critic_loss(value_preds_batch, values, curr_e_clip:float, return_batch, clip_value:float):
+=======
+def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value):
+    return default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
+    #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)
+
+def default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value):
+>>>>>>> master
     if clip_value:
         value_pred_clipped = value_preds_batch + \
                 (values - value_preds_batch).clamp(-curr_e_clip, curr_e_clip)
