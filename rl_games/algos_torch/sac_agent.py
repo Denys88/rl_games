@@ -559,6 +559,10 @@ class SACAgent(BaseAlgorithm):
 
                 should_exit = False
 
+                if self.save_freq > 0:
+                    if (self.epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
+                        self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
+
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
                     print('saving next best rewards: ', mean_rewards)
                     self.last_mean_rewards = mean_rewards
