@@ -20,13 +20,13 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
+      units: [128, 64]
       activation: elu
       initializer:
         name: default
 
   config:
-      name: WalkerStand_envpool
+      name: HopperHop_envpool
       env_name: envpool
       score_to_win: 20000
       normalize_input: True
@@ -59,7 +59,7 @@ params:
       critic_coef: 4
       use_diagnostics: True
       env_config:
-        env_name: WalkerStand-v1
+        env_name: HopperHop-v1
         flatten_obs: True
 
       player:

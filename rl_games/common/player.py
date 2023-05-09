@@ -267,9 +267,9 @@ class BasePlayer(object):
                         cur_rewards_done = cur_rewards/done_count
                         cur_steps_done = cur_steps/done_count
                         if print_game_res:
-                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1} w: {game_res:.1}')
+                            print(f'reward: {cur_rewards_done:.4} steps: {cur_steps_done:.4} w: {game_res}')
                         else:
-                            print(f'reward: {cur_rewards_done:.1f} steps: {cur_steps_done:.1f}')
+                            print(f'reward: {cur_rewards_done:.4} steps: {cur_steps_done:.4f}')
 
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:

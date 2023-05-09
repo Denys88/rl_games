@@ -36,7 +36,7 @@ params:
     normalize_value: True
     value_bootstrap: True
     reward_shaper:
-      scale_value: 0.1
+      scale_value: 1
     normalize_advantage: True
     use_smooth_clamp: True
     gamma: 0.99
