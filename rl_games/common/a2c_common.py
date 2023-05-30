@@ -116,7 +116,7 @@ class A2CBase(BaseAlgorithm):
 
         self.use_diagnostics = config.get('use_diagnostics', False)
 
-        if self.use_diagnostics and self.rank == 0:
+        if self.use_diagnostics and self.global_rank == 0:
             self.diagnostics = PpoDiagnostics()
         else:
             self.diagnostics = DefaultDiagnostics()
@@ -269,7 +269,7 @@ class A2CBase(BaseAlgorithm):
 
         self.entropy_coef = self.config['entropy_coef']
 
-        if self.rank == 0:
+        if self.global_rank == 0:
             writer = SummaryWriter(self.summaries_dir)
             if self.population_based_training:
                 self.writer = IntervalSummaryWriter(writer, self.config)
@@ -287,7 +287,7 @@ class A2CBase(BaseAlgorithm):
             self.actor_loss_func = common_losses.actor_loss
 
         if self.normalize_advantage and self.normalize_rms_advantage:
-            momentum = self.config.get('adv_rms_momentum', 0.5) #'0.25'
+            momentum = self.config.get('adv_rms_momentum', 0.5)
             self.advantage_mean_std = GeneralizedMovingStats((1,), momentum=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
@@ -321,7 +321,7 @@ class A2CBase(BaseAlgorithm):
             for param in self.model.parameters():
                 if param.grad is not None:
                     param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.rank_size
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
                     )
                     offset += param.numel()
 
@@ -881,7 +881,7 @@ class DiscreteA2CBase(A2CBase):
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
-                av_kls /= self.rank_size
+                av_kls /= self.world_size
 
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
             self.update_lr(self.last_lr)
@@ -966,7 +966,7 @@ class DiscreteA2CBase(A2CBase):
         self.obs = self.env_reset()
 
         if self.multi_gpu:
-            torch.cuda.set_device(self.rank)
+            torch.cuda.set_device(self.local_rank)
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
             dist.broadcast_object_list(model_params, 0)
@@ -979,11 +979,11 @@ class DiscreteA2CBase(A2CBase):
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
             total_time += sum_time
-            curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
+            curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
             self.frame += curr_frames
             should_exit = False
 
-            if self.rank == 0:
+            if self.global_rank == 0:
                 self.diagnostics.epoch(self, current_epoch = epoch_num)
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
@@ -1148,14 +1148,14 @@ class ContinuousA2CBase(A2CBase):
                     av_kls = kl
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
-                        av_kls /= self.rank_size
+                        av_kls /= self.world_size
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
-                av_kls /= self.rank_size
+                av_kls /= self.world_size
             if self.schedule_type == 'standard':
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
                 self.update_lr(self.last_lr)
@@ -1257,12 +1257,12 @@ class ContinuousA2CBase(A2CBase):
             self.dataset.update_values_dict(None)
             should_exit = False
 
-            if self.rank == 0:
+            if self.global_rank == 0:
                 self.diagnostics.epoch(self, current_epoch = epoch_num)
                 # do we need scaled_time?
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
-                curr_frames = self.curr_frames * self.rank_size if self.multi_gpu else self.curr_frames
+                curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
                 self.frame += curr_frames
 
                 print_statistics(self.print_stats, curr_frames, step_time, scaled_play_time, scaled_time, 
