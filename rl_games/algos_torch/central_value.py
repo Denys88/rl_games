@@ -2,8 +2,6 @@ import os
 import torch
 from torch import nn
 import torch.distributed as dist
-import gym
-import numpy as np
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.common  import common_losses
@@ -12,6 +10,7 @@ from rl_games.common import schedulers
 
 
 class CentralValueTrain(nn.Module):
+
     def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, 
                 seq_len, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
         nn.Module.__init__(self)
@@ -82,14 +81,24 @@ class CentralValueTrain(nn.Module):
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
+        self.local_rank = 0
+        self.global_rank = 0
+        self.world_size = 1
         if self.multi_gpu:
-            self.rank = int(os.getenv("LOCAL_RANK", "0"))
-            self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
+            # self.rank = int(os.getenv("LOCAL_RANK", "0"))
+            # self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
             # dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
 
-            self.device_name = 'cuda:' + str(self.rank)
+            # local rank of the GPU in a node
+            self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
+            # global rank of the GPU
+            self.global_rank = int(os.getenv("RANK", "0"))
+            # total number of GPUs across all nodes
+            self.world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+            self.device_name = 'cuda:' + str(self.local_rank)
             config['device'] = self.device_name
-            if self.rank != 0:
+            if self.global_rank != 0:
                 config['print_stats'] = False
                 config['lr_schedule'] = None
 

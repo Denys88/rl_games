@@ -85,18 +85,32 @@ class A2CBase(BaseAlgorithm):
         self.algo_observer.before_init(base_name, config, self.experiment_name)
         self.load_networks(params)
         self.multi_gpu = config.get('multi_gpu', False)
-        self.rank = 0
-        self.rank_size = 1
+        #self.rank = 0
+        #self.rank_size = 1
+
+        # multi-gpu/multi-node stuff
+        self.local_rank = 0
+        self.global_rank = 0
+        self.world_size = 1
+
         self.curr_frames = 0
 
         if self.multi_gpu:
-            self.rank = int(os.getenv("LOCAL_RANK", "0"))
-            self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
-            dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
+            # self.rank = int(os.getenv("LOCAL_RANK", "0"))
+            # self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
 
-            self.device_name = 'cuda:' + str(self.rank)
+            # local rank of the GPU in a node
+            self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
+            # global rank of the GPU
+            self.global_rank = int(os.getenv("RANK", "0"))
+            # total number of GPUs across all nodes
+            self.world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+            dist.init_process_group("nccl", rank=self.global_rank, world_size=self.world_size)
+
+            self.device_name = 'cuda:' + str(self.local_rank)
             config['device'] = self.device_name
-            if self.rank != 0:
+            if self.global_rank != 0:
                 config['print_stats'] = False
                 config['lr_schedule'] = None
 

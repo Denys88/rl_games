@@ -33,6 +33,7 @@ def _override_sigma(agent, args):
 
 
 class Runner:
+
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
@@ -60,8 +61,28 @@ class Runner:
         if self.seed is None:
             self.seed = int(time.time())
 
+        self.local_rank = 0
+        self.global_rank = 0
+        self.world_size = 1
+
         if params["config"].get('multi_gpu', False):
-            self.seed += int(os.getenv("LOCAL_RANK", "0"))
+            # local rank of the GPU in a node
+            self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
+            # global rank of the GPU
+            self.global_rank = int(os.getenv("RANK", "0"))
+            # total number of GPUs across all nodes
+            self.world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+            # set different random seed for each GPU
+            self.seed += self.global_rank
+
+            print(f"global_rank = {self.global_rank} local_rank = {self.local_rank} world_size = {self.world_size}")
+
+            #assert self.device == 'cuda:' + str(self.multi_gpu_rank) # check it was set correctly
+            #self.is_master_gpu = self.multi_gpu_rank == 0
+            #assert self.device == 'cuda:' + str(self.multi_gpu_local_rank) # check it was set correctly
+
+            #self.seed += int(os.getenv("LOCAL_RANK", "0"))
         print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
@@ -80,7 +101,7 @@ class Runner:
                     params['config']['env_config']['seed'] = self.seed
                 else:
                     if params["config"].get('multi_gpu', False):
-                        params['config']['env_config']['seed'] += int(os.getenv("LOCAL_RANK", "0"))
+                        params['config']['env_config']['seed'] += self
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
