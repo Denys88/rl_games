@@ -73,6 +73,7 @@ class CentralValueTrain(nn.Module):
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
         self.batch_size = self.horizon_length * self.num_actors
+
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
@@ -85,10 +86,6 @@ class CentralValueTrain(nn.Module):
         self.global_rank = 0
         self.world_size = 1
         if self.multi_gpu:
-            # self.rank = int(os.getenv("LOCAL_RANK", "0"))
-            # self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
-            # dist.init_process_group("nccl", rank=self.rank, world_size=self.rank_size)
-
             # local rank of the GPU in a node
             self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
             # global rank of the GPU
@@ -98,6 +95,7 @@ class CentralValueTrain(nn.Module):
 
             self.device_name = 'cuda:' + str(self.local_rank)
             config['device'] = self.device_name
+
             if self.global_rank != 0:
                 config['print_stats'] = False
                 config['lr_schedule'] = None

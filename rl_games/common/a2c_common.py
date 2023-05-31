@@ -84,11 +84,10 @@ class A2CBase(BaseAlgorithm):
         self.algo_observer = config['features']['observer']
         self.algo_observer.before_init(base_name, config, self.experiment_name)
         self.load_networks(params)
-        self.multi_gpu = config.get('multi_gpu', False)
-        #self.rank = 0
-        #self.rank_size = 1
 
-        # multi-gpu/multi-node stuff
+        self.multi_gpu = config.get('multi_gpu', False)
+
+        # multi-gpu/multi-node data
         self.local_rank = 0
         self.global_rank = 0
         self.world_size = 1
@@ -96,9 +95,6 @@ class A2CBase(BaseAlgorithm):
         self.curr_frames = 0
 
         if self.multi_gpu:
-            # self.rank = int(os.getenv("LOCAL_RANK", "0"))
-            # self.rank_size = int(os.getenv("WORLD_SIZE", "1"))
-
             # local rank of the GPU in a node
             self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
             # global rank of the GPU
@@ -315,6 +311,7 @@ class A2CBase(BaseAlgorithm):
             for param in self.model.parameters():
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
+
             all_grads = torch.cat(all_grads_list)
             dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
             offset = 0
@@ -354,7 +351,7 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('performance/step_time', step_time, frame)
         self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(a_losses).item(), frame)
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
-                
+
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
