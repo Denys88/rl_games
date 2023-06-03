@@ -78,11 +78,6 @@ class Runner:
 
             print(f"global_rank = {self.global_rank} local_rank = {self.local_rank} world_size = {self.world_size}")
 
-            #assert self.device == 'cuda:' + str(self.multi_gpu_rank) # check it was set correctly
-            #self.is_master_gpu = self.multi_gpu_rank == 0
-            #assert self.device == 'cuda:' + str(self.multi_gpu_local_rank) # check it was set correctly
-
-            #self.seed += int(os.getenv("LOCAL_RANK", "0"))
         print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
