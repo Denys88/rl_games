@@ -39,13 +39,12 @@ setup(name='rl-games',
             'gym>=0.17.2',
             'torch>=1.7.0',
             'numpy>=1.16.0',
-            'ray>=1.1.0',
+            # to support Python 3.10
+            'ray>=2.2.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
             'setproctitle',
             'psutil',
             'pyyaml'
-            # Optional dependencies
-            # 'ray>=1.1.0',
       ],
       )

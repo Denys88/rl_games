@@ -292,8 +292,9 @@ Additional environment supported properties and functions
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
 * New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
-* Added shaped reward graph to the tensorboard. 
-
+* Added shaped reward graph to the tensorboard.
+* Fixed bug with SAC not saving weights with save_frequency.
+* Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
 
 1.6.0
 

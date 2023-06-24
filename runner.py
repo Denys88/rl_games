@@ -1,11 +1,9 @@
 from distutils.util import strtobool
-import numpy as np
-import argparse, copy, os, yaml
+import argparse, os, yaml
 import ray
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-#import warnings
-#warnings.filterwarnings("error")
+
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
@@ -52,8 +50,9 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    rank = int(os.getenv("LOCAL_RANK", "0"))
-    if args["track"] and rank == 0:
+    #rank = int(os.getenv("LOCAL_RANK", "0"))
+    global_rank = int(os.getenv("RANK", "0"))
+    if args["track"] and global_rank == 0:
         import wandb
 
         wandb.init(
@@ -69,5 +68,5 @@ if __name__ == '__main__':
 
     ray.shutdown()
 
-    if args["track"] and rank == 0:
+    if args["track"] and global_rank == 0:
         wandb.finish()
