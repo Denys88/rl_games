@@ -294,7 +294,7 @@ Additional environment supported properties and functions
 * New methods didn't. It is impossible to turn it on from the yaml files. Once we find an env which trains better it will be added to the config.
 * Added shaped reward graph to the tensorboard.
 * Fixed bug with SAC not saving weights with save_frequency.
-* Added multi-node training support for GPU-accelerated training environments like Isaac Gym. Thanks to @ankurhanda and @ArthurAllshire for assistance.
+* Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance.
 
 1.6.0
 
