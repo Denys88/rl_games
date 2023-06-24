@@ -651,7 +651,8 @@ class A2CResnetBuilder(NetworkBuilder):
 
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
-            self.flatten_act = self.activations_factory.create(self.activation) 
+            self.flatten_act = self.activations_factory.create(self.activation)
+
             if self.is_discrete:
                 self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:

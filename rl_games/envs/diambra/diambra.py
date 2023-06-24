@@ -5,7 +5,9 @@ import random
 from diambra_environment.diambraGym import diambraGym
 from diambra_environment.makeDiambraEnv import make_diambra_env
 
+
 class DiambraEnv(gym.Env):
+
     def __init__(self, **kwargs):
         gym.Env.__init__(self)
         self.seed = kwargs.pop('seed', None)
@@ -17,7 +19,7 @@ class DiambraEnv(gym.Env):
         self.attacks_buttons = kwargs.pop('attacks_buttons', False)
         self._game_num = 0
         self.n_agents = 1
-        self.rank = random.randint(0, 100500)
+        self.random_seed = random.randint(0, 100500)
         repo_base_path = os.path.abspath(self.env_path) # Absolute path to your DIAMBRA environment
 
         env_kwargs = {}
@@ -61,7 +63,7 @@ class DiambraEnv(gym.Env):
         key_to_add.append("stage")
         key_to_add.append("character")
         
-        self.env = make_diambra_env(diambraGym, env_prefix="Train" + str(self.rank), seed= self.rank,  
+        self.env = make_diambra_env(diambraGym, env_prefix="Train" + str(self.random_seed), seed=self.random_seed,  
             diambra_kwargs=env_kwargs, 
             diambra_gym_kwargs=gym_kwargs,
             wrapper_kwargs=wrapper_kwargs, 
@@ -69,7 +71,6 @@ class DiambraEnv(gym.Env):
 
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
-
 
     def _preproc_state_obs(self, obs):
         return obs
