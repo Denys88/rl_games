@@ -29,6 +29,10 @@
 
 ![Allegro_Hand_real_world](https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif)
 
+* [DexPBT](https://sites.google.com/view/dexpbt)
+
+![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
+
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
 * [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
