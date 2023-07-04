@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
+from rl_games.algos_torch.network_builder import NetworkBuilder
 
 
 class TcnnNet(nn.Module):
@@ -23,9 +23,6 @@ class TcnnNet(nn.Module):
         mu_val = self.model(obs)
         mu, value = torch.split(mu_val, [self.actions_num, 1], dim=1)
         return mu, mu * 0.0 + self.sigma, value, None
-
-
-from rl_games.algos_torch.network_builder import NetworkBuilder
 
 
 class TcnnNetBuilder(NetworkBuilder):
