@@ -7,9 +7,7 @@ from rl_games.common import datasets
 
 from torch import optim
 import torch 
-from torch import nn
-import numpy as np
-import gym
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
     def __init__(self, base_name, params):
@@ -128,7 +126,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
             loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
-            
+
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:

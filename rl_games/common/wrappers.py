@@ -210,6 +210,7 @@ class WarpFrame(gym.ObservationWrapper):
             frame = np.expand_dims(frame, -1)
         return frame
 
+
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k, flat = False):
         """
@@ -302,6 +303,7 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
+
 class BatchedFrameStackWithStates(gym.Wrapper):
     def __init__(self, env, k, transpose = False, flatten = False):
         gym.Wrapper.__init__(self, env)
@@ -362,6 +364,7 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 obses = np.transpose(data, (1, 0, 2))
         return obses
 
+
 class ProcgenStack(gym.Wrapper):
     def __init__(self, env, k = 2, greyscale=True):
         gym.Wrapper.__init__(self, env)
@@ -420,6 +423,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
 
+
 class LazyFrames(object):
     def __init__(self, frames):
         """This object ensures that common frames between the observations are only stored once.
@@ -447,6 +451,7 @@ class LazyFrames(object):
 
     def __getitem__(self, i):
         return self._force()[i]
+
 
 class ReallyDoneWrapper(gym.Wrapper):
     def __init__(self, env):
