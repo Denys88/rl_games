@@ -299,6 +299,7 @@ Additional environment supported properties and functions
 * Added shaped reward graph to the tensorboard.
 * Fixed bug with SAC not saving weights with save_frequency.
 * Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
+* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
 
 1.6.0
 
