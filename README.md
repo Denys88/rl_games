@@ -263,6 +263,9 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |
 | name                   | BreakoutNoFrameskip-v4    |         | The exact name of an (atari) gym env. An example, depends on the training env this parameters can be different.                                                                   |
+| evaluation             | True                      | False   | Enables the evaluation feature for inferencing while training. |
+| update_checkpoint_freq | 100                       | 100     | Frequency in number of steps to look for new checkpoints. |
+| dir_to_monitor         |                           |         | Directory to search for checkpoints in during evaluation. |
 
 ## Custom network example: 
 [simple test network](rl_games/envs/test_network.py)  
