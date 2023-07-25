@@ -648,7 +648,7 @@ class A2CBase(BaseAlgorithm):
             self.scaler.load_state_dict(weights['scaler'])
 
     def set_weights(self, weights):
-        self.model.load_state_dict(weights['model'])
+        self.model.load_state_dict(weights['model'], strict=False)
         self.set_stats_weights(weights)
 
     def _preproc_obs(self, obs_batch):

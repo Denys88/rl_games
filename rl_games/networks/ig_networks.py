@@ -131,6 +131,7 @@ class EncoderMLPBuilder(network_builder.NetworkBuilder):
                     sigma = self.sigma_act(self.sigma)
                 else:
                     sigma = self.sigma_act(self.sigma(out))
+
                 return mu, mu*0 + sigma, value, None
 
 
@@ -138,19 +139,19 @@ class TransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
     def __init__(self,
-    actions_num = 1,
-    input_shape = 128,
-    input_split = [], 
-    seq_pool=True,
-    embedding_dim=768,
-    num_layers=12,
-    num_heads=12,
-    mlp_ratio=4.0,
-    dropout=0.1,
-    attention_dropout=0.1,
-    stochastic_depth=0.1,
-    split_features=False,
-    positional_embedding='none',
+        actions_num = 1,
+        input_shape = 128,
+        input_split = [],
+        seq_pool = True,
+        embedding_dim = 768,
+        num_layers = 12,
+        num_heads = 12,
+        mlp_ratio = 4.0,
+        dropout = 0.1,
+        attention_dropout = 0.1,
+        stochastic_depth = 0.1,
+        split_features = False,
+        positional_embedding = 'none',
     ):
         super(TransformerModel, self).__init__()
         self.input_shape = input_shape
@@ -160,6 +161,7 @@ class TransformerModel(nn.Module):
             self.encoders = torch.nn.ModuleList([torch.nn.Linear(num, embedding_dim,bias=False) for num in self.input_split])
         else:
             self.projector = torch.nn.Linear(input_shape[1], embedding_dim, bias=False)
+
         self.actions_num = actions_num
         self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
         self.transformer_encoder = TransformerClassifier(
@@ -189,6 +191,7 @@ class TransformerModel(nn.Module):
 
         output = self.transformer_encoder(src)
         mu, value = torch.split(output, [self.actions_num,1], dim=1)
+
         return mu, mu*0 + self.sigma, value, None
 
 
@@ -240,18 +243,18 @@ class TorchTransformerModel(nn.Module):
 
     def __init__(self, 
         actions_num = 1,
-        input_shape = [4,42],
-        input_split = [], 
-        seq_pool=True, #unused
-        embedding_dim=768,
-        num_layers=12,
-        num_heads=12,
-        mlp_ratio=4.0,
-        dropout=0.1,
-        attention_dropout=0.1, #unused
-        stochastic_depth=0.1, #unused
-        split_features=False, #unused
-        positional_embedding='none',):
+        input_shape = [4, 42],
+        input_split = [],
+        seq_pool = True, #unused
+        embedding_dim = 768,
+        num_layers = 12,
+        num_heads = 12,
+        mlp_ratio = 4.0,
+        dropout = 0.1,
+        attention_dropout = 0.1, #unused
+        stochastic_depth = 0.1, #unused
+        split_features = False, #unused
+        positional_embedding = 'none',):
         '''
         half of params are unused now
         '''
@@ -274,6 +277,7 @@ class TorchTransformerModel(nn.Module):
     def forward(self, src):
         src = src.permute(1,0,2)
         src = self.proj_layer(src)
+
         if not self.positional_embedding == None:
             src = self.pos_encoder(src)
 
@@ -281,7 +285,8 @@ class TorchTransformerModel(nn.Module):
         output = torch.mean(output, dim=0)
         #output = self.last_ln(output)
         output = self.decoder(output)
-        mu, value = torch.split(output, [self.actions_num,1], dim=1)
+        mu, value = torch.split(output, [self.actions_num, 1], dim=1)
+
         return mu, mu*0 + self.sigma, value, None
 
 
@@ -350,6 +355,7 @@ class TorchTransformerBuilder(network_builder.NetworkBuilder):
             self.load(params)
 
             self.transformer = TorchTransformerModel(actions_num, input_shape, **self.tranformer_params)
+            self.sigma = self.transformer.sigma
 
         def load(self, params):
             super().load(params)

@@ -307,6 +307,7 @@ class A2CBuilder(NetworkBuilder):
             seq_length = obs_dict.get('seq_length', 1)
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
+
             if self.has_cnn:
                 # for obs shape 4
                 # input expected shape (B, W, H, C)
@@ -767,6 +768,7 @@ class A2CResnetBuilder(NetworkBuilder):
             self.is_multi_discrete = 'multi_discrete'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
+
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
                 self.fixed_sigma = self.space_config['fixed_sigma']
@@ -775,12 +777,14 @@ class A2CResnetBuilder(NetworkBuilder):
             elif self.is_multi_discrete:
                 self.space_config = params['space']['multi_discrete']    
             self.has_rnn = 'rnn' in params
+
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
                 self.rnn_layers = params['rnn']['layers']
                 self.rnn_name = params['rnn']['name']
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
                 self.rnn_ln = params['rnn'].get('layer_norm', False)
+
             self.has_cnn = True
             self.permute_input = params['cnn'].get('permute_input', True)
             self.conv_depths = params['cnn']['conv_depths']

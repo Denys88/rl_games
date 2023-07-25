@@ -178,6 +178,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -328,7 +329,6 @@ class ModelCentralValue(BaseModel):
                 'rnn_states': states
             }
             return result
-
 
 
 class ModelSACContinuous(BaseModel):

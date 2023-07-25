@@ -90,15 +90,25 @@ class IsaacAlgoObserver(AlgoObserver):
         self.mean_scores = torch_ext.AverageMeter(1, self.algo.games_to_track).to(self.algo.ppo_device)
         self.ep_infos = []
         self.direct_info = {}
+
+        self.histo_freq = 10
+        self.current_ep = 0
+        self.mu_datapoints = None
+
         self.writer = self.algo.writer
+
+    def after_steps(self):
+        self.mu_datapoints = self.algo.dataset.values_dict['mu'][0:1000]
 
     def process_infos(self, infos, done_indices):
         if not isinstance(infos, dict):
             classname = self.__class__.__name__
             raise ValueError(f"{classname} expected 'infos' as dict. Received: {type(infos)}")
+
         # store episode information
         if "episode" in infos:
             self.ep_infos.append(infos["episode"])
+
         # log other variables directly
         if len(infos) > 0 and isinstance(infos, dict):  # allow direct logging from env
             self.direct_info = {}
@@ -126,14 +136,32 @@ class IsaacAlgoObserver(AlgoObserver):
                 value = torch.mean(info_tensor)
                 self.writer.add_scalar("Episode/" + key, value, epoch_num)
             self.ep_infos.clear()
+
         # log scalars from env information
         for k, v in self.direct_info.items():
             self.writer.add_scalar(f"{k}/frame", v, frame)
             self.writer.add_scalar(f"{k}/iter", v, epoch_num)
             self.writer.add_scalar(f"{k}/time", v, total_time)
+
         # log mean reward/score from the env
         if self.mean_scores.current_size > 0:
             mean_scores = self.mean_scores.get_mean()
             self.writer.add_scalar("scores/mean", mean_scores, frame)
             self.writer.add_scalar("scores/iter", mean_scores, epoch_num)
             self.writer.add_scalar("scores/time", mean_scores, total_time)
+
+        mean_std = torch.mean(self.algo.model.a2c_network.sigma).exp()
+        max_std = torch.max(self.algo.model.a2c_network.sigma).exp()
+        min_std = torch.min(self.algo.model.a2c_network.sigma).exp()
+
+        self.writer.add_scalar('info/mean_std', mean_std, epoch_num)
+        self.writer.add_scalar('info/max_std', max_std, epoch_num)
+        self.writer.add_scalar('info/min_std', min_std, epoch_num)
+
+        self.current_ep += 1
+        if self.current_ep % self.histo_freq == 0:
+            for i in range(self.algo.actions_num):
+                self.writer.add_histogram(
+                    'info/mu[{0}]'.format(i),
+                    torch.clamp(self.mu_datapoints[:,i], min=-1.0, max=1.0),
+                    epoch_num, bins='auto')
