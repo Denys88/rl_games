@@ -263,6 +263,9 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |
 | name                   | BreakoutNoFrameskip-v4    |         | The exact name of an (atari) gym env. An example, depends on the training env this parameters can be different.                                                                   |
+| evaluation             | True                      | False   | Enables the evaluation feature for inferencing while training. |
+| update_checkpoint_freq | 100                       | 100     | Frequency in number of steps to look for new checkpoints. |
+| dir_to_monitor         |                           |         | Directory to search for checkpoints in during evaluation. |
 
 ## Custom network example: 
 [simple test network](rl_games/envs/test_network.py)  
@@ -299,6 +302,7 @@ Additional environment supported properties and functions
 * Added shaped reward graph to the tensorboard.
 * Fixed bug with SAC not saving weights with save_frequency.
 * Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
+* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
 
 1.6.0
 

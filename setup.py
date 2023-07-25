@@ -45,6 +45,7 @@ setup(name='rl-games',
             'tensorboardX>=1.6',
             'setproctitle',
             'psutil',
-            'pyyaml'
+            'pyyaml',
+            'watchdog>=2.1.9,<3.0.0',  # for evaluation process
       ],
       )
