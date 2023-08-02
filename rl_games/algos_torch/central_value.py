@@ -4,9 +4,8 @@ from torch import nn
 import torch.distributed as dist
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
-from rl_games.common  import common_losses
-from rl_games.common import datasets
-from rl_games.common import schedulers
+from rl_games.common  import common_losses, datasets, schedulers
+from typing import Dict, Optional
 
 
 class CentralValueTrain(nn.Module):
@@ -80,6 +79,7 @@ class CentralValueTrain(nn.Module):
             total_agents = self.num_actors #* self.num_agents
             num_seqs = self.horizon_length // self.seq_len
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
         self.local_rank = 0
@@ -232,8 +232,16 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         if self.writter != None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
+
         return avg_loss
+
+    @torch.jit.script
+    def forward_for_gradients(values, value_preds_batch, e_clip:float, returns_batch, clip_value:float, rnn_masks_batch:Optional[torch.Tensor], sum_rnn_masks:int):
+        loss = common_losses.critic_loss(value_preds_batch, values, e_clip, returns_batch, clip_value)
+        losses = torch_ext.apply_masks_compilable([loss], rnn_masks_batch, sum_rnn_masks)
+
+        return losses[0]
 
     def calc_gradients(self, batch):
         obs_batch = self._preproc_obs(batch['obs'])
@@ -262,6 +270,7 @@ class CentralValueTrain(nn.Module):
         else:
             for param in self.model.parameters():
                 param.grad = None
+
         loss.backward()
 
         if self.multi_gpu:
@@ -270,9 +279,11 @@ class CentralValueTrain(nn.Module):
             for param in self.model.parameters():
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
+
             all_grads = torch.cat(all_grads_list)
             dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
             offset = 0
+
             for param in self.model.parameters():
                 if param.grad is not None:
                     param.grad.data.copy_(

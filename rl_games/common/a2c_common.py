@@ -21,7 +21,7 @@ from tensorboardX import SummaryWriter
 import torch 
 from torch import nn
 import torch.distributed as dist
- 
+
 from time import sleep
 
 from rl_games.common import common_losses
@@ -41,7 +41,6 @@ def rescale_actions(low, high, action):
     m = (high + low) / 2.0
     scaled_action = action * d + m
     return scaled_action
-
 
 def print_statistics(print_stats, curr_frames, step_time, step_inference_time, total_time, epoch_num, max_epochs, frame, max_frames):
     if print_stats:
@@ -175,7 +174,7 @@ class A2CBase(BaseAlgorithm):
             self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
 
         elif self.linear_lr:
-            
+
             if self.max_epochs == -1 and self.max_frames == -1:
                 print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
                 self.scheduler = schedulers.IdentityScheduler()
@@ -216,7 +215,7 @@ class A2CBase(BaseAlgorithm):
                 self.obs_shape[k] = v.shape
         else:
             self.obs_shape = self.observation_space.shape
- 
+
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -1341,8 +1340,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num

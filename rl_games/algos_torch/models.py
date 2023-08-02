@@ -28,8 +28,10 @@ class BaseModel():
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
         value_size = config.get('value_size', 1)
+
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
+
 
 class BaseModelNetwork(nn.Module):
     def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
@@ -40,12 +42,13 @@ class BaseModelNetwork(nn.Module):
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #   
+            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #
+ 
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
             else:
-                self.running_mean_std = RunningMeanStd(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -54,6 +57,7 @@ class BaseModelNetwork(nn.Module):
     def denorm_value(self, value):
         with torch.no_grad():
             return self.value_mean_std(value, denorm=True) if self.normalize_value else value
+
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -67,7 +71,7 @@ class ModelA2C(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-        
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()            
 
@@ -111,6 +115,7 @@ class ModelA2C(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CMultiDiscrete(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -123,7 +128,7 @@ class ModelA2CMultiDiscrete(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-        
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
@@ -141,6 +146,7 @@ class ModelA2CMultiDiscrete(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             logits, value, states = self.a2c_network(input_dict)
+
             if is_train:
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
@@ -163,8 +169,8 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:   
-                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]                
-                
+                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
+
                 selected_action = [c.sample().long() for c in categorical]
                 neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, selected_action)]
                 selected_action = torch.stack(selected_action, dim=-1)
@@ -178,6 +184,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -190,7 +197,7 @@ class ModelA2CContinuous(BaseModel):
 
         def is_rnn(self):
             return self.a2c_network.is_rnn()
-            
+
         def get_default_rnn_state(self):
             return self.a2c_network.get_default_rnn_state()
 
@@ -262,9 +269,9 @@ class ModelA2CContinuousLogStd(BaseModel):
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
+
             if is_train:
-                entropy = distr.entropy().sum(dim=-1)
-                prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
+                sigma, entropy, prev_neglogp = ModelA2CContinuousLogStd.compute_neglog_train(prev_actions, mu, logstd, prev_actions.size()[-1])
                 result = {
                     'prev_neglogp' : torch.squeeze(prev_neglogp),
                     'values' : value,
@@ -272,11 +279,12 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'rnn_states' : states,
                     'mus' : mu,
                     'sigmas' : sigma
-                }                
+                }
+
                 return result
             else:
-                selected_action = distr.sample()
-                neglogp = self.neglogp(selected_action, mu, sigma, logstd)
+
+                selected_action, sigma, neglogp = ModelA2CContinuousLogStd.compute_neglog_infer(mu, logstd, torch.broadcast_shapes(mu.size(), logstd.size())[-1])
                 result = {
                     'neglogpacs' : torch.squeeze(neglogp),
                     'values' : self.denorm_value(value),
@@ -285,12 +293,33 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'mus' : mu,
                     'sigmas' : sigma
                 }
+
                 return result
 
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
+
+    @torch.jit.script
+    def compute_neglog_train(action, mu, logstd, action_cols:int):
+        sigma = torch.exp(logstd)
+        entropy = (0.5 + 0.5 * torch.log(2 * torch.pi) + torch.log(sigma)).sum(dim=-1)
+        neglogp = 0.5 * (((action - mu) / sigma)**2).sum(dim=-1) \
+            + 0.5 * torch.log(2.0 * torch.pi) * action_cols \
+            + logstd.sum(dim=-1)
+
+        return sigma, entropy, neglogp
+
+    @torch.jit.script
+    def compute_neglog_infer(mu, logstd, action_cols:int):
+        sigma = torch.exp(logstd)
+        selected_action = torch.normal(mu, sigma)
+        neglogp = 0.5 * (((selected_action - mu) / sigma)**2).sum(dim=-1) \
+            + 0.5 * torch.log(2.0 * torch.pi) * action_cols \
+            + logstd.sum(dim=-1)
+
+        return selected_action, sigma, neglogp
 
 
 class ModelCentralValue(BaseModel):
@@ -330,13 +359,12 @@ class ModelCentralValue(BaseModel):
             return result
 
 
-
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):
         BaseModel.__init__(self, 'sac')
         self.network_builder = network
-    
+
     class Network(BaseModelNetwork):
         def __init__(self, sac_network,**kwargs):
             BaseModelNetwork.__init__(self,**kwargs)

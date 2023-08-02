@@ -17,6 +17,7 @@ from rl_games.algos_torch.layers import symexp, symlog
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
+
 class NetworkBuilder:
     def __init__(self, **kwargs):
         pass
@@ -29,6 +30,7 @@ class NetworkBuilder:
 
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
+
 
     class BaseNetwork(nn.Module):
         def __init__(self, **kwargs):
@@ -87,12 +89,12 @@ class NetworkBuilder:
             if name == 'gru':
                 return GRUWithDones(input_size=input, hidden_size=units, num_layers=layers)
 
-        def _build_sequential_mlp(self, 
-        input_size, 
+        def _build_sequential_mlp(self,
+        input_size,
         units, 
         activation,
         dense_func,
-        norm_only_first_layer=False, 
+        norm_only_first_layer=False,
         norm_func_name = None):
             print('build mlp:', input_size)
             in_size = input_size
@@ -114,11 +116,11 @@ class NetworkBuilder:
 
             return nn.Sequential(*layers)
 
-        def _build_mlp(self, 
-        input_size, 
-        units, 
+        def _build_mlp(self,
+        input_size,
+        units,
         activation,
-        dense_func, 
+        dense_func,
         norm_only_first_layer=False,
         norm_func_name = None,
         d2rl=False):
@@ -202,7 +204,7 @@ class A2CBuilder(NetworkBuilder):
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-            
+
             if self.has_cnn:
                 if self.permute_input:
                     input_shape = torch_ext.shape_whc_to_cwh(input_shape)
@@ -270,11 +272,12 @@ class A2CBuilder(NetworkBuilder):
             '''
             if self.is_multi_discrete:
                 self.logits = torch.nn.ModuleList([torch.nn.Linear(out_size, num) for num in actions_num])
+
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
-                self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
+                self.mu_act = self.activations_factory.create(self.space_config['mu_activation'])
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
-                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
+                self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation'])
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
@@ -373,7 +376,7 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     a_out = self.actor_mlp(a_out)
                     c_out = self.critic_mlp(c_out)
-                            
+        
                 value = self.value_act(self.value(c_out))
 
                 if self.is_discrete:
@@ -446,7 +449,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, mu*0 + sigma, value, states
-                    
+
         def is_separate_critic(self):
             return self.separate
 
@@ -523,8 +526,16 @@ class A2CBuilder(NetworkBuilder):
                 self.has_cnn = False
 
     def build(self, name, **kwargs):
+        #import torch._dynamo as dynamo
         net = A2CBuilder.Network(self.params, **kwargs)
+        #net = torch.compile(net, mode="reduce-overhead")
+        #compiled_net = torch.compile(net, mode="max-autotune")
+        #opt_net = dynamo.optimize("inductor")(net)
+
+        #print("Created optimized NN!")
+
         return net
+
 
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
