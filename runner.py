@@ -26,6 +26,8 @@ if __name__ == '__main__':
     os.makedirs("nn", exist_ok=True)
     os.makedirs("runs", exist_ok=True)
 
+    #breakpoint()
+
     args = vars(ap.parse_args())
     config_name = args['file']
 
@@ -50,7 +52,6 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    #rank = int(os.getenv("LOCAL_RANK", "0"))
     global_rank = int(os.getenv("RANK", "0"))
     if args["track"] and global_rank == 0:
         import wandb

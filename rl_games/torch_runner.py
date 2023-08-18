@@ -49,6 +49,7 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
+
         ### it didnot help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
@@ -57,6 +58,7 @@ class Runner:
         pass
 
     def load_config(self, params):
+        print("Loading config")
         self.seed = params.get('seed', None)
         if self.seed is None:
             self.seed = int(time.time())

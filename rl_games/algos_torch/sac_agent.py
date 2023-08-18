@@ -38,6 +38,8 @@ class SACAgent(BaseAlgorithm):
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
 
+        self.save_freq = config.get('save_frequency', 0)
+
         self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
 
         print(self.batch_size, self.num_actors, self.num_agents)
@@ -236,7 +238,11 @@ class SACAgent(BaseAlgorithm):
     def set_full_state_weights(self, weights):
         self.set_weights(weights)
 
-        self.step = weights['step']
+        for key in weights:
+            print("Set full state weights keys:")
+            print(key)
+
+        self.step = weights['steps']
         self.actor_optimizer.load_state_dict(weights['actor_optimizer'])
         self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
         self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
@@ -560,7 +566,7 @@ class SACAgent(BaseAlgorithm):
                 should_exit = False
 
                 if self.save_freq > 0:
-                    if (self.epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
+                    if (self.epoch_num % self.save_freq) == 0:
                         self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
