@@ -130,6 +130,8 @@ class SACAgent(BaseAlgorithm):
         self.max_epochs = self.config.get('max_epochs', -1)
         self.max_frames = self.config.get('max_frames', -1)
 
+        self.save_freq = config.get('save_frequency', 0)
+
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
@@ -203,6 +205,7 @@ class SACAgent(BaseAlgorithm):
         return self._device
 
     def get_weights(self):
+        print("Loading weights")
         state = {'actor': self.model.sac_network.actor.state_dict(),
          'critic': self.model.sac_network.critic.state_dict(), 
          'critic_target': self.model.sac_network.critic_target.state_dict()}
@@ -221,6 +224,7 @@ class SACAgent(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def get_full_state_weights(self):
+        print("Loading full weights")
         state = self.get_weights()
 
         state['epoch'] = self.epoch_num
@@ -569,7 +573,7 @@ class SACAgent(BaseAlgorithm):
                 should_exit = False
 
                 if self.save_freq > 0:
-                    if (self.epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
+                    if self.epoch_num % self.save_freq == 0:
                         self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:

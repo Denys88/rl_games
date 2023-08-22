@@ -8,6 +8,7 @@ import random
 from time import sleep
 import torch
 
+
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
