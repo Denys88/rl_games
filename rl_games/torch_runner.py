@@ -53,6 +53,8 @@ class Runner:
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
 
+        #breakpoint()
+
     def reset(self):
         pass
 
@@ -131,12 +133,12 @@ class Runner:
         pass
 
     def run(self, args):
-        load_path = None
-
         if args['train']:
+            print('Started to train')
             self.run_train(args)
-
         elif args['play']:
+            print('Started to play')
             self.run_play(args)
         else:
+            print('Started to train2')
             self.run_train(args)

@@ -445,6 +445,11 @@ class SACAgent(BaseAlgorithm):
         critic2_losses = []
 
         obs = self.obs
+        if isinstance(obs, dict):
+            obs = self.obs['obs']
+
+        next_obs_processed = obs.clone()
+
         for s in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
@@ -480,16 +485,17 @@ class SACAgent(BaseAlgorithm):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
 
-            if isinstance(obs, dict):
-                obs = obs['obs']
             if isinstance(next_obs, dict):    
-                next_obs = next_obs['obs']
+                next_obs_processed = next_obs['obs']
+
+            self.obs = next_obs.clone()
 
             rewards = self.rewards_shaper(rewards)
 
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1))
+            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs_processed, torch.unsqueeze(dones, 1))
 
-            self.obs = obs = next_obs.clone()
+            if isinstance(obs, dict):
+                obs = self.obs['obs']
 
             if not random_exploration:
                 self.set_train()
