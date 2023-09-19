@@ -40,12 +40,12 @@ class BaseAlgorithm(ABC):
 
     # Get algo training parameters
     @abstractmethod
-    def get_params(self, param_name):
+    def get_param(self, param_name):
         pass
 
     # Set algo training parameters
     @abstractmethod
-    def set_params(self, param_name, param_value):
+    def set_param(self, param_name, param_value):
         pass
 
 

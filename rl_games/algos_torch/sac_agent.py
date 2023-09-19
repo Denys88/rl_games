@@ -61,7 +61,6 @@ class SACAgent(BaseAlgorithm):
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'normalize_input' : self.normalize_input,
             'normalize_input': self.normalize_input,
         }
         self.model = self.network.build(net_config)
@@ -224,6 +223,7 @@ class SACAgent(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def get_full_state_weights(self):
+        breakpoint()
         print("Loading full weights")
         state = self.get_weights()
 
@@ -246,14 +246,21 @@ class SACAgent(BaseAlgorithm):
         self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
         self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
 
+        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+
+        if self.vec_env is not None:
+            env_state = weights.get('env_state', None)
+            self.vec_env.set_env_state(env_state)
+
     def restore(self, fn, set_epoch=True):
+        print("SAC restore")
         checkpoint = torch_ext.load_checkpoint(fn)
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
-    def get_params(self, param_name):
+    def get_param(self, param_name):
         pass
 
-    def set_params(self, param_name, param_value):
+    def set_param(self, param_name, param_value):
         pass
 
     def get_masked_action_values(self, obs, action_masks):

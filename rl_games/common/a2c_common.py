@@ -660,7 +660,7 @@ class A2CBase(BaseAlgorithm):
         self.model.load_state_dict(weights['model'])
         self.set_stats_weights(weights)
 
-    def get_params(self, param_name):
+    def get_param(self, param_name):
         if param_name in [
             "grad_norm",
             "critic_coef", 
@@ -678,7 +678,7 @@ class A2CBase(BaseAlgorithm):
         else:
             raise NotImplementedError(f"Can't get param {param_name}")       
 
-    def set_params(self, param_name, param_value):
+    def set_param(self, param_name, param_value):
         if param_name in [
             "grad_norm",
             "critic_coef", 
