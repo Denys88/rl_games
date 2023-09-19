@@ -223,7 +223,6 @@ class SACAgent(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def get_full_state_weights(self):
-        breakpoint()
         print("Loading full weights")
         state = self.get_weights()
 

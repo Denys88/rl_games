@@ -118,7 +118,7 @@ class Runner:
         agent.train()
 
     def run_play(self, args):
-        breakpoint()
+        print('Started to play')
         player = self.create_player()
         _restore(player, args)
         _override_sigma(player, args)
@@ -132,10 +132,8 @@ class Runner:
 
     def run(self, args):
         if args['train']:
-            print('Started to train')
             self.run_train(args)
         elif args['play']:
             self.run_play(args)
         else:
-            print('Started to train2')
             self.run_train(args)
