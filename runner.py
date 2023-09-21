@@ -1,6 +1,5 @@
 from distutils.util import strtobool
 import argparse, os, yaml
-import ray
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
@@ -42,7 +41,12 @@ if __name__ == '__main__':
 
         from rl_games.torch_runner import Runner
 
-        ray.init(object_store_memory=1024*1024*1000)
+        try:
+            import ray
+        except ImportError:
+            pass
+        else:
+            ray.init(object_store_memory=1024*1024*1000)
 
         runner = Runner()
         try:
@@ -50,7 +54,6 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    #rank = int(os.getenv("LOCAL_RANK", "0"))
     global_rank = int(os.getenv("RANK", "0"))
     if args["track"] and global_rank == 0:
         import wandb
@@ -66,7 +69,12 @@ if __name__ == '__main__':
 
     runner.run(args)
 
-    ray.shutdown()
+    try:
+        import ray
+    except ImportError:
+        pass
+    else:
+        ray.shutdown()
 
     if args["track"] and global_rank == 0:
         wandb.finish()

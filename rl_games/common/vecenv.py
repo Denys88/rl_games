@@ -1,4 +1,3 @@
-import ray
 from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
@@ -7,6 +6,7 @@ import gym
 import random
 from time import sleep
 import torch
+
 
 class RayWorker:
     def __init__(self, config_name, config):
@@ -101,6 +101,8 @@ class RayVecEnv(IVecEnv):
         self.num_actors = num_actors
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
+
+        import ray
         self.remote_worker = ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
