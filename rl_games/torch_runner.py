@@ -129,11 +129,8 @@ class Runner:
         pass
 
     def run(self, args):
-        load_path = None
-
         if args['train']:
             self.run_train(args)
-
         elif args['play']:
             self.run_play(args)
         else:

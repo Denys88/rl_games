@@ -57,7 +57,6 @@ if __name__ == '__main__':
     global_rank = int(os.getenv("RANK", "0"))
     if args["track"] and global_rank == 0:
         import wandb
-
         wandb.init(
             project=args["wandb_project_name"],
             entity=args["wandb_entity"],
