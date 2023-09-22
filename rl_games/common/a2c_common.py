@@ -161,6 +161,7 @@ class A2CBase(BaseAlgorithm):
         self.rnn_states = None
         self.name = base_name
 
+        # TODO: do we still need it?
         self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', -1)
         self.max_frames = self.config.get('max_frames', -1)
@@ -229,14 +230,18 @@ class A2CBase(BaseAlgorithm):
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
         self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
+
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
+
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
-        self.mini_epochs_num = self.config['mini_epochs']
+
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
+
+        self.mini_epochs_num = self.config['mini_epochs']
 
         self.mixed_precision = self.config.get('mixed_precision', False)
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
@@ -244,7 +249,7 @@ class A2CBase(BaseAlgorithm):
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.mean_rewards = self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -1000000000
         self.play_time = 0
         self.epoch_num = 0
         self.curr_frames = 0
@@ -588,10 +593,11 @@ class A2CBase(BaseAlgorithm):
     def get_full_state_weights(self):
         state = self.get_weights()
         state['epoch'] = self.epoch_num
+        state['frame'] = self.frame
         state['optimizer'] = self.optimizer.state_dict()
+
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
-        state['frame'] = self.frame
 
         # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
@@ -603,19 +609,22 @@ class A2CBase(BaseAlgorithm):
 
         return state
 
-    def set_full_state_weights(self, weights):
+    def set_full_state_weights(self, weights, set_epoch=True):
+
         self.set_weights(weights)
-        self.epoch_num = weights['epoch'] # frames as well?
+        if set_epoch:
+            self.epoch_num = weights['epoch']
+            self.frame = weights['frame']
+
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
 
         self.optimizer.load_state_dict(weights['optimizer'])
-        self.frame = weights.get('frame', 0)
-        self.last_mean_rewards = weights.get('last_mean_rewards', -100500)
 
-        env_state = weights.get('env_state', None)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
 
         if self.vec_env is not None:
+            env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
     def get_weights(self):
@@ -650,6 +659,55 @@ class A2CBase(BaseAlgorithm):
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         self.set_stats_weights(weights)
+
+    def get_param(self, param_name):
+        if param_name in [
+            "grad_norm",
+            "critic_coef", 
+            "bounds_loss_coef",
+            "entropy_coef",
+            "kl_threshold",
+            "gamma",
+            "tau",
+            "mini_epochs_num",
+            "e_clip",
+            ]:
+            return getattr(self, param_name)
+        elif param_name == "learning_rate":
+            return self.last_lr
+        else:
+            raise NotImplementedError(f"Can't get param {param_name}")       
+
+    def set_param(self, param_name, param_value):
+        if param_name in [
+            "grad_norm",
+            "critic_coef", 
+            "bounds_loss_coef",
+            "entropy_coef",
+            "gamma",
+            "tau",
+            "mini_epochs_num",
+            "e_clip",
+            ]:
+            setattr(self, param_name, param_value)
+        elif param_name == "learning_rate":
+            if self.global_rank == 0:
+                if self.is_adaptive_lr:
+                    raise NotImplementedError("Can't directly mutate LR on this schedule")
+                else:
+                    self.learning_rate = param_value
+
+                    for param_group in self.optimizer.param_groups:
+                        param_group["lr"] = self.learning_rate
+        elif param_name == "kl_threshold":
+            if self.global_rank == 0:
+                if self.is_adaptive_lr:
+                    self.kl_threshold = param_value
+                    self.scheduler.kl_threshold = param_value
+                else:
+                    raise NotImplementedError("Can't directly mutate kl threshold")
+        else:
+            raise NotImplementedError(f"No param found for {param_value}")
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
@@ -912,7 +970,6 @@ class DiscreteA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-            
         
         advantages = torch.sum(advantages, axis=1)
 
@@ -1024,7 +1081,7 @@ class DiscreteA2CBase(A2CBase):
                     checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
-                        if (epoch_num % self.save_freq == 0) and (mean_rewards <= self.last_mean_rewards):
+                        if epoch_num % self.save_freq == 0:
                             self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:
@@ -1301,7 +1358,7 @@ class ContinuousA2CBase(A2CBase):
                     checkpoint_name = self.config['name'] + '_ep_' + str(epoch_num) + '_rew_' + str(mean_rewards[0])
 
                     if self.save_freq > 0:
-                        if (epoch_num % self.save_freq == 0) and (mean_rewards[0] <= self.last_mean_rewards):
+                        if epoch_num % self.save_freq == 0:
                             self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                     if mean_rewards[0] > self.last_mean_rewards and epoch_num >= self.save_best_after:

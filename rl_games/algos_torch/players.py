@@ -16,6 +16,7 @@ def rescale_actions(low, high, action):
 
 
 class PpoPlayerContinuous(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
         self.network = self.config['network']
@@ -81,7 +82,9 @@ class PpoPlayerContinuous(BasePlayer):
     def reset(self):
         self.init_rnn()
 
+
 class PpoPlayerDiscrete(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
 
@@ -185,6 +188,7 @@ class PpoPlayerDiscrete(BasePlayer):
 
 
 class SACPlayer(BasePlayer):
+
     def __init__(self, params):
         BasePlayer.__init__(self, params)
         self.network = self.config['network']

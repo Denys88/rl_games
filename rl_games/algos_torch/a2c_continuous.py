@@ -7,11 +7,10 @@ from rl_games.common import datasets
 
 from torch import optim
 import torch 
-from torch import nn
-import numpy as np
-import gym
+
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
+
     def __init__(self, base_name, params):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
@@ -68,9 +67,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
 
-    def restore(self, fn):
+    def restore(self, fn, set_epoch=True):
         checkpoint = torch_ext.load_checkpoint(fn)
-        self.set_full_state_weights(checkpoint)
+        self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
     def get_masked_action_values(self, obs, action_masks):
         assert False

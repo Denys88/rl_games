@@ -1,6 +1,7 @@
 from abc import ABC
 from abc import abstractmethod, abstractproperty
 
+
 class BaseAlgorithm(ABC):
     def __init__(self, base_name, config):
         pass
@@ -26,7 +27,7 @@ class BaseAlgorithm(ABC):
         pass
 
     @abstractmethod
-    def set_full_state_weights(self, weights):
+    def set_full_state_weights(self, weights, set_epoch):
         pass
 
     @abstractmethod
@@ -37,5 +38,14 @@ class BaseAlgorithm(ABC):
     def set_weights(self, weights):
         pass
 
+    # Get algo training parameters
+    @abstractmethod
+    def get_param(self, param_name):
+        pass
+
+    # Set algo training parameters
+    @abstractmethod
+    def set_param(self, param_name, param_value):
+        pass
 
 

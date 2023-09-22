@@ -303,6 +303,8 @@ Additional environment supported properties and functions
 * Fixed bug with SAC not saving weights with save_frequency.
 * Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
 * Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
+* Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
+* Fixed SAC not loading weights properly.
 
 1.6.0
 
