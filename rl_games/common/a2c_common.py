@@ -202,7 +202,10 @@ class A2CBase(BaseAlgorithm):
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
         self.horizon_length = config['horizon_length']
+
+        # seq_length is used only with rnn policy and value functions
         self.seq_length = self.config.get('seq_length', 4)
+        print('seq_length:', self.seq_length)
         self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now. Didn't show that it is usefull
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
         self.normalize_advantage = config['normalize_advantage']
@@ -794,7 +797,7 @@ class A2CBase(BaseAlgorithm):
         for n in range(self.horizon_length):
             if n % self.seq_length == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                    mb_s[n // self.seq_len,:,:,:] = s
+                    mb_s[n // self.seq_length,:,:,:] = s
 
             if self.has_central_value:
                 self.central_value_net.pre_step_rnn(n)

@@ -12,7 +12,7 @@ from rl_games.common import schedulers
 class CentralValueTrain(nn.Module):
 
     def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, 
-                seq_len, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
+                seq_length, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
