@@ -43,7 +43,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'horizon_length' : self.horizon_length,
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
-                'seq_len' : self.seq_len,
+                'seq_length' : self.seq_length,
                 'normalize_value' : self.normalize_value,
                 'network' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
@@ -55,7 +55,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', False)        
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_length)
 
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
@@ -127,11 +127,12 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
+
         rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
-            batch_dict['seq_length'] = self.seq_len
+            batch_dict['seq_length'] = self.seq_length
             batch_dict['bptt_len'] = self.bptt_len
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']

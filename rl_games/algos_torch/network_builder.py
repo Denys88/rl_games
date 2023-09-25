@@ -3,19 +3,16 @@ from rl_games.algos_torch import torch_ext
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 
-import math
-import numpy as np
 from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
-from rl_games.algos_torch.layers import symexp, symlog
+
 
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
+
 
 class NetworkBuilder:
     def __init__(self, **kwargs):
@@ -196,6 +193,7 @@ class A2CBuilder(NetworkBuilder):
             input_shape = kwargs.pop('input_shape')
             self.value_size = kwargs.pop('value_size', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
@@ -306,9 +304,9 @@ class A2CBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             obs = obs_dict['obs']
             states = obs_dict.get('rnn_states', None)
-            seq_length = obs_dict.get('seq_length', 1)
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
+
             if self.has_cnn:
                 # for obs shape 4
                 # input expected shape (B, W, H, C)
@@ -325,6 +323,8 @@ class A2CBuilder(NetworkBuilder):
                 c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
                 if self.has_rnn:
+                    seq_length = obs_dict.get['seq_length']
+
                     if not self.is_rnn_before_mlp:
                         a_out_in = a_out
                         c_out_in = c_out
@@ -398,6 +398,8 @@ class A2CBuilder(NetworkBuilder):
                 out = out.flatten(1)                
 
                 if self.has_rnn:
+                    seq_length = obs_dict.get['seq_length']
+
                     out_in = out
                     if not self.is_rnn_before_mlp:
                         out_in = out
@@ -703,13 +705,15 @@ class A2CResnetBuilder(NetworkBuilder):
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
             states = obs_dict.get('rnn_states', None)
-            seq_length = obs_dict.get('seq_length', 1)
+
             out = obs
             out = self.cnn(out)
             out = out.flatten(1)         
             out = self.flatten_act(out)
 
             if self.has_rnn:
+                seq_length = obs_dict.get['seq_length']
+
                 out_in = out
                 if not self.is_rnn_before_mlp:
                     out_in = out
@@ -769,13 +773,15 @@ class A2CResnetBuilder(NetworkBuilder):
             self.is_multi_discrete = 'multi_discrete'in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
+
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
                 self.fixed_sigma = self.space_config['fixed_sigma']
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
             elif self.is_multi_discrete:
-                self.space_config = params['space']['multi_discrete']    
+                self.space_config = params['space']['multi_discrete']
+
             self.has_rnn = 'rnn' in params
             if self.has_rnn:
                 self.rnn_units = params['rnn']['units']
@@ -783,6 +789,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.rnn_name = params['rnn']['name']
                 self.is_rnn_before_mlp = params['rnn'].get('before_mlp', False)
                 self.rnn_ln = params['rnn'].get('layer_norm', False)
+
             self.has_cnn = True
             self.permute_input = params['cnn'].get('permute_input', True)
             self.conv_depths = params['cnn']['conv_depths']

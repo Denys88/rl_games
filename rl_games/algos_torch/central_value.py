@@ -16,7 +16,7 @@ class CentralValueTrain(nn.Module):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
-        self.num_agents, self.horizon_length, self.num_actors, self.seq_len = num_agents, horizon_length, num_actors, seq_len
+        self.num_agents, self.horizon_length, self.num_actors, self.seq_length = num_agents, horizon_length, num_actors, seq_length
         self.normalize_value = normalize_value
         self.num_actions = num_actions
         self.state_shape = state_shape
@@ -78,8 +78,8 @@ class CentralValueTrain(nn.Module):
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             total_agents = self.num_actors #* self.num_agents
-            num_seqs = self.horizon_length // self.seq_len
-            assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+            num_seqs = self.horizon_length // self.seq_length
+            assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
             self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
         self.local_rank = 0
@@ -100,7 +100,7 @@ class CentralValueTrain(nn.Module):
                 config['print_stats'] = False
                 config['lr_schedule'] = None
 
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_length)
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -167,9 +167,9 @@ class CentralValueTrain(nn.Module):
     def pre_step_rnn(self, n):
         if not self.is_rnn:
             return
-        if n % self.seq_len == 0:
+        if n % self.seq_length == 0:
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-                mb_s[n // self.seq_len,:,:,:] = s
+                mb_s[n // self.seq_length,:,:,:] = s
 
     def post_step_rnn(self, all_done_indices, zero_rnn_on_done=True):
         if not self.is_rnn:
@@ -245,7 +245,7 @@ class CentralValueTrain(nn.Module):
 
         batch_dict = {'obs' : obs_batch, 
                     'actions' : actions_batch,
-                    'seq_length' : self.seq_len,
+                    'seq_length' : self.seq_length,
                     'dones' : dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
