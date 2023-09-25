@@ -305,6 +305,7 @@ Additional environment supported properties and functions
 * Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
 * Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
 * Fixed SAC not loading weights properly.
+* Removed Ray dependency for use cases it's not required.
 
 1.6.0
 
