@@ -323,7 +323,8 @@ class A2CBuilder(NetworkBuilder):
                 c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
                 if self.has_rnn:
-                    seq_length = obs_dict['seq_length']
+                    #seq_length = obs_dict['seq_length']
+                    seq_length = obs_dict.get('seq_length', 1)
 
                     if not self.is_rnn_before_mlp:
                         a_out_in = a_out
@@ -398,7 +399,8 @@ class A2CBuilder(NetworkBuilder):
                 out = out.flatten(1)                
 
                 if self.has_rnn:
-                    seq_length = obs_dict['seq_length']
+                    #seq_length = obs_dict['seq_length']
+                    seq_length = obs_dict.get('seq_length', 1)
 
                     out_in = out
                     if not self.is_rnn_before_mlp:
@@ -712,7 +714,8 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             if self.has_rnn:
-                seq_length = obs_dict['seq_length']
+                #seq_length = obs_dict['seq_length']
+                seq_length = obs_dict.get('seq_length', 1)
 
                 out_in = out
                 if not self.is_rnn_before_mlp:

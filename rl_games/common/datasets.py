@@ -6,6 +6,7 @@ from torch.utils.data import Dataset
 class PPODataset(Dataset):
 
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_length):
+
         self.is_rnn = is_rnn
         self.seq_length = seq_length
         self.batch_size = batch_size

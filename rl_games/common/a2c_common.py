@@ -807,6 +807,7 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
@@ -863,6 +864,7 @@ class A2CBase(BaseAlgorithm):
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
         mb_returns = mb_advs + mb_values
         batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
+
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         states = []
@@ -870,8 +872,10 @@ class A2CBase(BaseAlgorithm):
             t_size = mb_s.size()[0] * mb_s.size()[2]
             h_size = mb_s.size()[3]
             states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
+
         batch_dict['rnn_states'] = states
         batch_dict['step_time'] = step_time
+
         return batch_dict
 
 

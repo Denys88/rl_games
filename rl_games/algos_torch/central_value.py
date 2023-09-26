@@ -183,7 +183,6 @@ class CentralValueTrain(nn.Module):
     def forward(self, input_dict):
         return self.model(input_dict)
 
-
     def get_value(self, input_dict):
         self.eval()
         obs_batch = input_dict['states']
@@ -284,5 +283,5 @@ class CentralValueTrain(nn.Module):
             nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
-        
+
         return loss
