@@ -202,9 +202,16 @@ class A2CBase(BaseAlgorithm):
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
         self.horizon_length = config['horizon_length']
-        self.seq_len = self.config.get('seq_length', 4)
-        self.bptt_len = self.config.get('bptt_length', self.seq_len) # not used right now. Didn't show that it is usefull
+
+        # seq_length is used only with rnn policy and value functions
+        if 'seq_len' in config:
+            print('WARNING: seq_len is deprecated, use seq_length instead')
+
+        self.seq_length = self.config.get('seq_length', 4)
+        print('seq_length:', self.seq_length)
+        self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now. Didn't show that it is usefull
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
+
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']
@@ -229,7 +236,7 @@ class A2CBase(BaseAlgorithm):
         self.game_shaped_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
-        self.games_num = self.config['minibatch_size'] // self.seq_len # it is used only for current rnn implementation
+        self.games_num = self.config['minibatch_size'] // self.seq_length # it is used only for current rnn implementation
 
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
@@ -463,8 +470,8 @@ class A2CBase(BaseAlgorithm):
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
 
             total_agents = self.num_agents * self.num_actors
-            num_seqs = self.horizon_length // self.seq_len
-            assert((self.horizon_length * total_agents // self.num_minibatches) % self.seq_len == 0)
+            num_seqs = self.horizon_length // self.seq_length
+            assert((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
             self.mb_rnn_states = [torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
     def init_rnn_from_model(self, model):
@@ -792,9 +799,9 @@ class A2CBase(BaseAlgorithm):
         step_time = 0.0
 
         for n in range(self.horizon_length):
-            if n % self.seq_len == 0:
+            if n % self.seq_length == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                    mb_s[n // self.seq_len,:,:,:] = s
+                    mb_s[n // self.seq_length,:,:,:] = s
 
             if self.has_central_value:
                 self.central_value_net.pre_step_rnn(n)
@@ -804,6 +811,7 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
@@ -860,6 +868,7 @@ class A2CBase(BaseAlgorithm):
         mb_advs = self.discount_values(fdones, last_values, mb_fdones, mb_values, mb_rewards)
         mb_returns = mb_advs + mb_values
         batch_dict = self.experience_buffer.get_transformed_list(swap_and_flatten01, self.tensor_list)
+
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         states = []
@@ -867,8 +876,10 @@ class A2CBase(BaseAlgorithm):
             t_size = mb_s.size()[0] * mb_s.size()[2]
             h_size = mb_s.size()[3]
             states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
+
         batch_dict['rnn_states'] = states
         batch_dict['step_time'] = step_time
+
         return batch_dict
 
 
