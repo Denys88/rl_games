@@ -62,7 +62,7 @@ class DiambraEnv(gym.Env):
         key_to_add.append("oppPosition")
         key_to_add.append("stage")
         key_to_add.append("character")
-        
+
         self.env = make_diambra_env(diambraGym, env_prefix="Train" + str(self.random_seed), seed=self.random_seed,  
             diambra_kwargs=env_kwargs, 
             diambra_gym_kwargs=gym_kwargs,

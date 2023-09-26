@@ -3,8 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import numpy as np
-
 
 class NoisyLinear(nn.Linear):
     def __init__(self, in_features, out_features, sigma_init=0.017, bias=True):
@@ -54,14 +52,12 @@ class NoisyFactorizedLinear(nn.Linear):
         noise_v = torch.mul(eps_in, eps_out)
         return F.linear(input, self.weight + self.sigma_weight * noise_v, bias)
 
-
-
 def symlog(x):
     return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
 
-
 def symexp(x):
     return torch.sign(x) * (torch.exp(torch.abs(x)) - 1.0)
+
 
 class SymLog(nn.Module):
 
