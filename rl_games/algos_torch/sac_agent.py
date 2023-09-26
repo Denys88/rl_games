@@ -38,6 +38,7 @@ class SACAgent(BaseAlgorithm):
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
 
+        # TODO: double-check! To use bootstrap instead?
         self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
 
         print(self.batch_size, self.num_actors, self.num_agents)
@@ -60,7 +61,6 @@ class SACAgent(BaseAlgorithm):
             'action_dim': self.env_info["action_space"].shape[0],
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
-            'normalize_input' : self.normalize_input,
             'normalize_input': self.normalize_input,
         }
         self.model = self.network.build(net_config)
@@ -88,11 +88,7 @@ class SACAgent(BaseAlgorithm):
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
 
-        self.step = 0
         self.algo_observer = config['features']['observer']
-
-        # TODO: Is there a better way to get the maximum number of episodes?
-        self.max_episodes = torch.ones(self.num_actors, device=self._device)*self.num_steps_per_episode
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -133,6 +129,8 @@ class SACAgent(BaseAlgorithm):
         self.max_epochs = self.config.get('max_epochs', -1)
         self.max_frames = self.config.get('max_frames', -1)
 
+        self.save_freq = config.get('save_frequency', 0)
+
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
@@ -146,10 +144,10 @@ class SACAgent(BaseAlgorithm):
         self.min_alpha = torch.tensor(np.log(1)).float().to(self._device)
 
         self.frame = 0
-        self.update_time = 0
-        self.last_mean_rewards = -100500
-        self.play_time = 0
         self.epoch_num = 0
+        self.update_time = 0
+        self.last_mean_rewards = -1000000000
+        self.play_time = 0
 
         # TODO: put it into the separate class
         pbt_str = ''
@@ -205,17 +203,8 @@ class SACAgent(BaseAlgorithm):
     def device(self):
         return self._device
 
-    def get_full_state_weights(self):
-        state = self.get_weights()
-
-        state['steps'] = self.step
-        state['actor_optimizer'] = self.actor_optimizer.state_dict()
-        state['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()        
-
-        return state
-
     def get_weights(self):
+        print("Loading weights")
         state = {'actor': self.model.sac_network.actor.state_dict(),
          'critic': self.model.sac_network.critic.state_dict(), 
          'critic_target': self.model.sac_network.critic_target.state_dict()}
@@ -233,17 +222,45 @@ class SACAgent(BaseAlgorithm):
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
-    def set_full_state_weights(self, weights):
+    def get_full_state_weights(self):
+        print("Loading full weights")
+        state = self.get_weights()
+
+        state['epoch'] = self.epoch_num
+        state['frame'] = self.frame
+        state['actor_optimizer'] = self.actor_optimizer.state_dict()
+        state['critic_optimizer'] = self.critic_optimizer.state_dict()
+        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()        
+
+        return state
+
+    def set_full_state_weights(self, weights, set_epoch=True):
         self.set_weights(weights)
 
-        self.step = weights['step']
+        if set_epoch:
+            self.epoch_num = weights['epoch']
+            self.frame = weights['frame']
+
         self.actor_optimizer.load_state_dict(weights['actor_optimizer'])
         self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
         self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
 
-    def restore(self, fn):
+        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+
+        if self.vec_env is not None:
+            env_state = weights.get('env_state', None)
+            self.vec_env.set_env_state(env_state)
+
+    def restore(self, fn, set_epoch=True):
+        print("SAC restore")
         checkpoint = torch_ext.load_checkpoint(fn)
-        self.set_full_state_weights(checkpoint)
+        self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
+
+    def get_param(self, param_name):
+        pass
+
+    def set_param(self, param_name, param_value):
+        pass
 
     def get_masked_action_values(self, obs, action_masks):
         assert False
@@ -334,6 +351,7 @@ class SACAgent(BaseAlgorithm):
         if isinstance(obs, dict):
             obs = obs['obs']
         obs = self.model.norm_obs(obs)
+
         return obs
 
     def cast_obs(self, obs):
@@ -348,7 +366,7 @@ class SACAgent(BaseAlgorithm):
 
         return obs
 
-    # todo: move to common utils
+    # TODO: move to common utils
     def obs_to_tensors(self, obs):
         obs_is_dict = isinstance(obs, dict)
         if obs_is_dict:
@@ -359,6 +377,7 @@ class SACAgent(BaseAlgorithm):
             upd_obs = self.cast_obs(obs)
         if not obs_is_dict or 'obs' not in obs:    
             upd_obs = {'obs' : upd_obs}
+
         return upd_obs
 
     def _obs_to_tensors_internal(self, obs):
@@ -368,18 +387,19 @@ class SACAgent(BaseAlgorithm):
                 upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
+
         return upd_obs
 
     def preprocess_actions(self, actions):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
+
         return actions
 
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
         obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
 
-        self.step += self.num_actors
         if self.is_tensor_obses:
             return self.obs_to_tensors(obs), rewards.to(self._device), dones.to(self._device), infos
         else:
@@ -415,7 +435,7 @@ class SACAgent(BaseAlgorithm):
     def clear_stats(self):
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -1000000000
         self.algo_observer.after_clear_stats()
 
     def play_steps(self, random_exploration = False):
@@ -431,6 +451,11 @@ class SACAgent(BaseAlgorithm):
         critic2_losses = []
 
         obs = self.obs
+        if isinstance(obs, dict):
+            obs = self.obs['obs']
+
+        next_obs_processed = obs.clone()
+
         for s in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
@@ -466,16 +491,17 @@ class SACAgent(BaseAlgorithm):
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
 
-            if isinstance(obs, dict):
-                obs = obs['obs']
             if isinstance(next_obs, dict):    
-                next_obs = next_obs['obs']
+                next_obs_processed = next_obs['obs']
+
+            self.obs = next_obs.clone()
 
             rewards = self.rewards_shaper(rewards)
 
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs, torch.unsqueeze(dones, 1))
+            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs_processed, torch.unsqueeze(dones, 1))
 
-            self.obs = obs = next_obs.clone()
+            if isinstance(obs, dict):
+                obs = self.obs['obs']
 
             if not random_exploration:
                 self.set_train()
@@ -505,10 +531,9 @@ class SACAgent(BaseAlgorithm):
     def train(self):
         self.init_tensors()
         self.algo_observer.after_init(self)
-        self.last_mean_rewards = -100500
         total_time = 0
         # rep_count = 0
-        self.frame = 0
+
         self.obs = self.env_reset()
 
         while True:
@@ -560,7 +585,7 @@ class SACAgent(BaseAlgorithm):
                 should_exit = False
 
                 if self.save_freq > 0:
-                    if (self.epoch_num % self.save_freq) == 0:
+                    if self.epoch_num % self.save_freq == 0:
                         self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
