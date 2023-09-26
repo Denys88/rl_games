@@ -306,6 +306,8 @@ Additional environment supported properties and functions
 * Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
 * Fixed SAC not loading weights properly.
 * Removed Ray dependency for use cases it's not required.
+* Added warning for using deprecated 'seq_len' instead of 'seq_length' in configs with RNN networks.
+
 
 1.6.0
 

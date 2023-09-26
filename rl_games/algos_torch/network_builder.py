@@ -323,7 +323,6 @@ class A2CBuilder(NetworkBuilder):
                 c_out = c_out.contiguous().view(c_out.size(0), -1)                    
 
                 if self.has_rnn:
-                    #seq_length = obs_dict['seq_length']
                     seq_length = obs_dict.get('seq_length', 1)
 
                     if not self.is_rnn_before_mlp:
@@ -360,9 +359,11 @@ class A2CBuilder(NetworkBuilder):
                     c_out = c_out.transpose(0,1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
+
                     if self.rnn_ln:
                         a_out = self.a_layer_norm(a_out)
                         c_out = self.c_layer_norm(c_out)
+
                     if type(a_states) is not tuple:
                         a_states = (a_states,)
                         c_states = (c_states,)
@@ -399,7 +400,6 @@ class A2CBuilder(NetworkBuilder):
                 out = out.flatten(1)                
 
                 if self.has_rnn:
-                    #seq_length = obs_dict['seq_length']
                     seq_length = obs_dict.get('seq_length', 1)
 
                     out_in = out

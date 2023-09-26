@@ -204,10 +204,14 @@ class A2CBase(BaseAlgorithm):
         self.horizon_length = config['horizon_length']
 
         # seq_length is used only with rnn policy and value functions
+        if 'seq_len' in config:
+            print('WARNING: seq_len is deprecated, use seq_length instead')
+
         self.seq_length = self.config.get('seq_length', 4)
         print('seq_length:', self.seq_length)
         self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now. Didn't show that it is usefull
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
+
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
         self.normalize_input = self.config['normalize_input']
