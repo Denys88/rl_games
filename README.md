@@ -294,7 +294,7 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
-1.6.1 (Unreleased)
+1.6.1
 * Fixed Central Value RNN bug which occurs if you train ma multi agent environment.
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
