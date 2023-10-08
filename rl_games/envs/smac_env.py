@@ -96,7 +96,7 @@ class SMACEnv(gym.Env):
         return obses, rewards, dones, info
 
     def get_action_mask(self):
-        return np.array(self.env.get_avail_actions(), dtype=np.bool)
+        return np.array(self.env.get_avail_actions(), dtype=bool)
     
     def has_action_mask(self):
         return not self.random_invalid_step

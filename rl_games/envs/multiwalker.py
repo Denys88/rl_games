@@ -5,7 +5,6 @@ import yaml
 from rl_games.torch_runner import Runner
 import os
 from collections import deque
-import rl_games.envs.connect4_network
 
 class MultiWalker(gym.Env):
     def __init__(self, name="multiwalker",  **kwargs):
