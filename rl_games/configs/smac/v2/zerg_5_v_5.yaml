@@ -1,0 +1,86 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: False
+    #normalization: layer_norm
+    space: 
+      discrete:
+
+    mlp:
+      units: [512, 256]
+      activation: relu
+      initializer:
+        name: default 
+    rnn:
+      name: lstm
+      units: 128
+      layers: 1
+      layer_norm: False
+
+  config:
+    name: zerg_5_v_5
+    reward_shaper:
+      scale_value: 1
+
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 2e-4
+    score_to_win: 20
+    entropy_coef: 0.005
+    truncate_grads: True
+    grad_norm: 10
+    env_name: smac_v2
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 16
+    horizon_length: 256
+    minibatch_size: 2560 # 5 * 512
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule: linear
+    kl_threshold: 0.05
+    normalize_input: True
+    normalize_value: True
+    use_action_masks: True
+    max_epochs: 4000
+    seq_length: 16
+
+    player:
+      games_num: 200
+    env_config:
+      name: 'COULD_BE_IGNORED'
+      path: 'rl_games/configs/smac/v2/env_configs/sc2_gen_zerg.yaml'
+      frames: 1
+      transpose: False
+      random_invalid_step: False
+      central_value: True
+      apply_agent_ids: True
+
+    central_value_config:
+      minibatch_size: 512
+      mini_epochs: 4
+      learning_rate: 5e-4
+      clip_value: True
+      normalize_input: True
+      network:
+        name: actor_critic
+        central_value: True
+        mlp:
+          units: [512, 256]
+          activation: relu
+          initializer:
+            name: default 
+          regularizer:
+            name: None
+        rnn:
+          name: lstm
+          units: 128
+          layers: 1
+          layer_norm: False
