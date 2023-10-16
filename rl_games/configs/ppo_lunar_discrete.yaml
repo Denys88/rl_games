@@ -22,6 +22,7 @@ params:
         name: None
 
   config:
+    env_name: LunarLander-v2
     reward_shaper:
         scale_value: 0.1
     normalize_advantage: True
@@ -33,8 +34,6 @@ params:
     grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
-    env_name: LunarLander-v2
-    ppo: true
     e_clip: 0.2
     clip_value: True
     num_actors: 16
@@ -42,9 +41,9 @@ params:
     minibatch_size: 64
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.008
     normalize_input: False
-    device: 'cuda'
+    device: cuda
     multi_gpu: False
     use_diagnostics: True

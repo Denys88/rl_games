@@ -64,8 +64,7 @@ params:
     grad_norm: 1
     entropy_coef: 0.01
     truncate_grads: True
-    env_name:  envpool
-    ppo: true
+    env_name: envpool
     e_clip: 0.2
     clip_value: False
     num_actors: 48
@@ -84,7 +83,7 @@ params:
     max_epochs: 30000
     weight_decay: 0.0001
     env_config:
-      env_name: 'SpaceInvaders-v5'
+      env_name: SpaceInvaders-v5
       episodic_life: True
       has_lives: True
 
@@ -92,5 +91,5 @@ params:
         render: True
         games_num: 10
         n_game_life: 3
-        determenistic: True
+        deterministic: True
         render_sleep: 0.05

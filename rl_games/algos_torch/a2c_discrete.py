@@ -10,9 +10,10 @@ from torch import optim
 import torch 
 from torch import nn
 import numpy as np
-import gym
+
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
+
     def __init__(self, base_name, params):
         a2c_common.DiscreteA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
@@ -21,7 +22,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1),
+            'value_size': self.env_info.get('value_size', 1),
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
@@ -42,24 +43,23 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'horizon_length' : self.horizon_length,
                 'num_actors' : self.num_actors, 
                 'num_actions' : self.actions_num, 
-                'seq_len' : self.seq_len,
+                'seq_length' : self.seq_length,
                 'normalize_value' : self.normalize_value,
                 'network' : self.central_value_config['network'],
                 'config' : self.central_value_config, 
                 'writter' : self.writer,
                 'max_epochs' : self.max_epochs,
                 'multi_gpu' : self.multi_gpu,
-                'hvd': self.hvd if self.multi_gpu else None
+                'zero_rnn_on_done' : self.zero_rnn_on_done
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
         self.use_experimental_cv = self.config.get('use_experimental_cv', False)        
-        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_len)
+        self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, self.is_discrete, self.is_rnn, self.ppo_device, self.seq_length)
 
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
-        self.has_value_loss = (self.has_central_value and self.use_experimental_cv) \
-                            or (not self.has_phasic_policy_gradients and not self.has_central_value)
+        self.has_value_loss = self.use_experimental_cv or not self.has_central_value
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -70,9 +70,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
 
-    def restore(self, fn):
+    def restore(self, fn, set_epoch=True):
         checkpoint = torch_ext.load_checkpoint(fn)
-        self.set_full_state_weights(checkpoint)
+        self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -127,13 +127,15 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
+
         rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
-            batch_dict['seq_length'] = self.seq_len
+            batch_dict['seq_length'] = self.seq_length
             batch_dict['bptt_len'] = self.bptt_len
-            batch_dict['dones'] = input_dict['dones']
+            if self.zero_rnn_on_done:
+                batch_dict['dones'] = input_dict['dones']
 
         with torch.cuda.amp.autocast(enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
@@ -143,7 +145,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
-                c_loss = common_losses.critic_loss(value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
                 c_loss = torch.zeros(1, device=self.ppo_device)
 
@@ -159,7 +161,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                     param.grad = None
 
         self.scaler.scale(loss).backward()
-        self.trancate_gradients()
+        self.trancate_gradients_and_step()
 
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)

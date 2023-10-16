@@ -1,22 +1,19 @@
+import os
+import time
 import numpy as np
 import random
-import copy
+from copy import deepcopy
 import torch
-import yaml
 
-from rl_games import envs
 from rl_games.common import object_factory
-from rl_games.common import env_configurations
-from rl_games.common import experiment
 from rl_games.common import tr_helpers
 
-from rl_games.algos_torch import model_builder
 from rl_games.algos_torch import a2c_continuous
 from rl_games.algos_torch import a2c_discrete
 from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
-import rl_games.networks
+
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
@@ -31,7 +28,10 @@ def _override_sigma(agent, args):
                     net.sigma.fill_(float(args['sigma']))
             else:
                 print('Print cannot set new sigma because fixed_sigma is False')
+
+
 class Runner:
+
     def __init__(self, algo_observer=None):
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
@@ -50,25 +50,51 @@ class Runner:
         ### it didnot help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
+
     def reset(self):
         pass
 
     def load_config(self, params):
         self.seed = params.get('seed', None)
+        if self.seed is None:
+            self.seed = int(time.time())
+
+        self.local_rank = 0
+        self.global_rank = 0
+        self.world_size = 1
+
+        if params["config"].get('multi_gpu', False):
+            # local rank of the GPU in a node
+            self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
+            # global rank of the GPU
+            self.global_rank = int(os.getenv("RANK", "0"))
+            # total number of GPUs across all nodes
+            self.world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+            # set different random seed for each GPU
+            self.seed += self.global_rank
+
+            print(f"global_rank = {self.global_rank} local_rank = {self.local_rank} world_size = {self.world_size}")
+
+        print(f"self.seed = {self.seed}")
 
         self.algo_params = params['algo']
         self.algo_name = self.algo_params['name']
         self.exp_config = None
 
         if self.seed:
-
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
             random.seed(self.seed)
+
+            # deal with environment specific seed if applicable
             if 'env_config' in params['config']:
                 if not 'seed' in params['config']['env_config']:
                     params['config']['env_config']['seed'] = self.seed
+                else:
+                    if params["config"].get('multi_gpu', False):
+                        params['config']['env_config']['seed'] += self
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
@@ -77,9 +103,10 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
-    def load(self, yaml_conf):
-        self.default_config = yaml_conf['params']
-        self.load_config(params=copy.deepcopy(self.default_config))
+    def load(self, yaml_config):
+        config = deepcopy(yaml_config)
+        self.default_config = deepcopy(config['params'])
+        self.load_config(params=self.default_config)
 
     def run_train(self, args):
         print('Started to train')
@@ -102,11 +129,8 @@ class Runner:
         pass
 
     def run(self, args):
-        load_path = None
-
         if args['train']:
             self.run_train(args)
-
         elif args['play']:
             self.run_play(args)
         else:

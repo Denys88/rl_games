@@ -23,10 +23,9 @@ params:
       n_hidden_layers: 4
 
   config:
-    name: 'Ant_brax_tcnn'
+    name: Ant_brax_tcnn
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True

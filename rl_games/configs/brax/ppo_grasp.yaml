@@ -37,7 +37,6 @@ params:
     name: 'Grasp_brax'
     env_name: brax
     multi_gpu: False
-    ppo: True
     mixed_precision: True
     normalize_input: True
     normalize_value: True

@@ -18,12 +18,12 @@ params:
       initializer:
         name: default 
       regularizer:
-        name:  'None'
+        name: None
 
   config:
     name: 8m_cv
     reward_shaper:
-        scale_value: 1
+      scale_value: 1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
@@ -32,8 +32,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.001
     truncate_grads: True
-    env_name:  smac
-    ppo: true
+    env_name: smac
     e_clip: 0.2
     clip_value: True
     num_actors: 8
@@ -41,14 +40,13 @@ params:
     minibatch_size: 4096 # 3 * 512
     mini_epochs: 4
     critic_coef: 1
-    lr_schedule:  None
+    lr_schedule: None
     kl_threshold: 0.05
     normalize_input: True
     seq_length: 2
     use_action_masks: True
     ignore_dead_batches : False
     max_epochs: 10000
-
 
     central_value_config:
       minibatch_size: 512
@@ -66,7 +64,7 @@ params:
             name: default
             scale: 2 
           regularizer:
-            name:  'None'
+            name: None
 
     env_config:
       name: 8m
