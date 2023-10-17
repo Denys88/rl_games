@@ -493,8 +493,9 @@ class SACAgent(BaseAlgorithm):
 
             if isinstance(next_obs, dict):    
                 next_obs_processed = next_obs['obs']
-
-            self.obs = next_obs.clone()
+                self.obs = next_obs_processed.clone()
+            else:
+                self.obs = next_obs.clone()
 
             rewards = self.rewards_shaper(rewards)
 
