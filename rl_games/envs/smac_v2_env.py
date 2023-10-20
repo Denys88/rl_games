@@ -1,19 +1,25 @@
 import gym
 import numpy as np
-from smac.env import StarCraft2Env
-from smac.env import MultiAgentEnv
+import yaml
+from smacv2.env import StarCraft2Env
+from smacv2.env import MultiAgentEnv
+from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
 
-class SMACEnv(gym.Env):
+class SMACEnvV2(gym.Env):
     def __init__(self, name="3m",  **kwargs):
         gym.Env.__init__(self)
         self._seed = kwargs.pop('seed', None)
+        self.path = kwargs.pop('path')
         self.reward_sparse = kwargs.get('reward_sparse', False)
-        self.use_central_value = kwargs.pop('central_value', False)
+        self.use_central_value = kwargs.pop('central_value', True)
         self.concat_infos = True
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
         self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
         self.apply_agent_ids = kwargs.pop('apply_agent_ids', True)
-        self.env = StarCraft2Env(map_name=name, seed=self._seed, **kwargs)
+        with open(self.path, 'r') as stream:
+            config = yaml.safe_load(stream)
+            env_args = config['env_args']
+        self.env = StarCraftCapabilityEnvWrapper(seed=self._seed, **env_args)
         self.env_info = self.env.get_env_info()
 
         self._game_num = 0

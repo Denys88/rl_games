@@ -86,16 +86,6 @@ def create_slime_gym_env(**kwargs):
         env = gym.make(name, **kwargs)
     return env
 
-def create_connect_four_env(**kwargs):
-    from rl_games.envs.connect4_selfplay import ConnectFourSelfPlay
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-    self_play = kwargs.pop('self_play', False)
-    if self_play:
-        env = ConnectFourSelfPlay(name, **kwargs) 
-    else:
-        env = gym.make(name, **kwargs)
-    return env
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -170,6 +160,21 @@ def create_smac(name, **kwargs):
     has_cv = kwargs.get('central_value', False)
     env = SMACEnv(name, **kwargs)
     
+    
+    if frames > 1:
+        if has_cv:
+            env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
+        else:
+            env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=flatten)
+    return env
+
+def create_smac_v2(name, **kwargs):
+    from rl_games.envs.smac_v2_env import SMACEnvV2
+    frames = kwargs.pop('frames', 1)
+    transpose = kwargs.pop('transpose', False)
+    flatten = kwargs.pop('flatten', True)
+    has_cv = kwargs.get('central_value', False)
+    env = SMACEnvV2(name, **kwargs)
     
     if frames > 1:
         if has_cv:
@@ -359,6 +364,10 @@ configurations = {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'smac_v2' : {
+        'env_creator' : lambda **kwargs : create_smac_v2(**kwargs),
+        'vecenv_type' : 'RAY'
+    },
     'smac_cnn' : {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY'
@@ -389,10 +398,6 @@ configurations = {
     },
     'minigrid_env' : {
         'env_creator' : lambda **kwargs : create_minigrid_env(kwargs.pop('name'), **kwargs),
-        'vecenv_type' : 'RAY'
-    },
-    'connect4_env' : {
-        'env_creator' : lambda **kwargs : create_connect_four_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
     'multiwalker_env' : {

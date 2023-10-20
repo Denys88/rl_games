@@ -7,7 +7,6 @@ import random
 from time import sleep
 import torch
 
-
 class RayWorker:
     def __init__(self, config_name, config):
         self.env = configurations[config_name]['env_creator'](**config)
@@ -96,14 +95,16 @@ class RayWorker:
 
 
 class RayVecEnv(IVecEnv):
+    import ray
+
     def __init__(self, config_name, num_actors, **kwargs):
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        import ray
-        self.remote_worker = ray.remote(RayWorker)
+        
+        self.remote_worker = self.ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
         if self.seed is not None:
@@ -111,15 +112,15 @@ class RayVecEnv(IVecEnv):
             seed_set = []
             for (seed, worker) in zip(seeds, self.workers):	        
                 seed_set.append(worker.seed.remote(seed))
-            ray.get(seed_set)
+            self.ray.get(seed_set)
 
         res = self.workers[0].get_number_of_agents.remote()
-        self.num_agents = ray.get(res)
+        self.num_agents = self.ray.get(res)
 
         res = self.workers[0].get_env_info.remote()
-        env_info = ray.get(res)
+        env_info = self.ray.get(res)
         res = self.workers[0].can_concat_infos.remote()
-        can_concat_infos = ray.get(res)
+        can_concat_infos = self.ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
         self.concat_infos = can_concat_infos
         self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
@@ -139,7 +140,7 @@ class RayVecEnv(IVecEnv):
             for num, worker in enumerate(self.workers):
                 res_obs.append(worker.step.remote(actions[self.num_agents * num: self.num_agents * num + self.num_agents]))
 
-        all_res = ray.get(res_obs)
+        all_res = self.ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res
             if self.use_global_obs:
@@ -171,27 +172,27 @@ class RayVecEnv(IVecEnv):
 
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
-        return ray.get(res)
+        return self.ray.get(res)
 
     def set_weights(self, indices, weights):
         res = []
         for ind in indices:
             res.append(self.workers[ind].set_weights.remote(weights))
-        ray.get(res)
+        self.ray.get(res)
 
     def has_action_masks(self):
         return True
 
     def get_action_masks(self):
         mask = [worker.get_action_mask.remote() for worker in self.workers]
-        masks = ray.get(mask)
+        masks = self.ray.get(mask)
         return np.concatenate(masks, axis=0)
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]
         newobs, newstates = [],[]
         for res in res_obs:
-            cobs = ray.get(res)
+            cobs = self.ray.get(res)
             if self.use_global_obs:
                 newobs.append(cobs["obs"])
                 newstates.append(cobs["state"])
