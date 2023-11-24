@@ -2,20 +2,23 @@ import torch
 import copy
 from torch.utils.data import Dataset
 
+
 class PPODataset(Dataset):
-    def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_len):
+
+    def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_length):
+
         self.is_rnn = is_rnn
-        self.seq_len = seq_len
+        self.seq_length = seq_length
         self.batch_size = batch_size
         self.minibatch_size = minibatch_size
         self.device = device
         self.length = self.batch_size // self.minibatch_size
         self.is_discrete = is_discrete
         self.is_continuous = not is_discrete
-        total_games = self.batch_size // self.seq_len
-        self.num_games_batch = self.minibatch_size // self.seq_len
+        total_games = self.batch_size // self.seq_length
+        self.num_games_batch = self.minibatch_size // self.seq_length
         self.game_indexes = torch.arange(total_games, dtype=torch.long, device=self.device)
-        self.flat_indexes = torch.arange(total_games * self.seq_len, dtype=torch.long, device=self.device).reshape(total_games, self.seq_len)
+        self.flat_indexes = torch.arange(total_games * self.seq_length, dtype=torch.long, device=self.device).reshape(total_games, self.seq_length)
 
         self.special_names = ['rnn_states']
 
@@ -34,9 +37,10 @@ class PPODataset(Dataset):
     def _get_item_rnn(self, idx):
         gstart = idx * self.num_games_batch
         gend = (idx + 1) * self.num_games_batch
-        start = gstart * self.seq_len
-        end = gend * self.seq_len
-        self.last_range = (start, end)   
+        start = gstart * self.seq_length
+        end = gend * self.seq_length
+        self.last_range = (start, end)
+
         input_dict = {}
         for k,v in self.values_dict.items():
             if k not in self.special_names:

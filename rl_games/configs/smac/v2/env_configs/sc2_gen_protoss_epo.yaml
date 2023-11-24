@@ -1,0 +1,70 @@
+env: sc2wrapped
+
+env_args:
+  continuing_episode: False
+  difficulty: "7"
+  game_version: null
+  map_name: "10gen_protoss"
+  move_amount: 2
+  obs_all_health: True
+  obs_instead_of_state: False
+  obs_last_action: False
+  obs_own_health: True
+  obs_pathing_grid: False
+  obs_terrain_height: False
+  obs_timestep_number: False
+  reward_death_value: 10
+  reward_defeat: 0
+  reward_negative_scale: 0.5
+  reward_only_positive: True
+  reward_scale: True
+  reward_scale_rate: 20
+  reward_sparse: False
+  reward_win: 200
+  replay_dir: ""
+  replay_prefix: ""
+  conic_fov: False
+  use_unit_ranges: True
+  min_attack_range: 2
+  obs_own_pos: True
+  num_fov_actions: 12
+  capability_config:
+    n_units: 5
+    n_enemies: 5
+    team_gen:
+      dist_type: "weighted_teams"
+      unit_types:
+        - "stalker"
+        - "zealot"
+        - "colossus"
+      weights:
+        - 0.45
+        - 0.45
+        - 0.1
+      observe: True
+    start_positions:
+      dist_type: "surrounded_and_reflect"
+      p: 0.5
+      map_x: 32
+      map_y: 32
+
+    # enemy_mask:
+    #   dist_type: "mask"
+    #   mask_probability: 0.5
+    #   n_enemies: 5
+  state_last_action: True
+  state_timestep_number: False
+  step_mul: 8
+  heuristic_ai: False
+  # heuristic_rest: False
+  debug: False
+  # Most severe partial obs setting:
+  prob_obs_enemy: 0.0
+  action_mask: False
+
+test_nepisode: 32
+test_interval: 10000
+log_interval: 2000
+runner_log_interval: 2000
+learner_log_interval: 2000
+t_max: 10050000

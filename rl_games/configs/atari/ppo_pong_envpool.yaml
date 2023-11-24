@@ -71,7 +71,7 @@ params:
     #schedule_entropy: True
     #update_norm_in_train: True
     max_epochs: 500
-    use_diagnostics: False
+    use_diagnostics: True
 
     env_config:
       env_name: Pong-v5
@@ -81,4 +81,4 @@ params:
       render: False
       games_num: 100
       n_game_life: 1
-      determenistic: True
+      deterministic: True

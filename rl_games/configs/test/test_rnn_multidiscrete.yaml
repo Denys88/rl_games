@@ -64,7 +64,7 @@ params:
       multi_discrete_space: True
     player:
         games_num: 100
-        determenistic: True
+        deterministic: True
 
     central_value_config:
       minibatch_size: 512

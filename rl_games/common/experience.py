@@ -20,7 +20,7 @@ class ReplayBuffer(object):
         self._next_obses = np.zeros((size,) + ob_space.shape, dtype=ob_space.dtype)
         self._rewards = np.zeros(size)
         self._actions = np.zeros(size, dtype=np.int32)
-        self._dones = np.zeros(size, dtype=np.bool)
+        self._dones = np.zeros(size, dtype=bool)
 
         self._maxsize = size
         self._next_idx = 0
@@ -337,11 +337,11 @@ class ExperienceBuffer:
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.float32), obs_base_shape)
         self.tensor_dict['dones'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(), dtype=np.uint8), obs_base_shape)
+
         if self.is_discrete or self.is_multi_discrete:
-            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.long), obs_base_shape)
+            self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=int), obs_base_shape)
         if self.use_action_masks:
-            print('action_masks:', self.actions_shape, (np.sum(self.actions_num),))
-            self.tensor_dict['action_masks'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(np.sum(self.actions_num),), dtype=np.bool), obs_base_shape)
+            self.tensor_dict['action_masks'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(np.sum(self.actions_num),), dtype=bool), obs_base_shape)
         if self.is_continuous:
             self.tensor_dict['actions'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
             self.tensor_dict['mus'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=self.actions_shape, dtype=np.float32), obs_base_shape)
