@@ -41,7 +41,7 @@ params:
     clip_value: False
     num_actors: 16
     horizon_length: 256
-    minibatch_size: 2560 # 5 * 512
+    minibatch_size: 10240 # 5 * 512
     mini_epochs: 4
     critic_coef: 1
     lr_schedule: linear

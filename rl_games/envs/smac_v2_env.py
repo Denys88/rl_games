@@ -14,7 +14,7 @@ class SMACEnvV2(gym.Env):
         self.use_central_value = kwargs.pop('central_value', True)
         self.concat_infos = True
         self.random_invalid_step = kwargs.pop('random_invalid_step', False)
-        self.replay_save_freq = kwargs.pop('replay_save_freq', 10000)
+        self.replay_save_freq = kwargs.pop('replay_save_freq', 100)
         self.apply_agent_ids = kwargs.pop('apply_agent_ids', True)
         with open(self.path, 'r') as stream:
             config = yaml.safe_load(stream)
