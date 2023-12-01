@@ -153,11 +153,12 @@ def create_roboschool_env(name):
     return gym.make(name)
 
 def create_smac(name, **kwargs):
-    from rl_games.envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
     frames = kwargs.pop('frames', 1)
     transpose = kwargs.pop('transpose', False)
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
+    as_single_agent = kwargs.pop('as_single_agent', False)
     env = SMACEnv(name, **kwargs)
     
     
@@ -166,6 +167,9 @@ def create_smac(name, **kwargs):
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
         else:
             env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=flatten)
+
+    if as_single_agent:
+        env = MultiDiscreteSmacWrapper(env)
     return env
 
 def create_smac_v2(name, **kwargs):
@@ -184,16 +188,18 @@ def create_smac_v2(name, **kwargs):
     return env
 
 def create_smac_cnn(name, **kwargs):
-    from rl_games.envs.smac_env import SMACEnv
+    from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
     has_cv = kwargs.get('central_value', False)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
+
     env = SMACEnv(name, **kwargs)
     if has_cv:
         env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=transpose)
     else:
         env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
-        
+    if as_single_agent:
+        env = MultiDiscreteSmacWrapper(env)
     return env
 
 def create_test_env(name, **kwargs):

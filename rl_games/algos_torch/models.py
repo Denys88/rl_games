@@ -144,7 +144,8 @@ class ModelA2CMultiDiscrete(BaseModel):
             if is_train:
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
-                else:   
+                else:
+                    action_masks = np.split(action_masks,len(logits), axis=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
                 prev_neglogp = [-c.log_prob(a.squeeze()) for c,a in zip(categorical, prev_actions)]
@@ -162,7 +163,8 @@ class ModelA2CMultiDiscrete(BaseModel):
             else:
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
-                else:   
+                else:
+                    action_masks = np.split(action_masks, len(logits), axis=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]                
                 
                 selected_action = [c.sample().long() for c in categorical]
