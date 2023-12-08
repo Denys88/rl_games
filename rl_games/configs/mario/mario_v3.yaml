@@ -7,30 +7,42 @@ params:
     name: discrete_a2c
 
   network:
-    name: resnet_actor_critic
-    require_rewards: False
-    require_last_actions: False
+    name: actor_critic
     separate: False
-    value_shape: 1
     space: 
       discrete:
-    
+
     cnn:
-      conv_depths: [32, 64, 128, 256]
-      activation: relu
+      #permute_input: False
+      type: conv2d
+      activation: elu
       initializer:
         name: default
+        #name: glorot_normal_initializer
+        #gain: 1.4142
       regularizer:
-        name: 'None'
+        name: None
+      convs:    
+        - filters: 32
+          kernel_size: 8
+          strides: 4
+          padding: 0
+        - filters: 64
+          kernel_size: 4
+          strides: 2
+          padding: 0
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 0
       
     mlp:
       units: [512]
-      activation: relu
-      regularizer:
-        name: 'None'
+      activation: elu
       initializer:
-        name: default 
-    
+        name: orthogonal_initializer
+        gain: 1.41421356237
+
   config:
     name: mario_ray
     env_name: 'SuperMarioBros-v1'
@@ -54,18 +66,15 @@ params:
     clip_value: False
     num_actors: 64
     horizon_length: 128
-    # seq_length: 8
     minibatch_size: 4096
     mini_epochs: 4
     critic_coef: 2
     max_epochs: 5000
     use_diagnostics: False
-
-
     player:
       render: True
       games_num: 1
       n_game_life: 1
-      deterministic: False
+      deterministic: True
       use_vecenv: False
       render_sleep: 0.05

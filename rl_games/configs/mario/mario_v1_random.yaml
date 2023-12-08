@@ -1,3 +1,4 @@
+
 params:  
   seed: 322
   algo:
@@ -33,7 +34,7 @@ params:
     
   config:
     name: mario_ray
-    env_name: 'SuperMarioBros-v1'
+    env_name: 'SuperMarioBrosRandomStages-v1'
     score_to_win: 100500
     normalize_value: True
     normalize_input: False
