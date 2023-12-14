@@ -131,10 +131,10 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
         'SuperMarioBros-1-3-v1',
         'SuperMarioBros-1-4-v1',
     ]
-
-    env = gym_super_mario_bros.make(stage_names[1])
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    
+    #stages=['1-1','1-2','1-3','1-4']
+    env = gym_super_mario_bros.make('SuperMarioBrosRandomStages-v1', stages=['2-1', '2-2', '2-3', '2-4',])
+    env = JoypadSpace(env, COMPLEX_MOVEMENT)
+    env = wrappers.EpisodicLifeMarioEnv(env)
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     #env = wrappers.AllowBacktracking(env)
