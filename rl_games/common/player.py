@@ -77,7 +77,8 @@ class BasePlayer(object):
         self.device = torch.device(self.device_name)
 
         self.evaluation = self.player_config.get("evaluation", False)
-        self.update_checkpoint_freq = self.player_config.get("update_checkpoint_freq", 100)
+        self.update_checkpoint_freq = self.player_config.get(
+            "update_checkpoint_freq", 100)
         # if we run player as evaluation worker this will take care of loading new checkpoints
         self.dir_to_monitor = self.player_config.get("dir_to_monitor")
         # path to the newest checkpoint
@@ -85,7 +86,8 @@ class BasePlayer(object):
 
         if self.evaluation and self.dir_to_monitor is not None:
             self.checkpoint_mutex = threading.Lock()
-            self.eval_checkpoint_dir = os.path.join(self.dir_to_monitor, "eval_checkpoints")
+            self.eval_checkpoint_dir = os.path.join(
+                self.dir_to_monitor, "eval_checkpoints")
             os.makedirs(self.eval_checkpoint_dir, exist_ok=True)
 
             patterns = ["*.pth"]
@@ -96,7 +98,8 @@ class BasePlayer(object):
             self.file_events.on_modified = self.on_file_modified
 
             self.file_observer = Observer()
-            self.file_observer.schedule(self.file_events, self.dir_to_monitor, recursive=False)
+            self.file_observer.schedule(
+                self.file_events, self.dir_to_monitor, recursive=False)
             self.file_observer.start()
 
     def wait_for_checkpoint(self):
@@ -109,7 +112,8 @@ class BasePlayer(object):
             with self.checkpoint_mutex:
                 if self.checkpoint_to_load is not None:
                     if attempt % 10 == 0:
-                        print(f"Evaluation: waiting for new checkpoint in {self.dir_to_monitor}...")
+                        print(
+                            f"Evaluation: waiting for new checkpoint in {self.dir_to_monitor}...")
                     break
             time.sleep(1.0)
 
@@ -119,21 +123,24 @@ class BasePlayer(object):
         # lock mutex while loading new checkpoint
         with self.checkpoint_mutex:
             if self.checkpoint_to_load is not None:
-                print(f"Evaluation: loading new checkpoint {self.checkpoint_to_load}...")
+                print(
+                    f"Evaluation: loading new checkpoint {self.checkpoint_to_load}...")
                 # try if we can load anything from the pth file, this will quickly fail if the file is corrupted
                 # without triggering the retry loop in "safe_filesystem_op()"
                 load_error = False
                 try:
                     torch.load(self.checkpoint_to_load)
                 except Exception as e:
-                    print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
+                    print(
+                        f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
                     load_error = True
 
                 if not load_error:
                     try:
                         self.restore(self.checkpoint_to_load)
                     except Exception as e:
-                        print(f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load}: {e}")
+                        print(
+                            f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load}: {e}")
 
                 # whether we succeeded or not, forget about this checkpoint
                 self.checkpoint_to_load = None
@@ -146,7 +153,8 @@ class BasePlayer(object):
             # there is a chance that the file is changed/corrupted while we're copying it
             # not sure what we can do about this. In practice it never happened so far though
             try:
-                eval_checkpoint_path = os.path.join(self.eval_checkpoint_dir, basename(path))
+                eval_checkpoint_path = os.path.join(
+                    self.eval_checkpoint_dir, basename(path))
                 shutil.copyfile(path, eval_checkpoint_path)
             except Exception as e:
                 print(f"Failed to copy {path} to {eval_checkpoint_path}: {e}")
@@ -180,7 +188,14 @@ class BasePlayer(object):
     def env_step(self, env, actions):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
-        obs, rewards, dones, infos = env.step(int(actions))
+
+        def check_if_numpy_array_is_scalar(arr):
+            return arr.size == 1 and arr.shape == ()
+
+        if check_if_numpy_array_is_scalar(actions):
+            actions = actions.item()
+
+        obs, rewards, dones, infos = env.step(actions)
         if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
@@ -364,9 +379,11 @@ class BasePlayer(object):
                         cur_rewards_done = cur_rewards/done_count
                         cur_steps_done = cur_steps/done_count
                         if print_game_res:
-                            print(f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f} w: {game_res}')
+                            print(
+                                f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f} w: {game_res}')
                         else:
-                            print(f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f}')
+                            print(
+                                f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f}')
 
                     sum_game_res += game_res
                     if batch_size//self.num_agents == 1 or games_played >= n_games:
