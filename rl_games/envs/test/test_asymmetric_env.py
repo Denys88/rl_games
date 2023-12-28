@@ -1,4 +1,4 @@
-import gym as gymnasium
+import gymnasium as gym
 import numpy as np
 from rl_games.common.wrappers import MaskVelocityWrapper
 

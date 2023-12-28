@@ -2,7 +2,7 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
-import gym as gymnasium
+import gymnasium as gym
 import random
 from time import sleep
 import torch

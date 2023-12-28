@@ -5,7 +5,7 @@ import os
 os.environ.setdefault('PATH', '')
 from collections import deque
 
-import gym as gymnasium
+import gymnasium as gym
 from gym import spaces
 from copy import copy
 

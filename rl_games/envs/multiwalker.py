@@ -1,4 +1,4 @@
-import gym as gymnasium
+import gymnasium as gym
 import numpy as np
 from pettingzoo.sisl import multiwalker_v6
 import yaml
