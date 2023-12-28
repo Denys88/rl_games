@@ -1,4 +1,4 @@
-import gym
+import gym as gymnasium
 import numpy as np
 import yaml
 from smacv2.env import StarCraft2Env

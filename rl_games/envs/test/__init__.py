@@ -1,4 +1,4 @@
-import gym
+import gym as gymnasium
 
 gym.envs.register(
      id='TestRnnEnv-v0',

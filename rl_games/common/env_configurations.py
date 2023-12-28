@@ -1,10 +1,11 @@
 import rl_games.envs.test
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
+from rl_games.common import gymnasium_utils
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
 from rl_games.envs.cule import create_cule
-import gym
+import gym as gymnasium
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
@@ -108,10 +109,10 @@ def create_dm_control_env(**kwargs):
     return env
 
 def create_super_mario_env(name='SuperMarioBros-v1'):
-    import gym
+    import gym as gymnasium
     from nes_py.wrappers import JoypadSpace
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-    import gym_super_mario_bros
+    import gym as gymnasium_super_mario_bros
     env = gym_super_mario_bros.make(name)
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
 
@@ -120,11 +121,11 @@ def create_super_mario_env(name='SuperMarioBros-v1'):
     return env
 
 def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
-    import gym
+    import gym as gymnasium
     from nes_py.wrappers import JoypadSpace
     from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
 
-    import gym_super_mario_bros
+    import gym as gymnasium_super_mario_bros
     stage_names = [
         'SuperMarioBros-1-1-v1',
         'SuperMarioBros-1-2-v1',
@@ -142,13 +143,13 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     return env
 
 def create_quadrupped_env():
-    import gym
+    import gym as gymnasium
     import roboschool
     import quadruppedEnv
     return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'), 4, False), 2, True)
 
 def create_roboschool_env(name):
-    import gym
+    import gym as gymnasium
     import roboschool
     return gym.make(name)
 
@@ -202,8 +203,8 @@ def create_test_env(name, **kwargs):
     return env
 
 def create_minigrid_env(name, **kwargs):
-    import gym_minigrid
-    import gym_minigrid.wrappers
+    import gym as gymnasium_minigrid
+    import gym as gymnasium_minigrid.wrappers
 
 
     state_bonus = kwargs.pop('state_bonus', False)
@@ -448,8 +449,16 @@ def get_obs_and_action_spaces_from_config(config):
     env = configurations[config['env_name']]['env_creator'](**env_config)
     result_shapes = get_env_info(env)
     env.close()
-    return result_shapes
+    return patch_env_info(result_shapes)
 
+
+def patch_env_info(env_info):
+    import gymnas
+    env_info['observation_space'] = gymnasium_utils.convert_space(env_info['observation_space'] )
+    env_info['action_space'] = gymnasium_utils.convert_space(env_info['observation_space'] )
+    if 'state_space' in env_info:
+        env_info['state_space'] = gymnasium_utils.convert_space(env_info['state_space'] )
+    return env_info
 
 def register(name, config):
     configurations[name] = config

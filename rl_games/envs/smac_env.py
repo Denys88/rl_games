@@ -1,4 +1,4 @@
-import gym
+import gym as gymnasium
 import numpy as np
 from smac.env import StarCraft2Env
 from smac.env import MultiAgentEnv
