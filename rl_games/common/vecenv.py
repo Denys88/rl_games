@@ -139,7 +139,7 @@ class RayWorkerGymnasium:
         pass
 
     def reset(self):
-        obs, info = self.env.reset(self.saved_seed) # ignoring info for now
+        obs, info = self.env.reset(seed=self.saved_seed) # ignoring info for now
         obs = self._obs_to_fp32(obs)
         return obs
 
@@ -192,8 +192,7 @@ class RayVecEnv(IVecEnv):
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        
-        self.remote_worker = self.ray.remote(RayWorker)
+        self.remote_worker = self.ray.remote(RayWorkerGymnasium)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
         if self.seed is not None:

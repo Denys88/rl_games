@@ -43,7 +43,7 @@ class BraxEnv(IVecEnv):
         is_done = jax_to_torch(is_done)
         return next_obs, reward, is_done, info
 
-    def reset(self):
+    def reset(self, **kwargs):
         # todo add random init like in collab examples?
         obs = self.env.reset()
         return jax_to_torch(obs)

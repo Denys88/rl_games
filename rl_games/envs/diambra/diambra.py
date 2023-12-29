@@ -75,7 +75,7 @@ class DiambraEnv(gym.Env):
     def _preproc_state_obs(self, obs):
         return obs
 
-    def reset(self):
+    def reset(self, **kwargs):
         self._game_num += 1
         obs = self.env.reset() # rename, to think remove
         obs_dict = self._preproc_state_obs(obs)

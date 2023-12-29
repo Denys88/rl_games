@@ -102,7 +102,8 @@ def convert_space(space: Union["gym.Space", gymnasium.Space]) -> gymnasium.Space
     :param space: A gym/gymnasium Space
     :return: Patched space (gymnasium Space)
     """
-
+    if space is None: 
+        return None
     # Gymnasium space, no convertion to be done
     if isinstance(space, gymnasium.Space):
         return space

@@ -20,10 +20,10 @@ class SlimeVolleySelfplay(gym.Env):
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
 
-    def reset(self):
+    def reset(self, **kwargs):
         if self.agent == None:
             self.create_agent(self.config_path)
-        obs = self.env.reset()
+        obs = self.env.reset( **kwargs)
         self.opponent_obs = obs
         self.sum_rewards = 0
         return obs

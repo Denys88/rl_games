@@ -45,7 +45,7 @@ class TestRNNEnv(gym.Env):
     def get_number_of_agents(self):
         return 1
 
-    def reset(self):
+    def reset(self, seed):
         self._curr_steps = 0
         self._current_pos = [0,0]
         bound = self.max_dist - self.min_dist
@@ -143,7 +143,7 @@ class TestRNNEnv(gym.Env):
         else:
             reward = reward[0] + reward[1]
         
-        return obses, np.array(reward).astype(np.float32), done, info
+        return obses, np.array(reward).astype(np.float32), done, false,  info
     
     def has_action_mask(self):
         return False
