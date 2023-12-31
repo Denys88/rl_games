@@ -276,6 +276,10 @@ def create_env(name, **kwargs):
         env = wrappers.TimeLimit(env, steps_limit)
     return env
 
+def create_mario_env(**kwargs):
+    import gym
+    import rl_games.envs.mario
+    return gym.make('MarioEnv-v0',**kwargs)
 
 configurations = {
     'CartPole-v1': {
@@ -449,6 +453,10 @@ configurations = {
     'cule': {
         'env_creator': lambda **kwargs: create_cule(**kwargs),
         'vecenv_type': 'CULE'
+    },
+    'MarioEnv': {
+        'env_creator': lambda **kwargs: create_mario_env(**kwargs),
+        'vecenv_type': 'RAY'
     },
 }
 

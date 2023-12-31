@@ -156,7 +156,7 @@ class RayVecEnv(IVecEnv):
             ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
         else:
             ret_obs = self.concat_func(newobs)
-
+        
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs

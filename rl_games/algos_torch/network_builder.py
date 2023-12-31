@@ -740,6 +740,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     obs_list.append(reward.unsqueeze(1))
                 if self.require_last_actions:
                     obs_list.append(last_action)
+
                 out = torch.cat(obs_list, dim=1)
                 batch_size = out.size()[0]
                 num_seqs = batch_size // seq_length

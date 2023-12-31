@@ -129,12 +129,14 @@ class EpisodicLifeMarioEnv(gym.Wrapper):
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
         lives = self.env.unwrapped.env._life
-        if lives < self.lives and lives > 0:
+        if lives < self.lives:
             # for Qbert sometimes we stay in lives == 0 condition for a few frames
             # so it's important to keep lives > 0, so that we only reset once
             # the environment advertises done.
             done = True
-        self.lives = lives
+        elif lives > self.lives:
+            # do not allow use of bonus life
+            self.lives = lives
         return obs, reward, done, info
 
     def reset(self, **kwargs):
