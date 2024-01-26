@@ -93,42 +93,6 @@ class EpisodicLifeEnv(gym.Wrapper):
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
         lives = self.env.unwrapped.ale.lives()
-        if lives < self.lives and lives > 0:
-            # for Qbert sometimes we stay in lives == 0 condition for a few frames
-            # so it's important to keep lives > 0, so that we only reset once
-            # the environment advertises done.
-            done = True
-        self.lives = lives
-        return obs, reward, done, info
-
-    def reset(self, **kwargs):
-        """Reset only when lives are exhausted.
-        This way all states are still reachable even though lives are episodic,
-        and the learner need not know about any of this behind-the-scenes.
-        """
-        if self.was_real_done:
-            obs = self.env.reset(**kwargs)
-        else:
-            # no-op step to advance from terminal/lost life state
-            obs, _, _, _ = self.env.step(0)
-        self.lives = self.env.unwrapped.ale.lives()
-        return obs
-
-class EpisodicLifeMarioEnv(gym.Wrapper):
-    def __init__(self, env):
-        """Make end-of-life == end-of-episode, but only reset on True game over.
-        Done by DeepMind for the DQN and co. since it helps value estimation.
-        """
-        gym.Wrapper.__init__(self, env)
-        self.lives = 0
-        self.was_real_done  = True
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        self.was_real_done = done
-        # check current lives, make loss of life terminal,
-        # then update lives to handle bonus lives
-        lives = self.env.unwrapped.env._life
         if lives < self.lives:
             # for Qbert sometimes we stay in lives == 0 condition for a few frames
             # so it's important to keep lives > 0, so that we only reset once
@@ -149,17 +113,18 @@ class EpisodicLifeMarioEnv(gym.Wrapper):
         else:
             # no-op step to advance from terminal/lost life state
             obs, _, _, _ = self.env.step(0)
-        self.lives = self.env.unwrapped.env._life
+        self.lives = self.env.unwrapped.ale.lives()
         return obs
 
 class EpisodicLifeMarioEnv(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, max_lives):
         """Make end-of-life == end-of-episode, but only reset on True game over.
         Done by DeepMind for the DQN and co. since it helps value estimation.
         """
         gym.Wrapper.__init__(self, env)
         self.lives = 0
-        self.was_real_done = True
+        self.was_real_done  = True
+        self.max_lives = max_lives
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -167,12 +132,14 @@ class EpisodicLifeMarioEnv(gym.Wrapper):
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
         lives = self.env.unwrapped._life
-        if lives < self.lives and lives > 0:
+        if lives < self.lives:
             # for Qbert sometimes we stay in lives == 0 condition for a few frames
             # so it's important to keep lives > 0, so that we only reset once
             # the environment advertises done.
             done = True
-        self.lives = lives
+        elif lives > self.lives:
+            # do not allow use of bonus life
+            self.lives = lives
         return obs, reward, done, info
 
     def reset(self, **kwargs):
@@ -182,6 +149,7 @@ class EpisodicLifeMarioEnv(gym.Wrapper):
         """
         if self.was_real_done:
             obs = self.env.reset(**kwargs)
+            self.env.unwrapped.ram[0x075a] = self.max_lives
         else:
             # no-op step to advance from terminal/lost life state
             obs, _, _, _ = self.env.step(0)
@@ -225,6 +193,28 @@ class EpisodicLifeRandomMarioEnv(gym.Wrapper):
         self.lives = self.env.unwrapped.env._life
         return obs
 
+class PreventSlugEnv(gym.Wrapper):
+    def __init__(self, env, max_no_rewards=10000):
+        """Abort if too much time without getting reward."""
+        MyWrapper.__init__(self, env)
+        self.last_reward = 0
+        self.steps = 0
+        self.max_no_rewards = max_no_rewards
+        self.got_reward = False
+
+    def step(self, *args, **kwargs):
+        obs, reward, done, info = self.env.step(*args, **kwargs)
+        self.steps += 1
+        if reward > 0:
+            self.last_reward = self.steps
+        if self.steps - self.last_reward > self.max_no_rewards:
+            done = True
+        return obs, reward, done, info
+
+    def reset(self):
+        self.got_reward = False
+        self.steps = 0
+        return self.env.reset()
 
 class EpisodeStackedEnv(gym.Wrapper):
     def __init__(self, env):
@@ -791,14 +781,14 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     return env
 
 
-def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale=False, wrap_impala=False):
+def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale=False, wrap_impala=False, gray=True):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
         env = EpisodicLifeEnv(env)
     if 'FIRE' in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
-    env = WarpFrame(env)
+    env = WarpFrame(env, grayscale=gray)
     if scale:
         env = ScaledFloatFrame(env)
     if clip_rewards:

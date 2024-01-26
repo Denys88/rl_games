@@ -5,7 +5,6 @@ from rl_games.common import wrappers
 class MarioEnv(gym.Env):
     def __init__(self, **kwargs):
         env_name=kwargs.pop('env_name', 'SuperMarioBros-v1')
-        self.has_lives = kwargs.pop('has_lives', True)
         self.max_lives = kwargs.pop('max_lives', 16)
         self.movement = kwargs.pop('movement', 'SIMPLE')
         self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', False)
@@ -26,16 +25,16 @@ class MarioEnv(gym.Env):
         from nes_py.wrappers import JoypadSpace
         from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
         import gym_super_mario_bros
-        movement = SIMPLE_MOVEMENT if name == 'SIMPLE' else COMPLEX_MOVEMENT
+        movement = SIMPLE_MOVEMENT if self.movement == 'SIMPLE' else COMPLEX_MOVEMENT
         env = gym_super_mario_bros.make(name)
         env = JoypadSpace(env, movement)
         if 'Random' in name:
             env = wrappers.EpisodicLifeRandomMarioEnv(env)
         else:
-            env = wrappers.EpisodicLifeMarioEnv(env)
+            env = wrappers.EpisodicLifeMarioEnv(env, self.max_lives)
         env = wrappers.MaxAndSkipEnv(env, skip=4)
         env = wrappers.wrap_deepmind(
-            env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
+            env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True, gray=False)
         return env
 
     def step(self, action):
@@ -43,14 +42,14 @@ class MarioEnv(gym.Env):
         if self.use_dict_obs_space:
             next_obs = {
                 'observation': next_obs,
-                'reward': np.clip(np.array(reward, dtype=float), -1, 1),
+                'reward': np.array(reward, dtype=float),
                 'last_action': np.array(action, dtype=int)
             }
         return next_obs, reward, is_done, info
 
     def reset(self):
         obs = self.env.reset()
-        self.env.unwrapped.ram[0x075a] = self.max_lives
+        
         if self.use_dict_obs_space:
             obs = {
                 'observation': obs,
@@ -58,6 +57,9 @@ class MarioEnv(gym.Env):
                 'last_action': np.array(0, dtype=int),
             }
         return obs
+
+    def render(self, mode, **kwargs):
+        self.env.render(mode, **kwargs)
 
     def get_number_of_agents(self):
         return 1

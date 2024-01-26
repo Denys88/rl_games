@@ -654,7 +654,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     rnn_in_size += actions_num
 
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
                 'input_size' : mlp_input_size,

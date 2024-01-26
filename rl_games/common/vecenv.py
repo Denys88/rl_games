@@ -46,8 +46,8 @@ class RayWorker:
             random.seed(seed)
             self.env.seed(seed)
             
-    def render(self):
-        self.env.render()
+    def render(self, **kwargs):
+        self.env.render(**kwargs)
 
     def reset(self):
         obs = self.env.reset()
@@ -71,6 +71,9 @@ class RayWorker:
             return self.env.concat_infos
         else:
             return False
+
+    def render(self, mode, **kwargs):
+        self.env.render(mode, **kwargs)
 
     def get_env_info(self):
         info = {}
@@ -214,6 +217,10 @@ class RayVecEnv(IVecEnv):
                 newobsdict["states"] = np.stack(newstates)            
             ret_obs = newobsdict
         return ret_obs
+
+    def render(self, mode,  **kwargs):
+        res = self.workers[0].render.remote(mode,  **kwargs)
+        return self.ray.get(res)
 
 vecenv_config = {}
 

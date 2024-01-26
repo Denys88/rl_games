@@ -34,3 +34,6 @@ class IVecEnv:
 
     def set_env_state(self, env_state):
         pass
+
+    def render(self, mode, **kwargs):
+        pass

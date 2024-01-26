@@ -20,55 +20,54 @@ params:
       activation: relu
       initializer:
         name: default
-      regularizer:
-        name: 'None'
+
       
     mlp:
       units: [512]
       activation: relu
-      regularizer:
-        name: 'None'
       initializer:
-        name: default 
+        name: orthogonal_initializer
+        gain: 1.41421356237
     rnn:
       name: lstm
       units: 256
       layers: 1
+      #layer_norm: True
   config:
     reward_shaper:
-      min_val: -1
-      max_val: 1
+      scale_value: 1
         
     normalize_advantage: True
     gamma: 0.995
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 5e-4
     name: mario_resnet
     score_to_win: 100000
-    grad_norm: 1.5
-    entropy_coef: 0.01
+    grad_norm: 1.0
+    entropy_coef: 0.005
     truncate_grads: True
     env_name: MarioEnv
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    horizon_length: 256
-    minibatch_size: 2048
-    mini_epochs: 2
-    critic_coef: 1
-    lr_schedule: None
-    kl_threshold: 0.01
+    horizon_length: 512
+    minibatch_size: 4096
+    mini_epochs: 3
+    critic_coef: 2
+    lr_schedule: None #adaptive
+    kl_threshold: 0.008
     normalize_input: False
+    normalize_value: True
     use_diagnostics: True
     seq_length: 32
     max_epochs: 200000
-
+    weight_decay: 0.0001
+    save_frequency: 50
     env_config:
       use_dict_obs_space: True
 
     player:
-        render: False
+        render: True
         games_num: 20
-        n_game_life: 5
-        deterministic: True
-
+        deterministic: False
+        use_vecenv: True
