@@ -1,4 +1,6 @@
 # Introduction to [rl_games](https://github.com/Denys88/rl_games/)  - new envs, and new algorithms built on rl_games
+**Author** - [Anish Diwan](https://www.anishdiwan.com/)
+
 This write-up describes some elements of the general functioning of the [rl_games](https://github.com/Denys88/rl_games/) reinforcement learning library. It also provides a guide on extending rl_games with new environments and algorithms using a structure similar to the [IsaacGymEnvs](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs) package. Topics covered in this write-up are
 1. The various components of rl_games (runner, algorthms, environments ...)
 2. Using rl_games for your own work
