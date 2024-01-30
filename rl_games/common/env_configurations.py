@@ -253,6 +253,7 @@ def create_env(name, **kwargs):
         env = wrappers.TimeLimit(env, steps_limit)
     return env
 
+# Dictionary of env_name as key and a sub-dict containing env_type and a env-creator function
 configurations = {
     'CartPole-v1' : {
         'vecenv_type' : 'RAY',
@@ -458,4 +459,11 @@ def get_obs_and_action_spaces_from_config(config):
 
 
 def register(name, config):
+    """Add a new key-value pair to the known environments (configurations dict).
+
+    Args:
+        name (:obj:`str`): Name of the env to be added.
+        config (:obj:`dict`): Dictionary with env type and a creator function.
+
+    """
     configurations[name] = config
