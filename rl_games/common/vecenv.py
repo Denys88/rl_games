@@ -8,7 +8,20 @@ from time import sleep
 import torch
 
 class RayWorker:
+    """Wrapper around a third-party (gym for example) environment class that enables parallel training.
+
+    The RayWorker class wraps around another environment class to enable the use of this 
+    environment within an asynchronous parallel training setup
+
+    """
     def __init__(self, config_name, config):
+        """Initialise the class. Sets up the environment creator using the `rl_games.common.env_configurations.configuraitons` dict
+
+        Args:
+            config_name (:obj:`str`): Key of the environment to create.
+            config: Misc. kwargs passed on to the environment creator function
+
+        """
         self.env = configurations[config_name]['env_creator'](**config)
 
     def _obs_to_fp32(self, obs):
@@ -27,6 +40,12 @@ class RayWorker:
         return obs
 
     def step(self, action):
+        """Step the environment and reset if done
+
+        Args:
+            action (type depends on env): Action to take.
+
+        """
         next_state, reward, is_done, info = self.env.step(action)
         
         if np.isscalar(is_done):
@@ -95,9 +114,23 @@ class RayWorker:
 
 
 class RayVecEnv(IVecEnv):
+    """Main env class that manages several `rl_games.common.vecenv.Rayworker` objects for parallel training
+    
+    The RayVecEnv class manages a set of individual environments and wraps around the methods from RayWorker.
+    Each worker is executed asynchronously.
+
+    """
     import ray
 
     def __init__(self, config_name, num_actors, **kwargs):
+        """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
+
+        Args:
+            config_name (:obj:`str`): Key of the environment to create.
+            num_actors (:obj:`int`): Number of environments (actors) to create
+            **kwargs: Misc. kwargs passed on to the environment creator function within the RayWorker __init__
+
+        """
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
@@ -131,6 +164,14 @@ class RayVecEnv(IVecEnv):
             self.concat_func = np.concatenate
     
     def step(self, actions):
+        """Step all individual environments (using the created workers). 
+        Returns a concatenated array of observations, rewards, done states, and infos if the env allows concatenation.
+        Else returns a nested dict.
+
+        Args:
+            action (type depends on env): Action to take.
+
+        """
         newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
         res_obs = []
         if self.num_agents == 1:
@@ -218,6 +259,12 @@ class RayVecEnv(IVecEnv):
 vecenv_config = {}
 
 def register(config_name, func):
+    """Add an environment type (for example RayVecEnv) to the list of available types `rl_games.common.vecenv.vecenv_config`
+    Args:
+        config_name (:obj:`str`): Key of the environment to create.
+        func (:obj:`func`): Function that creates the environment 
+
+    """
     vecenv_config[config_name] = func
 
 def create_vec_env(config_name, num_actors, **kwargs):
