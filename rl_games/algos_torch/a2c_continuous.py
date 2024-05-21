@@ -6,7 +6,12 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
+import torch
+
+try:
+    from apex.optimizers import FusedAdam as AdamImpl
+except ImportError:
+    AdamImpl = optim.Adam
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -40,8 +45,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
-        self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularization' or 'bound'
+        self.optimizer = AdamImpl(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
         if self.has_central_value:
             cv_config = {
@@ -85,6 +90,27 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         assert False
+
+    @torch.compile() #(mode='max-autotune')
+    def calc_losses(self, actor_loss_func, old_action_log_probs_batch, action_log_probs, advantage, curr_e_clip, value_preds_batch, values, return_batch, mu, entropy, rnn_masks):
+        a_loss = actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+
+        if self.has_value_loss:
+            c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+        else:
+            c_loss = torch.zeros(1, device=self.ppo_device)
+        if self.bound_loss_type == 'regularisation':
+            b_loss = self.reg_loss(mu)
+        elif self.bound_loss_type == 'bound':
+            b_loss = self.bound_loss(mu)
+        else:
+            b_loss = torch.zeros(1, device=self.ppo_device)
+        losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
+        a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
+
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+
+        return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
@@ -131,22 +157,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-            if self.has_value_loss:
-                c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-            else:
-                c_loss = torch.zeros(1, device=self.ppo_device)
-            if self.bound_loss_type == 'regularisation':
-                b_loss = self.reg_loss(mu)
-            elif self.bound_loss_type == 'bound':
-                b_loss = self.bound_loss(mu)
-            else:
-                b_loss = torch.zeros(1, device=self.ppo_device)
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(self.actor_loss_func, 
+                old_action_log_probs_batch, action_log_probs, advantage, curr_e_clip, 
+                value_preds_batch, values, return_batch, mu, entropy, rnn_masks)
             
             if self.multi_gpu:
                 self.optimizer.zero_grad()

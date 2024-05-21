@@ -2,11 +2,17 @@ import os
 import torch
 from torch import nn
 import torch.distributed as dist
+
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
-from rl_games.common  import common_losses
-from rl_games.common import datasets
-from rl_games.common import schedulers
+from rl_games.common  import common_losses, datasets, schedulers
+
+try:
+    from apex.optimizers import FusedAdam as AdamImpl
+    from apex.contrib.clip_grad import clip_grad_norm_
+except ImportError:
+    AdamImpl = torch.optim.Adam
+    from torch.nn.utils import clip_grad_norm_
 
 
 class CentralValueTrain(nn.Module):
@@ -61,7 +67,8 @@ class CentralValueTrain(nn.Module):
 
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.optimizer = AdamImpl(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
+
         self.frame = 0
         self.epoch_num = 0
         self.running_mean_std = None
@@ -222,7 +229,7 @@ class CentralValueTrain(nn.Module):
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
             if self.normalize_input:
-                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
+                self.model.running_mean_std.eval()  # don't need to update statistics more than one miniepoch
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
@@ -231,8 +238,16 @@ class CentralValueTrain(nn.Module):
         self.frame += self.batch_size
         if self.writter != None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
+
         return avg_loss
+    
+    @torch.compile() #(mode='max-autotune')
+    def calc_loss(self, value_preds_batch, values, returns_batch, rnn_masks_batch):
+        loss = common_losses.critic_loss(self.model, value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
+        #print(loss.min(), loss.max(), loss.size(), rnn_masks_batch)
+        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
+        return losses[0]
 
     def calc_gradients(self, batch):
         obs_batch = self._preproc_obs(batch['obs'])
@@ -251,11 +266,9 @@ class CentralValueTrain(nn.Module):
 
         res_dict = self.model(batch_dict)
         values = res_dict['values']
-        loss = common_losses.critic_loss(self.model, value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
-        #print(loss.min(), loss.max(), loss.size(), rnn_masks_batch)
-        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
-        loss = losses[0]
-        #6print('aaa', loss.min(), loss.max(), loss.size())
+
+        loss = self.calc_loss(value_preds_batch, values, returns_batch, rnn_masks_batch)
+
         if self.multi_gpu:
             self.optimizer.zero_grad()
         else:
@@ -270,7 +283,9 @@ class CentralValueTrain(nn.Module):
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
             all_grads = torch.cat(all_grads_list)
+
             dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+
             offset = 0
             for param in self.model.parameters():
                 if param.grad is not None:
@@ -280,7 +295,7 @@ class CentralValueTrain(nn.Module):
                     offset += param.numel()
 
         if self.truncate_grads:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
 

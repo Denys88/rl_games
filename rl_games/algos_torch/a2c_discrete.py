@@ -8,8 +8,13 @@ from rl_games.common import datasets
 
 from torch import optim
 import torch 
-from torch import nn
+
 import numpy as np
+
+try:
+    from apex.optimizers import FusedAdam as AdamImpl
+except ImportError:
+    AdamImpl = optim.Adam
 
 
 class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
@@ -43,7 +48,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.init_rnn_from_model(self.model)
 
         self.last_lr = float(self.last_lr)
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.optimizer = AdamImpl(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
 
         if self.has_central_value:
             cv_config = {

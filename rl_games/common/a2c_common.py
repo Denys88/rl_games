@@ -26,6 +26,11 @@ from time import sleep
 
 from rl_games.common import common_losses
 
+try:
+    from apex.contrib.clip_grad import clip_grad_norm_
+except ImportError:
+    from torch.nn.utils import clip_grad_norm_
+
 
 def swap_and_flatten01(arr):
     """
@@ -336,7 +341,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.scaler.step(self.optimizer)
         self.scaler.update()

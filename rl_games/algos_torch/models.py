@@ -40,12 +40,13 @@ class BaseModelNetwork(nn.Module):
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #   
+            self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
+
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
             else:
-                self.running_mean_std = RunningMeanStd(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -54,6 +55,7 @@ class BaseModelNetwork(nn.Module):
     def denorm_value(self, value):
         with torch.no_grad():
             return self.value_mean_std(value, denorm=True) if self.normalize_value else value
+
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -110,6 +112,7 @@ class ModelA2C(BaseModel):
                     'rnn_states' : states
                 }
                 return  result
+
 
 class ModelA2CMultiDiscrete(BaseModel):
     def __init__(self, network):
@@ -179,6 +182,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     'rnn_states' : states
                 }
                 return  result
+
 
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
@@ -289,9 +293,10 @@ class ModelA2CContinuousLogStd(BaseModel):
                 }
                 return result
 
+        @torch.compile() #(mode='max-autotune')
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
-                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
+                + 0.5 * np.log(2.0 * np.pi) * x.size(-1) \
                 + logstd.sum(dim=-1)
 
 
@@ -330,7 +335,6 @@ class ModelCentralValue(BaseModel):
                 'rnn_states': states
             }
             return result
-
 
 
 class ModelSACContinuous(BaseModel):
