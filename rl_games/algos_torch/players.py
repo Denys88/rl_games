@@ -230,7 +230,7 @@ class SACPlayer(BasePlayer):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         dist = self.model.actor(obs)
-        actions = dist.sample() if is_deterministic else dist.mean
+        actions = dist.sample() if not is_deterministic else dist.mean
         actions = actions.clamp(*self.action_range).to(self.device)
         if self.has_batch_dimension == False:
             actions = torch.squeeze(actions.detach())
