@@ -199,7 +199,7 @@ class SACPlayer(BasePlayer):
         ]
 
         obs_shape = self.obs_shape
-        self.normalize_input = False
+        self.normalize_input = self.config.get('normalize_input', False)
         config = {
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
@@ -229,6 +229,7 @@ class SACPlayer(BasePlayer):
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
+        obs = self.model.norm_obs(obs)
         dist = self.model.actor(obs)
         actions = dist.sample() if is_deterministic else dist.mean
         actions = actions.clamp(*self.action_range).to(self.device)
