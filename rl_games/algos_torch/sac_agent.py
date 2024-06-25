@@ -208,6 +208,8 @@ class SACAgent(BaseAlgorithm):
         state = {'actor': self.model.sac_network.actor.state_dict(),
          'critic': self.model.sac_network.critic.state_dict(), 
          'critic_target': self.model.sac_network.critic_target.state_dict()}
+        if self.normalize_input:
+            state['running_mean_std'] = self.model.running_mean_std.state_dict()
         return state
 
     def save(self, fn):
