@@ -1,5 +1,5 @@
 from rl_games.common.ivecenv import IVecEnv
-import gym
+import gymnasium as gym
 import numpy as np
 
 
@@ -21,7 +21,7 @@ class Envpool(IVecEnv):
         self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', False)
         self.flatten_obs = kwargs.pop('flatten_obs', False) # for the dm control
         self.env = envpool.make( env_name,
-                                 env_type=kwargs.pop('env_type', 'gym'),
+                                 env_type=kwargs.pop('env_type', 'gymnasium'),
                                  num_envs=num_actors,
                                  batch_size=self.batch_size,
                                  **kwargs
@@ -63,8 +63,9 @@ class Envpool(IVecEnv):
             self.scores *= 1 - dones
 
     def step(self, action):
-        next_obs, reward, is_done, info = self.env.step(action , self.ids)
-        info['time_outs'] = info['TimeLimit.truncated']
+        next_obs, reward, is_terminated, is_truncated, info = self.env.step(action , self.ids)
+        is_done = is_terminated | is_truncated
+        info['time_outs'] = is_truncated
         self._set_scores(info, is_done)
         if self.flatten_obs:
             next_obs = flatten_dict(next_obs)
@@ -78,6 +79,7 @@ class Envpool(IVecEnv):
 
     def reset(self):
         obs = self.env.reset(self.ids)
+        obs = obs[0]
         if self.flatten_obs:
             obs = flatten_dict(obs)
         if self.use_dict_obs_space:
@@ -86,7 +88,7 @@ class Envpool(IVecEnv):
                 'reward': np.zeros(obs.shape[0]),
                 'last_action': np.zeros(obs.shape[0]),
             }
-        
+
         return obs
 
     def get_number_of_agents(self):

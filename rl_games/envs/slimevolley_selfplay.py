@@ -1,8 +1,9 @@
-import gym
+import gymnasium as gym
 import numpy as np
 import slimevolleygym
 import yaml
 from rl_games.torch_runner import Runner
+from rl_games.common.env_configurations import patch_env_info
 import os
 
 class SlimeVolleySelfplay(gym.Env):
@@ -19,10 +20,10 @@ class SlimeVolleySelfplay(gym.Env):
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
 
-    def reset(self):
+    def reset(self, **kwargs):
         if self.agent == None:
             self.create_agent(self.config_path)
-        obs = self.env.reset()
+        obs = self.env.reset( **kwargs)
         self.opponent_obs = obs
         self.sum_rewards = 0
         return obs
@@ -32,7 +33,7 @@ class SlimeVolleySelfplay(gym.Env):
             config = yaml.safe_load(stream)
             runner = Runner()
             from rl_games.common.env_configurations import get_env_info
-            config['params']['config']['env_info'] = get_env_info(self)
+            config['params']['config']['env_info'] = patch_env_info(get_env_info(self))
             runner.load(config)
         config = runner.get_prebuilt_config()
 

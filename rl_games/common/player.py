@@ -2,7 +2,7 @@ import os
 import shutil
 import threading
 import time
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 import copy
@@ -11,7 +11,7 @@ from typing import Optional
 from rl_games.common import vecenv
 from rl_games.common import env_configurations
 from rl_games.algos_torch import model_builder
-
+from rl_games.common.env_configurations import patch_env_info
 
 class BasePlayer(object):
 
@@ -32,11 +32,11 @@ class BasePlayer(object):
                 print('[BasePlayer] Creating vecenv: ', self.env_name)
                 self.env = vecenv.create_vec_env(
                     self.env_name, self.config['num_actors'], **self.env_config)
-                self.env_info = self.env.get_env_info()
+                self.env_info = patch_env_info(self.env.get_env_info())
             else:
                 print('[BasePlayer] Creating regular env: ', self.env_name)
                 self.env = self.create_env()
-                self.env_info = env_configurations.get_env_info(self.env)
+                self.env_info = patch_env_info(env_configurations.get_env_info(self.env))
         else:
             self.env = config.get('vec_env')
 
