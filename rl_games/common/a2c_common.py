@@ -757,9 +757,9 @@ class A2CBase(BaseAlgorithm):
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            step_time_start = time.time()
+            step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
+            step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
 
@@ -830,9 +830,9 @@ class A2CBase(BaseAlgorithm):
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            step_time_start = time.time()
+            step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
+            step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
 
@@ -920,7 +920,7 @@ class DiscreteA2CBase(A2CBase):
         super().train_epoch()
 
         self.set_eval()
-        play_time_start = time.time()
+        play_time_start = time.perf_counter()
 
         with torch.no_grad():
             if self.is_rnn:
@@ -930,8 +930,8 @@ class DiscreteA2CBase(A2CBase):
 
         self.set_train()
 
-        play_time_end = time.time()
-        update_time_start = time.time()
+        play_time_end = time.perf_counter()
+        update_time_start = time.perf_counter()
         rnn_masks = batch_dict.get('rnn_masks', None)
 
         self.curr_frames = batch_dict.pop('played_frames')
@@ -966,7 +966,7 @@ class DiscreteA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
 
-        update_time_end = time.time()
+        update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
@@ -1034,7 +1034,7 @@ class DiscreteA2CBase(A2CBase):
     def train(self):
         self.init_tensors()
         self.mean_rewards = self.last_mean_rewards = -100500
-        start_time = time.time()
+        start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
         # self.frame = 0  # loading from checkpoint
@@ -1183,15 +1183,15 @@ class ContinuousA2CBase(A2CBase):
         super().train_epoch()
 
         self.set_eval()
-        play_time_start = time.time()
+        play_time_start = time.perf_counter()
         with torch.no_grad():
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
 
-        play_time_end = time.time()
-        update_time_start = time.time()
+        play_time_end = time.perf_counter()
+        update_time_start = time.perf_counter()
         rnn_masks = batch_dict.get('rnn_masks', None)
 
         self.set_train()
@@ -1240,7 +1240,7 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
 
-        update_time_end = time.time()
+        update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
@@ -1310,7 +1310,7 @@ class ContinuousA2CBase(A2CBase):
     def train(self):
         self.init_tensors()
         self.last_mean_rewards = -100500
-        start_time = time.time()
+        start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
         self.obs = self.env_reset()
