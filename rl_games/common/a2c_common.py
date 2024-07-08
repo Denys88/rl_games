@@ -643,6 +643,9 @@ class A2CBase(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
+    def set_central_value_function_weights(self, weights):
+        self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+
     def get_weights(self):
         state = self.get_stats_weights()
         state['model'] = self.model.state_dict()
