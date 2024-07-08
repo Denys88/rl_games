@@ -1265,7 +1265,10 @@ class ContinuousA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
-            self.value_mean_std.train()
+            if self.config.get('freeze_critic', False):
+                self.value_mean_std.eval()
+            else:
+                self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
