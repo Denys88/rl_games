@@ -17,6 +17,10 @@ from rl_games.algos_torch import sac_agent
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
+        if args['train'] and args.get('load_critic_only', False):
+            assert agent.has_central_value, 'This should only work for asymmetric actor critic'
+            agent.restore_central_value_function(args['checkpoint'])
+            return
         agent.restore(args['checkpoint'])
 
 def _override_sigma(agent, args):

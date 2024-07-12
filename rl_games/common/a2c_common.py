@@ -643,6 +643,9 @@ class A2CBase(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
+    def set_central_value_function_weights(self, weights):
+        self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+
     def get_weights(self):
         state = self.get_stats_weights()
         state['model'] = self.model.state_dict()
@@ -1262,7 +1265,10 @@ class ContinuousA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
-            self.value_mean_std.train()
+            if self.config.get('freeze_critic', False):
+                self.value_mean_std.eval()
+            else:
+                self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
