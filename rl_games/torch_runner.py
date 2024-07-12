@@ -17,6 +17,10 @@ from rl_games.algos_torch import sac_agent
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
+        if args['train'] and args.get('load_critic_only', False):
+            assert agent.has_central_value, 'This should only work for asymmetric actor critic'
+            agent.restore_central_value_function(args['checkpoint'])
+            return
         agent.restore(args['checkpoint'])
 
 def _override_sigma(agent, args):
@@ -63,7 +67,7 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
-        ### it didnot help for lots for openai gym envs anyway :(
+        ### it did not help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
 

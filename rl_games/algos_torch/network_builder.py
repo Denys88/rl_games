@@ -8,6 +8,7 @@ from rl_games.algos_torch.d2rl import D2RLNet
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
+from rl_games.algos_torch.spatial_softmax import SpatialSoftArgmax
 
 
 def _create_initializer(func, **kwargs):
@@ -130,12 +131,17 @@ class NetworkBuilder:
 
             if ctype == 'conv2d':
                 return self._build_cnn2d(**kwargs)
+            if ctype == 'conv2d_spatial_softargmax':
+                return self._build_cnn2d(add_spatial_softmax=True, **kwargs)
+            if ctype == 'conv2d_flatten':
+                return self._build_cnn2d(add_flatten=True, **kwargs)
             if ctype == 'coord_conv2d':
                 return self._build_cnn2d(conv_func=torch_ext.CoordConv2d, **kwargs)
             if ctype == 'conv1d':
                 return self._build_cnn1d(**kwargs)
 
-        def _build_cnn2d(self, input_shape, convs, activation, conv_func=torch.nn.Conv2d, norm_func_name=None):
+        def _build_cnn2d(self, input_shape, convs, activation, conv_func=torch.nn.Conv2d, norm_func_name=None,
+                         add_spatial_softmax=False, add_flatten=False):
             in_channels = input_shape[0]
             layers = []
             for conv in convs:
@@ -150,7 +156,11 @@ class NetworkBuilder:
                 if norm_func_name == 'layer_norm':
                     layers.append(torch_ext.LayerNorm2d(in_channels))
                 elif norm_func_name == 'batch_norm':
-                    layers.append(torch.nn.BatchNorm2d(in_channels))  
+                    layers.append(torch.nn.BatchNorm2d(in_channels))
+            if add_spatial_softmax:
+                layers.append(SpatialSoftArgmax(normalize=True))
+            if add_flatten:
+                layers.append(torch.nn.Flatten())
             return nn.Sequential(*layers)
 
         def _build_cnn1d(self, input_shape, convs, activation, norm_func_name=None):

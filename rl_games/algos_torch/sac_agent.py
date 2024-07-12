@@ -444,7 +444,7 @@ class SACAgent(BaseAlgorithm):
         self.algo_observer.after_clear_stats()
 
     def play_steps(self, random_exploration = False):
-        total_time_start = time.time()
+        total_time_start = time.perf_counter()
         total_update_time = 0
         total_time = 0
         step_time = 0.0
@@ -469,11 +469,10 @@ class SACAgent(BaseAlgorithm):
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
 
-            step_start = time.time()
-
+            step_start = time.perf_counter()
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
-            step_end = time.time()
+            step_end = time.perf_counter()
 
             self.current_rewards += rewards
             self.current_lengths += 1
@@ -503,7 +502,6 @@ class SACAgent(BaseAlgorithm):
                 self.obs = next_obs.clone()
 
             rewards = self.rewards_shaper(rewards)
-
             self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs_processed, torch.unsqueeze(dones, 1))
 
             if isinstance(obs, dict):
@@ -511,9 +509,10 @@ class SACAgent(BaseAlgorithm):
 
             if not random_exploration:
                 self.set_train()
-                update_time_start = time.time()
+
+                update_time_start = time.perf_counter()
                 actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
-                update_time_end = time.time()
+                update_time_end = time.perf_counter()
                 update_time = update_time_end - update_time_start
 
                 self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
@@ -524,7 +523,7 @@ class SACAgent(BaseAlgorithm):
 
             total_update_time += update_time
 
-        total_time_end = time.time()
+        total_time_end = time.perf_counter()
         total_time = total_time_end - total_time_start
         play_time = total_time - total_update_time
 

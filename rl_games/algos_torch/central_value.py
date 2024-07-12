@@ -1,4 +1,5 @@
 import os
+import copy
 import torch
 from torch import nn
 import torch.distributed as dist
@@ -226,6 +227,8 @@ class CentralValueTrain(nn.Module):
         self.train()
         loss = 0
         for _ in range(self.mini_epoch):
+            if self.config.get('freeze_critic', False):
+                break
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
             if self.normalize_input:
