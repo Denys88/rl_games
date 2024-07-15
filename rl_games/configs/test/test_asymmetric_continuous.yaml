@@ -58,7 +58,7 @@ params:
     normalize_value: True
     seq_length: 4
     weight_decay: 0.0000
-    multi_gpu: True
+    multi_gpu: False
     bounds_loss_coef: 0.0
     use_diagnostics: True
     env_config:
