@@ -179,7 +179,7 @@ class BasePlayer(object):
 
     def env_step(self, env, actions):
         if not self.is_tensor_obses:
-            actions = actions.cpu().numpy()
+            actions = actions.cpu().detach().numpy()
         obs, rewards, dones, infos = env.step(actions)
         if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)

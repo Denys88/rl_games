@@ -1,7 +1,7 @@
 from rl_games.common import object_factory
 import rl_games.algos_torch
-from rl_games.algos_torch import network_builder
-from rl_games.algos_torch import models
+from rl_games.algos_torch import models, network_builder
+from rl_games.networks import vision_networks
 
 NETWORK_REGISTRY = {}
 MODEL_REGISTRY = {}
@@ -21,7 +21,9 @@ class NetworkBuilder:
         self.network_factory.register_builder('resnet_actor_critic',
                                             lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('vision_actor_critic',
-                                            lambda **kwargs: network_builder.A2CVisionBuilder())
+                                            lambda **kwargs: vision_networks.A2CVisionBuilder())
+        self.network_factory.register_builder('e2e_vision_actor_critic',
+                                            lambda **kwargs: vision_networks.A2CVisionBackboneBuilder())
 
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())

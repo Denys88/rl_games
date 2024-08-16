@@ -379,10 +379,6 @@ class ExperienceBuffer:
             return t_dict
 
     def update_data(self, name, index, val):
-        print('name:', name)
-        print(self.tensor_dict.keys())
-        print(self.tensor_dict[name].shape)
-        print(self.tensor_dict["obses"].shape)
         if type(val) is dict:
             for k,v in val.items():
                 self.tensor_dict[name][k][index,:] = v

@@ -28,7 +28,7 @@ class Envpool(IVecEnv):
                                 )
         
         if self.use_dict_obs_space:
-            self.observation_space= gym.spaces.Dict({
+            self.observation_space = gym.spaces.Dict({
                 'observation' : self.env.observation_space,
                 'reward' : gym.spaces.Box(low=0, high=1, shape=( ), dtype=np.float32),
                 'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=int)
