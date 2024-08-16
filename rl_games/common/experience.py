@@ -330,11 +330,7 @@ class ExperienceBuffer:
         state_base_shape = self.state_base_shape
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
-        # print("obs base shape", obs_base_shape)
-        # print('obses shape:', self.tensor_dict['obses'].shape)
-        # print('proprioception_space shape:', env_info.get('proprioception_space'))
-        # if env_info.get('proprieception_space') is not None:
-        #     self.tensor_dict['proprio'] = self._create_tensor_from_space(env_info['proprioception_space'], self.obs_base_shape)
+
         if self.has_central_value:
             self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
         

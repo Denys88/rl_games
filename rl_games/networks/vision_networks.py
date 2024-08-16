@@ -1,8 +1,9 @@
 import torch
 from torch import nn
+from torchvision import models
 import torch.nn.functional as F
 import torch_ext
-from rl_games.algos_torch.network_builder import NetworkBuilder
+from rl_games.algos_torch.network_builder import NetworkBuilder, ImpalaSequential
     
 
 class A2CVisionBuilder(NetworkBuilder):
@@ -20,7 +21,8 @@ class A2CVisionBuilder(NetworkBuilder):
             if type(input_shape) is dict:
                 input_shape = input_shape['camera']
                 proprio_shape = input_shape['proprio']
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self)
@@ -208,10 +210,6 @@ class A2CVisionBuilder(NetworkBuilder):
         return net
 
 
-import torch
-import torch.nn as nn
-from torchvision import models
-
 class A2CVisionBackboneBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -227,7 +225,8 @@ class A2CVisionBackboneBuilder(NetworkBuilder):
             if isinstance(input_shape, dict):
                 input_shape = input_shape['camera']
                 proprio_shape = input_shape['proprio']
-            self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
+
+            self.num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
             NetworkBuilder.BaseNetwork.__init__(self)
