@@ -10,7 +10,7 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 import numpy as np
 import time
@@ -356,7 +356,7 @@ class A2CBase(BaseAlgorithm):
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
-        has_central_value_net = self.config.get('central_value_config') is not  None
+        has_central_value_net = self.config.get('central_value_config') is not None
         if has_central_value_net:
             print('Adding Central Value Network')
             if 'model' not in params['config']['central_value_config']:

@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torchvision import models
 import torch.nn.functional as F
-import torch_ext
+from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.network_builder import NetworkBuilder, ImpalaSequential
     
 

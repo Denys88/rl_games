@@ -10,6 +10,7 @@ from rl_games.algos_torch.sac_helper import SquashedNormal
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
 
+
 class BaseModel():
     def __init__(self, model_class):
         self.model_class = model_class
@@ -25,11 +26,13 @@ class BaseModel():
 
     def build(self, config):
         obs_shape = config['input_shape']
+        print(f"obs_shape: {obs_shape}")
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
         value_size = config.get('value_size', 1)
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
+
 
 class BaseModelNetwork(nn.Module):
     def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
@@ -365,6 +368,4 @@ class ModelSACContinuous(BaseModel):
             mu, sigma = self.sac_network(input_dict)
             dist = SquashedNormal(mu, sigma)
             return dist
-
-
 
