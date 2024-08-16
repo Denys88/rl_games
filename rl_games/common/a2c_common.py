@@ -416,6 +416,9 @@ class A2CBase(BaseAlgorithm):
             'rnn_states' : self.rnn_states
         }
 
+        # if 'proprio' in obs:
+        #     input_dict['proprio'] = obs['proprio']
+
         with torch.no_grad():
             res_dict = self.model(input_dict)
             if self.has_central_value:
@@ -449,6 +452,9 @@ class A2CBase(BaseAlgorithm):
                     'obs' : processed_obs,
                     'rnn_states' : self.rnn_states
                 }
+                # if 'proprio' in obs:
+                #     input_dict['proprio'] = obs['proprio']
+
                 result = self.model(input_dict)
                 value = result['values']
             return value
@@ -829,6 +835,8 @@ class A2CBase(BaseAlgorithm):
 
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
+            # if 'proprio' in self.obs:
+            #     self.experience_buffer.update_data('proprio', n, self.obs['proprio'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
 
             for k in update_list:
@@ -1021,6 +1029,9 @@ class DiscreteA2CBase(A2CBase):
         dataset_dict['dones'] = dones
         dataset_dict['rnn_states'] = rnn_states
         dataset_dict['rnn_masks'] = rnn_masks
+
+        # if 'proprio' in batch_dict:
+        #     dataset_dict['proprio'] = batch_dict['proprio']
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']

@@ -76,7 +76,6 @@ class GeneralizedMovingStats(nn.Module):
         else:
             raise NotImplementedError(self.impl)
 
-
     def _update_stats(self, x):
         m = self.decay
         if self.impl == 'off':

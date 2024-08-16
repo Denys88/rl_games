@@ -35,7 +35,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1),
+            'value_size': self.env_info.get('value_size', 1),
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
@@ -143,6 +143,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'prev_actions': actions_batch, 
             'obs' : obs_batch,
         }
+
+        # print("TEST")
+        # print("----------------")
+        # for key in input_dict:
+        #     print(key)
+
+        # if "proprio" in input_dict:
+        #     batch_dict['proprio'] = input_dict['proprio']
 
         rnn_masks = None
         if self.is_rnn:

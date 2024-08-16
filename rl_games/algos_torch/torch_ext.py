@@ -208,6 +208,7 @@ class CoordConv2d(nn.Conv2d):
                 x.size(0), 1, 1, 1).type_as(x)
             CoordConv2d.pool[key] = coord
         return CoordConv2d.pool[key]
+
     def forward(self, x):
         return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
@@ -243,7 +244,6 @@ class LayerNorm2d(nn.Module):
         mean = x_flat.mean(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
         std = x_flat.std(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
         return self.gamma.expand_as(x) * (x - mean) / (std + self.eps) + self.beta.expand_as(x)
-
 
 
 class DiscreteActionsEncoder(nn.Module):

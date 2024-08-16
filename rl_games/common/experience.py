@@ -325,10 +325,16 @@ class ExperienceBuffer:
             self._init_from_aux_dict(self.aux_tensor_dict)
 
     def _init_from_env_info(self, env_info):
+        # TODO: Review and update for dictinary observation spaces
         obs_base_shape = self.obs_base_shape
         state_base_shape = self.state_base_shape
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
+        # print("obs base shape", obs_base_shape)
+        # print('obses shape:', self.tensor_dict['obses'].shape)
+        # print('proprioception_space shape:', env_info.get('proprioception_space'))
+        # if env_info.get('proprieception_space') is not None:
+        #     self.tensor_dict['proprio'] = self._create_tensor_from_space(env_info['proprioception_space'], self.obs_base_shape)
         if self.has_central_value:
             self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
         
@@ -373,12 +379,15 @@ class ExperienceBuffer:
             return t_dict
 
     def update_data(self, name, index, val):
+        print('name:', name)
+        print(self.tensor_dict.keys())
+        print(self.tensor_dict[name].shape)
+        print(self.tensor_dict["obses"].shape)
         if type(val) is dict:
             for k,v in val.items():
                 self.tensor_dict[name][k][index,:] = v
         else:
             self.tensor_dict[name][index,:] = val
-
 
     def update_data_rnn(self, name, indices,play_mask, val):
         if type(val) is dict:
