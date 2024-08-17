@@ -159,7 +159,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        with torch.amp.autocast("cuda", enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
