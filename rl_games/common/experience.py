@@ -357,10 +357,10 @@ class ExperienceBuffer:
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape + space.shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Discrete:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape, dtype=dtype, device = self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
