@@ -6,7 +6,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.network_builder import NetworkBuilder, ImpalaSequential
     
 
-class A2CVisionBuilder(NetworkBuilder):
+class VisionImpalaBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
 
@@ -225,11 +225,13 @@ class A2CVisionBuilder(NetworkBuilder):
                 return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
 
     def build(self, name, **kwargs):
-        net = A2CVisionBuilder.Network(self.params, **kwargs)
+        net = VisionImpalaBuilder.Network(self.params, **kwargs)
         return net
 
 
-class A2CVisionBackboneBuilder(NetworkBuilder):
+from timm import create_model  # timm is required for ConvNeXt and ViT
+
+class VisionBackboneBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
 
@@ -241,7 +243,7 @@ class A2CVisionBackboneBuilder(NetworkBuilder):
             self.actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
             proprio_size = 0 # Number of proprioceptive features
-            if type(full_input_shape) is dict:
+            if isinstance(full_input_shape, dict):
                 input_shape = full_input_shape['camera']
                 proprio_shape = full_input_shape['proprio']
                 proprio_size = proprio_shape[0]
@@ -256,9 +258,8 @@ class A2CVisionBackboneBuilder(NetworkBuilder):
             if self.permute_input:
                 input_shape = torch_ext.shape_whc_to_cwh(input_shape)
 
-            self.cnn = self._build_resnet(input_shape, self.params['cnn']['pretrained'])
-            cnn_output_size = self.cnn.fc.in_features  # Output size after ResNet
-            proprio_size = proprio_shape[0] # Number of proprioceptive features
+            self.cnn = self._build_backbone(input_shape, self.params['backbone'])
+            cnn_output_size = self.cnn_output_size
 
             mlp_input_size = cnn_output_size + proprio_size
             if len(self.units) == 0:
@@ -326,7 +327,6 @@ class A2CVisionBackboneBuilder(NetworkBuilder):
             mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
-            # TODO: Add resnet preprocessing
             obs = obs_dict['camera']
             proprio = obs_dict['proprio']
             if self.permute_input:
@@ -421,29 +421,24 @@ class A2CVisionBackboneBuilder(NetworkBuilder):
             self.require_rewards = params.get('require_rewards')
             self.require_last_actions = params.get('require_last_actions')
 
-        def _build_resnet(self, input_shape, pretrained):
-            resnet = models.resnet18(pretrained=pretrained)
-            # Modify the first convolution layer to match input shape if needed
-            if input_shape[0] != 3:
-                resnet.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
-            # Remove the fully connected layer
-            resnet = nn.Sequential(*list(resnet.children())[:-1])
-            return resnet
+        def _build_backbone(self, input_shape, backbone_params):
+            backbone_type = backbone_params['type']
+            pretrained = backbone_params.get('pretrained', False)
 
-        def is_separate_critic(self):
-            return False
-
-        def is_rnn(self):
-            return self.has_rnn
-
-        def get_default_rnn_state(self):
-            num_layers = self.rnn_layers
-            if self.rnn_name == 'lstm':
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
-                        torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
-            else:
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
-
-    def build(self, name, **kwargs):
-        net = A2CVisionBackboneBuilder.Network(self.params, **kwargs)
-        return net
+            if backbone_type == 'resnet18':
+                model = models.resnet18(pretrained=pretrained)
+                # Modify the first convolution layer to match input shape if needed
+                if input_shape[0] != 3:
+                    model.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
+                # Remove the fully connected layer
+                self.cnn_output_size = model.fc.in_features
+                model = nn.Sequential(*list(model.children())[:-1])
+            elif backbone_type == 'convnext_tiny':
+                model = create_model('convnext_tiny', pretrained=pretrained)
+                # Remove the fully connected layer
+                self.cnn_output_size = model.head.fc.in_features
+                model = nn.Sequential(*list(model.children())[:-1])
+            elif backbone_type == 'vit_tiny_patch16_224':
+                model = create_model('vit_tiny_patch16_224', pretrained=pretrained)
+                # ViT outputs a single token, so no need to remove layers
+                self.cnn_output

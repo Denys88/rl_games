@@ -39,7 +39,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -79,7 +79,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-        
+
     def save(self, fn):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
@@ -144,14 +144,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs' : obs_batch,
         }
 
-        # print("TEST")
-        # print("----------------")
-        # for key in input_dict:
-        #     print(key)
-
-        # if "proprio" in input_dict:
-        #     batch_dict['proprio'] = input_dict['proprio']
-
         rnn_masks = None
         if self.is_rnn:
             rnn_masks = input_dict['rnn_masks']
@@ -172,7 +164,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(self.actor_loss_func, 
                 old_action_log_probs_batch, action_log_probs, advantage, curr_e_clip, 
                 value_preds_batch, values, return_batch, mu, entropy, rnn_masks)
-            
+
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:
@@ -222,5 +214,3 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             b_loss = 0
         return b_loss
-
-
