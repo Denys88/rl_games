@@ -242,11 +242,12 @@ class VisionBackboneBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             self.actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
-            proprio_size = 0 # Number of proprioceptive features
+
+            self.proprio_size = 0 # Number of proprioceptive features
             if isinstance(full_input_shape, dict):
                 input_shape = full_input_shape['camera']
                 proprio_shape = full_input_shape['proprio']
-                proprio_size = proprio_shape[0]
+                self.proprio_size = proprio_shape[0]
             else:
                 input_shape = full_input_shape
 
@@ -261,7 +262,7 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.cnn = self._build_backbone(input_shape, self.params['backbone'])
             cnn_output_size = self.cnn_output_size
 
-            mlp_input_size = cnn_output_size + proprio_size
+            mlp_input_size = cnn_output_size + self.proprio_size
             if len(self.units) == 0:
                 out_size = cnn_output_size
             else:
@@ -308,9 +309,9 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             mlp_init = self.init_factory.create(**self.initializer)
 
-            for m in self.modules():
-                if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            # for m in self.modules():
+            #     if isinstance(m, nn.Conv2d):
+            #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             for m in self.mlp:
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
@@ -327,8 +328,11 @@ class VisionBackboneBuilder(NetworkBuilder):
             mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
-            obs = obs_dict['camera']
-            proprio = obs_dict['proprio']
+            if self.proprio_size > 0:
+                obs = obs_dict['camera']
+                proprio = obs_dict['proprio']
+            else:
+                obs = obs_dict['obs']
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
@@ -341,7 +345,8 @@ class VisionBackboneBuilder(NetworkBuilder):
             out = out.flatten(1)
             out = self.flatten_act(out)
 
-            out = torch.cat([out, proprio], dim=1)
+            if self.proprio_size > 0:
+                out = torch.cat([out, proprio], dim=1)
 
             if self.has_rnn:
                 seq_length = obs_dict.get('seq_length', 1)
@@ -417,7 +422,7 @@ class VisionBackboneBuilder(NetworkBuilder):
                 self.rnn_ln = params['rnn'].get('layer_norm', False)
 
             self.has_cnn = True
-            self.permute_input = params['cnn'].get('permute_input', True)
+            self.permute_input = params['backbone'].get('permute_input', True)
             self.require_rewards = params.get('require_rewards')
             self.require_last_actions = params.get('require_last_actions')
 
@@ -442,3 +447,7 @@ class VisionBackboneBuilder(NetworkBuilder):
                 model = create_model('vit_tiny_patch16_224', pretrained=pretrained)
                 # ViT outputs a single token, so no need to remove layers
                 self.cnn_output
+
+        def build(self, name, **kwargs):
+            net = VisionBackboneBuilder.Network(self.params, **kwargs)
+            return net

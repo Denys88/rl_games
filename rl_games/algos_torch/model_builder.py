@@ -22,8 +22,8 @@ class NetworkBuilder:
                                             lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('vision_actor_critic',
                                             lambda **kwargs: network_builder.A2CVisionBuilder())
-        # self.network_factory.register_builder('e2e_vision_actor_critic',
-        #                                     lambda **kwargs: vision_networks.A2CVisionBackboneBuilder())
+        self.network_factory.register_builder('e2e_vision_actor_critic',
+                                            lambda **kwargs: network_builder.VisionBackboneBuilder())
 
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
