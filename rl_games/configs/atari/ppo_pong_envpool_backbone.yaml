@@ -27,20 +27,20 @@ params:
     #     name: 'None'
   
     backbone:
-      type: resnet18 #vit_tiny_patch16_224 #convnext_tiny #resnet18
-      pretrained: False
-      permute_input: True
-      freeze: False
+      type: resnet18 #convnext_tiny #vit_tiny_patch16_224
+      pretrained: True
+      permute_input: False
+      freeze: True
 
       args:
-        zero_init_residual: False
+        zero_init_residual: True
         norm_layer: None
 
     mlp:
       units: [512]
       activation: relu
       regularizer:
-        name: 'None'
+        name: None
       initializer:
         name: default
 
@@ -49,22 +49,22 @@ params:
     #   units: 256
     #   layers: 1
   config:
-    name: pong_resnet18_nopretrained_novaluenorm_weightdecay_nomaxpool
+    name: pong_resnet18_pretrained_2_mini_epoch_1e-4_linear_lr_norm_value_frozen
     env_name: envpool
     reward_shaper:
       min_val: -1
       max_val: 1
 
-    mixed_precision: False
+    mixed_precision: True
     normalize_input: False
-    normalize_value: False
+    normalize_value: True
     normalize_advantage: True
-    gamma: 0.995
+    gamma: 0.99
     tau: 0.95
     learning_rate: 1e-4
 
     score_to_win: 100000
-    grad_norm: 1.5
+    grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
 
@@ -72,12 +72,12 @@ params:
     clip_value: True
     save_best_after: 25
     save_frequency: 50
-    num_actors: 64
-    horizon_length: 128
-    minibatch_size: 2048
-    mini_epochs: 4
+    num_actors: 32
+    horizon_length: 64
+    minibatch_size: 512
+    mini_epochs: 2
     critic_coef: 1
-    lr_schedule: None
+    lr_schedule: linear
     kl_threshold: 0.01
     use_diagnostics: True
     seq_length: 8

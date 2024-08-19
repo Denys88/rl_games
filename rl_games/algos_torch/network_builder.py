@@ -1072,7 +1072,6 @@ class A2CVisionBuilder(NetworkBuilder):
 
 
 from torchvision import models
-from timm import create_model  # timm is required for ConvNeXt and ViT
 
 class VisionBackboneBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -1172,6 +1171,8 @@ class VisionBackboneBuilder(NetworkBuilder):
                 proprio = obs_dict['proprio']
             else:
                 obs = obs_dict['obs']
+
+            # print('obs.shape: ', obs.shape)
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
@@ -1181,7 +1182,10 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             out = obs
             out = self.cnn(out)
+            #print(out.shape)
             out = out.flatten(1)
+            #print(out.shape)
+            #print('AAAAAAAAAAAAAAAAAaaa')
             out = self.flatten_act(out)
 
             if self.proprio_size > 0:
@@ -1281,19 +1285,20 @@ class VisionBackboneBuilder(NetworkBuilder):
                 print('backbone_output_size: ', backbone_output_size)
                 backbone = nn.Sequential(*list(backbone.children())[:-1])
             elif backbone_type == 'convnext_tiny':
-                backbone = create_model('convnext_tiny', pretrained=pretrained)
-                # Modify the first convolution layer to match input shape if needed
-                #backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
-                # Remove the fully connected layer
-                backbone_output_size = backbone.head.fc.in_features
+                backbone = models.convnext_tiny(pretrained=pretrained)
+                backbone_output_size = backbone.classifier[2].in_features
+                backbone.classifier = nn.Identity()
 
-                backbone = nn.Sequential(*list(backbone.children())[:-1])
+                # Do we need it?
+                # backbone = nn.Sequential(*list(backbone.children())[:-1])
             elif backbone_type == 'vit_tiny_patch16_224':
-                backbone = create_model('vit_tiny_patch16_224', pretrained=pretrained)
-                # # ViT outputs a single token, so no need to remove layers
-                # backbone = models.vit_small_patch16_224(pretrained=pretrained)
+                backbone = models.vit_small_patch16_224(pretrained=pretrained)
                 backbone_output_size = backbone.heads.head.in_features
                 backbone.heads.head = nn.Identity()
+
+                # ViT outputs a single token, so no need to remove layers
+                # Is it true?
+
             else:
                 raise ValueError(f'Unknown backbone type: {backbone_type}')
 
