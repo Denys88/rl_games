@@ -737,7 +737,6 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             if self.has_rnn:
-                #seq_length = obs_dict['seq_length']
                 seq_length = obs_dict.get('seq_length', 1)
 
                 out_in = out
@@ -1103,12 +1102,11 @@ class VisionBackboneBuilder(NetworkBuilder):
             if self.permute_input:
                 input_shape = torch_ext.shape_whc_to_cwh(input_shape)
 
-            self.cnn = self._build_backbone(input_shape, self.params['backbone'])
-            cnn_output_size = self.cnn_output_size
+            self.cnn, self.cnn_output_size = self._build_backbone(input_shape, params['backbone'])
 
-            mlp_input_size = cnn_output_size + self.proprio_size
+            mlp_input_size = self.cnn_output_size + self.proprio_size
             if len(self.units) == 0:
-                out_size = cnn_output_size
+                out_size = self.cnn_output_size
             else:
                 out_size = self.units[-1]
 
@@ -1153,9 +1151,6 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             mlp_init = self.init_factory.create(**self.initializer)
 
-            # for m in self.modules():
-            #     if isinstance(m, nn.Conv2d):
-            #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             for m in self.mlp:
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
@@ -1271,36 +1266,50 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.require_last_actions = params.get('require_last_actions')
 
         def _build_backbone(self, input_shape, backbone_params):
-            print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-            print(backbone_params)
             backbone_type = backbone_params['type']
             pretrained = backbone_params.get('pretrained', False)
 
             if backbone_type == 'resnet18':
-                model = models.resnet18(pretrained=pretrained)
+                backbone = models.resnet18(pretrained=pretrained, zero_init_residual=True) # norm_layer=nn.LayerNorm
                 # Modify the first convolution layer to match input shape if needed
-                if input_shape[0] != 3:
-                    model.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
+                backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
+                backbone.maxpool = nn.Identity()
+                # if input_shape[0] != 3:
+                #     model.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
                 # Remove the fully connected layer
-                self.cnn_output_size = model.fc.in_features
-                model = nn.Sequential(*list(model.children())[:-1])
+                backbone_output_size = backbone.fc.in_features
+                print('backbone_output_size: ', backbone_output_size)
+                backbone = nn.Sequential(*list(backbone.children())[:-1])
             elif backbone_type == 'convnext_tiny':
-                model = create_model('convnext_tiny', pretrained=pretrained)
+                backbone = create_model('convnext_tiny', pretrained=pretrained)
+                # Modify the first convolution layer to match input shape if needed
+                #backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
                 # Remove the fully connected layer
-                self.cnn_output_size = model.head.fc.in_features
-                model = nn.Sequential(*list(model.children())[:-1])
-            # elif backbone_type == 'vit_tiny_patch16_224':
-            #     model = create_model('vit_tiny_patch16_224', pretrained=pretrained)
-            #     # ViT outputs a single token, so no need to remove layers
-            #     self.cnn_output
+                backbone_output_size = backbone.head.fc.in_features
+
+                backbone = nn.Sequential(*list(backbone.children())[:-1])
+            elif backbone_type == 'vit_tiny_patch16_224':
+                backbone = create_model('vit_tiny_patch16_224', pretrained=pretrained)
+                # # ViT outputs a single token, so no need to remove layers
+                # backbone = models.vit_small_patch16_224(pretrained=pretrained)
+                backbone_output_size = backbone.heads.head.in_features
+                backbone.heads.head = nn.Identity()
             else:
                 raise ValueError(f'Unknown backbone type: {backbone_type}')
 
-            return model
+            # Optionally freeze the follow-up layers, leaving the first convolutional layer unfrozen
+            if backbone_params.get('freeze', False):
+                for name, param in backbone.named_parameters():
+                    if 'conv1' not in name:  # Ensure the first conv layer is not frozen
+                        param.requires_grad = False
 
-        def build(self, name, **kwargs):
-            net = VisionBackboneBuilder.Network(self.params, **kwargs)
-            return net
+            return backbone, backbone_output_size
+
+    def build(self, name, **kwargs):
+        print("Building Network")
+        print(self.params)
+        net = VisionBackboneBuilder.Network(self.params, **kwargs)
+        return net
 
 
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):

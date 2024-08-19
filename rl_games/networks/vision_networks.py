@@ -122,8 +122,6 @@ class VisionImpalaBuilder(NetworkBuilder):
             out = torch.cat([out, proprio], dim=1)
 
             if self.has_rnn:
-                # TODO: Double check, it's not lways present!!!
-                #seq_length = obs_dict['seq_length']
                 seq_length = obs_dict.get('seq_length', 1)
 
                 out_in = out

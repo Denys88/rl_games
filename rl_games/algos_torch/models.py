@@ -26,7 +26,6 @@ class BaseModel():
 
     def build(self, config):
         obs_shape = config['input_shape']
-        print(f"obs_shape: {obs_shape}")
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
         value_size = config.get('value_size', 1)
