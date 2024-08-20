@@ -1071,7 +1071,20 @@ class A2CVisionBuilder(NetworkBuilder):
         return net
 
 
-from torchvision import models
+from torchvision import models, transforms
+
+def preprocess_image(image):
+    # Normalize the image using ImageNet's mean and standard deviation
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],  # Mean of ImageNet dataset
+        std=[0.229, 0.224, 0.225]   # Std of ImageNet dataset
+    )
+
+    # Apply the normalization
+    image = normalize(image)
+
+    return image
+
 
 class VisionBackboneBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -1103,6 +1116,7 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             self.cnn, self.cnn_output_size = self._build_backbone(input_shape, params['backbone'])
 
+            self.resize_transform = transforms.Resize((224, 224))
             mlp_input_size = self.cnn_output_size + self.proprio_size
             if len(self.units) == 0:
                 out_size = self.cnn_output_size
@@ -1176,16 +1190,20 @@ class VisionBackboneBuilder(NetworkBuilder):
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
+            if self.preprocess_image:
+                obs = preprocess_image(obs)
+
+            # Assuming your input image is a tensor or PIL image, resize it to 224x224
+            #obs = self.resize_transform(obs)
+
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
             states = obs_dict.get('rnn_states', None)
 
             out = obs
             out = self.cnn(out)
-            #print(out.shape)
             out = out.flatten(1)
-            #print(out.shape)
-            #print('AAAAAAAAAAAAAAAAAaaa')
+
             out = self.flatten_act(out)
 
             if self.proprio_size > 0:
@@ -1272,12 +1290,15 @@ class VisionBackboneBuilder(NetworkBuilder):
         def _build_backbone(self, input_shape, backbone_params):
             backbone_type = backbone_params['type']
             pretrained = backbone_params.get('pretrained', False)
+            self.preprocess_image = backbone_params.get('preprocess_image', False)
 
             if backbone_type == 'resnet18':
                 backbone = models.resnet18(pretrained=pretrained, zero_init_residual=True) # norm_layer=nn.LayerNorm
                 # Modify the first convolution layer to match input shape if needed
+
+                # TODO: add low-res parameter
                 backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
-                backbone.maxpool = nn.Identity()
+                #backbone.maxpool = nn.Identity()
                 # if input_shape[0] != 3:
                 #     model.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
                 # Remove the fully connected layer
@@ -1289,16 +1310,21 @@ class VisionBackboneBuilder(NetworkBuilder):
                 backbone_output_size = backbone.classifier[2].in_features
                 backbone.classifier = nn.Identity()
 
-                # Do we need it?
-                # backbone = nn.Sequential(*list(backbone.children())[:-1])
-            elif backbone_type == 'vit_tiny_patch16_224':
-                backbone = models.vit_small_patch16_224(pretrained=pretrained)
+                # Modify the first convolutional layer to work with smaller resolutions
+                backbone.features[0][0] = nn.Conv2d(
+                    in_channels=input_shape[0],
+                    out_channels=backbone.features[0][0].out_channels,
+                    kernel_size=3,  # Reduce kernel size to 3x3
+                    stride=1,       # Reduce stride to 1 to preserve spatial resolution
+                    padding=1,      # Add padding to preserve dimensions after convolution
+                    bias=True # False
+                )
+
+            elif backbone_type == 'vit_b_16':
+                backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
+
                 backbone_output_size = backbone.heads.head.in_features
                 backbone.heads.head = nn.Identity()
-
-                # ViT outputs a single token, so no need to remove layers
-                # Is it true?
-
             else:
                 raise ValueError(f'Unknown backbone type: {backbone_type}')
 

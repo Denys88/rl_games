@@ -16,21 +16,13 @@ params:
     value_shape: 1
     space: 
       discrete:
-    
-    # cnn:
-    #   permute_input: False
-    #   conv_depths: [16, 32, 32]
-    #   activation: relu
-    #   initializer:
-    #     name: default
-    #   regularizer:
-    #     name: 'None'
   
     backbone:
-      type: resnet18 #convnext_tiny #vit_tiny_patch16_224
+      type: resnet18 #convnext_tiny #vit_b_16 #resnet18
       pretrained: True
       permute_input: False
-      freeze: True
+      freeze: False
+      preprocess_image: False
 
       args:
         zero_init_residual: True
@@ -49,7 +41,7 @@ params:
     #   units: 256
     #   layers: 1
   config:
-    name: pong_resnet18_pretrained_2_mini_epoch_1e-4_linear_lr_norm_value_frozen
+    name: pong_resnet18_maxpool
     env_name: envpool
     reward_shaper:
       min_val: -1
@@ -71,7 +63,7 @@ params:
     e_clip: 0.2
     clip_value: True
     save_best_after: 25
-    save_frequency: 50
+    save_frequency: 500
     num_actors: 32
     horizon_length: 64
     minibatch_size: 512
@@ -81,14 +73,14 @@ params:
     kl_threshold: 0.01
     use_diagnostics: True
     seq_length: 8
-    max_epochs: 1000
+    max_epochs: 2000
     #weight_decay: 0.001
 
     env_config:
       env_name: Pong-v5
       has_lives: False
       use_dict_obs_space: False #True
-
+      stack_num: 3
     player:
         render: True
         games_num: 10
