@@ -13,10 +13,10 @@ params:
       discrete:
   
     backbone:
-      type: resnet18 #efficientnet_v2_s #convnext_tiny #vit_b_16 #resnet18 #resnet34
+      type: vit_b_16 #efficientnet_v2_s #convnext_tiny #vit_b_16 #resnet18 #resnet34
       pretrained: True
       permute_input: False
-      freeze: False
+      freeze: True
       preprocess_image: True
 
       args:
@@ -25,7 +25,7 @@ params:
 
     mlp:
       units: [256]
-      activation: relu #elu
+      activation: relu
       regularizer:
         name: None
       initializer:
@@ -37,7 +37,7 @@ params:
       layers: 1
       before_mlp: True
   config:
-    name: Pacman_resnet18_LSTM_before_MLP_rew_shaper_100
+    name: Pacman_vit_b_16_frozen
     env_name: envpool
     reward_shaper:
       min_val: -100
@@ -62,7 +62,7 @@ params:
     save_frequency: 500
     num_actors: 64
     horizon_length: 128
-    minibatch_size: 2048
+    minibatch_size: 1024 #2048
     mini_epochs: 2
     critic_coef: 1
     lr_schedule: linear
