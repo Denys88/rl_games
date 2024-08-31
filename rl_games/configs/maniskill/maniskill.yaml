@@ -20,13 +20,13 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [512, 256, 128]
+      units: [256, 128, 64]
       activation: elu
       initializer:
         name: default
 
   config:
-      name: Maniskill
+      name: PickCube_state
       env_name: maniskill
       normalize_input: True
       normalize_value: True
@@ -48,11 +48,13 @@ params:
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
-      max_epochs: 2000
+      max_epochs: 1000
+      save_best_after: 25
+      save_frequency: 100
       num_actors: 4096
-      horizon_length: 64
+      horizon_length: 16
       minibatch_size: 16384
-      mini_epochs: 5
+      mini_epochs: 4
       critic_coef: 2
 
       env_config:

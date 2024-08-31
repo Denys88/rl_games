@@ -148,7 +148,11 @@ class Maniskill(IVecEnv):
         # else:
         #     self.observation_space = gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space.shape)
 
-        self.action_space = self.env.unwrapped.single_action_space
+        self._clip_actions = 1.0
+
+        action_space = self.env.unwrapped.single_action_space
+        print("Single action apace:", action_space)
+        self.action_space = gym.spaces.Box(-self._clip_actions, self._clip_actions, action_space.shape)
 
     def step(self, action):
         # # move actions to sim-device
@@ -163,12 +167,14 @@ class Maniskill(IVecEnv):
         extras["time_outs"] = truncated #truncated.to(device=self._rl_device)
         # process observations and states
         #obs_and_states = self._process_obs(obs_dict)
-        obs_and_states = obs_dict
+
+        obs_and_states = {'obs': obs_dict}
         # move buffers to rl-device
         # note: we perform clone to prevent issues when rl-device and sim-device are the same.
         #rew = rew.to(device=self._rl_device)
         #dones = (terminated | truncated).to(device=self._rl_device)
-        dones = (terminated | truncated).any() # stop if any environment terminates/truncates
+        dones = (terminated | truncated) # stop if any environment terminates/truncates
+
         # extras = {
         #     k: v.to(device=self._rl_device, non_blocking=True) if hasattr(v, "to") else v for k, v in extras.items()
         # }
@@ -197,10 +203,12 @@ class Maniskill(IVecEnv):
 
     def reset(self):
         obs = self.env.reset()
+        # print(obs)
+        print("obs reset shape:", obs[0].shape)
         # if self.flatten_obs:
         #     obs = flatten_dict(obs)
 
-        return obs
+        return {'obs': obs[0]}
 
     def get_number_of_agents(self):
         return 1
@@ -209,6 +217,7 @@ class Maniskill(IVecEnv):
         info = {}
         info['action_space'] = self.action_space
         info['observation_space'] = self.observation_space
+        print("info:", info)
         return info
 
 
