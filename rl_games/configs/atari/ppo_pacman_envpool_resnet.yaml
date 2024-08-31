@@ -24,38 +24,38 @@ params:
         norm_layer: None
 
     mlp:
-      units: [256]
-      activation: relu #elu
+      units: [512]
+      activation: relu
       regularizer:
         name: None
       initializer:
         name: default
-
     rnn:
       name: lstm
       units: 512
       layers: 1
       before_mlp: True
+      concat_output: True
+
   config:
-    name: Pacman_resnet18_LSTM_before_MLP_rew_shaper_100
+    name: Pacman_resnet18_LSTM_before_MLP_concat_output_rew_shaper_100_norm
     env_name: envpool
+    mixed_precision: True
+    normalize_input: True
+    normalize_value: True
+    normalize_advantage: True
     reward_shaper:
       min_val: -100
       max_val: 100
-
-    mixed_precision: True
-    normalize_input: False
-    normalize_value: True
-    normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-    learning_rate: 2e-4
-
     score_to_win: 100000
     grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
-
+    learning_rate: 2e-4
+    lr_schedule: linear
+    kl_threshold: 0.01
     e_clip: 0.2
     clip_value: True
     save_best_after: 25
@@ -65,11 +65,9 @@ params:
     minibatch_size: 2048
     mini_epochs: 2
     critic_coef: 1
-    lr_schedule: linear
-    kl_threshold: 0.01
     use_diagnostics: True
     seq_length: 8
-    max_epochs: 10000
+    max_epochs: 20000
     #weight_decay: 0.001
 
     env_config:

@@ -4,7 +4,7 @@ from torchvision import models
 import torch.nn.functional as F
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.network_builder import NetworkBuilder, ImpalaSequential
-    
+
 
 class VisionImpalaBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -15,7 +15,7 @@ class VisionImpalaBuilder(NetworkBuilder):
 
     class Network(NetworkBuilder.BaseNetwork):
         def __init__(self, params, **kwargs):
-            self.actions_num = kwargs.pop('actions_num')
+            self.actions_num = actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
             proprio_size = 0 # Number of proprioceptive features
             if type(full_input_shape) is dict:
@@ -68,18 +68,18 @@ class VisionImpalaBuilder(NetworkBuilder):
             self.flatten_act = self.activations_factory.create(self.activation)
 
             if self.is_discrete:
-                self.logits = torch.nn.Linear(out_size, self.actions_num)
+                self.logits = torch.nn.Linear(out_size, actions_num)
             if self.is_continuous:
-                self.mu = torch.nn.Linear(out_size, self.actions_num)
+                self.mu = torch.nn.Linear(out_size, actions_num)
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation'])
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation'])
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
-                    self.sigma = nn.Parameter(torch.zeros(self.actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+                    self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
                 else:
-                    self.sigma = torch.nn.Linear(out_size, self.actions_num)
+                    self.sigma = torch.nn.Linear(out_size, actions_num)
 
             mlp_init = self.init_factory.create(**self.initializer)
 
@@ -102,9 +102,6 @@ class VisionImpalaBuilder(NetworkBuilder):
             mlp_init(self.value.weight)
 
         def forward(self, obs_dict):
-            # print(obs_dict.keys())
-            # print(obs_dict['obs'].keys())
-            # currently works only dictinary of camera and proprio observations
             obs = obs_dict['obs']['camera']
             proprio = obs_dict['obs']['proprio']
             if self.permute_input:
@@ -227,7 +224,20 @@ class VisionImpalaBuilder(NetworkBuilder):
         return net
 
 
-from timm import create_model  # timm is required for ConvNeXt and ViT
+from torchvision import models, transforms
+
+def preprocess_image(image):
+    # Normalize the image using ImageNet's mean and standard deviation
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],  # Mean of ImageNet dataset
+        std=[0.229, 0.224, 0.225]   # Std of ImageNet dataset
+    )
+
+    # Apply the normalization
+    image = normalize(image)
+
+    return image
+
 
 class VisionBackboneBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
@@ -240,6 +250,8 @@ class VisionBackboneBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             self.actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
+
+            print("Observations shape: ", full_input_shape)
 
             self.proprio_size = 0 # Number of proprioceptive features
             if isinstance(full_input_shape, dict):
@@ -257,12 +269,11 @@ class VisionBackboneBuilder(NetworkBuilder):
             if self.permute_input:
                 input_shape = torch_ext.shape_whc_to_cwh(input_shape)
 
-            self.cnn = self._build_backbone(input_shape, self.params['backbone'])
-            cnn_output_size = self.cnn_output_size
+            self.cnn, self.cnn_output_size = self._build_backbone(input_shape, params['backbone'])
 
-            mlp_input_size = cnn_output_size + self.proprio_size
+            mlp_input_size = self.cnn_output_size + self.proprio_size
             if len(self.units) == 0:
-                out_size = cnn_output_size
+                out_size = self.cnn_output_size
             else:
                 out_size = self.units[-1]
 
@@ -307,9 +318,6 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             mlp_init = self.init_factory.create(**self.initializer)
 
-            # for m in self.modules():
-            #     if isinstance(m, nn.Conv2d):
-            #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
             for m in self.mlp:
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
@@ -327,12 +335,16 @@ class VisionBackboneBuilder(NetworkBuilder):
 
         def forward(self, obs_dict):
             if self.proprio_size > 0:
-                obs = obs_dict['camera']
-                proprio = obs_dict['proprio']
+                obs = obs_dict['obs']['camera']
+                proprio = obs_dict['obs']['proprio']
             else:
                 obs = obs_dict['obs']
+
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
+
+            if self.preprocess_image:
+                obs = preprocess_image(obs)
 
             dones = obs_dict.get('dones', None)
             bptt_len = obs_dict.get('bptt_len', 0)
@@ -427,25 +439,86 @@ class VisionBackboneBuilder(NetworkBuilder):
         def _build_backbone(self, input_shape, backbone_params):
             backbone_type = backbone_params['type']
             pretrained = backbone_params.get('pretrained', False)
+            self.preprocess_image = backbone_params.get('preprocess_image', False)
 
-            if backbone_type == 'resnet18':
-                model = models.resnet18(pretrained=pretrained)
+            if backbone_type == 'resnet18' or backbone_type == 'resnet34':
+                if backbone_type == 'resnet18':
+                    backbone = models.resnet18(pretrained=pretrained, zero_init_residual=True)
+                else:
+                    backbone = models.resnet34(pretrained=pretrained, zero_init_residual=True)
+
                 # Modify the first convolution layer to match input shape if needed
-                if input_shape[0] != 3:
-                    model.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
+                # TODO: add low-res parameter
+                backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
+                # backbone.maxpool = nn.Identity()
+                # if input_shape[0] != 3:
+                #     backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
                 # Remove the fully connected layer
-                self.cnn_output_size = model.fc.in_features
-                model = nn.Sequential(*list(model.children())[:-1])
+                backbone_output_size = backbone.fc.in_features
+                print('backbone_output_size: ', backbone_output_size)
+                backbone = nn.Sequential(*list(backbone.children())[:-1])
             elif backbone_type == 'convnext_tiny':
-                model = create_model('convnext_tiny', pretrained=pretrained)
-                # Remove the fully connected layer
-                self.cnn_output_size = model.head.fc.in_features
-                model = nn.Sequential(*list(model.children())[:-1])
-            elif backbone_type == 'vit_tiny_patch16_224':
-                model = create_model('vit_tiny_patch16_224', pretrained=pretrained)
-                # ViT outputs a single token, so no need to remove layers
-                self.cnn_output
+                backbone = models.convnext_tiny(pretrained=pretrained)
+                backbone_output_size = backbone.classifier[2].in_features
+                backbone.classifier = nn.Identity()
 
-        def build(self, name, **kwargs):
-            net = VisionBackboneBuilder.Network(self.params, **kwargs)
-            return net
+                # Modify the first convolutional layer to work with smaller resolutions
+                backbone.features[0][0] = nn.Conv2d(
+                    in_channels=input_shape[0],
+                    out_channels=backbone.features[0][0].out_channels,
+                    kernel_size=3,  # Reduce kernel size to 3x3
+                    stride=1,       # Reduce stride to 1 to preserve spatial resolution
+                    padding=1,      # Add padding to preserve dimensions after convolution
+                    bias=True # False
+                )
+            elif backbone_type == 'efficientnet_v2_s':
+                backbone = models.efficientnet_v2_s(pretrained=pretrained)
+                backbone.features[0][0] = nn.Conv2d(input_shape[0], 24, kernel_size=3, stride=1, padding=1, bias=False)
+                backbone_output_size = backbone.classifier[1].in_features
+                backbone.classifier = nn.Identity()
+            elif backbone_type == 'vit_b_16':
+                backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
+
+                # Add a resize layer to ensure the input is correctly sized for ViT
+                resize_layer = nn.Upsample(size=(224, 224), mode='bilinear', align_corners=False)
+
+                backbone_output_size = backbone.heads.head.in_features
+                backbone.heads.head = nn.Identity()
+
+                # Combine the resize layer and the backbone into a sequential model
+                backbone = nn.Sequential(resize_layer, backbone)
+                # # Assuming your input image is a tensor or PIL image, resize it to 224x224
+                # #obs = self.resize_transform(obs)
+                # backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
+
+                # backbone_output_size = backbone.heads.head.in_features
+                # backbone.heads.head = nn.Identity()
+            else:
+                raise ValueError(f'Unknown backbone type: {backbone_type}')
+
+            # Optionally freeze the follow-up layers, leaving the first convolutional layer unfrozen
+            if backbone_params.get('freeze', False):
+                print('Freezing backbone')
+                for name, param in backbone.named_parameters():
+                    if 'conv1' not in name:  # Ensure the first conv layer is not frozen
+                        param.requires_grad = False
+
+            return backbone, backbone_output_size
+
+        def is_separate_critic(self):
+            return False
+
+        def is_rnn(self):
+            return self.has_rnn
+
+        def get_default_rnn_state(self):
+            num_layers = self.rnn_layers
+            if self.rnn_name == 'lstm':
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+            else:
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+
+    def build(self, name, **kwargs):
+        net = VisionBackboneBuilder.Network(self.params, **kwargs)
+        return net

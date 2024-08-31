@@ -7,6 +7,7 @@ import random
 from time import sleep
 import torch
 
+
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
 
@@ -281,6 +282,9 @@ register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, 
 
 from rl_games.envs.envpool import Envpool
 register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))
+
+from rl_games.envs.maniskill import Maniskill
+register('MANISKILL', lambda config_name, num_actors, **kwargs: Maniskill(config_name, num_actors, **kwargs))
 
 from rl_games.envs.cule import CuleEnv
 register('CULE', lambda config_name, num_actors, **kwargs: CuleEnv(config_name, num_actors, **kwargs))

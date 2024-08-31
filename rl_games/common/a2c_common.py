@@ -12,6 +12,7 @@ from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
 from rl_games.algos_torch import model_builder
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games import networks
 import numpy as np
 import time
 import gym
