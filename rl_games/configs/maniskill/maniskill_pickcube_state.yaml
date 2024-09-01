@@ -28,11 +28,11 @@ params:
   config:
       name: PickCube_state
       env_name: maniskill
+      reward_shaper:
+        scale_value: 1.0
       normalize_input: True
       normalize_value: True
       value_bootstrap: True
-      reward_shaper:
-        scale_value: 1.0
       normalize_advantage: True
       gamma: 0.99
       tau: 0.95
@@ -48,7 +48,7 @@ params:
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
-      max_epochs: 4000
+      max_epochs: 5000
       save_best_after: 25
       save_frequency: 100
       num_actors: 4096
@@ -59,6 +59,9 @@ params:
 
       env_config:
         env_name: PickCube-v1  # todo: add list of all envs
+        observation_mode: state
+        control_mode: pd_ee_delta_pose
+        reward_mode: dense
 
       player:
         render: True
