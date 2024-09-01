@@ -48,7 +48,9 @@ if __name__ == '__main__':
         else:
             ray.init(object_store_memory=1024*1024*1000)
 
-        runner = Runner()
+        from rl_games.common.algo_observer import IsaacAlgoObserver
+        runner = Runner(IsaacAlgoObserver())
+
         try:
             runner.load(config)
         except yaml.YAMLError as exc:

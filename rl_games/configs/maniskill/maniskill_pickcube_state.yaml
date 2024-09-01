@@ -48,13 +48,13 @@ params:
       use_smooth_clamp: True
       bound_loss_type: regularisation
       bounds_loss_coef: 0.0005
-      max_epochs: 1000
+      max_epochs: 4000
       save_best_after: 25
       save_frequency: 100
       num_actors: 4096
       horizon_length: 16
       minibatch_size: 16384
-      mini_epochs: 4
+      mini_epochs: 6
       critic_coef: 2
 
       env_config:

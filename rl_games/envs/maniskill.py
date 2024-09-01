@@ -77,24 +77,25 @@ class Maniskill(IVecEnv):
         self.reward_mode = "dense" # can be one of ['sparse', 'dense']
         self.robot_uids = "panda" # can be one of ['panda', 'fetch']
 
-        #self.batch_size = num_envs # ???
-
-        #self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', True)
-
-        # self.env = gym2.make( self.env_name,
-        #                          env_type=kwargs.pop('env_type', 'gym'),
-        #                          num_envs=num_envs,
-        #                          batch_size=self.batch_size,
-        #                          **kwargs
-        #                         )
         self.env = gym2.make(self.env_name,
                             num_envs=num_envs,
+                        #    render_mode="rgb_array",
                             obs_mode=self.obs_mode,
                             reward_mode=self.reward_mode,
                             control_mode=self.control_mode,
                             robot_uids=self.robot_uids,
                             enable_shadow=True # this makes the default lighting cast shadows
                             )
+        
+        # from mani_skill.utils.wrappers import RecordEpisode
+        # # to make it look a little more realistic, we will enable shadows which make the default lighting cast shadows
+        # self.env = RecordEpisode(
+        #     self.env,
+        #     "./videos", # the directory to save replay videos and trajectories to
+        #     # on GPU sim we record intervals, not by single episodes as there are multiple envs
+        #     # each 100 steps a new video is saved
+        #     max_steps_per_video=240
+        # )
         
         # if self.use_dict_obs_space:
         #     self.observation_space = gym.spaces.Dict({
@@ -113,7 +114,7 @@ class Maniskill(IVecEnv):
         policy_obs_space = self.env.unwrapped.single_observation_space
         print("Observation Space Unwrapped:", policy_obs_space)
 
-        self._clip_obs = np.inf
+        self._clip_obs = 5.0
 
         # TODO: single function
         if isinstance(policy_obs_space, gymnasium.spaces.Dict):
@@ -154,27 +155,35 @@ class Maniskill(IVecEnv):
         print("Single action apace:", action_space)
         self.action_space = gym.spaces.Box(-self._clip_actions, self._clip_actions, action_space.shape)
 
-    def step(self, action):
-        # # move actions to sim-device
+    def step(self, actions):
+        # TODO: use env device
+        # TODO: add reward/observation clamoping
+        # TODO: move buffers to rl-device
+        # TODO: move actions to sim-device
         # actions = actions.detach().clone().to(device=self._sim_device)
         # # clip the actions
-        # actions = torch.clamp(actions, -self._clip_actions, self._clip_actions)
+        actions = torch.clamp(actions, -self._clip_actions, self._clip_actions)
 
-        obs_dict, rew, terminated, truncated, extras = self.env.step(action)
+        obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
+        #self.env.render_human()
         # move time out information to the extras dict
         # this is only needed for infinite horizon tasks
         # note: only useful when `value_bootstrap` is True in the agent configuration
-        extras["time_outs"] = truncated #truncated.to(device=self._rl_device)
+
+        extras["time_outs"] = truncated
+
         # process observations and states
         #obs_and_states = self._process_obs(obs_dict)
-
         obs_and_states = {'obs': obs_dict}
-        # move buffers to rl-device
-        # note: we perform clone to prevent issues when rl-device and sim-device are the same.
-        #rew = rew.to(device=self._rl_device)
-        #dones = (terminated | truncated).to(device=self._rl_device)
-        dones = (terminated | truncated) # stop if any environment terminates/truncates
 
+        # dones = (terminated | truncated)
+        dones = torch.logical_or(terminated, truncated)
+        if dones.any():
+            env_idx = torch.arange(0, self.env.num_envs, device=self.env.device)[dones] # device=self.device
+            reset_obs, _ = self.env.reset(options=dict(env_idx=env_idx))
+            obs_and_states['obs'] = reset_obs
+
+        #print('extras keys:', extras.keys())
         # extras = {
         #     k: v.to(device=self._rl_device, non_blocking=True) if hasattr(v, "to") else v for k, v in extras.items()
         # }
@@ -183,32 +192,21 @@ class Maniskill(IVecEnv):
         if "log" in extras:
             extras["episode"] = extras.pop("log")
 
-        # done = (terminated | truncated).any() # stop if any environment terminates/truncates
-        # info['time_outs'] = truncated
-
-        # if self.obs_mode == 'state_dict':
-        #     next_obs = obs
+        # TODO: revisit success calculation
+        if "success" in extras:
+            extras["successes"] = extras["success"].float().mean()
 
         # if self.flatten_obs:
         #     next_obs = flatten_dict(next_obs)
 
-        # if self.use_dict_obs_space:
-        #     next_obs = {
-        #         'observation': next_obs,
-        #         'reward': np.clip(reward, -1, 1),
-        #         'last_action': action
-        #     }
-        #return next_obs, reward, is_done, info
         return obs_and_states, rew, dones, extras
 
     def reset(self):
         obs = self.env.reset()
-        # print(obs)
-        print("obs reset shape:", obs[0].shape)
-        # if self.flatten_obs:
-        #     obs = flatten_dict(obs)
-
         return {'obs': obs[0]}
+    
+    def render(self, mode='human'):
+        self.env.render_human()
 
     def get_number_of_agents(self):
         return 1
