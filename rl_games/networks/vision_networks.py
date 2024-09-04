@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torchvision import models
+from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 import torch.nn.functional as F
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.network_builder import NetworkBuilder, ImpalaSequential
@@ -21,9 +22,12 @@ class VisionImpalaBuilder(NetworkBuilder):
             if type(full_input_shape) is dict:
                 input_shape = full_input_shape['camera']
                 proprio_shape = full_input_shape['proprio']
+
                 proprio_size = proprio_shape[0]
             else:
                 input_shape = full_input_shape
+
+            self.normalize_emb = kwargs.pop('normalize_emb', False)
 
             self.num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
@@ -42,6 +46,9 @@ class VisionImpalaBuilder(NetworkBuilder):
             else:
                 out_size = self.units[-1]
 
+            self.running_mean_std = torch.jit.script(RunningMeanStd((mlp_input_size,)))
+            self.layer_norm_emb = torch.nn.LayerNorm(mlp_input_size)
+
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     rnn_in_size = out_size
@@ -55,7 +62,7 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             mlp_args = {
                 'input_size' : mlp_input_size,
-                'units' :self.units,
+                'units' : self.units,
                 'activation' : self.activation,
                 'norm_func_name' : self.normalization,
                 'dense_func' : torch.nn.Linear
@@ -101,6 +108,14 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             mlp_init(self.value.weight)
 
+        def norm_emb(self, embedding):
+            #with torch.no_grad():
+            return self.running_mean_std(embedding) if self.normalize_emb else embedding
+                # if len(self.units) == 0:
+                #     out_size = cnn_output_size
+                # else:
+                #     out_size = self.units[-1]
+
         def forward(self, obs_dict):
             obs = obs_dict['obs']['camera']
             proprio = obs_dict['obs']['proprio']
@@ -117,6 +132,9 @@ class VisionImpalaBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             out = torch.cat([out, proprio], dim=1)
+            #print('out shape: ', out.shape)
+            #out = self.norm_emb(out)
+            out = self.layer_norm_emb(out)
 
             if self.has_rnn:
                 seq_length = obs_dict.get('seq_length', 1)

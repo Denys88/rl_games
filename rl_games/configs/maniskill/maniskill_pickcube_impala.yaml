@@ -23,9 +23,9 @@ params:
       continuous:
         mu_activation: None
         sigma_activation: None
-
         mu_init:
           name: default
+          scale: 0.02
         sigma_init:
           name: const_initializer
           val: 0
@@ -35,25 +35,27 @@ params:
       conv_depths: [16, 32, 32]
       activation: relu
       initializer:
-        name: default
+        name: orthogonal_initializer
+        gain: 1.41421356237
       regularizer:
         name: None
     mlp:
-      units: [512, 256]
+      units: [256]
       activation: elu
       regularizer:
         name: None
       initializer:
         name: default
-    # rnn:
-    #   name: lstm
-    #   units: 512
-    #   layers: 1
-    #   before_mlp: True
-    #   concat_output: True
+    rnn:
+      name: lstm
+      layer_norm: True
+      units: 512
+      layers: 1
+      before_mlp: True
+      concat_output: True
 
   config:
-    name: PickCube_RGB_impala
+    name: PickCube_RGB_impala_lstm_init_2e-4_linear_lr
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -70,17 +72,17 @@ params:
       scale_value: 1.0
     gamma: 0.99
     tau : 0.95
-    learning_rate: 1e-4
-    lr_schedule: adaptive
+    learning_rate: 2e-4
+    lr_schedule: linear
     kl_threshold: 0.008
-    max_epochs: 10000
+    max_epochs: 20000
     save_best_after: 25
     save_frequency: 500
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 16
+    horizon_length: 32
     minibatch_size: 2048
     mini_epochs: 2
     critic_coef: 1
