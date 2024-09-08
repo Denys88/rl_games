@@ -40,21 +40,22 @@ params:
         zero_init_residual: True
         norm_layer: None
     mlp:
-      units: [512]
+      units: [256]
       activation: elu
       regularizer:
         name: None
       initializer:
         name: default
-    # rnn:
-    #   name: lstm
-    #   units: 512
-    #   layers: 1
-    #   before_mlp: True
-    #   concat_output: True
+    rnn:
+      name: lstm
+      layer_norm: True
+      units: 512
+      layers: 1
+      before_mlp: True
+      concat_output: True
 
   config:
-    name: PickCube_RGB_resnet18
+    name: PickCube_RGB_resnet18_LSTM_norm_embedding_64envs
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -66,22 +67,22 @@ params:
     normalize_input: False
     normalize_value: True
     normalize_advantage: True
-    num_actors: 128
+    num_actors: 64 #128
     reward_shaper:
       scale_value: 1.0
     gamma: 0.99
     tau : 0.95
     learning_rate: 1e-4
-    lr_schedule: None
+    lr_schedule: linear
     kl_threshold: 0.008
-    max_epochs: 50000
+    max_epochs: 20000
     save_best_after: 25
     save_frequency: 500
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 64
+    horizon_length: 128
     minibatch_size: 512
     mini_epochs: 2
     critic_coef: 1
@@ -97,6 +98,6 @@ params:
       reward_mode: dense
 
     player:
-        render: True
+        render: False
         deterministic: True
 

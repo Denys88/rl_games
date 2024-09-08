@@ -55,7 +55,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_Impala_Small_LSTM_norm_embedding
+    name: PickCube_RGB_Impala_Small_LSTM_RMSnorm_embedding_128envs
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -67,7 +67,7 @@ params:
     normalize_input: False
     normalize_value: True
     normalize_advantage: True
-    num_actors: 256
+    num_actors: 128 #256
     reward_shaper:
       scale_value: 1.0
     gamma: 0.99

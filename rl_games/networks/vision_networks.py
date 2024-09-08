@@ -48,13 +48,14 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             self.running_mean_std = torch.jit.script(RunningMeanStd((mlp_input_size,)))
             self.layer_norm_emb = torch.nn.LayerNorm(mlp_input_size)
+            #self.layer_norm_emb = torch.nn.RMSNorm(mlp_input_size)
 
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     rnn_in_size = out_size
                     out_size = self.rnn_units
                 else:
-                    rnn_in_size =  mlp_input_size
+                    rnn_in_size = mlp_input_size
                     mlp_input_size = self.rnn_units
 
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
@@ -132,8 +133,6 @@ class VisionImpalaBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             out = torch.cat([out, proprio], dim=1)
-            #print('out shape: ', out.shape)
-            #out = self.norm_emb(out)
             out = self.layer_norm_emb(out)
 
             if self.has_rnn:
@@ -295,6 +294,8 @@ class VisionBackboneBuilder(NetworkBuilder):
             else:
                 out_size = self.units[-1]
 
+            self.layer_norm_emb = torch.nn.LayerNorm((mlp_input_size,))
+
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
                     rnn_in_size = out_size
@@ -375,6 +376,8 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             if self.proprio_size > 0:
                 out = torch.cat([out, proprio], dim=1)
+
+            out = self.layer_norm_emb(out)
 
             if self.has_rnn:
                 seq_length = obs_dict.get('seq_length', 1)

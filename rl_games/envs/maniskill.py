@@ -126,7 +126,7 @@ class Maniskill(IVecEnv):
                             robot_uids=self.robot_uids,
                             enable_shadow=True # this makes the default lighting cast shadows
                             )
-        
+
         print("Observation Space Before:", self.env.observation_space)
         policy_obs_space = self.env.unwrapped.single_observation_space
         print("Observation Space Unwrapped Before:", policy_obs_space)
@@ -181,22 +181,6 @@ class Maniskill(IVecEnv):
         else:
             self.observation_space = gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space.shape)
 
-        # if isinstance(critic_obs_space, gymnasium.spaces.Dict):
-        #     # check if we have a dictionary of observations
-        #     for key in critic_obs_space.keys():
-        #         if not isinstance(critic_obs_space[key], gymnasium.spaces.Box):
-        #             raise NotImplementedError(
-        #                 f"Dictinary of dictinary observations support has not been tested yet: '{type(policy_obs_space[key])}'."
-        #             )
-        #     self.state_observation_space = gym.spaces.Dict(
-        #         {
-        #             key: gym.spaces.Box(-self._clip_obs, self._clip_obs, critic_obs_space[key].shape)
-        #             for key in critic_obs_space.keys()
-        #         }
-        #     )
-        # else:
-        #     self.observation_space = gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space.shape)
-
         self._clip_actions = 1.0
 
         action_space = self.env.unwrapped.single_action_space
@@ -213,10 +197,8 @@ class Maniskill(IVecEnv):
         actions = torch.clamp(actions, -self._clip_actions, self._clip_actions)
 
         obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
-        #self.env.render_human()
         # move time out information to the extras dict
-        # this is only needed for infinite horizon tasks
-        # note: only useful when `value_bootstrap` is True in the agent configuration
+        # note: only used when `value_bootstrap` is True in the agent configuration
 
         extras["time_outs"] = truncated
 
@@ -240,7 +222,6 @@ class Maniskill(IVecEnv):
         if "log" in extras:
             extras["episode"] = extras.pop("log")
 
-        # TODO: revisit success calculation
         if "success" in extras:
             extras["successes"] = extras["success"].float().mean()
 
@@ -251,8 +232,6 @@ class Maniskill(IVecEnv):
 
     def reset(self):
         obs = self.env.reset()
-        print("obs:", obs[0].keys())
-
         obs_dict = {'obs': obs[0]}
 
         # if self.obs_mode == 'rgbd':
