@@ -321,9 +321,7 @@ class A2CBase(BaseAlgorithm):
         self.algo_observer = config['features']['observer']
 
         self.soft_aug = config['features'].get('soft_augmentation', None)
-        self.has_soft_aug = self.soft_aug is not None
-        # soft augmentation not yet supported
-        assert not self.has_soft_aug
+        self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
         if self.multi_gpu:
@@ -374,6 +372,8 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
 
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
+        for k,v in self.aux_loss_dict.items():
+            self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
@@ -1356,9 +1356,6 @@ class ContinuousA2CBase(A2CBase):
 
                 if len(b_losses) > 0:
                     self.writer.add_scalar('losses/bounds_loss', torch_ext.mean_list(b_losses).item(), frame)
-
-                if self.has_soft_aug:
-                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()

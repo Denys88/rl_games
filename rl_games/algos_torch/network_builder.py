@@ -67,6 +67,9 @@ class NetworkBuilder:
         def get_default_rnn_state(self):
             return None
 
+        def get_aux_loss(self):
+            return None
+
         def _calc_input_size(self, input_shape,cnn_layers=None):
             if cnn_layers is None:
                 assert(len(input_shape) == 1)

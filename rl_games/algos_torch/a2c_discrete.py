@@ -170,7 +170,16 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
             loss = a_loss + 0.5 *c_loss * self.critic_coef - entropy * self.entropy_coef
-
+            aux_loss = self.model.get_aux_loss()
+            self.aux_loss_dict = {}
+            if aux_loss is not None:
+                for k, v in aux_loss.items():
+                    loss += v
+                    if k in self.aux_loss_dict:
+                        self.aux_loss_dict[k] = v.detach()
+                    else:
+                        self.aux_loss_dict[k] = [v.detach()]
+                    
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:

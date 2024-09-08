@@ -16,6 +16,7 @@ class TestRNNEnv(gym.Env):
         self.apply_dist_reward = kwargs.pop('apply_dist_reward', False)
         self.apply_exploration_reward = kwargs.pop('apply_exploration_reward', False)
         self.multi_head_value = kwargs.pop('multi_head_value', False)
+        self.aux_loss = kwargs.pop('aux_loss', False)
         if self.multi_head_value:
             self.value_size = 2
         else:
@@ -33,6 +34,8 @@ class TestRNNEnv(gym.Env):
                 'pos': gym.spaces.Box(low=0, high=1, shape=(2, ), dtype=np.float32),
                 'info': gym.spaces.Box(low=0, high=1, shape=(4, ), dtype=np.float32),
             }
+            if self.aux_loss:
+                spaces['aux_target'] = gym.spaces.Box(low=0, high=1, shape=(1, ), dtype=np.float32)
             self.observation_space = gym.spaces.Dict(spaces)
         else:
             self.observation_space = gym.spaces.Box(low=0, high=1, shape=(6, ), dtype=np.float32)
@@ -58,6 +61,9 @@ class TestRNNEnv(gym.Env):
                 'pos': obs[:2],
                 'info': obs[2:]
             }
+            if self.aux_loss:
+                aux_target = np.sum((self._goal_pos - self._current_pos)**2) / bound**2
+                obs['aux_target'] = np.expand_dims(aux_target.astype(np.float32), axis=0)
         if self.use_central_value:
             obses = {}
             obses["obs"] = obs
@@ -93,6 +99,7 @@ class TestRNNEnv(gym.Env):
     def step(self, action):
         info = {}  
         self._curr_steps += 1
+        bound = self.max_dist - self.min_dist
         if self.multi_discrete_space:
             self.step_multi_categorical(action)
         else:
@@ -125,6 +132,9 @@ class TestRNNEnv(gym.Env):
                 'pos': obs[:2],
                 'info': obs[2:]
             }
+            if self.aux_loss:
+                aux_target = np.sum((self._goal_pos - self._current_pos)**2) / bound**2
+                obs['aux_target'] = np.expand_dims(aux_target.astype(np.float32), axis=0)
         if self.use_central_value:
             state = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
             obses = {}
