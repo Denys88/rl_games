@@ -62,14 +62,20 @@ class VisionImpalaBuilder(NetworkBuilder):
                 self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
-                'input_size' : mlp_input_size,
-                'units' : self.units,
-                'activation' : self.activation,
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
+                'input_size': mlp_input_size,
+                'units': self.units,
+                'activation': self.activation,
+                'norm_func_name': self.normalization,
+                'dense_func': torch.nn.Linear
             }
 
             self.mlp = self._build_mlp(**mlp_args)
+        
+            self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
+
+            self.aux_loss_map = {
+                'aux_dist_loss' : None
+            }
 
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
@@ -117,9 +123,13 @@ class VisionImpalaBuilder(NetworkBuilder):
                 # else:
                 #     out_size = self.units[-1]
 
+        def get_aux_loss(self):
+            return self.aux_loss_map
+
         def forward(self, obs_dict):
             obs = obs_dict['obs']['camera']
             proprio = obs_dict['obs']['proprio']
+            target_obs = obs['tcp_pose'] # obs[self.target_key]
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
@@ -169,6 +179,9 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             value = self.value_act(self.value(out))
 
+            y = self.aux_loss_linear(out)
+            self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
+
             if self.is_discrete:
                 logits = self.logits(out)
                 return logits, value, states
@@ -188,7 +201,7 @@ class VisionImpalaBuilder(NetworkBuilder):
             self.initializer = params['mlp']['initializer']
             self.is_discrete = 'discrete' in params['space']
             self.is_continuous = 'continuous' in params['space']
-            self.is_multi_discrete = 'multi_discrete'in params['space']
+            self.is_multi_discrete = 'multi_discrete' in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
 

@@ -1,5 +1,4 @@
 from rl_games.common.ivecenv import IVecEnv
-#import gym
 import numpy as np
 
 import torch
@@ -39,12 +38,6 @@ def _process_obs(self, obs_dict: VecEnvObs) -> torch.Tensor | dict[str, torch.Te
             obs[key] = obs[key].to(device=self._rl_device).clone()
         # TODO: add state processing for asymmetric case
         return obs
-    
-def maniskill_process_obs(obs_dict: VecEnvObs) -> dict[str, torch.Tensor]:
-    obs_dict['obs']['camera'] = obs_dict['obs'].pop('rgbd')
-    obs_dict['obs']['proprio'] = obs_dict['obs'].pop('state')
-    obs_dict['obs']['camera'] = obs_dict['obs']['camera'].float() / 255.0
-    return obs_dict
 
 
 class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
@@ -59,8 +52,9 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
     Note that the returned observations will have a "rgbd" or "rgb" or "depth" key depending on the rgb/depth bool flags.
     """
 
-    def __init__(self, env, rgb=True, depth=False, state=True) -> None:
+    def __init__(self, env, rgb=True, depth=False, state=True, aux_loss=False) -> None:
         self.base_env: BaseEnv = env.unwrapped
+        self.aux_loss = aux_loss
         super().__init__(env)
         self.include_rgb = rgb
         self.include_depth = depth
@@ -69,8 +63,16 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
         self.base_env.update_obs_space(new_obs)
 
     def observation(self, observation: Dict):
+        # print("Observation:", observation.keys())
+        # for key, value in observation.items():
+        #     print(key, value.keys())
+        tcp_pose = observation['extra']['tcp_pose']
+        # print("Input Obs:", observation.keys())
+        # print("Input Obs Agent:", observation['agent'].keys())
+        # print("Input Obs Extra:", observation['extra'].keys())
         sensor_data = observation.pop("sensor_data")
         del observation["sensor_param"]
+        #del observation["extra"]
         images = []
         for cam_data in sensor_data.values():
             if self.include_rgb:
@@ -80,9 +82,12 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
         images = torch.concat(images, axis=-1)
         # flatten the rest of the data which should just be state data
         observation = common.flatten_state_dict(observation, use_torch=True)
+
         ret = dict()
         if self.include_state:
             ret["proprio"] = observation
+        if self.aux_loss:
+            ret['aux_target'] = tcp_pose
         ret["camera"] = images.float() / 255.0
 
         return ret
@@ -102,6 +107,7 @@ class Maniskill(IVecEnv):
 
         # an observation type and space, see https://maniskill.readthedocs.io/en/latest/user_guide/concepts/observation.html for details
         self.obs_mode = kwargs.pop('obs_mode', 'state') # can be one of ['pointcloud', 'rgbd', 'state_dict', 'state']
+        self.aux_loss = kwargs.pop('aux_loss', True)
 
         # a controller type / action space, see https://maniskill.readthedocs.io/en/latest/user_guide/concepts/controllers.html for a full list
         # can be one of ['pd_ee_delta_pose', 'pd_ee_delta_pos', 'pd_joint_delta_pos', 'arm_pd_joint_pos_vel']
@@ -133,13 +139,15 @@ class Maniskill(IVecEnv):
 
         # TODO: add pointcloud and Depth support
         if self.obs_mode == 'rgbd':
-            self.env = RlgFlattenRGBDObservationWrapper(self.env)
+            self.env = RlgFlattenRGBDObservationWrapper(self.env, aux_loss=self.aux_loss)
             policy_obs_space = self.env.unwrapped.single_observation_space
 
             modified_policy_obs_space = {}
 
             # Copy existing keys and values, renaming as needed
             for key, value in policy_obs_space.items():
+                print("Key:", key)
+                print("Value:", value)
                 if key == 'rgbd':
                     print("RGBD Shape:", value.shape)
                     modified_policy_obs_space['camera'] = value
@@ -147,6 +155,9 @@ class Maniskill(IVecEnv):
                     modified_policy_obs_space['proprio'] = value
                 else:
                     modified_policy_obs_space[key] = value
+            
+            # if self.aux_loss:
+            #     modified_policy_obs_space['aux_target'] = gymnasium.spaces.Dict(low=-np.Inf, high=np.Inf, shape=(3, ), dtype=np.float32)
 
             print("Observation Space Unwrapped:", modified_policy_obs_space)
 
@@ -197,13 +208,11 @@ class Maniskill(IVecEnv):
         actions = torch.clamp(actions, -self._clip_actions, self._clip_actions)
 
         obs_dict, rew, terminated, truncated, extras = self.env.step(actions)
+
         # move time out information to the extras dict
         # note: only used when `value_bootstrap` is True in the agent configuration
-
         extras["time_outs"] = truncated
 
-        # process observations and states
-        #obs_and_states = self._process_obs(obs_dict)
         obs_and_states = {'obs': obs_dict}
 
         # dones = (terminated | truncated)
@@ -212,6 +221,8 @@ class Maniskill(IVecEnv):
             env_idx = torch.arange(0, self.env.num_envs, device=self.env.device)[dones] # device=self.device
             reset_obs, _ = self.env.reset(options=dict(env_idx=env_idx))
             obs_and_states['obs'] = reset_obs
+
+        #print('obs keys:', obs_dict.keys())
 
         #print('extras keys:', extras.keys())
         # extras = {
@@ -224,9 +235,6 @@ class Maniskill(IVecEnv):
 
         if "success" in extras:
             extras["successes"] = extras["success"].float().mean()
-
-        # if self.obs_mode == 'rgbd':
-        #     obs_and_states = maniskill_process_obs(obs_and_states)
 
         return obs_and_states, rew, dones, extras
 
