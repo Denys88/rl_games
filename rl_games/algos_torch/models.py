@@ -62,7 +62,6 @@ class BaseModelNetwork(nn.Module):
     def get_aux_loss(self):
         return None
 
-
 class ModelA2C(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')

@@ -213,7 +213,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                         self.aux_loss_dict[k] = v.detach()
                     else:
                         self.aux_loss_dict[k] = [v.detach()]
-
             if self.multi_gpu:
                 self.optimizer.zero_grad()
             else:
