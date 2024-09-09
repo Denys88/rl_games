@@ -54,6 +54,10 @@ class BaseModelNetwork(nn.Module):
     def denorm_value(self, value):
         with torch.no_grad():
             return self.value_mean_std(value, denorm=True) if self.normalize_value else value
+        
+    
+    def get_aux_loss(self):
+        return None
 
 class ModelA2C(BaseModel):
     def __init__(self, network):
@@ -64,7 +68,10 @@ class ModelA2C(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self,**kwargs)
             self.a2c_network = a2c_network
-
+        
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+        
         def is_rnn(self):
             return self.a2c_network.is_rnn()
         
@@ -121,6 +128,9 @@ class ModelA2CMultiDiscrete(BaseModel):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+        
         def is_rnn(self):
             return self.a2c_network.is_rnn()
         
@@ -190,6 +200,9 @@ class ModelA2CContinuous(BaseModel):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+        
         def is_rnn(self):
             return self.a2c_network.is_rnn()
             
@@ -248,6 +261,9 @@ class ModelA2CContinuousLogStd(BaseModel):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+        
         def is_rnn(self):
             return self.a2c_network.is_rnn()
 
@@ -305,6 +321,9 @@ class ModelCentralValue(BaseModel):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
 
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+
         def is_rnn(self):
             return self.a2c_network.is_rnn()
 
@@ -343,6 +362,9 @@ class ModelSACContinuous(BaseModel):
         def __init__(self, sac_network,**kwargs):
             BaseModelNetwork.__init__(self,**kwargs)
             self.sac_network = sac_network
+
+        def get_aux_loss(self):
+            return self.sac_network.get_aux_loss()
 
         def critic(self, obs, action):
             return self.sac_network.critic(obs, action)
