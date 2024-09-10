@@ -55,7 +55,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_resnet18_LSTM_norm_embedding_64envs_auxloss
+    name: PickCube_RGB_resnet18_LSTM_norm_embedding_128envs_2e-4_linear_lr_first_layer_retrain
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -72,7 +72,7 @@ params:
       scale_value: 1.0
     gamma: 0.99
     tau : 0.95
-    learning_rate: 1e-4
+    learning_rate: 2e-4
     lr_schedule: linear
     kl_threshold: 0.008
     max_epochs: 20000

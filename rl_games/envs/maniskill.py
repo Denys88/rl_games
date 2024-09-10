@@ -66,8 +66,9 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
         # print("Observation:", observation.keys())
         # for key, value in observation.items():
         #     print(key, value.keys())
-        aux_target = observation['extra']['aux_target']
-        del observation['extra']['aux_target']
+        if self.aux_loss:
+            aux_target = observation['extra']['aux_target']
+            del observation['extra']['aux_target']
         # print("Input Obs:", observation.keys())
         # print("Input Obs Agent:", observation['agent'].keys())
         # print("Input Obs Extra:", observation['extra'].keys())
@@ -109,7 +110,7 @@ class Maniskill(IVecEnv):
 
         # an observation type and space, see https://maniskill.readthedocs.io/en/latest/user_guide/concepts/observation.html for details
         self.obs_mode = kwargs.pop('obs_mode', 'state') # can be one of ['pointcloud', 'rgbd', 'state_dict', 'state']
-        self.aux_loss = kwargs.pop('aux_loss', True)
+        self.aux_loss = kwargs.pop('aux_loss', False)
 
         # a controller type / action space, see https://maniskill.readthedocs.io/en/latest/user_guide/concepts/controllers.html for a full list
         # can be one of ['pd_ee_delta_pose', 'pd_ee_delta_pos', 'pd_joint_delta_pos', 'arm_pd_joint_pos_vel']

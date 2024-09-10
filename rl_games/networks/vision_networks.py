@@ -70,12 +70,14 @@ class VisionImpalaBuilder(NetworkBuilder):
             }
 
             self.mlp = self._build_mlp(**mlp_args)
-        
-            self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
 
-            self.aux_loss_map = {
-                'aux_dist_loss': None
-            }
+            # TODO: implement for Impala
+            self.aux_loss_map = None
+            if self.use_aux_loss:
+                self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
+                self.aux_loss_map = {
+                    'aux_dist_loss': None
+                }
 
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
@@ -283,9 +285,13 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             print('full_input_shape: ', full_input_shape)
 
-            self.target_key = 'aux_target'
-            self.target_shape = full_input_shape[self.target_key]
-            print("Target shape: ", self.target_shape)
+            self.use_aux_loss = kwargs.pop('use_aux_loss', False)
+
+            if self.use_aux_loss:
+                self.target_key = 'aux_target'
+                if 'aux_target' in full_input_shape:
+                    self.target_shape = full_input_shape[self.target_key]
+                    print("Target shape: ", self.target_shape)
 
             print("Observations shape: ", full_input_shape)
 
@@ -341,11 +347,12 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             self.mlp = self._build_mlp(**mlp_args)
 
-            self.aux_loss_linear = nn.Linear(out_size, self.target_shape[0])
-
-            self.aux_loss_map = {
-                'aux_dist_loss': None
-            }
+            self.aux_loss_map = None
+            if self.use_aux_loss:
+                self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
+                self.aux_loss_map = {
+                    'aux_dist_loss': None
+                }
 
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
@@ -392,7 +399,8 @@ class VisionBackboneBuilder(NetworkBuilder):
             else:
                 obs = obs_dict['obs']
 
-            target_obs = obs_dict['obs'][self.target_key]
+            if self.use_aux_loss:
+                target_obs = obs_dict['obs'][self.target_key]
 
             # print('obs.min(): ', obs.min())
             # print('obs.max(): ', obs.max())
@@ -452,8 +460,9 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             value = self.value_act(self.value(out))
 
-            y = self.aux_loss_linear(out)
-            self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
+            if self.use_aux_loss:
+                y = self.aux_loss_linear(out)
+                self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
 
             if self.is_discrete:
                 logits = self.logits(out)
