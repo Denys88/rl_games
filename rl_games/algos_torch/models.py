@@ -268,7 +268,7 @@ class ModelA2CContinuousLogStd(BaseModel):
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
-        
+
         def is_rnn(self):
             return self.a2c_network.is_rnn()
 

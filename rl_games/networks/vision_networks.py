@@ -74,7 +74,7 @@ class VisionImpalaBuilder(NetworkBuilder):
             self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
 
             self.aux_loss_map = {
-                'aux_dist_loss' : None
+                'aux_dist_loss': None
             }
 
             self.value = self._build_value_layer(out_size, self.value_size)
@@ -129,7 +129,7 @@ class VisionImpalaBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             obs = obs_dict['obs']['camera']
             proprio = obs_dict['obs']['proprio']
-            target_obs = obs['tcp_pose'] # obs[self.target_key]
+            target_obs = obs[self.target_key]
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
@@ -281,6 +281,12 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
 
+            print('full_input_shape: ', full_input_shape)
+
+            self.target_key = 'aux_target'
+            self.target_shape = full_input_shape[self.target_key]
+            print("Target shape: ", self.target_shape)
+
             print("Observations shape: ", full_input_shape)
 
             self.proprio_size = 0 # Number of proprioceptive features
@@ -288,6 +294,11 @@ class VisionBackboneBuilder(NetworkBuilder):
                 input_shape = full_input_shape['camera']
                 proprio_shape = full_input_shape['proprio']
                 self.proprio_size = proprio_shape[0]
+
+                # # TODO: This is a hack to get the target shape
+                # for k, v in full_input_shape.items():
+                #     if self.target_key == k:
+                #         self.target_shape = v[0]
             else:
                 input_shape = full_input_shape
 
@@ -330,6 +341,12 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             self.mlp = self._build_mlp(**mlp_args)
 
+            self.aux_loss_linear = nn.Linear(out_size, self.target_shape[0])
+
+            self.aux_loss_map = {
+                'aux_dist_loss': None
+            }
+
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
             self.flatten_act = self.activations_factory.create(self.activation)
@@ -365,12 +382,21 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             mlp_init(self.value.weight)
 
+        def get_aux_loss(self):
+            return self.aux_loss_map
+
         def forward(self, obs_dict):
             if self.proprio_size > 0:
                 obs = obs_dict['obs']['camera']
                 proprio = obs_dict['obs']['proprio']
             else:
                 obs = obs_dict['obs']
+
+            target_obs = obs_dict['obs'][self.target_key]
+
+            # print('obs.min(): ', obs.min())
+            # print('obs.max(): ', obs.max())
+            # print('obs.shape: ', obs.shape)
 
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
@@ -425,6 +451,9 @@ class VisionBackboneBuilder(NetworkBuilder):
                 out = self.mlp(out)
 
             value = self.value_act(self.value(out))
+
+            y = self.aux_loss_linear(out)
+            self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
 
             if self.is_discrete:
                 logits = self.logits(out)

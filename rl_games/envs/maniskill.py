@@ -66,7 +66,8 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
         # print("Observation:", observation.keys())
         # for key, value in observation.items():
         #     print(key, value.keys())
-        tcp_pose = observation['extra']['tcp_pose']
+        aux_target = observation['extra']['aux_target']
+        del observation['extra']['aux_target']
         # print("Input Obs:", observation.keys())
         # print("Input Obs Agent:", observation['agent'].keys())
         # print("Input Obs Extra:", observation['extra'].keys())
@@ -80,6 +81,7 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
             if self.include_depth:
                 images.append(cam_data["depth"])
         images = torch.concat(images, axis=-1)
+
         # flatten the rest of the data which should just be state data
         observation = common.flatten_state_dict(observation, use_torch=True)
 
@@ -87,8 +89,8 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
         if self.include_state:
             ret["proprio"] = observation
         if self.aux_loss:
-            ret['aux_target'] = tcp_pose
-        ret["camera"] = images.float() / 255.0
+            ret['aux_target'] = aux_target
+        ret["camera"] = images
 
         return ret
 
@@ -141,6 +143,7 @@ class Maniskill(IVecEnv):
         if self.obs_mode == 'rgbd':
             self.env = RlgFlattenRGBDObservationWrapper(self.env, aux_loss=self.aux_loss)
             policy_obs_space = self.env.unwrapped.single_observation_space
+            print("Observation Space Unwrapped After:", policy_obs_space)
 
             modified_policy_obs_space = {}
 
@@ -150,18 +153,20 @@ class Maniskill(IVecEnv):
                 print("Value:", value)
                 if key == 'rgbd':
                     print("RGBD Shape:", value.shape)
+                    print("RGBD Dtype:", value.dtype)
+                    print(value)
+                    self.env.unwrapped.single_observation_space[key].dtype = np.uint8
+                    value.dtype = np.int8
                     modified_policy_obs_space['camera'] = value
                 elif key == 'state':
                     modified_policy_obs_space['proprio'] = value
                 else:
                     modified_policy_obs_space[key] = value
-            
-            # if self.aux_loss:
-            #     modified_policy_obs_space['aux_target'] = gymnasium.spaces.Dict(low=-np.Inf, high=np.Inf, shape=(3, ), dtype=np.float32)
 
-            print("Observation Space Unwrapped:", modified_policy_obs_space)
+            print("Observation Space Unwrapped Done:", modified_policy_obs_space)
 
             policy_obs_space = gymnasium.spaces.Dict(modified_policy_obs_space)
+            print("Observation Space After:", policy_obs_space)
         
         # from mani_skill.utils.wrappers import RecordEpisode
         # # to make it look a little more realistic, we will enable shadows which make the default lighting cast shadows
@@ -175,6 +180,8 @@ class Maniskill(IVecEnv):
 
         self._clip_obs = 5.0
 
+        self.observation_space = gym.spaces.Dict()
+
         # TODO: single function
         if isinstance(policy_obs_space, gymnasium.spaces.Dict):
             # check if we have a dictionary of observations
@@ -183,14 +190,16 @@ class Maniskill(IVecEnv):
                     raise NotImplementedError(
                         f"Dictinary of dictinary observations support was not testes: '{type(policy_obs_space[key])}'."
                     )
-            self.observation_space = gym.spaces.Dict(
-                {
-                    key: gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space[key].shape)
-                    for key in policy_obs_space.keys()
-                }
-            )
+
+                val = policy_obs_space[key]
+                if val.dtype == np.float16 or val.dtype == np.float32:
+                    self.observation_space[key] = gym.spaces.Box(-self._clip_obs, self._clip_obs, val.shape)
+                elif policy_obs_space[key].dtype == np.uint8:
+                    self.observation_space[key] = gym.spaces.Box(0, 255, val.shape, dtype=np.uint8)
         else:
             self.observation_space = gym.spaces.Box(-self._clip_obs, self._clip_obs, policy_obs_space.shape)
+
+        print("Observation Space:", self.observation_space)
 
         self._clip_actions = 1.0
 
