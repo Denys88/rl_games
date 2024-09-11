@@ -8,9 +8,6 @@ import gymnasium as gym2
 import gymnasium.spaces.utils
 from gymnasium.vector.utils import batch_space
 
-from mani_skill.envs.sapien_env import BaseEnv
-from mani_skill.utils import common
-
 
 VecEnvObs = Dict[str, torch.Tensor | Dict[str, torch.Tensor]]
 
@@ -53,6 +50,9 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
     """
 
     def __init__(self, env, rgb=True, depth=False, state=True, aux_loss=False) -> None:
+        from mani_skill.envs.sapien_env import BaseEnv
+        from mani_skill.utils import common
+
         self.base_env: BaseEnv = env.unwrapped
         self.aux_loss = aux_loss
         super().__init__(env)

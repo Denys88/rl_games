@@ -18,17 +18,17 @@ class VisionImpalaBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             self.actions_num = actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
-            proprio_size = 0 # Number of proprioceptive features
+            self.use_aux_loss = kwargs.pop('use_aux_loss', False)
+
+            self.proprio_size = 0 # Number of proprioceptive features
             if type(full_input_shape) is dict:
                 input_shape = full_input_shape['camera']
                 proprio_shape = full_input_shape['proprio']
-
-                proprio_size = proprio_shape[0]
+                self.proprio_size = proprio_shape[0]
             else:
                 input_shape = full_input_shape
 
             self.normalize_emb = kwargs.pop('normalize_emb', False)
-
             self.num_seqs = kwargs.pop('num_seqs', 1)
             self.value_size = kwargs.pop('value_size', 1)
 
@@ -40,7 +40,7 @@ class VisionImpalaBuilder(NetworkBuilder):
             self.cnn = self._build_impala(input_shape, self.conv_depths)
             cnn_output_size = self._calc_input_size(input_shape, self.cnn)
 
-            mlp_input_size = cnn_output_size + proprio_size
+            mlp_input_size = cnn_output_size + self.proprio_size
             if len(self.units) == 0:
                 out_size = cnn_output_size
             else:
@@ -71,7 +71,6 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             self.mlp = self._build_mlp(**mlp_args)
 
-            # TODO: implement for Impala
             self.aux_loss_map = None
             if self.use_aux_loss:
                 self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
@@ -129,9 +128,15 @@ class VisionImpalaBuilder(NetworkBuilder):
             return self.aux_loss_map
 
         def forward(self, obs_dict):
-            obs = obs_dict['obs']['camera']
-            proprio = obs_dict['obs']['proprio']
-            target_obs = obs[self.target_key]
+            if self.proprio_size > 0:
+                obs = obs_dict['obs']['camera']
+                proprio = obs_dict['obs']['proprio']
+            else:
+                obs = obs_dict['obs']
+
+            if self.use_aux_loss:
+                target_obs = obs_dict['obs'][self.target_key]
+
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
 
@@ -144,7 +149,8 @@ class VisionImpalaBuilder(NetworkBuilder):
             out = out.flatten(1)
             out = self.flatten_act(out)
 
-            out = torch.cat([out, proprio], dim=1)
+            if self.proprio_size > 0:
+                out = torch.cat([out, proprio], dim=1)
             out = self.layer_norm_emb(out)
 
             if self.has_rnn:
@@ -181,8 +187,9 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             value = self.value_act(self.value(out))
 
-            y = self.aux_loss_linear(out)
-            self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
+            if self.use_aux_loss:
+                y = self.aux_loss_linear(out)
+                self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
 
             if self.is_discrete:
                 logits = self.logits(out)
@@ -283,10 +290,7 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
 
-            print('full_input_shape: ', full_input_shape)
-
             self.use_aux_loss = kwargs.pop('use_aux_loss', False)
-
             if self.use_aux_loss:
                 self.target_key = 'aux_target'
                 if 'aux_target' in full_input_shape:
@@ -294,6 +298,7 @@ class VisionBackboneBuilder(NetworkBuilder):
                     print("Target shape: ", self.target_shape)
 
             print("Observations shape: ", full_input_shape)
+            print("Use aux loss: ", self.use_aux_loss)
 
             self.proprio_size = 0 # Number of proprioceptive features
             if isinstance(full_input_shape, dict):
@@ -401,10 +406,6 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             if self.use_aux_loss:
                 target_obs = obs_dict['obs'][self.target_key]
-
-            # print('obs.min(): ', obs.min())
-            # print('obs.max(): ', obs.max())
-            # print('obs.shape: ', obs.shape)
 
             if self.permute_input:
                 obs = obs.permute((0, 3, 1, 2))
