@@ -3,7 +3,7 @@ https://developer.nvidia.com/isaac-gym
 
 ## What's Written Below
 
-Content below is written is written to complement `HOW_TO_RL_GAMES.md` in the same directory, while focusing more on **explaining the implementations** in the classes and how to **customize the training (testing) loops, models and networks**. Since the AMP implementation in `IsaacGymEnvs` is used as the example, so you are reading me here under this file.
+Content below is written to complement `HOW_TO_RL_GAMES.md` in the same directory, while focusing more on **explaining the implementations** in the classes and how to **customize the training (testing) loops, models and networks**. Since the AMP implementation in `IsaacGymEnvs` is used as the example, so you are reading me here under this file.
 
 ## Program Entry Point
 
