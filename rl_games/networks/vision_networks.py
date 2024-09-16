@@ -18,7 +18,15 @@ class VisionImpalaBuilder(NetworkBuilder):
         def __init__(self, params, **kwargs):
             self.actions_num = actions_num = kwargs.pop('actions_num')
             full_input_shape = kwargs.pop('input_shape')
-            self.use_aux_loss = kwargs.pop('use_aux_loss', False)
+            self.use_aux_loss = kwargs.pop('use_aux_loss', True)
+            print(kwargs)
+            print("params: ", params)
+            self.aux_loss_weight = 100.0 # kwargs.pop('aux_loss_weight', 1.0)
+            if self.use_aux_loss:
+                self.target_key = 'aux_target'
+                if 'aux_target' in full_input_shape:
+                    self.target_shape = full_input_shape[self.target_key]
+                    print("Target shape: ", self.target_shape)
 
             self.proprio_size = 0 # Number of proprioceptive features
             if type(full_input_shape) is dict:
@@ -41,12 +49,14 @@ class VisionImpalaBuilder(NetworkBuilder):
             cnn_output_size = self._calc_input_size(input_shape, self.cnn)
 
             mlp_input_size = cnn_output_size + self.proprio_size
+            if self.use_aux_loss:
+                mlp_input_size += self.target_shape[0]
+
             if len(self.units) == 0:
                 out_size = cnn_output_size
             else:
                 out_size = self.units[-1]
 
-            self.running_mean_std = torch.jit.script(RunningMeanStd((mlp_input_size,)))
             self.layer_norm_emb = torch.nn.LayerNorm(mlp_input_size)
             #self.layer_norm_emb = torch.nn.RMSNorm(mlp_input_size)
 
@@ -73,7 +83,10 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             self.aux_loss_map = None
             if self.use_aux_loss:
-                self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
+                print("Building aux loss")
+                print("cnn_output_size: ", cnn_output_size)
+                print("target_shape: ", self.target_shape)
+                self.aux_loss_linear = nn.Linear(cnn_output_size, self.target_shape[0])
                 self.aux_loss_map = {
                     'aux_dist_loss': None
                 }
@@ -116,14 +129,6 @@ class VisionImpalaBuilder(NetworkBuilder):
 
             mlp_init(self.value.weight)
 
-        def norm_emb(self, embedding):
-            #with torch.no_grad():
-            return self.running_mean_std(embedding) if self.normalize_emb else embedding
-                # if len(self.units) == 0:
-                #     out_size = cnn_output_size
-                # else:
-                #     out_size = self.units[-1]
-
         def get_aux_loss(self):
             return self.aux_loss_map
 
@@ -147,10 +152,21 @@ class VisionImpalaBuilder(NetworkBuilder):
             out = obs
             out = self.cnn(out)
             out = out.flatten(1)
-            out = self.flatten_act(out)
+            cnn_out = self.flatten_act(out)
 
             if self.proprio_size > 0:
-                out = torch.cat([out, proprio], dim=1)
+                out = torch.cat([cnn_out, proprio], dim=1)
+
+            if self.use_aux_loss:
+                y = self.aux_loss_linear(cnn_out)
+                out = torch.cat([out, y], dim=1)
+                self.aux_loss_map['aux_dist_loss'] = self.aux_loss_weight * torch.nn.functional.mse_loss(y, target_obs)
+                # print("aux predicted shape: ", y.shape)
+                # print("aux predicted: ", y)
+                # print("aux target: ", target_obs)
+                # print("delta: ", y - target_obs)
+                # print("aux loss: ", self.aux_loss_map['aux_dist_loss'])
+
             out = self.layer_norm_emb(out)
 
             if self.has_rnn:
@@ -186,10 +202,6 @@ class VisionImpalaBuilder(NetworkBuilder):
                 out = self.mlp(out)
 
             value = self.value_act(self.value(out))
-
-            if self.use_aux_loss:
-                y = self.aux_loss_linear(out)
-                self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
 
             if self.is_discrete:
                 logits = self.logits(out)
@@ -291,6 +303,7 @@ class VisionBackboneBuilder(NetworkBuilder):
             full_input_shape = kwargs.pop('input_shape')
 
             self.use_aux_loss = kwargs.pop('use_aux_loss', False)
+            self.aux_loss_weight = 100.0
             if self.use_aux_loss:
                 self.target_key = 'aux_target'
                 if 'aux_target' in full_input_shape:
@@ -324,12 +337,15 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.cnn, self.cnn_output_size = self._build_backbone(input_shape, params['backbone'])
 
             mlp_input_size = self.cnn_output_size + self.proprio_size
+            if self.use_aux_loss:
+                mlp_input_size += self.target_shape[0]
+
             if len(self.units) == 0:
                 out_size = self.cnn_output_size
             else:
                 out_size = self.units[-1]
 
-            self.layer_norm_emb = torch.nn.LayerNorm((mlp_input_size,))
+            self.layer_norm_emb = torch.nn.LayerNorm(mlp_input_size)
 
             if self.has_rnn:
                 if not self.is_rnn_before_mlp:
@@ -354,7 +370,7 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             self.aux_loss_map = None
             if self.use_aux_loss:
-                self.aux_loss_linear = nn.Linear(out_size, self.target_shape)
+                self.aux_loss_linear = nn.Linear(self.cnn_output_size, self.target_shape[0])
                 self.aux_loss_map = {
                     'aux_dist_loss': None
                 }
@@ -420,10 +436,15 @@ class VisionBackboneBuilder(NetworkBuilder):
             out = obs
             out = self.cnn(out)
             out = out.flatten(1)
-            out = self.flatten_act(out)
+            vis_out = self.flatten_act(out)
 
             if self.proprio_size > 0:
-                out = torch.cat([out, proprio], dim=1)
+                out = torch.cat([vis_out, proprio], dim=1)
+
+            if self.use_aux_loss:
+                y = self.aux_loss_linear(vis_out)
+                out = torch.cat([out, y], dim=1)
+                self.aux_loss_map['aux_dist_loss'] = self.aux_loss_weight * torch.nn.functional.mse_loss(y, target_obs)
 
             out = self.layer_norm_emb(out)
 
@@ -460,10 +481,6 @@ class VisionBackboneBuilder(NetworkBuilder):
                 out = self.mlp(out)
 
             value = self.value_act(self.value(out))
-
-            if self.use_aux_loss:
-                y = self.aux_loss_linear(out)
-                self.aux_loss_map['aux_dist_loss'] = torch.nn.functional.mse_loss(y, target_obs)
 
             if self.is_discrete:
                 logits = self.logits(out)
@@ -522,7 +539,7 @@ class VisionBackboneBuilder(NetworkBuilder):
 
                 # Modify the first convolution layer to match input shape if needed
                 # TODO: add low-res parameter
-                backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
+                #backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
                 # backbone.maxpool = nn.Identity()
                 # if input_shape[0] != 3:
                 #     backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)

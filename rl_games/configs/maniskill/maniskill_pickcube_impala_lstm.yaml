@@ -54,7 +54,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_impala_LSTM_norm
+    name: PickCube_RGB_AUX_LOSS_add_impala_LSTM_norm
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -70,13 +70,13 @@ params:
     reward_shaper:
       scale_value: 1.0
     gamma: 0.99
-    tau : 0.95
+    tau: 0.95
     learning_rate: 2e-4
     lr_schedule: linear
     kl_threshold: 0.008
     max_epochs: 20000
     save_best_after: 25
-    save_frequency: 500
+    save_frequency: 1000
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
@@ -92,11 +92,12 @@ params:
 
     env_config:
       env_name: PickCube-v1
-      obs_mode: rgbd
+      obs_mode: rgb
       control_mode: pd_ee_delta_pose
       reward_mode: dense
+      aux_loss: True
 
     player:
-        render: True
+        render: False
         deterministic: True
 

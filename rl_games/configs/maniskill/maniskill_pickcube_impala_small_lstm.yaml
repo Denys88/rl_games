@@ -15,8 +15,6 @@ params:
 
   network:
     name: vision_actor_critic
-    require_rewards: False
-    require_last_actions: False
     separate: False
     value_shape: 1
     space:
@@ -40,7 +38,7 @@ params:
       regularizer:
         name: None
     mlp:
-      units: [256]
+      units: [256, 128]
       activation: elu
       regularizer:
         name: None
@@ -55,7 +53,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_Impala_Small_LSTM_RMSnorm_embedding_128envs
+    name: PickCube_RGB_AUX_LOSS_Impala_Small_LSTM_256x128_MLP_100weight
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -67,22 +65,22 @@ params:
     normalize_input: False
     normalize_value: True
     normalize_advantage: True
-    num_actors: 128 #256
+    num_actors: 256
     reward_shaper:
       scale_value: 1.0
     gamma: 0.99
-    tau : 0.95
+    tau: 0.95
     learning_rate: 2e-4
     lr_schedule: None
     kl_threshold: 0.008
     max_epochs: 10000
     save_best_after: 25
-    save_frequency: 500
+    save_frequency: 1000
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 32
+    horizon_length: 64
     minibatch_size: 2048
     mini_epochs: 2
     critic_coef: 1
@@ -93,9 +91,10 @@ params:
 
     env_config:
       env_name: PickCube-v1
-      obs_mode: rgbd
+      obs_mode: rgb
       control_mode: pd_ee_delta_pose
       reward_mode: dense
+      aux_loss: True
 
     player:
         render: False

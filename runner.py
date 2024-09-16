@@ -70,12 +70,12 @@ if __name__ == '__main__':
 
     runner.run(args)
 
+    if args["track"] and global_rank == 0:
+        wandb.finish()
+
     try:
         import ray
     except ImportError:
         pass
     else:
         ray.shutdown()
-
-    if args["track"] and global_rank == 0:
-        wandb.finish()

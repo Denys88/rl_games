@@ -7,6 +7,7 @@ from typing import Dict
 import gymnasium as gym2
 import gymnasium.spaces.utils
 from gymnasium.vector.utils import batch_space
+from mani_skill.utils import common
 
 
 VecEnvObs = Dict[str, torch.Tensor | Dict[str, torch.Tensor]]
@@ -36,6 +37,19 @@ def _process_obs(self, obs_dict: VecEnvObs) -> torch.Tensor | dict[str, torch.Te
         # TODO: add state processing for asymmetric case
         return obs
 
+def save_images_to_file(images: torch.Tensor, file_path: str):
+    """Save images to file.
+
+    Args:
+        images: A tensor of shape (N, H, W, C) containing the images.
+        file_path: The path to save the images to.
+    """
+    from torchvision.utils import make_grid, save_image
+
+    save_image(
+        make_grid(torch.swapaxes(images.unsqueeze(1), 1, -1).squeeze(-1), nrow=round(images.shape[0] ** 0.5)), file_path
+    )
+
 
 class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
     """
@@ -51,10 +65,11 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
 
     def __init__(self, env, rgb=True, depth=False, state=True, aux_loss=False) -> None:
         from mani_skill.envs.sapien_env import BaseEnv
-        from mani_skill.utils import common
 
         self.base_env: BaseEnv = env.unwrapped
         self.aux_loss = aux_loss
+        self.write_image_to_file = False
+
         super().__init__(env)
         self.include_rgb = rgb
         self.include_depth = depth
@@ -83,6 +98,9 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
                 images.append(cam_data["depth"])
         images = torch.concat(images, axis=-1)
 
+        if self.write_image_to_file:
+            save_images_to_file(images.float() / 255.0, f"pickup_cube_{'rgb'}.png")
+
         # flatten the rest of the data which should just be state data
         observation = common.flatten_state_dict(observation, use_torch=True)
 
@@ -103,7 +121,6 @@ class Maniskill(IVecEnv):
         import gymnasium
         import gymnasium as gym2
         import mani_skill.envs
-        from mani_skill.utils.wrappers import FlattenRGBDObservationWrapper
 
         # Can be any env_id from the list of Rigid-Body envs: https://maniskill.readthedocs.io/en/latest/tasks/index.html
         self.env_name = kwargs.pop('env_name', 'PickCube-v1') # can be one of ['PickCube-v1', 'PegInsertionSide-v1', 'StackCube-v1']
@@ -141,7 +158,7 @@ class Maniskill(IVecEnv):
         print("Observation Space Unwrapped Before:", policy_obs_space)
 
         # TODO: add pointcloud and Depth support
-        if self.obs_mode == 'rgbd':
+        if self.obs_mode == 'rgb' or self.obs_mode == 'rgbd':
             self.env = RlgFlattenRGBDObservationWrapper(self.env, aux_loss=self.aux_loss)
             policy_obs_space = self.env.unwrapped.single_observation_space
             print("Observation Space Unwrapped After:", policy_obs_space)
@@ -152,7 +169,7 @@ class Maniskill(IVecEnv):
             for key, value in policy_obs_space.items():
                 print("Key:", key)
                 print("Value:", value)
-                if key == 'rgbd':
+                if key == 'rgb' or key == 'rgbd':
                     print("RGBD Shape:", value.shape)
                     print("RGBD Dtype:", value.dtype)
                     print(value)
@@ -188,6 +205,8 @@ class Maniskill(IVecEnv):
             # check if we have a dictionary of observations
             for key in policy_obs_space.keys():
                 if not isinstance(policy_obs_space[key], gymnasium.spaces.Box):
+                    print("Key:", key)
+                    print("Value:", policy_obs_space[key])
                     raise NotImplementedError(
                         f"Dictinary of dictinary observations support was not testes: '{type(policy_obs_space[key])}'."
                     )
@@ -228,7 +247,7 @@ class Maniskill(IVecEnv):
         # dones = (terminated | truncated)
         dones = torch.logical_or(terminated, truncated)
         if dones.any():
-            env_idx = torch.arange(0, self.env.num_envs, device=self.env.device)[dones] # device=self.device
+            env_idx = torch.arange(0, self.env.unwrapped.num_envs, device=self.env.unwrapped.device)[dones] # device=self.device
             reset_obs, _ = self.env.reset(options=dict(env_idx=env_idx))
             obs_and_states['obs'] = reset_obs
 
@@ -278,4 +297,6 @@ class Maniskill(IVecEnv):
 
 
 def create_maniskill(**kwargs):
-    return Maniskill("", num_envs=kwargs.pop('num_actors', 16), **kwargs)
+    print("Creating Maniskill env with the following parameters:")
+    print(kwargs)
+    return Maniskill("", num_envs=kwargs.pop('num_actors', 4), **kwargs)
