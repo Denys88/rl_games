@@ -35,7 +35,7 @@ params:
       pretrained: True
       permute_input: True
       freeze: False
-      preprocess_image: True
+      preprocess_image: False
       args:
         zero_init_residual: True
         norm_layer: None
@@ -55,7 +55,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_resnet18_LSTM_256x128_MLP_frozen_RGB
+    name: PickCube_RGB_resnet18_LSTM_256x128_MLP_depth
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -82,7 +82,7 @@ params:
     entropy_coef: 0.0
     truncate_grads: True
     e_clip: 0.2
-    horizon_length: 64
+    horizon_length: 64 #128
     minibatch_size: 1024
     mini_epochs: 2
     critic_coef: 1
@@ -93,7 +93,7 @@ params:
 
     env_config:
       env_name: PickCube-v1
-      obs_mode: rgb
+      obs_mode: depth #rgbd #rgb
       control_mode: pd_ee_delta_pose
       reward_mode: dense
       aux_loss: False

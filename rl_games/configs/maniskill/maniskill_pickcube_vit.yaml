@@ -31,10 +31,10 @@ params:
         fixed_sigma: True
   
     backbone:
-      type: resnet18 # can be efficientnet_v2_s #convnext_tiny #vit_b_16 #resnet18 #resnet34
+      type: dinov2_vits14_reg #vit_b_16 # can be efficientnet_v2_s #convnext_tiny #vit_b_16 #resnet18 #resnet34
       pretrained: True
       permute_input: True
-      freeze: False
+      freeze: True
       preprocess_image: True
       args:
         zero_init_residual: True
@@ -55,7 +55,7 @@ params:
       concat_output: True
 
   config:
-    name: PickCube_RGB_resnet18_LSTM_256x128_MLP_frozen_RGB
+    name: PickCube_RGB_DINO2_VITS14_REG_LSTM_256x128_MLP_frozen_RGB
     env_name: maniskill
     reward_shaper:
       scale_value: 1.0
@@ -67,7 +67,7 @@ params:
     normalize_input: False
     normalize_value: True
     normalize_advantage: True
-    num_actors: 128
+    num_actors: 64 #128
     reward_shaper:
       scale_value: 1.0
     gamma: 0.99
@@ -83,7 +83,7 @@ params:
     truncate_grads: True
     e_clip: 0.2
     horizon_length: 64
-    minibatch_size: 1024
+    minibatch_size: 256 #512 #1024
     mini_epochs: 2
     critic_coef: 1
     clip_value: True

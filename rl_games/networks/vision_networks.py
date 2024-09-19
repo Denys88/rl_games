@@ -523,12 +523,11 @@ class VisionBackboneBuilder(NetworkBuilder):
 
             self.has_cnn = True
             self.permute_input = params['backbone'].get('permute_input', True)
-            self.require_rewards = params.get('require_rewards')
-            self.require_last_actions = params.get('require_last_actions')
 
         def _build_backbone(self, input_shape, backbone_params):
             backbone_type = backbone_params['type']
             pretrained = backbone_params.get('pretrained', False)
+            modify_first_conv = backbone_params.get('modify_first_conv', False)
             self.preprocess_image = backbone_params.get('preprocess_image', False)
 
             if backbone_type == 'resnet18' or backbone_type == 'resnet34':
@@ -538,11 +537,13 @@ class VisionBackboneBuilder(NetworkBuilder):
                     backbone = models.resnet34(pretrained=pretrained, zero_init_residual=True)
 
                 # Modify the first convolution layer to match input shape if needed
-                # TODO: add low-res parameter
-                #backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
+                if input_shape[0] != 3:
+                    backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
+
+                # In case of lower resolution images, modify the first convolutional layer to work with smaller resolutions
+                if modify_first_conv:
+                    backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
                 # backbone.maxpool = nn.Identity()
-                # if input_shape[0] != 3:
-                #     backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
                 # Remove the fully connected layer
                 backbone_output_size = backbone.fc.in_features
                 print('backbone_output_size: ', backbone_output_size)
@@ -577,21 +578,46 @@ class VisionBackboneBuilder(NetworkBuilder):
 
                 # Combine the resize layer and the backbone into a sequential model
                 backbone = nn.Sequential(resize_layer, backbone)
-                # # Assuming your input image is a tensor or PIL image, resize it to 224x224
-                # #obs = self.resize_transform(obs)
-                # backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
+            elif backbone_type == 'dinov2_vits14_reg':
+                # **Newly Added DinoV2 ViT-S14 Regression Backbone Handling**
+                try:
+                    # Load the dinov2_vits14_reg model using torch.hub
+                    backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg', pretrained=pretrained)
+                except Exception as e:
+                    raise ValueError(f"Failed to load dinov2_vits14_reg: {e}")
 
-                # backbone_output_size = backbone.heads.head.in_features
-                # backbone.heads.head = nn.Identity()
+                # The head is already Identity, no need to modify
+                # Add a resize layer to ensure the input is correctly sized for DinoV2
+                resize_size = 196
+                resize_layer = nn.Upsample(size=(resize_size, resize_size), mode='bilinear', align_corners=False)
+
+                # Combine the resize layer and the backbone into a sequential model
+                backbone = nn.Sequential(resize_layer, backbone)
+
+                # Set backbone_output_size to 384 since the model outputs 384-dimensional features
+                backbone_output_size = 384
             else:
                 raise ValueError(f'Unknown backbone type: {backbone_type}')
 
-            # Optionally freeze the follow-up layers, leaving the first convolutional layer unfrozen
+            # # Optionally freeze the follow-up layers, leaving the first convolutional layer unfrozen
+            # if backbone_params.get('freeze', False):
+            #     print('Freezing backbone')
+            #     for name, param in backbone.named_parameters():
+            #         if 'conv1' not in name:  # Ensure the first conv layer is not frozen
+            #             param.requires_grad = False
+
+            # Optionally freeze layers except specified layers (for ResNet, ConvNeXt, EfficientNet, ViT)
             if backbone_params.get('freeze', False):
-                print('Freezing backbone')
+                print('Freezing backbone layers except specified layers')
                 for name, param in backbone.named_parameters():
-                    if 'conv1' not in name:  # Ensure the first conv layer is not frozen
-                        param.requires_grad = False
+                    if 'vit' in backbone_type.lower():
+                        # For all ViT backbones, avoid freezing 'patch_embed.proj' layer
+                        if not ('patch_embed.proj' in name):
+                            param.requires_grad = False
+                    else:
+                        # General case for other backbones (e.g., ResNet, ConvNeXt)
+                        if 'conv1' not in name and 'features.0.0' not in name:
+                            param.requires_grad = False
 
             return backbone, backbone_output_size
 

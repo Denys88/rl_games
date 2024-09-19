@@ -109,7 +109,11 @@ class RlgFlattenRGBDObservationWrapper(gym2.ObservationWrapper):
             ret["proprio"] = observation
         if self.aux_loss:
             ret['aux_target'] = aux_target
-        ret["camera"] = images
+        
+        if not self.include_rgb and self.include_depth:
+            ret["camera"] = images.float() / 32768.0
+        else:
+            ret["camera"] = images
 
         return ret
 
@@ -158,8 +162,10 @@ class Maniskill(IVecEnv):
         print("Observation Space Unwrapped Before:", policy_obs_space)
 
         # TODO: add pointcloud and Depth support
-        if self.obs_mode == 'rgb' or self.obs_mode == 'rgbd':
-            self.env = RlgFlattenRGBDObservationWrapper(self.env, aux_loss=self.aux_loss)
+        use_rgb = self.obs_mode == 'rgbd' or self.obs_mode == 'rgb'
+        use_depth = self.obs_mode == 'rgbd' or self.obs_mode == 'depth'
+        if self.obs_mode == 'rgb' or self.obs_mode == 'rgbd' or self.obs_mode == 'depth':
+            self.env = RlgFlattenRGBDObservationWrapper(self.env, aux_loss=self.aux_loss, rgb=use_rgb, depth=use_depth)
             policy_obs_space = self.env.unwrapped.single_observation_space
             print("Observation Space Unwrapped After:", policy_obs_space)
 
@@ -213,7 +219,11 @@ class Maniskill(IVecEnv):
 
                 val = policy_obs_space[key]
                 if val.dtype == np.float16 or val.dtype == np.float32:
-                    self.observation_space[key] = gym.spaces.Box(-self._clip_obs, self._clip_obs, val.shape)
+                    self.observation_space[key] = gym.spaces.Box(-self._clip_obs, self._clip_obs, val.shape, dtype=val.dtype)
+                elif val.dtype == np.int16:
+                    # to fix!!!
+                    #self.observation_space[key] = gym.spaces.Box(-32768, 32767, val.shape, dtype=np.int16)
+                    self.observation_space[key] = gym.spaces.Box(-1,0, 1.0, val.shape, dtype=np.float32)
                 elif policy_obs_space[key].dtype == np.uint8:
                     self.observation_space[key] = gym.spaces.Box(0, 255, val.shape, dtype=np.uint8)
         else:
