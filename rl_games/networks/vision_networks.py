@@ -525,86 +525,141 @@ class VisionBackboneBuilder(NetworkBuilder):
             self.permute_input = params['backbone'].get('permute_input', True)
 
         def _build_backbone(self, input_shape, backbone_params):
-            backbone_type = backbone_params['type']
-            pretrained = backbone_params.get('pretrained', False)
-            modify_first_conv = backbone_params.get('modify_first_conv', False)
+            backbone_type = backbone_params.get('type', 'resnet18')
+            pretrained = backbone_params.get('pretrained', True)
+            modify_first_layer = backbone_params.get('modify_first_layer', False)
             self.preprocess_image = backbone_params.get('preprocess_image', False)
 
-            if backbone_type == 'resnet18' or backbone_type == 'resnet34':
-                if backbone_type == 'resnet18':
-                    backbone = models.resnet18(pretrained=pretrained, zero_init_residual=True)
-                else:
-                    backbone = models.resnet34(pretrained=pretrained, zero_init_residual=True)
+            # Define a mapping from backbone type to required resize size
+            resize_size_map = {
+                'vit_b_16': 224,           # Must be divisible by 16
+                'dinov2_vits14_reg': 196,  # Must be divisible by 14
+                'vit_mae': 224,            # Must be divisible by 16
+                'vit_tiny': 224,           # ViT-Tiny adjusted for 16x16 patch size and smaller input
+                'deit_tiny': 224,          # DeiT-Tiny adjusted similarly
+                'deit_tiny_distilled': 224, # DeiT-Tiny distilled version
+                'mobilevit_s': 256,        # MobileViT-S
+                'efficientformer_l2': 224, # EfficientFormer-L2
+                'swinv2': 224,             # Swin Transformer
+                # Add other ViT variants as needed
+            }
 
-                # Modify the first convolution layer to match input shape if needed
-                if input_shape[0] != 3:
-                    backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False)
+            backbone = None
+            backbone_output_size = None
+            resize_size = None
 
-                # In case of lower resolution images, modify the first convolutional layer to work with smaller resolutions
-                if modify_first_conv:
+            if backbone_type.startswith('resnet'):
+                # ResNet handling...
+                try:
+                    backbone_class = getattr(models, backbone_type)
+                    backbone = backbone_class(pretrained=pretrained)
+                except AttributeError:
+                    raise ValueError(f'Unknown ResNet model: {backbone_type}')
+
+                if modify_first_layer:
                     backbone.conv1 = nn.Conv2d(input_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
-                # backbone.maxpool = nn.Identity()
-                # Remove the fully connected layer
+                elif input_shape[0] != 3:
+                    backbone.conv1 = nn.Conv2d(
+                        input_shape[0], 64, kernel_size=7, stride=2, padding=3, bias=False
+                    )
                 backbone_output_size = backbone.fc.in_features
-                print('backbone_output_size: ', backbone_output_size)
                 backbone = nn.Sequential(*list(backbone.children())[:-1])
+
             elif backbone_type == 'convnext_tiny':
+                # ConvNeXt handling...
                 backbone = models.convnext_tiny(pretrained=pretrained)
                 backbone_output_size = backbone.classifier[2].in_features
                 backbone.classifier = nn.Identity()
 
-                # Modify the first convolutional layer to work with smaller resolutions
                 backbone.features[0][0] = nn.Conv2d(
                     in_channels=input_shape[0],
                     out_channels=backbone.features[0][0].out_channels,
-                    kernel_size=3,  # Reduce kernel size to 3x3
-                    stride=1,       # Reduce stride to 1 to preserve spatial resolution
-                    padding=1,      # Add padding to preserve dimensions after convolution
-                    bias=True # False
+                    kernel_size=4,   # Adjust kernel size as needed
+                    stride=4,        # Adjust stride as needed
+                    padding=0,       # Adjust padding as needed
+                    bias=False
                 )
+
             elif backbone_type == 'efficientnet_v2_s':
+                # EfficientNet handling...
                 backbone = models.efficientnet_v2_s(pretrained=pretrained)
-                backbone.features[0][0] = nn.Conv2d(input_shape[0], 24, kernel_size=3, stride=1, padding=1, bias=False)
                 backbone_output_size = backbone.classifier[1].in_features
                 backbone.classifier = nn.Identity()
-            elif backbone_type == 'vit_b_16':
-                backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
 
-                # Add a resize layer to ensure the input is correctly sized for ViT
-                resize_layer = nn.Upsample(size=(224, 224), mode='bilinear', align_corners=False)
+                backbone.features[0][0] = nn.Conv2d(
+                    input_shape[0], backbone.features[0][0].out_channels,
+                    kernel_size=3, stride=1, padding=1, bias=False
+                )
 
-                backbone_output_size = backbone.heads.head.in_features
-                backbone.heads.head = nn.Identity()
+            elif backbone_type.lower() in resize_size_map:
+                import timm
 
-                # Combine the resize layer and the backbone into a sequential model
-                backbone = nn.Sequential(resize_layer, backbone)
-            elif backbone_type == 'dinov2_vits14_reg':
-                # **Newly Added DinoV2 ViT-S14 Regression Backbone Handling**
-                try:
-                    # Load the dinov2_vits14_reg model using torch.hub
-                    backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg', pretrained=pretrained)
-                except Exception as e:
-                    raise ValueError(f"Failed to load dinov2_vits14_reg: {e}")
+                # Unified ViT handling for various ViT models
+                resize_size = resize_size_map.get(backbone_type.lower(), 224)  # Default to 224 if not specified
 
-                # The head is already Identity, no need to modify
-                # Add a resize layer to ensure the input is correctly sized for DinoV2
-                resize_size = 196
+                if backbone_type.lower() == 'vit_tiny':
+                    backbone = timm.create_model('vit_tiny_patch16_224', pretrained=pretrained)
+                    backbone_output_size = backbone.head.in_features
+                elif backbone_type.lower() == 'deit_tiny':
+                    backbone = timm.create_model('deit_tiny_patch16_224', pretrained=pretrained)
+                    backbone_output_size = backbone.head.in_features
+                elif backbone_type.lower() == 'deit_tiny_distilled':
+                    backbone = timm.create_model('deit_tiny_distilled_patch16_224', pretrained=pretrained,)
+                    backbone_output_size = backbone.head.in_features
+                elif backbone_type.lower() == 'mobilevit_s':
+                    print("Not working")
+                    backbone = timm.create_model('mobilevit_s', pretrained=pretrained)
+                    print(backbone)
+                    backbone_output_size = backbone.head.fc.in_features
+                    print(backbone_output_size)
+                elif backbone_type.lower() == 'efficientformer_l2':
+                    backbone = timm.create_model('efficientformerv2_s1.snap_dist_in1k', pretrained=pretrained)
+                    # print(backbone)
+                    # print(backbone.pos_embed.shape)
+                    backbone_output_size = backbone.head.in_features
+                elif backbone_type.lower() == 'vit_b_16':
+                    backbone = models.vision_transformer.vit_b_16(pretrained=pretrained)
+                    backbone_output_size = backbone.heads.head.in_features
+                elif backbone_type.lower() == 'dinov2_vits14_reg':
+                    try:
+                        backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14_reg', pretrained=pretrained)
+                    except Exception as e:
+                        raise ValueError(f"Failed to load dinov2_vits14_reg: {e}")
+                    backbone_output_size = 384  # As per Dinov2 ViT-S14 regression output
+                elif backbone_type.lower() == 'vit_mae':
+                    try:
+                        backbone = timm.create_model('vit_base_patch16_224.mae', pretrained=pretrained)
+                    except Exception as e:
+                        raise ValueError(f"Failed to load vit_mae: {e}")
+                    backbone_output_size = 768 # Typically 768 for ViT-Base
+                elif backbone_type.lower() == 'swinv2':
+                    print("Not working")
+                    try:
+                        backbone = timm.create_model('swinv2_cr_tiny_ns_224.sw_in1k', pretrained=pretrained)
+                    except Exception as e:
+                        raise ValueError(f"Failed to load swinv2_cr_tiny_ns_224.sw_in1k: {e}")
+                    backbone_output_size = 768  # Typically 768 for Swin Transformer
+                else:
+                    raise ValueError(f'Unknown ViT model type: {backbone_type}')
+
+                # Remove the classification/regression head if present
+                if hasattr(backbone, 'heads') and hasattr(backbone.heads, 'head'):
+                    backbone.heads.head = nn.Identity()
+                elif hasattr(backbone, 'head'):
+                    backbone.head = nn.Identity()
+                elif hasattr(backbone, 'decoder'):  # For MAE models
+                    backbone.decoder = nn.Identity()
+                else:
+                    print(f"Unable to locate the classification/regression head in {backbone_type} model.")
+
+                # Add a resize layer to ensure the input is correctly sized for the specific ViT model
                 resize_layer = nn.Upsample(size=(resize_size, resize_size), mode='bilinear', align_corners=False)
 
                 # Combine the resize layer and the backbone into a sequential model
                 backbone = nn.Sequential(resize_layer, backbone)
 
-                # Set backbone_output_size to 384 since the model outputs 384-dimensional features
-                backbone_output_size = 384
             else:
                 raise ValueError(f'Unknown backbone type: {backbone_type}')
-
-            # # Optionally freeze the follow-up layers, leaving the first convolutional layer unfrozen
-            # if backbone_params.get('freeze', False):
-            #     print('Freezing backbone')
-            #     for name, param in backbone.named_parameters():
-            #         if 'conv1' not in name:  # Ensure the first conv layer is not frozen
-            #             param.requires_grad = False
 
             # Optionally freeze layers except specified layers (for ResNet, ConvNeXt, EfficientNet, ViT)
             if backbone_params.get('freeze', False):
