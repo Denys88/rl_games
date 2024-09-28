@@ -40,15 +40,15 @@ params:
     lr_schedule: adaptive
     kl_threshold: 0.008
     save_best_after: 10
-    score_to_win: 300
+    score_to_win: 10000
     grad_norm: 1.5
     entropy_coef: 0
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
     num_actors: 16
-    horizon_length: 4096
-    minibatch_size: 8192
+    horizon_length: 128
+    minibatch_size: 1024
     mini_epochs: 4
     critic_coef: 2
     normalize_input: True
