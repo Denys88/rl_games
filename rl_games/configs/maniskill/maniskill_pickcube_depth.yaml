@@ -1,0 +1,104 @@
+params:
+  seed: 42
+
+  # environment wrapper clipping
+  env:
+    # added to the wrapper
+    clip_observations: 5.0
+    # can make custom wrapper?
+    clip_actions: 1.0
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: e2e_vision_actor_critic
+    separate: False
+    value_shape: 1
+    space: 
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+          scale: 0.02
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+  
+    backbone:
+      type: resnet18 # can be efficientnet_v2_s #convnext_tiny #vit_b_16 #resnet18 #resnet34
+      pretrained: True
+      permute_input: True
+      freeze: False
+      preprocess_image: False
+      args:
+        zero_init_residual: True
+        norm_layer: None
+    mlp:
+      units: [256, 128]
+      activation: elu
+      regularizer:
+        name: None
+      initializer:
+        name: default
+    rnn:
+      name: lstm
+      layer_norm: True
+      units: 512
+      layers: 1
+      before_mlp: True
+      concat_output: True
+
+  config:
+    name: PickCube_RGB_resnet18_LSTM_256x128_MLP_depth
+    env_name: maniskill
+    reward_shaper:
+      scale_value: 1.0
+    device: cuda:0
+    device_name: cuda:0
+    multi_gpu: False
+    ppo: True
+    mixed_precision: True
+    normalize_input: False
+    normalize_value: True
+    normalize_advantage: True
+    num_actors: 128
+    reward_shaper:
+      scale_value: 1.0
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 2e-4
+    lr_schedule: linear
+    kl_threshold: 0.008
+    max_epochs: 10000
+    save_best_after: 25
+    save_frequency: 1000
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    horizon_length: 64 #128
+    minibatch_size: 1024
+    mini_epochs: 2
+    critic_coef: 1
+    clip_value: True
+    seq_length: 8
+    bounds_loss_coef: 0.0001
+    #weight_decay: 0.001
+
+    env_config:
+      env_name: PickCube-v1
+      obs_mode: depth #rgbd #rgb
+      control_mode: pd_ee_delta_pose
+      reward_mode: dense
+      aux_loss: False
+
+    player:
+        render: False
+        deterministic: True
+

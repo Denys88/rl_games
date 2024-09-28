@@ -5,8 +5,6 @@ params:
   model:
     name: discrete_a2c
 
-
-
   network:
     name: actor_critic
     separate: False

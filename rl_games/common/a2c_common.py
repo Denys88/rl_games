@@ -10,8 +10,9 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games import networks
 import numpy as np
 import time
 import gym
@@ -25,6 +26,11 @@ import torch.distributed as dist
 from time import sleep
 
 from rl_games.common import common_losses
+
+try:
+    from apex.contrib.clip_grad import clip_grad_norm_
+except ImportError:
+    from torch.nn.utils import clip_grad_norm_
 
 
 def swap_and_flatten01(arr):
@@ -241,8 +247,6 @@ class A2CBase(BaseAlgorithm):
         self.batch_size_envs = self.horizon_length * self.num_actors
 
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
-        self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
-        self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
 
         # either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
@@ -343,7 +347,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -351,7 +355,7 @@ class A2CBase(BaseAlgorithm):
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
-        has_central_value_net = self.config.get('central_value_config') is not  None
+        has_central_value_net = self.config.get('central_value_config') is not None
         if has_central_value_net:
             print('Adding Central Value Network')
             if 'model' not in params['config']['central_value_config']:
@@ -412,7 +416,6 @@ class A2CBase(BaseAlgorithm):
             'obs' : processed_obs,
             'rnn_states' : self.rnn_states
         }
-
         with torch.no_grad():
             res_dict = self.model(input_dict)
             if self.has_central_value:
@@ -446,6 +449,7 @@ class A2CBase(BaseAlgorithm):
                     'obs' : processed_obs,
                     'rnn_states' : self.rnn_states
                 }
+
                 result = self.model(input_dict)
                 value = result['values']
             return value
@@ -752,6 +756,7 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_masked_action_values(self.obs, masks)
             else:
                 res_dict = self.get_action_values(self.obs)
+
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
 
@@ -777,7 +782,7 @@ class A2CBase(BaseAlgorithm):
             self.current_lengths += 1
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
-     
+
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])

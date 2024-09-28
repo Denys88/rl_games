@@ -294,6 +294,10 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.6.5
+
+* Pytorch 2
+
 1.6.1
 * Fixed Central Value RNN bug which occurs if you train ma multi agent environment.
 * Added Deepmind Control PPO benchmark.

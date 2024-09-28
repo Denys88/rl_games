@@ -17,7 +17,7 @@ params:
       activation: relu
       initializer:
         name: orthogonal_initializer
-        gain: 1.41421356237 
+        gain: 1.41421356237
       convs:    
         - filters: 32
           kernel_size: 8
@@ -31,7 +31,7 @@ params:
           kernel_size: 3
           strides: 1
           padding: 0
-      
+
     mlp:
       units: [512]
       activation: relu
@@ -55,7 +55,7 @@ params:
     learning_rate: 8e-4
     lr_schedule: None
     kl_threshold: 0.01
-    
+
     grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True 

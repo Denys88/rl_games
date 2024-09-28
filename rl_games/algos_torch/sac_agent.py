@@ -1,14 +1,12 @@
 from rl_games.algos_torch import torch_ext
 
-from rl_games.common import vecenv
-from rl_games.common import schedulers
-from rl_games.common import experience
+from rl_games.common import vecenv, schedulers, experience
 from rl_games.common.a2c_common import print_statistics
 
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-from rl_games.algos_torch import  model_builder
+from rl_games.algos_torch import model_builder
 from torch import optim
 import torch 
 from torch import nn
@@ -16,6 +14,11 @@ import torch.nn.functional as F
 import numpy as np
 import time
 import os
+
+try:
+    from apex.optimizers import FusedAdam as AdamImpl
+except ImportError:
+    AdamImpl = optim.Adam
 
 
 class SACAgent(BaseAlgorithm):
@@ -68,17 +71,17 @@ class SACAgent(BaseAlgorithm):
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
-        self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
-                                                lr=float(self.config['actor_lr']),
-                                                betas=self.config.get("actor_betas", [0.9, 0.999]))
+        self.actor_optimizer = AdamImpl(self.model.sac_network.actor.parameters(),
+                                        lr=float(self.config['actor_lr']),
+                                        betas=self.config.get("actor_betas", [0.9, 0.999]))
 
-        self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
-                                                 lr=float(self.config["critic_lr"]),
-                                                 betas=self.config.get("critic_betas", [0.9, 0.999]))
+        self.critic_optimizer = AdamImpl(self.model.sac_network.critic.parameters(),
+                                         lr=float(self.config["critic_lr"]),
+                                         betas=self.config.get("critic_betas", [0.9, 0.999]))
 
-        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=float(self.config["alpha_lr"]),
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]))
+        self.log_alpha_optimizer = AdamImpl([self.log_alpha],
+                                            lr=float(self.config["alpha_lr"]),
+                                            betas=self.config.get("alphas_betas", [0.9, 0.999]))
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
         self.env_info['action_space'].shape,

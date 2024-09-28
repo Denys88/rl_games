@@ -3,12 +3,12 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
+from rl_games.envs.maniskill import create_maniskill
 from rl_games.envs.cule import create_cule
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
-
 
 
 class HCRewardEnv(gym.RewardWrapper):
@@ -32,8 +32,6 @@ class DMControlWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
         return observation, reward, done, info
-
-
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -86,14 +84,16 @@ def create_slime_gym_env(**kwargs):
         env = gym.make(name, **kwargs)
     return env
 
-
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
     skip = kwargs.pop('skip',4)
     episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
-    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
+    gray_scale = kwargs.pop('gray_scale',True)
+    frame_stack = kwargs.pop('frame_stack', True)
+    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, 
+                                       gray_scale=gray_scale, frame_stack=frame_stack, **kwargs)
     return env    
 
 def create_dm_control_env(**kwargs):
@@ -154,14 +154,15 @@ def create_roboschool_env(name):
 
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
+
     frames = kwargs.pop('frames', 1)
     transpose = kwargs.pop('transpose', False)
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
     as_single_agent = kwargs.pop('as_single_agent', False)
+
     env = SMACEnv(name, **kwargs)
-    
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -170,6 +171,7 @@ def create_smac(name, **kwargs):
 
     if as_single_agent:
         env = MultiDiscreteSmacWrapper(env)
+
     return env
 
 def create_smac_v2(name, **kwargs):
@@ -179,7 +181,7 @@ def create_smac_v2(name, **kwargs):
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
     env = SMACEnvV2(name, **kwargs)
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -192,6 +194,7 @@ def create_smac_cnn(name, **kwargs):
     has_cv = kwargs.get('central_value', False)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
+    as_single_agent = kwargs.pop('as_single_agent', False)
 
     env = SMACEnv(name, **kwargs)
     if has_cv:
@@ -200,6 +203,7 @@ def create_smac_cnn(name, **kwargs):
         env = wrappers.BatchedFrameStack(env, frames, transpose=transpose)
     if as_single_agent:
         env = MultiDiscreteSmacWrapper(env)
+
     return env
 
 def create_test_env(name, **kwargs):
@@ -211,14 +215,12 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
-
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
     rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
     rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
-
 
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
@@ -423,6 +425,10 @@ configurations = {
         'env_creator': lambda **kwargs: create_envpool(**kwargs),
         'vecenv_type': 'ENVPOOL'
     },
+    'maniskill': {
+        'env_creator': lambda **kwargs: create_maniskill(**kwargs),
+        'vecenv_type': 'MANISKILL'
+    },
     'cule': {
         'env_creator': lambda **kwargs: create_cule(**kwargs),
         'vecenv_type': 'CULE'
@@ -456,7 +462,6 @@ def get_obs_and_action_spaces_from_config(config):
     result_shapes = get_env_info(env)
     env.close()
     return result_shapes
-
 
 def register(name, config):
     """Add a new key-value pair to the known environments (configurations dict).

@@ -10,6 +10,7 @@ from rl_games.algos_torch.sac_helper import SquashedNormal
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
 
+
 class BaseModel():
     def __init__(self, model_class):
         self.model_class = model_class
@@ -31,6 +32,7 @@ class BaseModel():
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
 
+
 class BaseModelNetwork(nn.Module):
     def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
         nn.Module.__init__(self)
@@ -40,12 +42,13 @@ class BaseModelNetwork(nn.Module):
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #   
+            self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
+
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
             else:
-                self.running_mean_std = RunningMeanStd(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -118,6 +121,7 @@ class ModelA2C(BaseModel):
                 }
                 return  result
 
+
 class ModelA2CMultiDiscrete(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -189,6 +193,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     'rnn_states' : states
                 }
                 return  result
+
 
 class ModelA2CContinuous(BaseModel):
     def __init__(self, network):
@@ -263,7 +268,7 @@ class ModelA2CContinuousLogStd(BaseModel):
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
-        
+
         def is_rnn(self):
             return self.a2c_network.is_rnn()
 
@@ -305,9 +310,10 @@ class ModelA2CContinuousLogStd(BaseModel):
                 }
                 return result
 
+        @torch.compile() #(mode='max-autotune')
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
-                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
+                + 0.5 * np.log(2.0 * np.pi) * x.size(-1) \
                 + logstd.sum(dim=-1)
 
 
@@ -351,7 +357,6 @@ class ModelCentralValue(BaseModel):
             return result
 
 
-
 class ModelSACContinuous(BaseModel):
 
     def __init__(self, network):
@@ -383,6 +388,4 @@ class ModelSACContinuous(BaseModel):
             mu, sigma = self.sac_network(input_dict)
             dist = SquashedNormal(mu, sigma)
             return dist
-
-
 

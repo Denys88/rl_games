@@ -11,6 +11,7 @@ def flatten_dict(obs):
     res = np.column_stack(res)
     return res
 
+
 class Envpool(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import envpool
@@ -26,9 +27,9 @@ class Envpool(IVecEnv):
                                  batch_size=self.batch_size,
                                  **kwargs
                                 )
-        
+
         if self.use_dict_obs_space:
-            self.observation_space= gym.spaces.Dict({
+            self.observation_space = gym.spaces.Dict({
                 'observation' : self.env.observation_space,
                 'reward' : gym.spaces.Box(low=0, high=1, shape=( ), dtype=np.float32),
                 'last_action': gym.spaces.Box(low=0, high=self.env.action_space.n, shape=(), dtype=int)
@@ -63,7 +64,7 @@ class Envpool(IVecEnv):
             self.scores *= 1 - dones
 
     def step(self, action):
-        next_obs, reward, is_done, info = self.env.step(action , self.ids)
+        next_obs, reward, is_done, info = self.env.step(action, self.ids)
         info['time_outs'] = info['TimeLimit.truncated']
         self._set_scores(info, is_done)
         if self.flatten_obs:
@@ -86,7 +87,7 @@ class Envpool(IVecEnv):
                 'reward': np.zeros(obs.shape[0]),
                 'last_action': np.zeros(obs.shape[0]),
             }
-        
+
         return obs
 
     def get_number_of_agents(self):
@@ -97,8 +98,6 @@ class Envpool(IVecEnv):
         info['action_space'] = self.action_space
         info['observation_space'] = self.observation_space
         return info
-
-
 
 
 def create_envpool(**kwargs):

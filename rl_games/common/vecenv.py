@@ -7,6 +7,7 @@ import random
 from time import sleep
 import torch
 
+
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
 
@@ -120,7 +121,10 @@ class RayVecEnv(IVecEnv):
     Each worker is executed asynchronously.
 
     """
-    import ray
+    try:
+        import ray
+    except ImportError:
+        pass
 
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
@@ -278,6 +282,9 @@ register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, 
 
 from rl_games.envs.envpool import Envpool
 register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))
+
+from rl_games.envs.maniskill import Maniskill
+register('MANISKILL', lambda config_name, num_actors, **kwargs: Maniskill(config_name, num_actors, **kwargs))
 
 from rl_games.envs.cule import CuleEnv
 register('CULE', lambda config_name, num_actors, **kwargs: CuleEnv(config_name, num_actors, **kwargs))

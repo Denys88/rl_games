@@ -131,7 +131,10 @@ def launch_rlg_hydra(cfg: DictConfig):
 # Make a copy of RayVecEnv
 
 class CustomRayVecEnv(IVecEnv):
-    import ray
+    try:
+        import ray
+    except ImportError:
+        pass
 
     def __init__(self, config_dict, config_name, num_actors, **kwargs):
         ### ADDED CHANGE ###

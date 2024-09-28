@@ -24,7 +24,8 @@ numpy_to_torch_dtype_dict = {
 
 torch_to_numpy_dtype_dict = {value : key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
-def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce=True):
+@torch.compile() #(mode='max-autotune')
+def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce:bool=True):
     c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
     c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
     c3 = -1.0 / 2.0
@@ -157,6 +158,10 @@ def get_mean_var_with_masks(values, masks):
     values_var = min_sqr * sum_mask / (sum_mask-1)
     return values_mean, values_var
 
+def get_mean_std_with_masks(values, masks):
+    values_mean, values_var = get_mean_var_with_masks(values, masks)
+    return values_mean, torch.sqrt(values_var)
+
 def explained_variance(y_pred,y, masks=None):
     """
     Computes fraction of variance that ypred explains about y.
@@ -203,6 +208,7 @@ class CoordConv2d(nn.Conv2d):
                 x.size(0), 1, 1, 1).type_as(x)
             CoordConv2d.pool[key] = coord
         return CoordConv2d.pool[key]
+
     def forward(self, x):
         return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
@@ -238,7 +244,6 @@ class LayerNorm2d(nn.Module):
         mean = x_flat.mean(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
         std = x_flat.std(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
         return self.gamma.expand_as(x) * (x - mean) / (std + self.eps) + self.beta.expand_as(x)
-
 
 
 class DiscreteActionsEncoder(nn.Module):

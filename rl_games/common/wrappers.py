@@ -646,14 +646,15 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     #env = EpisodeStackedEnv(env)
     return env
 
-def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False, wrap_impala=False):
+def wrap_deepmind(env, episode_life=False, clip_rewards=True, scale=False, 
+                  wrap_impala=False, frame_stack=True,  gray_scale=True):
     """Configure environment for DeepMind-style Atari.
     """
     if episode_life:
         env = EpisodicLifeEnv(env)
     if 'FIRE' in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
-    env = WarpFrame(env)
+    env = WarpFrame(env, grayscale=gray_scale)
     if scale:
         env = ScaledFloatFrame(env)
     if clip_rewards:
@@ -680,7 +681,8 @@ def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
-def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False, **kwargs):
+def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, 
+                        wrap_impala=False, frame_stack=True, gray_scale=True, **kwargs):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
-    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
+    return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala, frame_stack=frame_stack, gray_scale=gray_scale)
 

@@ -325,10 +325,12 @@ class ExperienceBuffer:
             self._init_from_aux_dict(self.aux_tensor_dict)
 
     def _init_from_env_info(self, env_info):
+        # TODO: Review and update for dictinary observation spaces
         obs_base_shape = self.obs_base_shape
         state_base_shape = self.state_base_shape
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
+
         if self.has_central_value:
             self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
         
@@ -355,17 +357,17 @@ class ExperienceBuffer:
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape + space.shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Discrete:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape, dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
             '''
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            return torch.zeros(base_shape +(tuple_len,), dtype= dtype, device = self.device)
+            return torch.zeros(base_shape +(tuple_len,), dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Dict:
             t_dict = {}
             for k,v in space.spaces.items():
@@ -379,13 +381,12 @@ class ExperienceBuffer:
         else:
             self.tensor_dict[name][index,:] = val
 
-
-    def update_data_rnn(self, name, indices,play_mask, val):
+    def update_data_rnn(self, name, indices, play_mask, val):
         if type(val) is dict:
             for k,v in val:
-                self.tensor_dict[name][k][indices,play_mask] = v
+                self.tensor_dict[name][k][indices, play_mask] = v
         else:
-            self.tensor_dict[name][indices,play_mask] = val
+            self.tensor_dict[name][indices, play_mask] = val
 
     def get_transformed(self, transform_op):
         res_dict = {}
