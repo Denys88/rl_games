@@ -1,3 +1,4 @@
+import gymnasium
 import numpy as np
 from numpy.random import randint
 
@@ -625,6 +626,90 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
     def observation(self, observation):
         return  observation * self.mask
+
+class OldGymWrapper(gym.Env):
+    def __init__(self, env):
+        self.env = env
+
+        # Convert Gymnasium spaces to Gym spaces
+        self.observation_space = self.convert_space(env.observation_space)
+        self.action_space = self.convert_space(env.action_space)
+
+    def convert_space(self, space):
+        """Recursively convert Gymnasium spaces to Gym spaces."""
+        if isinstance(space, gymnasium.spaces.Box):
+            return gym.spaces.Box(
+                low=space.low,
+                high=space.high,
+                shape=space.shape,
+                dtype=space.dtype
+            )
+        elif isinstance(space, gymnasium.spaces.Discrete):
+            return gym.spaces.Discrete(n=space.n)
+        elif isinstance(space, gymnasium.spaces.MultiDiscrete):
+            return gym.spaces.MultiDiscrete(nvec=space.nvec)
+        elif isinstance(space, gymnasium.spaces.MultiBinary):
+            return gym.spaces.MultiBinary(n=space.n)
+        elif isinstance(space, gymnasium.spaces.Tuple):
+            return gym.spaces.Tuple([self.convert_space(s) for s in space.spaces])
+        elif isinstance(space, gymnasium.spaces.Dict):
+            return gym.spaces.Dict({k: self.convert_space(s) for k, s in space.spaces.items()})
+        else:
+            raise NotImplementedError(f"Space type {type(space)} is not supported.")
+
+    def reset(self):
+        result = self.env.reset()
+        if isinstance(result, tuple):
+            # Gymnasium returns (observation, info)
+            observation, _ = result
+        else:
+            observation = result
+        # Flatten the observation
+        observation = gym.spaces.flatten(self.observation_space, observation)
+        return observation  # Old Gym API returns only the observation
+
+    def step(self, action):
+        # Unflatten the action
+        action = gym.spaces.unflatten(self.action_space, action)
+        result = self.env.step(action)
+
+        if len(result) == 5:
+            # Gymnasium returns (obs, reward, terminated, truncated, info)
+            observation, reward, terminated, truncated, info = result
+            done = terminated or truncated  # Combine for old Gym API
+        else:
+            # Old Gym returns (obs, reward, done, info)
+            observation, reward, done, info = result
+
+        # Flatten the observation
+        observation = gym.spaces.flatten(self.observation_space, observation)
+        return observation, reward, done, info
+
+    def render(self, mode='human'):
+        return self.env.render(mode=mode)
+
+    def close(self):
+        return self.env.close()
+
+# Example usage:
+if __name__ == "__main__":
+    # Create a MyoSuite environment
+    env = myosuite.make('myoChallengeDieReorientP2-v0')
+
+    # Wrap it with the old Gym-style wrapper
+    env = OldGymWrapper(env)
+
+    # Use the environment as usual
+    observation = env.reset()
+    done = False
+    while not done:
+        # Sample a random action
+        action = env.action_space.sample()
+        # Step the environment
+        observation, reward, done, info = env.step(action)
+        # Optionally render the environment
+        env.render()
+    env.close()
 
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None, **kwargs):

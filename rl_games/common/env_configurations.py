@@ -86,6 +86,12 @@ def create_slime_gym_env(**kwargs):
         env = gym.make(name, **kwargs)
     return env
 
+def create_myo(**kwargs):
+    from myosuite.utils import gym
+    name = kwargs.pop('name')
+    env = gym.make(name, **kwargs)
+    env = wrappers.OldGymWrapper(env)
+    return env
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -426,6 +432,10 @@ configurations = {
     'cule': {
         'env_creator': lambda **kwargs: create_cule(**kwargs),
         'vecenv_type': 'CULE'
+    },
+    'myo_gym' : {
+        'env_creator' : lambda **kwargs : create_myo(**kwargs),
+        'vecenv_type' : 'RAY'
     },
 }
 
