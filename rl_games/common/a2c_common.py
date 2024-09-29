@@ -240,13 +240,10 @@ class A2CBase(BaseAlgorithm):
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
 
-        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
-        self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
-        self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
-
         # either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
         # otherwise minibatch_size_per_env is used minibatch_size_per_env is used to calculate minibatch_size
+        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
 
