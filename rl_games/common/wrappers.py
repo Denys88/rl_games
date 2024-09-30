@@ -6,7 +6,7 @@ import os
 os.environ.setdefault('PATH', '')
 from collections import deque
 
-import gym
+import gymnasium as gym
 from gym import spaces
 from copy import copy
 
@@ -68,7 +68,8 @@ class FireResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(1)
+        obs, _, terminated, truncated, _ = self.env.step(1)
+        done = terminated or truncated
         if done:
             self.env.reset(**kwargs)
         obs, _, done, _ = self.env.step(2)
@@ -90,7 +91,8 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.was_real_done  = True
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        done = terminated or truncated
         self.was_real_done = done
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
@@ -125,7 +127,8 @@ class EpisodeStackedEnv(gym.Wrapper):
         self.current_steps=0
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        done = terminated or truncated
         if reward == 0:
             self.current_steps += 1
         else:
@@ -136,7 +139,7 @@ class EpisodeStackedEnv(gym.Wrapper):
             done = True
             reward = -1
             obs = self.env.reset()
-        return obs, reward, done, info
+        return obs, reward, done, truncated, info
 
 
 class MaxAndSkipEnv(gym.Wrapper):
@@ -235,16 +238,16 @@ class FrameStack(gym.Wrapper):
             else:
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
 
-    def reset(self):
-        ob = self.env.reset()
+    def reset(self, **kwargs):
+        ob, info = self.env.reset(**kwargs)
         for _ in range(self.k):
             self.frames.append(ob)
         return self._get_ob()
 
     def step(self, action):
-        ob, reward, done, info = self.env.step(action)
+        ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward, terminated, truncated, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k
@@ -278,16 +281,16 @@ class BatchedFrameStack(gym.Wrapper):
             else:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
 
-    def reset(self):
-        ob = self.env.reset()
+    def reset(self, **kwargs):
+        ob = self.env.reset(**kwargs)
         for _ in range(self.k):
             self.frames.append(ob)
         return self._get_ob()
 
     def step(self, action):
-        ob, reward, done, info = self.env.step(action)
+        ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward, terminated, truncated, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k
@@ -325,8 +328,8 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
                 self.state_space = spaces.Box(low=0, high=1, shape=(k, state_shp[0]), dtype=env.observation_space.dtype)
 
-    def reset(self):
-        obs_dict = self.env.reset()
+    def reset(self, **kwargs):
+        obs_dict = self.env.reset(**kwargs)
         ob = obs_dict["obs"]
         state = obs_dict["state"]
         for _ in range(self.k):
@@ -379,9 +382,9 @@ class ProcgenStack(gym.Wrapper):
             shape = (shp[:-1] + (shp[-1] * k,))
         self.observation_space = spaces.Box(low=0, high=255, shape=shape, dtype=np.uint8)
 
-    def reset(self):
+    def reset(self, **kwargs):
         import cv2
-        frames = self.env.reset()
+        frames = self.env.reset(**kwargs)
         self.frames.append(frames)
 
         if self.greyscale:
@@ -512,9 +515,9 @@ class StickyActionEnv(gym.Wrapper):
         self.p = p
         self.last_action = 0
 
-    def reset(self):
+    def reset(self, **kwargs):
         self.last_action = 0
-        return self.env.reset()
+        return self.env.reset(**kwargs)
 
     def step(self, action):
         if self.unwrapped.np_random.uniform() < self.p:
@@ -536,7 +539,8 @@ class MontezumaInfoWrapper(gym.Wrapper):
         return int(ram[self.room_address])
 
     def step(self, action):
-        obs, rew, done, info = self.env.step(action)
+        obs, rew, terminated, truncated, info = self.env.step(action)
+        done = terminated or truncated
         self.visited_rooms.add(self.get_current_room())
         if done:
             if 'scores' not in info:
@@ -545,7 +549,7 @@ class MontezumaInfoWrapper(gym.Wrapper):
             self.visited_rooms.clear()
         return obs, rew, done, info
 
-    def reset(self):
+    def reset(self, **kwargs):
         return self.env.reset()
 
 
@@ -596,7 +600,7 @@ class ImpalaEnvWrapper(gym.Wrapper):
         }
         return obs, reward, done, info
 
-    def reset(self):
+    def reset(self, **kwargs):
         obs = self.env.reset()
         obs = {
             'observation': obs,

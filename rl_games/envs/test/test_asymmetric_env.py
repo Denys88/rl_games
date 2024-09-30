@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 from rl_games.common.wrappers import MaskVelocityWrapper
 
@@ -26,8 +26,8 @@ class TestAsymmetricCritic(gym.Env):
     def get_number_of_agents(self):
         return self.n_agents
 
-    def reset(self):
-        obs = self.env.reset()
+    def reset(self, seed):
+        obs, info = self.env.reset(seed)
         obs_dict = {}
         obs_dict["obs"] = obs * self.mask
         obs_dict["state"] = obs
@@ -46,7 +46,7 @@ class TestAsymmetricCritic(gym.Env):
             obses = obs_dict
         else:
             obses = obs_dict["obs"].astype(np.float32)
-        return obses, rewards, dones, info
+        return obses, rewards, dones, false, info
     
     def has_action_mask(self):
         return False

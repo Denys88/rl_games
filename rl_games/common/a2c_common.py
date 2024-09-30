@@ -12,9 +12,10 @@ from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
 from rl_games.algos_torch import  model_builder
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.common.env_configurations import patch_env_info
 import numpy as np
 import time
-import gym
+import gymnasium as gym
 
 from datetime import datetime
 from tensorboardX import SummaryWriter
@@ -127,7 +128,7 @@ class A2CBase(BaseAlgorithm):
         self.env_info = config.get('env_info')
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-            self.env_info = self.vec_env.get_env_info()
+            self.env_info = patch_env_info(self.vec_env.get_env_info())
         else:
             self.vec_env = config.get('vec_env', None)
 
