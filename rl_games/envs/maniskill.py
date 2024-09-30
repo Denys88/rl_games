@@ -7,6 +7,7 @@ from typing import Dict
 import gymnasium as gym2
 import gymnasium.spaces.utils
 from gymnasium.vector.utils import batch_space
+
 from mani_skill.utils import common
 
 
