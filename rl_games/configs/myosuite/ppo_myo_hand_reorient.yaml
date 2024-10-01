@@ -1,0 +1,67 @@
+params:  
+  seed: 8
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+        scale: 2
+  config:
+    env_name: myo_gym
+    name: MyoChallengeDieReorientP1
+    reward_shaper:
+      scale_value: 1.0
+      log_val: False
+    mixed_precision: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    save_best_after: 20
+    save_frequency: 500
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 32
+    horizon_length: 128
+    minibatch_size: 2048
+    mini_epochs: 5
+    critic_coef: 2
+    bounds_loss_coef: 0.001
+    max_epochs: 5000
+    use_diagnostics: True
+    weight_decay: 0.0
+    use_smooth_clamp: True
+    env_config:
+      name: myoChallengeDieReorientP1-v0
+    player:
+      render: True
+      deterministic: True
+      games_num: 200

@@ -41,6 +41,7 @@ if __name__ == '__main__':
 
         from rl_games.torch_runner import Runner
 
+        # Import Ray only when needed
         try:
             import ray
         except ImportError:

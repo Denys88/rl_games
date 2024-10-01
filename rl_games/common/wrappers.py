@@ -1,4 +1,3 @@
-import gymnasium
 import numpy as np
 from numpy.random import randint
 
@@ -11,12 +10,11 @@ from gym import spaces
 from copy import copy
 
 
-
 class InfoWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        
         self.reward = 0
+
     def reset(self, **kwargs):
         self.reward = 0
         return self.env.reset(**kwargs)
@@ -87,7 +85,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         """
         gym.Wrapper.__init__(self, env)
         self.lives = 0
-        self.was_real_done  = True
+        self.was_real_done = True
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -122,7 +120,7 @@ class EpisodeStackedEnv(gym.Wrapper):
 
         gym.Wrapper.__init__(self, env)
         self.max_stacked_steps = 1000
-        self.current_steps=0
+        self.current_steps = 0
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -140,7 +138,7 @@ class EpisodeStackedEnv(gym.Wrapper):
 
 
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env,skip=4, use_max = True):
+    def __init__(self, env, skip=4, use_max=True):
         """Return only every `skip`-th frame"""
         gym.Wrapper.__init__(self, env)
         self.use_max = use_max 
@@ -150,7 +148,7 @@ class MaxAndSkipEnv(gym.Wrapper):
         else:
             self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.float32)
         self._skip       = skip
-        
+
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
@@ -211,8 +209,9 @@ class WarpFrame(gym.ObservationWrapper):
             frame = np.expand_dims(frame, -1)
         return frame
 
+
 class FrameStack(gym.Wrapper):
-    def __init__(self, env, k, flat = False):
+    def __init__(self, env, k, flat=False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -262,7 +261,7 @@ class FrameStack(gym.Wrapper):
 
 
 class BatchedFrameStack(gym.Wrapper):
-    def __init__(self, env, k, transpose = False, flatten = False):
+    def __init__(self, env, k, transpose=False, flatten=False):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
@@ -303,8 +302,9 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
+
 class BatchedFrameStackWithStates(gym.Wrapper):
-    def __init__(self, env, k, transpose = False, flatten = False):
+    def __init__(self, env, k, transpose=False, flatten=False):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.obses = deque([], maxlen=k)
@@ -363,14 +363,15 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 obses = np.transpose(data, (1, 0, 2))
         return obses
 
+
 class ProcgenStack(gym.Wrapper):
-    def __init__(self, env, k = 2, greyscale=True):
+    def __init__(self, env, k=2, greyscale=True):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.curr_frame = 0
         self.frames = deque([], maxlen=k)
 
-        self.greyscale=greyscale
+        self.greyscale = greyscale
         self.prev_frame = None
         shp = env.observation_space.shape
         if greyscale:
@@ -421,6 +422,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
 
+
 class LazyFrames(object):
     def __init__(self, frames):
         """This object ensures that common frames between the observations are only stored once.
@@ -449,6 +451,7 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
+
 class ReallyDoneWrapper(gym.Wrapper):
     def __init__(self, env):
         """
@@ -470,6 +473,7 @@ class ReallyDoneWrapper(gym.Wrapper):
             obs, _, done, _ = self.env.step(1)
         done = lives == 0
         return obs, reward, done, info
+
 
 class AllowBacktracking(gym.Wrapper):
     """
@@ -505,6 +509,7 @@ def unwrap(env):
         return unwrap(env.leg_env)
     else:
         return env
+
 
 class StickyActionEnv(gym.Wrapper):
     def __init__(self, env, p=0.25):
@@ -591,7 +596,7 @@ class ImpalaEnvWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         obs = {
             'observation': obs,
-            'reward':np.clip(reward, -1, 1),
+            'reward': np.clip(reward, -1, 1),
             'last_action': action
         }
         return obs, reward, done, info
@@ -625,10 +630,13 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
             raise NotImplementedError
 
     def observation(self, observation):
-        return  observation * self.mask
+        return observation * self.mask
+
 
 class OldGymWrapper(gym.Env):
     def __init__(self, env):
+        import gymnasium
+
         self.env = env
 
         # Convert Gymnasium spaces to Gym spaces
@@ -686,14 +694,19 @@ class OldGymWrapper(gym.Env):
         return observation, reward, done, info
 
     def render(self, mode='human'):
-        return self.env.render(mode=mode)
+        # Fix to allow rendering in the old Gym API using Mujoco's render method
+        # return self.env.render(mode=mode)
+        return self.env.mj_render()
 
     def close(self):
         return self.env.close()
 
+
 # Example usage:
 if __name__ == "__main__":
     # Create a MyoSuite environment
+    import myosuite
+
     env = myosuite.make('myoChallengeDieReorientP2-v0')
 
     # Wrap it with the old Gym-style wrapper
@@ -714,12 +727,13 @@ if __name__ == "__main__":
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None, **kwargs):
     env = gym.make(env_id, **kwargs)
+
     if 'Montezuma' in env_id:
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
     env = InfoWrapper(env)
-    if directory != None:
-        env = gym.wrappers.Monitor(env,directory=directory,force=True)
+    if directory is not None:
+        env = gym.wrappers.Monitor(env, directory=directory, force=True)
     if sticky:
         env = StickyActionEnv(env)
     if not timelimit:
@@ -730,6 +744,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     env = MaxAndSkipEnv(env, skip=skip)
     #env = EpisodeStackedEnv(env)
     return env
+
 
 def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False, wrap_impala=False):
     """Configure environment for DeepMind-style Atari.
@@ -749,6 +764,7 @@ def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, 
         env = ImpalaEnvWrapper(env)
     return env
 
+
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
     """
@@ -761,11 +777,12 @@ def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
         env = FrameStack(env, 4)
     return env
 
+
 def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
+
 def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False, **kwargs):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
     return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
-
