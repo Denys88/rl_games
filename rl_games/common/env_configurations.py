@@ -9,7 +9,10 @@ from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
 
-
+try:
+    import bark_ml.environments.gym
+except:
+    pass
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):

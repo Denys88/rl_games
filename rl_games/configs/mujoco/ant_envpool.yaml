@@ -63,3 +63,6 @@ params:
 
     player:
       render: False
+      num_actors: 64
+      games_num: 1000
+      use_vecenv: True
