@@ -23,13 +23,13 @@ params:
     gating_hidden_size: 128
     use_sparse_gating: True
     use_entropy_loss: True
-    use_diversity_loss: False
+    use_diversity_loss: True
     top_k: 2
-    lambda_entropy: 0.01
+    lambda_entropy: -0.01
     lambda_diversity: 0.01
 
   config:
-    name: Ant-v4_envpool_moe
+    name: Humanoid_envpool_moe
     env_name: envpool
     score_to_win: 20000
     normalize_input: True
@@ -37,7 +37,7 @@ params:
     value_bootstrap: True
     normalize_advantage: True
     reward_shaper:
-      scale_value: 1
+      scale_value: 0.1
 
     gamma: 0.99
     tau: 0.95
@@ -54,10 +54,10 @@ params:
     bounds_loss_coef: 0.0
     max_epochs: 2000
     num_actors: 64
-    horizon_length: 64
+    horizon_length: 128
     minibatch_size: 2048
-    mini_epochs: 4
-    critic_coef: 2
+    mini_epochs: 5
+    critic_coef: 4
 
     env_config:
       env_name: Humanoid-v4

@@ -25,7 +25,7 @@ params:
     use_entropy_loss: True
     use_diversity_loss: False
     top_k: 2
-    lambda_entropy: 0.01
+    lambda_entropy: -0.01
     lambda_diversity: 0.01
 
   config:
