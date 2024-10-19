@@ -67,10 +67,10 @@ Explore RL Games quick and easily in colab notebooks:
 
 ## Installation
 
-For maximum training performance a preliminary installation of Pytorch 1.9+ with CUDA 11.1+ is highly recommended:
+For maximum training performance a preliminary installation of Pytorch 2.2 or newer with CUDA 12.1 or newer is highly recommended:
 
-```conda install pytorch torchvision cudatoolkit=11.3 -c pytorch -c nvidia``` or:
-```pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html```
+```conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia``` or:
+```pip install pip3 install torch torchvision```
 
 Then:
 

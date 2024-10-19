@@ -236,14 +236,20 @@ class A2CBase(BaseAlgorithm):
         self.game_shaped_rewards = torch_ext.AverageMeter(self.value_size, self.games_to_track).to(self.ppo_device)
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self.ppo_device)
         self.obs = None
-        self.games_num = self.config['minibatch_size'] // self.seq_length # it is used only for current rnn implementation
 
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
 
+        # either minibatch_size_per_env or minibatch_size should be present in a config
+        # if both are present, minibatch_size is used
+        # otherwise minibatch_size_per_env is used minibatch_size_per_env is used to calculate minibatch_size
         assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
+
+        assert(self.minibatch_size > 0)
+
+        self.games_num = self.minibatch_size // self.seq_length # it is used only for current rnn implementation
 
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert(self.batch_size % self.minibatch_size == 0)
@@ -312,9 +318,7 @@ class A2CBase(BaseAlgorithm):
         self.algo_observer = config['features']['observer']
 
         self.soft_aug = config['features'].get('soft_augmentation', None)
-        self.has_soft_aug = self.soft_aug is not None
-        # soft augmentation not yet supported
-        assert not self.has_soft_aug
+        self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
         if self.multi_gpu:
@@ -365,6 +369,8 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
 
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
+        for k,v in self.aux_loss_dict.items():
+            self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
@@ -634,6 +640,9 @@ class A2CBase(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
+    def set_central_value_function_weights(self, weights):
+        self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+
     def get_weights(self):
         state = self.get_stats_weights()
         state['model'] = self.model.state_dict()
@@ -748,9 +757,9 @@ class A2CBase(BaseAlgorithm):
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            step_time_start = time.time()
+            step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
+            step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
 
@@ -821,9 +830,9 @@ class A2CBase(BaseAlgorithm):
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
-            step_time_start = time.time()
+            step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
-            step_time_end = time.time()
+            step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
 
@@ -911,7 +920,7 @@ class DiscreteA2CBase(A2CBase):
         super().train_epoch()
 
         self.set_eval()
-        play_time_start = time.time()
+        play_time_start = time.perf_counter()
 
         with torch.no_grad():
             if self.is_rnn:
@@ -921,8 +930,8 @@ class DiscreteA2CBase(A2CBase):
 
         self.set_train()
 
-        play_time_end = time.time()
-        update_time_start = time.time()
+        play_time_end = time.perf_counter()
+        update_time_start = time.perf_counter()
         rnn_masks = batch_dict.get('rnn_masks', None)
 
         self.curr_frames = batch_dict.pop('played_frames')
@@ -957,7 +966,7 @@ class DiscreteA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
 
-        update_time_end = time.time()
+        update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
@@ -1025,7 +1034,7 @@ class DiscreteA2CBase(A2CBase):
     def train(self):
         self.init_tensors()
         self.mean_rewards = self.last_mean_rewards = -100500
-        start_time = time.time()
+        start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
         # self.frame = 0  # loading from checkpoint
@@ -1035,8 +1044,12 @@ class DiscreteA2CBase(A2CBase):
             torch.cuda.set_device(self.local_rank)
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
+            if self.has_central_value:
+                model_params.append(self.central_value_net.state_dict())
             dist.broadcast_object_list(model_params, 0)
             self.model.load_state_dict(model_params[0])
+            if self.has_central_value:
+                self.central_value_net.load_state_dict(model_params[1])
 
         while True:
             epoch_num = self.update_epoch()
@@ -1174,15 +1187,15 @@ class ContinuousA2CBase(A2CBase):
         super().train_epoch()
 
         self.set_eval()
-        play_time_start = time.time()
+        play_time_start = time.perf_counter()
         with torch.no_grad():
             if self.is_rnn:
                 batch_dict = self.play_steps_rnn()
             else:
                 batch_dict = self.play_steps()
 
-        play_time_end = time.time()
-        update_time_start = time.time()
+        play_time_end = time.perf_counter()
+        update_time_start = time.perf_counter()
         rnn_masks = batch_dict.get('rnn_masks', None)
 
         self.set_train()
@@ -1231,7 +1244,7 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
 
-        update_time_end = time.time()
+        update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
         total_time = update_time_end - play_time_start
@@ -1253,7 +1266,10 @@ class ContinuousA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
-            self.value_mean_std.train()
+            if self.config.get('freeze_critic', False):
+                self.value_mean_std.eval()
+            else:
+                self.value_mean_std.train()
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
@@ -1301,17 +1317,22 @@ class ContinuousA2CBase(A2CBase):
     def train(self):
         self.init_tensors()
         self.last_mean_rewards = -100500
-        start_time = time.time()
+        start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
         if self.multi_gpu:
+            torch.cuda.set_device(self.local_rank)
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
+            if self.has_central_value:
+                model_params.append(self.central_value_net.state_dict())
             dist.broadcast_object_list(model_params, 0)
             self.model.load_state_dict(model_params[0])
+            if self.has_central_value:
+                self.central_value_net.load_state_dict(model_params[1])
 
         while True:
             epoch_num = self.update_epoch()
@@ -1340,9 +1361,6 @@ class ContinuousA2CBase(A2CBase):
 
                 if len(b_losses) > 0:
                     self.writer.add_scalar('losses/bounds_loss', torch_ext.mean_list(b_losses).item(), frame)
-
-                if self.has_soft_aug:
-                    self.writer.add_scalar('losses/aug_loss', np.mean(aug_losses), frame)
 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()

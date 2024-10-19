@@ -17,6 +17,10 @@ from rl_games.algos_torch import sac_agent
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
+        if args['train'] and args.get('load_critic_only', False):
+            assert agent.has_central_value, 'This should only work for asymmetric actor critic'
+            agent.restore_central_value_function(args['checkpoint'])
+            return
         agent.restore(args['checkpoint'])
 
 def _override_sigma(agent, args):
@@ -31,8 +35,24 @@ def _override_sigma(agent, args):
 
 
 class Runner:
+    """Runs training/inference (playing) procedures as per a given configuration.
+
+    The Runner class provides a high-level API for instantiating agents for either training or playing
+    with an RL algorithm. It further logs training metrics.
+
+    """
 
     def __init__(self, algo_observer=None):
+        """Initialise the runner instance with algorithms and observers.
+
+        Initialises runners and players for all algorithms available in the library using `rl_games.common.object_factory.ObjectFactory`
+
+        Args:
+            algo_observer (:obj:`rl_games.common.algo_observer.AlgoObserver`, optional): Algorithm observer that logs training metrics.
+                Defaults to `rl_games.common.algo_observer.DefaultAlgoObserver`
+
+        """
+
         self.algo_factory = object_factory.ObjectFactory()
         self.algo_factory.register_builder('a2c_continuous', lambda **kwargs : a2c_continuous.A2CAgent(**kwargs))
         self.algo_factory.register_builder('a2c_discrete', lambda **kwargs : a2c_discrete.DiscreteA2CAgent(**kwargs)) 
@@ -47,7 +67,7 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
         torch.backends.cudnn.benchmark = True
-        ### it didnot help for lots for openai gym envs anyway :(
+        ### it did not help for lots for openai gym envs anyway :(
         #torch.backends.cudnn.deterministic = True
         #torch.use_deterministic_algorithms(True)
 
@@ -55,6 +75,13 @@ class Runner:
         pass
 
     def load_config(self, params):
+        """Loads passed config params.
+
+        Args:
+            params (:obj:`dict`): Parameters passed in as a dict obtained from a yaml file or some other config format.
+
+        """
+
         self.seed = params.get('seed', None)
         if self.seed is None:
             self.seed = int(time.time())
@@ -109,6 +136,12 @@ class Runner:
         self.load_config(params=self.default_config)
 
     def run_train(self, args):
+        """Run the training procedure from the algorithm passed in.
+
+        Args:
+            args (:obj:`dict`): Train specific args passed in as a dict obtained from a yaml file or some other config format.
+
+        """
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
         _restore(agent, args)
@@ -116,6 +149,12 @@ class Runner:
         agent.train()
 
     def run_play(self, args):
+        """Run the inference procedure from the algorithm passed in.
+
+        Args:
+            args (:obj:`dict`): Playing specific args passed in as a dict obtained from a yaml file or some other config format.
+
+        """
         print('Started to play')
         player = self.create_player()
         _restore(player, args)
@@ -129,6 +168,12 @@ class Runner:
         pass
 
     def run(self, args):
+        """Run either train/play depending on the args.
+
+        Args:
+            args (:obj:`dict`):  Args passed in as a dict obtained from a yaml file or some other config format.
+
+        """        
         if args['train']:
             self.run_train(args)
         elif args['play']:
