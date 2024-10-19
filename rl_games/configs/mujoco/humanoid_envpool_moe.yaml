@@ -19,7 +19,7 @@ params:
           val: 0
         fixed_sigma: True
     num_experts: 4
-    hidden_size: 256
+    hidden_size: 512
     gating_hidden_size: 128
     use_sparse_gating: True
     use_entropy_loss: True
@@ -60,7 +60,7 @@ params:
     critic_coef: 2
 
     env_config:
-      env_name: Ant-v4
+      env_name: Humanoid-v4
       seed: 5
       #flat_observation: True
 

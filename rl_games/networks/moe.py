@@ -81,9 +81,9 @@ class MoENet(NetworkBuilder.BaseNetwork):
         self.aux_loss_map = {
         }
         if self.use_diversity_loss:
-            self.aux_loss_map['diversity_loss'] = 0.0
+            self.aux_loss_map['moe_diversity_loss'] = 0.0
         if self.use_entropy_loss:
-            self.aux_loss_map['entropy_loss'] = 0.0
+            self.aux_loss_map['moe_entropy_loss'] = 0.0
 
     def is_rnn(self):
         return False
@@ -111,7 +111,7 @@ class MoENet(NetworkBuilder.BaseNetwork):
         # Compute Entropy Loss for Gating Weights
             entropy = -torch.sum(gating_weights * torch.log(gating_weights + 1e-8), dim=1)
             entropy_loss = torch.mean(entropy)
-            self.aux_loss_map['entropy_loss'] = self.lambda_entropy * entropy_loss
+            self.aux_loss_map['moe_entropy_loss'] = self.lambda_entropy * entropy_loss
 
         # Expert Networks Forward Pass
         expert_outputs = []
@@ -129,7 +129,7 @@ class MoENet(NetworkBuilder.BaseNetwork):
                     diversity_loss += torch.mean(similarity)
             num_pairs = num_experts * (num_experts - 1) / 2
             diversity_loss = diversity_loss / num_pairs
-            self.aux_loss_map['diversity_loss'] = self.lambda_diversity * diversity_loss
+            self.aux_loss_map['moe_diversity_loss'] = self.lambda_diversity * diversity_loss
 
         # Aggregate Expert Outputs
         gating_weights = gating_weights.unsqueeze(-1)  # Shape: [batch_size, num_experts, 1]
