@@ -9,7 +9,6 @@ from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
 
-
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
