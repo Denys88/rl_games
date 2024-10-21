@@ -7,7 +7,8 @@ params:
     name: continuous_a2c_logstd
 
   network:
-    name: moe
+    name: actor_critic
+    separate: False
     space:
       continuous:
         mu_activation: None
@@ -18,54 +19,48 @@ params:
           name: const_initializer
           val: 0
         fixed_sigma: True
-    num_experts: 4
-    hidden_size: 512
-    gating_hidden_size: 128
-    use_sparse_gating: True
-    use_entropy_loss: True
-    use_diversity_loss: True
-    top_k: 2
-    lambda_entropy: -0.01
-    lambda_diversity: 0.01
+    moe:
+      num_experts: 4
+      expert_units: [512, 256, 128]
+      model_units: [512, 256, 128]
+      #expert_activation: elu
+      is_scale_prob: False
+      initializer:
+        name: default
 
   config:
-    name: Humanoid_envpool_moe
-    env_name: envpool
-    score_to_win: 20000
-    normalize_input: True
-    normalize_value: True
-    value_bootstrap: True
-    normalize_advantage: True
-    reward_shaper:
-      scale_value: 0.1
+      name: Humanoid-v4_envpool
+      env_name: envpool
+      score_to_win: 20000
+      normalize_input: True
+      normalize_value: True
+      value_bootstrap: True
+      reward_shaper:
+        scale_value: 0.1
+      normalize_advantage: True
+      gamma: 0.99
+      tau: 0.95
 
-    gamma: 0.99
-    tau: 0.95
-    learning_rate: 3e-4
-    lr_schedule: adaptive
-    kl_threshold: 0.008
-    grad_norm: 1.0
-    entropy_coef: 0.0
-    truncate_grads: True
-    e_clip: 0.2
-    clip_value: True
-    use_smooth_clamp: True
-    bound_loss_type: regularisation
-    bounds_loss_coef: 0.0
-    max_epochs: 2000
-    num_actors: 64
-    horizon_length: 128
-    minibatch_size: 2048
-    mini_epochs: 5
-    critic_coef: 4
-
-    env_config:
-      env_name: Humanoid-v4
-      seed: 5
-      #flat_observation: True
-
-    player:
-      render: False
+      learning_rate: 3e-4
+      lr_schedule: adaptive
+      kl_threshold: 0.008
+      grad_norm: 1.0
+      entropy_coef: 0.0
+      truncate_grads: True
+      e_clip: 0.2
+      clip_value: True
+      use_smooth_clamp: True
+      bound_loss_type: regularisation
+      bounds_loss_coef: 0.0005
+      max_epochs: 2000
       num_actors: 64
-      games_num: 1000
-      use_vecenv: True
+      horizon_length: 128
+      minibatch_size: 2048
+      mini_epochs: 5
+      critic_coef: 4
+
+      env_config:
+        env_name: Humanoid-v4
+
+      player:
+        render: True

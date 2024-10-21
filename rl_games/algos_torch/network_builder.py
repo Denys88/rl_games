@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from rl_games.algos_torch.d2rl import D2RLNet
+from rl_games.common.layers.switch_ffn import  MoEBlock
 from rl_games.algos_torch.sac_helper import  SquashedNormal
 from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
 from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
@@ -67,6 +68,8 @@ class NetworkBuilder:
             return None
 
         def get_aux_loss(self):
+            if self.moe_block:
+                return self.actor_mlp.get_aux_loss()
             return None
 
         def _calc_input_size(self, input_shape,cnn_layers=None):
@@ -127,6 +130,9 @@ class NetworkBuilder:
                 return D2RLNet(input_size, units, act_layers, norm_func_name)
             else:
                 return self._build_sequential_mlp(input_size, units, activation, dense_func, norm_func_name = None,)
+
+        def _build_moe_block(self, input_size, expert_units, model_units, num_experts):
+            return MoEBlock(input_size, expert_units, model_units, num_experts)
 
         def _build_conv(self, ctype, **kwargs):
             print('conv_name:', ctype)
@@ -231,9 +237,8 @@ class A2CBuilder(NetworkBuilder):
             cnn_output_size = self._calc_input_size(input_shape, self.actor_cnn)
 
             mlp_input_size = cnn_output_size
-            if len(self.units) == 0:
-                out_size = cnn_output_size
-            else:
+            out_size = mlp_input_size
+            if len(self.units) > 0:
                 out_size = self.units[-1]
 
             if self.has_rnn:
@@ -263,18 +268,23 @@ class A2CBuilder(NetworkBuilder):
                     if self.rnn_ln:
                         self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
-            mlp_args = {
-                'input_size' : mlp_input_size,
-                'units' : self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear,
-                'd2rl' : self.is_d2rl,
-                'norm_only_first_layer' : self.norm_only_first_layer
-            }
-            self.actor_mlp = self._build_mlp(**mlp_args)
-            if self.separate:
-                self.critic_mlp = self._build_mlp(**mlp_args)
+
+            if self.moe_block:
+                self.actor_mlp = self._build_moe_block(mlp_input_size, self.expert_units, self.model_units, self.num_experts)
+                assert(not self.separate)
+            else:
+                mlp_args = {
+                    'input_size' : mlp_input_size,
+                    'units' : self.units, 
+                    'activation' : self.activation, 
+                    'norm_func_name' : self.normalization,
+                    'dense_func' : torch.nn.Linear,
+                    'd2rl' : self.is_d2rl,
+                    'norm_only_first_layer' : self.norm_only_first_layer
+                }
+                self.actor_mlp = self._build_mlp(**mlp_args)
+                if self.separate:
+                    self.critic_mlp = self._build_mlp(**mlp_args)
 
             self.value = self._build_value_layer(out_size, self.value_size)
             self.value_act = self.activations_factory.create(self.value_activation)
@@ -506,11 +516,22 @@ class A2CBuilder(NetworkBuilder):
 
         def load(self, params):
             self.separate = params.get('separate', False)
-            self.units = params['mlp']['units']
-            self.activation = params['mlp']['activation']
-            self.initializer = params['mlp']['initializer']
-            self.is_d2rl = params['mlp'].get('d2rl', False)
-            self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
+            self.moe_block = params.get('moe', False)
+
+            if self.moe_block:
+                assert(not params.get('mlp', False))
+                self.num_experts = self.moe_block['num_experts']
+                self.expert_units = self.moe_block['expert_units']
+                self.model_units = self.moe_block['model_units']
+                self.initializer = self.moe_block['initializer']
+                self.units = self.expert_units 
+
+            else:
+                self.units = params['mlp']['units']
+                self.activation = params['mlp']['activation']
+                self.initializer = params['mlp']['initializer']
+                self.is_d2rl = params['mlp'].get('d2rl', False)
+                self.norm_only_first_layer = params['mlp'].get('norm_only_first_layer', False)
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
             self.has_rnn = 'rnn' in params
