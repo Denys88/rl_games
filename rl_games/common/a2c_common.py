@@ -282,6 +282,7 @@ class A2CBase(BaseAlgorithm):
         os.makedirs(self.summaries_dir, exist_ok=True)
 
         self.entropy_coef = self.config['entropy_coef']
+        self.gradient_penalty_coef = self.config.get('gradient_penalty_coef', 0.0)
 
         if self.global_rank == 0:
             writer = SummaryWriter(self.summaries_dir)

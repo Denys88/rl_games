@@ -3,6 +3,12 @@ import torch
 import math
 
 
+def grad_penalty_loss(obs_batch, actions_log_prob_batch):
+    grad_log_prob = torch.autograd.grad(actions_log_prob_batch.sum(), obs_batch, create_graph=True)[0]
+    gradient_penalty_loss = torch.sum(torch.square(grad_log_prob), dim=-1).mean()
+    return gradient_penalty_loss
+    
+
 def critic_loss(model, value_preds_batch, values, curr_e_clip, return_batch, clip_value):
     return default_critic_loss(value_preds_batch, values, curr_e_clip, return_batch, clip_value)
     #return model.get_value_layer().loss(value_preds_batch=value_preds_batch, values=values, curr_e_clip=curr_e_clip, return_batch=return_batch, clip_value=clip_value)

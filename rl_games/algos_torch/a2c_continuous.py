@@ -147,10 +147,16 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 b_loss = self.bound_loss(mu)
             else:
                 b_loss = torch.zeros(1, device=self.ppo_device)
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
 
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+            if self.gradient_penalty_coef != 0.0:
+                gradient_penalty_loss = common_losses.grad_penalty_loss(obs_batch, action_log_probs)
+            else:
+                gradient_penalty_loss = torch.zeros(1, device=self.ppo_device)
+
+            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss , entropy.unsqueeze(1), b_loss.unsqueeze(1), gradient_penalty_loss.unsqueeze(1)], rnn_masks)
+            a_loss, c_loss, entropy, b_loss, gradient_penalty_loss = losses[0], losses[1], losses[2], losses[3], losses[4]
+
+            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef + gradient_penalty_loss * self.gradient_penalty_coef
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
             if aux_loss is not None:
