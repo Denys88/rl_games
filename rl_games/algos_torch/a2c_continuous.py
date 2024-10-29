@@ -112,6 +112,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         lr_mul = 1.0
         curr_e_clip = self.e_clip
 
+        # set requires_grad to True for gradient penalty loss
+        obs_batch = obs_batch.requires_grad_(True)
+
         batch_dict = {
             'is_train': True,
             'prev_actions': actions_batch, 
