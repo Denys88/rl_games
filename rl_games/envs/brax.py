@@ -18,7 +18,7 @@ def torch_to_jax(tensor):
 
 class BraxEnv(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
-        from brax import envs
+        from brax.v1 import envs
         import jax.numpy as jnp
 
         self.batch_size = num_actors
