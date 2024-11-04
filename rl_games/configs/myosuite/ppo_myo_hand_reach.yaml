@@ -20,12 +20,13 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
+      units: [512, 256, 128]
       d2rl: False
       activation: elu
       initializer:
         name: default
         scale: 2
+
   config:
     env_name: myo_gym
     name: MyoHandReachRandom
@@ -50,12 +51,12 @@ params:
     e_clip: 0.2
     clip_value: False
     num_actors: 32
-    horizon_length: 128
+    horizon_length: 256
     minibatch_size: 2048
     mini_epochs: 5
     critic_coef: 2
     bounds_loss_coef: 0.001
-    max_epochs: 5000
+    max_epochs: 10000
     use_diagnostics: True
     weight_decay: 0.0
     use_smooth_clamp: True

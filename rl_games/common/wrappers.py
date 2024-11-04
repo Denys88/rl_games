@@ -635,8 +635,6 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 class OldGymWrapper(gym.Env):
     def __init__(self, env):
-        import gymnasium
-
         self.env = env
 
         # Convert Gymnasium spaces to Gym spaces
@@ -644,6 +642,8 @@ class OldGymWrapper(gym.Env):
         self.action_space = self.convert_space(env.action_space)
 
     def convert_space(self, space):
+        import gymnasium
+
         """Recursively convert Gymnasium spaces to Gym spaces."""
         if isinstance(space, gymnasium.spaces.Box):
             return gym.spaces.Box(
