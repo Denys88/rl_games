@@ -45,7 +45,7 @@ class RunningMeanStd(nn.Module):
     def forward(self, input, denorm=False, mask=None):
         if self.training:
             if mask is not None:
-                mean, var = torch_ext.get_mean_std_with_masks(input, mask)
+                mean, var = torch_ext.get_mean_var_with_masks(input, mask)
             else:
                 mean = input.mean(self.axis) # along channel axis
                 var = input.var(self.axis)
