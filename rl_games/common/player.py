@@ -14,6 +14,7 @@ from rl_games.algos_torch import model_builder
 
 import pandas as pd
 
+
 class BasePlayer(object):
 
     def __init__(self, params):
@@ -392,7 +393,8 @@ class BasePlayer(object):
         else:
             print('av reward:', sum_rewards / games_played * n_game_life,
                   'av steps:', sum_steps / games_played * n_game_life)
-            
+
+        # save game data to parquet file
         df.to_parquet('game_data.parquet')
 
     def get_batch_size(self, obses, batch_size):

@@ -7,6 +7,7 @@ import random
 from time import sleep
 import torch
 
+
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
 
@@ -47,7 +48,7 @@ class RayWorker:
 
         """
         next_state, reward, is_done, info = self.env.step(action)
-        
+
         if np.isscalar(is_done):
             episode_done = is_done
         else:
@@ -64,7 +65,7 @@ class RayWorker:
             np.random.seed(seed)
             random.seed(seed)
             self.env.seed(seed)
-            
+
     def render(self):
         self.env.render()
 
@@ -95,7 +96,7 @@ class RayWorker:
         info = {}
         observation_space = self.env.observation_space
 
-        #if isinstance(observation_space, gym.spaces.dict.Dict):
+        # if isinstance(observation_space, gym.spaces.dict.Dict):
         #    observation_space = observation_space['observations']
 
         info['action_space'] = self.env.action_space
@@ -115,12 +116,16 @@ class RayWorker:
 
 class RayVecEnv(IVecEnv):
     """Main env class that manages several `rl_games.common.vecenv.Rayworker` objects for parallel training
-    
+
     The RayVecEnv class manages a set of individual environments and wraps around the methods from RayWorker.
     Each worker is executed asynchronously.
 
     """
-    import ray
+    # To avoid import errors when Ray is not installed and this class is not used
+    try:
+        import ray
+    except ImportError:
+        pass
 
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
@@ -136,7 +141,6 @@ class RayVecEnv(IVecEnv):
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        
         self.remote_worker = self.ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
@@ -162,7 +166,7 @@ class RayVecEnv(IVecEnv):
             self.concat_func = np.stack
         else:
             self.concat_func = np.concatenate
-    
+
     def step(self, actions):
         """Step all individual environments (using the created workers). 
         Returns a concatenated array of observations, rewards, done states, and infos if the env allows concatenation.
@@ -201,7 +205,7 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
@@ -231,7 +235,7 @@ class RayVecEnv(IVecEnv):
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]
-        newobs, newstates = [],[]
+        newobs, newstates = [], []
         for res in res_obs:
             cobs = self.ray.get(res)
             if self.use_global_obs:
@@ -248,7 +252,7 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
@@ -256,7 +260,9 @@ class RayVecEnv(IVecEnv):
             ret_obs = newobsdict
         return ret_obs
 
+
 vecenv_config = {}
+
 
 def register(config_name, func):
     """Add an environment type (for example RayVecEnv) to the list of available types `rl_games.common.vecenv.vecenv_config`
@@ -267,9 +273,11 @@ def register(config_name, func):
     """
     vecenv_config[config_name] = func
 
+
 def create_vec_env(config_name, num_actors, **kwargs):
     vec_env_name = configurations[config_name]['vecenv_type']
     return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
+
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 
