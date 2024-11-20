@@ -10,7 +10,6 @@ import numpy as np
 import math
 
 
-
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)

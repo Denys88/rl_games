@@ -19,14 +19,16 @@ params:
           name: const_initializer
           val: 0
         fixed_sigma: True
-    mlp:
-      units: [256, 128, 64]
-      activation: elu
+    
+    moe:
+      num_experts: 4
+      expert_units: [256, 128, 64]
+      model_units: [256, 128, 64]
+      #expert_activation: elu
       initializer:
         name: default
-
   config:
-    name: Ant-v4_envpool
+    name: Ant-v4_envpool_moe
     env_name: envpool
     score_to_win: 20000
     normalize_input: True

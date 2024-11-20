@@ -12,6 +12,8 @@ from rl_games.common import vecenv
 from rl_games.common import env_configurations
 from rl_games.algos_torch import model_builder
 
+import pandas as pd
+
 
 class BasePlayer(object):
 
@@ -271,6 +273,9 @@ class BasePlayer(object):
             )[2]), dtype=torch.float32).to(self.device) for s in rnn_states]
 
     def run(self):
+        # create pandas dataframe with fields: game_index, observation, action, reward and done
+        df = pd.DataFrame(columns=['game_index', 'observation', 'action', 'reward', 'done'])
+
         n_games = self.games_num
         render = self.render_env
         n_game_life = self.n_game_life
@@ -313,6 +318,8 @@ class BasePlayer(object):
 
             print_game_res = False
 
+            game_indices = torch.arange(0, batch_size).to(self.device)
+            cur_games = batch_size
             for n in range(self.max_steps):
                 if self.evaluation and n % self.update_checkpoint_freq == 0:
                     self.maybe_load_new_checkpoint()
@@ -324,7 +331,11 @@ class BasePlayer(object):
                 else:
                     action = self.get_action(obses, is_deterministic)
 
+                prev_obses = obses
                 obses, r, done, info = self.env_step(self.env, action)
+
+                for i in range(batch_size):
+                    df.loc[len(df)] = [game_indices[i].cpu().numpy().item(), prev_obses[i].cpu().numpy(), action[i].cpu().numpy(), r[i].cpu().numpy().item(), done[i].cpu().numpy().item()]
                 cr += r
                 steps += 1
 
@@ -337,6 +348,9 @@ class BasePlayer(object):
                 done_count = len(done_indices)
                 games_played += done_count
 
+                for bid in done_indices:
+                    game_indices[bid] = cur_games
+                    cur_games += 1
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
@@ -379,6 +393,9 @@ class BasePlayer(object):
         else:
             print('av reward:', sum_rewards / games_played * n_game_life,
                   'av steps:', sum_steps / games_played * n_game_life)
+
+        # save game data to parquet file
+        df.to_parquet('game_data.parquet')
 
     def get_batch_size(self, obses, batch_size):
         obs_shape = self.obs_shape
