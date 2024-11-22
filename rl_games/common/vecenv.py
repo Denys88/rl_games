@@ -2,7 +2,7 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
-import gym
+import gymnasium as gym
 import random
 from time import sleep
 import torch
@@ -112,6 +112,95 @@ class RayWorker:
             info['state_space'] = self.env.state_space
         return info
 
+class RayWorkerGymnasium:
+    def __init__(self, config_name, config):
+        self.env = configurations[config_name]['env_creator'](**config)
+        self.saved_seed = 0
+    def _obs_to_fp32(self, obs):
+        if isinstance(obs, dict):
+            for k, v in obs.items():
+                if isinstance(v, dict):
+                    for dk, dv in v.items():
+                        if dv.dtype == np.float64:
+                            v[dk] = dv.astype(np.float32)
+                else:
+                    if v.dtype == np.float64:
+                        obs[k] = v.astype(np.float32)
+        else:
+            if obs.dtype == np.float64:
+                obs = obs.astype(np.float32)
+        return obs
+
+    def step(self, action):
+        next_state, reward, is_terminated, is_truncated, info = self.env.step(action)
+        is_done = is_terminated or is_truncated
+        if np.isscalar(is_done):
+            episode_done = is_done
+        else:
+            episode_done = is_done.all()
+        if episode_done:
+            next_state = self.reset()
+        next_state = self._obs_to_fp32(next_state)
+        info['time_outs'] = is_truncated
+        return next_state, reward, is_done, info
+
+    def seed(self, seed):
+        self.saved_seed = seed
+        '''
+        if hasattr(self.env, 'seed'):
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            np.random.seed(seed)
+            random.seed(seed)
+        '''
+            
+    def render(self):
+        pass
+
+    def reset(self):
+        obs, info = self.env.reset(seed=self.saved_seed) # ignoring info for now
+        obs = self._obs_to_fp32(obs)
+        return obs
+
+    def get_action_mask(self):
+        return self.env.get_action_mask()
+
+    def get_number_of_agents(self):
+        if hasattr(self.env, 'get_number_of_agents'):
+            return self.env.get_number_of_agents()
+        else:
+            return 1
+
+    def set_weights(self, weights):
+        self.env.update_weights(weights)
+
+    def can_concat_infos(self):
+        if hasattr(self.env, 'concat_infos'):
+            return self.env.concat_infos
+        else:
+            return False
+
+    def get_env_info(self):
+        info = {}
+        observation_space = self.env.observation_space
+
+        #if isinstance(observation_space, gym.spaces.dict.Dict):
+        #    observation_space = observation_space['observations']
+
+        info['action_space'] = self.env.action_space
+        info['observation_space'] = observation_space
+        info['state_space'] = None
+        info['use_global_observations'] = False
+        info['agents'] = self.get_number_of_agents()
+        info['value_size'] = 1
+        if hasattr(self.env, 'use_central_value'):
+            info['use_global_observations'] = self.env.use_central_value
+        if hasattr(self.env, 'value_size'):
+            info['value_size'] = self.env.value_size
+        if hasattr(self.env, 'state_space'):
+            info['state_space'] = self.env.state_space
+        return info
+
 
 class RayVecEnv(IVecEnv):
     """Main env class that manages several `rl_games.common.vecenv.Rayworker` objects for parallel training
@@ -136,8 +225,7 @@ class RayVecEnv(IVecEnv):
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        
-        self.remote_worker = self.ray.remote(RayWorker)
+        self.remote_worker = self.ray.remote(RayWorkerGymnasium)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
         if self.seed is not None:

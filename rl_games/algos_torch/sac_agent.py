@@ -4,7 +4,7 @@ from rl_games.common import vecenv
 from rl_games.common import schedulers
 from rl_games.common import experience
 from rl_games.common.a2c_common import print_statistics
-
+from rl_games.common.env_configurations import patch_env_info
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -103,7 +103,7 @@ class SACAgent(BaseAlgorithm):
         self.env_info = config.get('env_info')
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
-            self.env_info = self.vec_env.get_env_info()
+            self.env_info = patch_env_info(self.vec_env.get_env_info())
 
         self._device = config.get('device', 'cuda:0')
 
