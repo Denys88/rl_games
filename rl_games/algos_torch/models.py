@@ -9,6 +9,8 @@ from torch.distributions import Categorical
 from rl_games.algos_torch.sac_helper import SquashedNormal
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
 from rl_games.algos_torch.moving_mean_std import GeneralizedMovingStats
+from torch.distributions import Normal, TransformedDistribution, TanhTransform
+import math
 
 class BaseModel():
     def __init__(self, model_class):
@@ -251,6 +253,7 @@ class ModelA2CContinuous(BaseModel):
                 return  result          
 
 
+
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -309,6 +312,59 @@ class ModelA2CContinuousLogStd(BaseModel):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
                 + logstd.sum(dim=-1)
+
+class ModelA2CContinuousTanh(BaseModel):
+    def __init__(self, network):
+        BaseModel.__init__(self, 'a2c')
+        self.network_builder = network
+        
+    class Network(BaseModelNetwork):
+        def __init__(self, a2c_network, **kwargs):
+            BaseModelNetwork.__init__(self, **kwargs)
+            self.a2c_network = a2c_network
+        def get_aux_loss(self):
+            return self.a2c_network.get_aux_loss()
+        
+        def is_rnn(self):
+            return self.a2c_network.is_rnn()
+
+        def get_value_layer(self):
+            return self.a2c_network.get_value_layer()
+
+        def get_default_rnn_state(self):
+            return self.a2c_network.get_default_rnn_state()
+
+        def forward(self, input_dict):
+            is_train = input_dict.get('is_train', True)
+            prev_actions = input_dict.get('prev_actions', None)
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+            mu, logstd, value, states = self.a2c_network(input_dict)
+            sigma = torch.nn.functional.softplus(logstd + 0.001)
+            main_distr = NormalTanhDistribution(mu.size(-1))
+            if is_train:
+                entropy = main_distr.entropy(mu, logstd)
+                prev_neglogp = -main_distr.log_prob(mu, logstd, main_distr.inverse_post_process(prev_actions))
+                result = {
+                    'prev_neglogp' : torch.squeeze(prev_neglogp),
+                    'values' : value,
+                    'entropy' : entropy,
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
+                }                
+                return result
+            else:
+                selected_action = main_distr.sample_no_postprocessing(mu, logstd)
+                neglogp = -main_distr.log_prob(mu, logstd, selected_action)
+                result = {
+                    'neglogpacs' : torch.squeeze(neglogp),
+                    'values' : self.denorm_value(value),
+                    'actions' : main_distr.post_process(selected_action),
+                    'rnn_states' : states,
+                    'mus' : mu,
+                    'sigmas' : sigma
+                }
+                return result
 
 
 class ModelCentralValue(BaseModel):
@@ -385,4 +441,79 @@ class ModelSACContinuous(BaseModel):
             return dist
 
 
+class TanhBijector:
+    """Tanh Bijector."""
 
+    def forward(self, x):
+        return torch.tanh(x)
+
+    def inverse(self, y):
+        y = torch.clamp(y, -0.99999997, 0.99999997)
+        return 0.5 * (y.log1p() - (-y).log1p())
+
+    def forward_log_det_jacobian(self, x):
+        # Log of the absolute value of the determinant of the Jacobian
+        return 2. * (math.log(2.) - x - F.softplus(-2. * x))
+
+class NormalTanhDistribution:
+    """Normal distribution followed by tanh."""
+
+    def __init__(self, event_size, min_std=0.001, var_scale=1.0):
+        """Initialize the distribution.
+
+        Args:
+            event_size (int): The size of events (i.e., actions).
+            min_std (float): Minimum standard deviation for the Gaussian.
+            var_scale (float): Scaling factor for the Gaussian's scale parameter.
+        """
+        self.param_size = event_size
+        self._min_std = min_std
+        self._var_scale = var_scale
+        self._event_ndims = 1  # Rank of events
+        self._postprocessor = TanhBijector()
+
+    def create_dist(self, loc, scale):
+        scale = (F.softplus(scale) + self._min_std) * self._var_scale
+        return torch.distributions.Normal(loc=loc, scale=scale)
+
+    def sample_no_postprocessing(self, loc, scale):
+        dist = self.create_dist(loc, scale)
+        return dist.rsample()
+
+    def sample(self, loc, scale):
+        """Returns a sample from the postprocessed distribution."""
+        pre_tanh_sample = self.sample_no_postprocessing(loc, scale)
+        return self._postprocessor.forward(pre_tanh_sample)
+
+    def post_process(self, pre_tanh_sample):
+        """Returns a postprocessed sample."""
+        return self._postprocessor.forward(pre_tanh_sample)
+    
+    def inverse_post_process(self, post_tanh_sample):
+        """Returns a postprocessed sample."""
+        return self._postprocessor.inverse(post_tanh_sample)
+    
+    def mode(self, loc, scale):
+        """Returns the mode of the postprocessed distribution."""
+        dist = self.create_dist(loc, scale)
+        pre_tanh_mode = dist.mean  # Mode of a normal distribution is its mean
+        return self._postprocessor.forward(pre_tanh_mode)
+
+    def log_prob(self, loc, scale, actions):
+        """Compute the log probability of actions."""
+        dist = self.create_dist(loc, scale)
+        log_probs = dist.log_prob(actions)
+        log_probs -= self._postprocessor.forward_log_det_jacobian(actions)
+        if self._event_ndims == 1:
+            log_probs = log_probs.sum(dim=-1)  # Sum over action dimension
+        return log_probs
+
+    def entropy(self, loc, scale):
+        """Return the entropy of the given distribution."""
+        dist = self.create_dist(loc, scale)
+        entropy = dist.entropy()
+        sample = dist.rsample()
+        entropy += self._postprocessor.forward_log_det_jacobian(sample)
+        if self._event_ndims == 1:
+            entropy = entropy.sum(dim=-1)
+        return entropy
