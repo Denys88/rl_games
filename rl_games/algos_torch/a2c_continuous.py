@@ -6,7 +6,7 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
+import torch
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -30,11 +30,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'actions_num' : self.actions_num,
             'input_shape' : obs_shape,
             'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1),
+            'value_size': self.env_info.get('value_size', 1),
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -74,7 +74,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-        
+
     def save(self, fn):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
@@ -114,7 +114,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         batch_dict = {
             'is_train': True,
-            'prev_actions': actions_batch, 
+            'prev_actions': actions_batch,
             'obs' : obs_batch,
         }
 
@@ -195,7 +195,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
     def reg_loss(self, mu):
         if self.bounds_loss_coef is not None:
-            reg_loss = (mu*mu).sum(axis=-1)
+            reg_loss = (mu * mu).sum(axis=-1)
         else:
             reg_loss = 0
         return reg_loss
@@ -209,5 +209,3 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             b_loss = 0
         return b_loss
-
-

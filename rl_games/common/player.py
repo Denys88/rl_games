@@ -62,7 +62,7 @@ class BasePlayer(object):
             'central_value_config') is not None
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
-        self.games_num = self.player_config.get('games_num', 2000)
+        self.games_num = self.player_config.get('games_num', 1000000000)
 
         if 'deterministic' in self.player_config:
             self.is_deterministic = self.player_config['deterministic']
@@ -73,7 +73,7 @@ class BasePlayer(object):
         self.n_game_life = self.player_config.get('n_game_life', 1)
         self.print_stats = self.player_config.get('print_stats', True)
         self.render_sleep = self.player_config.get('render_sleep', 0.002)
-        self.max_steps = 108000 // 4
+        self.max_steps = self.player_config.get('max_steps', 100000000)
         self.device = torch.device(self.device_name)
 
         self.evaluation = self.player_config.get("evaluation", False)
@@ -361,15 +361,15 @@ class BasePlayer(object):
                             game_res = info.get('scores', 0.5)
 
                     if self.print_stats:
-                        cur_rewards_done = cur_rewards/done_count
-                        cur_steps_done = cur_steps/done_count
+                        cur_rewards_done = cur_rewards / done_count
+                        cur_steps_done = cur_steps / done_count
                         if print_game_res:
                             print(f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f} w: {game_res}')
                         else:
                             print(f'reward: {cur_rewards_done:.2f} steps: {cur_steps_done:.1f}')
 
                     sum_game_res += game_res
-                    if batch_size//self.num_agents == 1 or games_played >= n_games:
+                    if batch_size // self.num_agents == 1 or games_played >= n_games:
                         break
 
         print(sum_rewards)
