@@ -10,7 +10,6 @@ import numpy as np
 import math
 
 
-
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
@@ -32,8 +31,6 @@ class DMControlWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
         return observation, reward, done, info
-
-
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -96,15 +93,15 @@ def create_myo(**kwargs):
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    skip = kwargs.pop('skip',4)
-    episode_life = kwargs.pop('episode_life',True)
+    skip = kwargs.pop('skip', 4)
+    episode_life = kwargs.pop('episode_life', True)
     wrap_impala = kwargs.pop('wrap_impala', False)
-    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
-    return env    
+    env = wrappers.make_atari_deepmind(name, skip=skip, episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
+    return env
 
 def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
-    name = 'dm2gym:'+ kwargs.pop('name')
+    name = 'dm2gym:' + kwargs.pop('name')
     env = gym.make(name, environment_kwargs=kwargs)
     env = DMControlWrapper(env)
     env = DMControlObsWrapper(env)
@@ -140,11 +137,11 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
 
     env = gym_super_mario_bros.make(stage_names[1])
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    
+
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     #env = wrappers.AllowBacktracking(env)
-    
+
     return env
 
 def create_quadrupped_env():
@@ -166,8 +163,7 @@ def create_smac(name, **kwargs):
     has_cv = kwargs.get('central_value', False)
     as_single_agent = kwargs.pop('as_single_agent', False)
     env = SMACEnv(name, **kwargs)
-    
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -185,7 +181,7 @@ def create_smac_v2(name, **kwargs):
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
     env = SMACEnvV2(name, **kwargs)
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -217,14 +213,12 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
-
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
     rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
     rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
-
 
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
@@ -243,7 +237,7 @@ def create_minigrid_env(name, **kwargs):
 
 def create_multiwalker_env(**kwargs):
     from rl_games.envs.multiwalker import MultiWalker
-    env = MultiWalker('', **kwargs) 
+    env = MultiWalker('', **kwargs)
 
     return env
 
@@ -290,19 +284,19 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
+        'env_creator' : lambda **kwargs  : wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
     'BreakoutNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4,sticky=False),
+        'env_creator' : lambda  **kwargs : wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4, sticky=False),
         'vecenv_type' : 'RAY'
     },
     'MsPacmanNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('MsPacmanNoFrameskip-v4', skip=4),
+        'env_creator' : lambda  **kwargs : wrappers.make_atari_deepmind('MsPacmanNoFrameskip-v4', skip=4),
         'vecenv_type' : 'RAY'
     },
     'CarRacing-v0' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_car_racing('CarRacing-v0', skip=4),
+        'env_creator' : lambda **kwargs  : wrappers.make_car_racing('CarRacing-v0', skip=4),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolAnt-v1' : {
@@ -310,19 +304,19 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'SuperMarioBros-v1' : {
-        'env_creator' : lambda :  create_super_mario_env(),
+        'env_creator' : lambda : create_super_mario_env(),
         'vecenv_type' : 'RAY'
     },
     'SuperMarioBrosRandomStages-v1' : {
-        'env_creator' : lambda :  create_super_mario_env('SuperMarioBrosRandomStages-v1'),
+        'env_creator' : lambda : create_super_mario_env('SuperMarioBrosRandomStages-v1'),
         'vecenv_type' : 'RAY'
     },
     'SuperMarioBrosRandomStage1-v1' : {
-        'env_creator' : lambda **kwargs  :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
+        'env_creator' : lambda **kwargs : create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHalfCheetah-v1' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('RoboschoolHalfCheetah-v1'),
+        'env_creator' : lambda **kwargs : create_roboschool_env('RoboschoolHalfCheetah-v1'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoid-v1' : {
@@ -330,27 +324,27 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v2' : {
-        'env_creator' : lambda **kwargs  : gym.make('LunarLanderContinuous-v2'),
+        'env_creator' : lambda **kwargs : gym.make('LunarLanderContinuous-v2'),
         'vecenv_type' : 'RAY'
     },
     'RoboschoolHumanoidFlagrun-v1' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
+        'env_creator' : lambda **kwargs : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalker-v3' : {
-        'env_creator' : lambda **kwargs  : create_env('BipedalWalker-v3', **kwargs),
+        'env_creator' : lambda **kwargs : create_env('BipedalWalker-v3', **kwargs),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerCnn-v3' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v3')), 4, False),
+        'env_creator' : lambda **kwargs : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v3')), 4, False),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v3' : {
-        'env_creator' : lambda **kwargs  : gym.make('BipedalWalkerHardcore-v3'),
+        'env_creator' : lambda **kwargs : gym.make('BipedalWalkerHardcore-v3'),
         'vecenv_type' : 'RAY'
     },
     'ReacherPyBulletEnv-v0' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('ReacherPyBulletEnv-v0'),
+        'env_creator' : lambda **kwargs : create_roboschool_env('ReacherPyBulletEnv-v0'),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcoreCnn-v3' : {
@@ -358,19 +352,19 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'QuadruppedWalk-v1' : {
-        'env_creator' : lambda **kwargs  : create_quadrupped_env(),
+        'env_creator' : lambda **kwargs : create_quadrupped_env(),
         'vecenv_type' : 'RAY'
     },
     'FlexAnt' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
+        'env_creator' : lambda **kwargs : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
         'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoid' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
+        'env_creator' : lambda **kwargs : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
         'vecenv_type' : 'ISAAC'
     },
     'FlexHumanoidHard' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
+        'env_creator' : lambda **kwargs : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
         'vecenv_type' : 'ISAAC'
     },
     'smac' : {
@@ -423,7 +417,7 @@ configurations = {
     },
     'brax' : {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
-        'vecenv_type': 'BRAX' 
+        'vecenv_type': 'BRAX'
     },
     'envpool': {
         'env_creator': lambda **kwargs: create_envpool(**kwargs),
@@ -439,6 +433,7 @@ configurations = {
     },
 }
 
+
 def get_env_info(env):
     result_shapes = {}
     result_shapes['observation_space'] = env.observation_space
@@ -450,15 +445,16 @@ def get_env_info(env):
     '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
-    
+
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
     '''
-    if hasattr(env, "value_size"):    
+    if hasattr(env, "value_size"):
         result_shapes['value_size'] = env.value_size
     print(result_shapes)
     return result_shapes
+
 
 def get_obs_and_action_spaces_from_config(config):
     env_config = config.get('env_config', {})
