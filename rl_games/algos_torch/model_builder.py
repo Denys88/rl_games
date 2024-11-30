@@ -46,6 +46,8 @@ class ModelBuilder:
                                             lambda network, **kwargs: models.ModelSACContinuous(network))
         self.model_factory.register_builder('central_value',
                                             lambda network, **kwargs: models.ModelCentralValue(network))
+        self.model_factory.register_builder('continuous_a2c_tanh',
+                                            lambda network, **kwargs: models.ModelA2CContinuousTanh(network))
         self.network_builder = NetworkBuilder()
 
     def get_network_builder(self):
