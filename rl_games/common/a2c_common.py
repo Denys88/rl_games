@@ -386,7 +386,7 @@ class A2CBase(BaseAlgorithm):
         if self.epochs_between_resets > 0:
             if self.epoch_num % self.epochs_between_resets == 0:
                 self.reset_envs()
-                self.init_current_rewards()
+                self.init_current_rewards(self.num_agents * self.num_actors, (self.num_agents * self.num_actors, self.value_size))
                 print(f"Forcing env reset after {self.epoch_num} epochs")
                 
 
