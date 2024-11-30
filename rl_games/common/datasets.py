@@ -22,13 +22,12 @@ class PPODataset(Dataset):
         self.length = self.batch_size // self.minibatch_size
         self.is_discrete = is_discrete
         self.is_continuous = not is_discrete
-        total_games = self.batch_size // self.seq_length
         self.num_games_batch = self.minibatch_size // self.seq_length
-        self.game_indexes = torch.arange(total_games, dtype=torch.long, device=self.device)
-        self.flat_indexes = torch.arange(total_games * self.seq_length, dtype=torch.long, device=self.device).reshape(total_games, self.seq_length)
+        
         self.special_names = ['rnn_states']
         self.permute = permute
-        self.permutation_indices = torch.arange(self.batch_size, dtype=torch.long, device=self.device)
+        if self.permute:
+            self.permutation_indices = torch.arange(self.batch_size, dtype=torch.long, device=self.device)
 
     def update_values_dict(self, values_dict):
         """Update the internal values dictionary."""

@@ -116,3 +116,50 @@ class TestNetAuxLossBuilder(NetworkBuilder):
 
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
+    
+
+
+class SimpleNet(NetworkBuilder.BaseNetwork):
+    def __init__(self, params, **kwargs):
+        nn.Module.__init__(self)
+        actions_num = kwargs.pop('actions_num')
+        input_shape = kwargs.pop('input_shape')
+        num_inputs =input_shape[0]
+        self.actions_num = actions_num
+        self.central_value = params.get('central_value', False)
+        self.value_size = kwargs.pop('value_size', 1)
+        self.linear = torch.nn.Sequential(
+            nn.Linear(num_inputs, 512),
+            nn.SiLU(),
+            nn.Linear(512, 256),
+            nn.SiLU(),
+            nn.Linear(256, 128),
+            nn.SiLU(),
+            nn.Linear(128, actions_num + 1),
+        )
+        self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+
+    def is_rnn(self):
+        return False
+    @torch.compile
+    def forward(self, obs):
+        obs = obs['obs']
+        x = self.linear(obs)
+        mu, value = torch.split(x, [self.actions_num, 1], dim=-1)
+        return mu, self.sigma.unsqueeze(0).expand(mu.size()[0], self.actions_num), value, None
+
+
+
+
+class SimpleNetBuilder(NetworkBuilder):
+    def __init__(self, **kwargs):
+        NetworkBuilder.__init__(self)
+
+    def load(self, params):
+        self.params = params
+
+    def build(self, name, **kwargs):
+        return SimpleNet(self.params, **kwargs)
+
+    def __call__(self, name, **kwargs):
+        return self.build(name, **kwargs)

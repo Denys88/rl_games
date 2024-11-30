@@ -158,6 +158,7 @@ class A2CBase(BaseAlgorithm):
         self.save_freq = config.get('save_frequency', 0)
         self.save_best_after = config.get('save_best_after', 100)
         self.print_stats = config.get('print_stats', True)
+        self.epochs_between_resets = config.get('epochs_between_resets', 0)
         self.rnn_states = None
         self.name = base_name
 
@@ -382,6 +383,12 @@ class A2CBase(BaseAlgorithm):
         self.model.eval()
         if self.normalize_rms_advantage:
             self.advantage_mean_std.eval()
+        if self.epochs_between_resets > 0:
+            if self.epoch_num % self.epochs_between_resets == 0:
+                self.reset_envs()
+                self.init_current_rewards()
+                print(f"Forcing env reset after {self.epoch_num} epochs")
+                
 
     def set_train(self):
         self.model.train()
@@ -466,10 +473,7 @@ class A2CBase(BaseAlgorithm):
 
         val_shape = (self.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
-        self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
-        self.current_shaped_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
-        self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
+        self.init_current_rewards(batch_size, current_rewards_shape)
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
@@ -479,6 +483,12 @@ class A2CBase(BaseAlgorithm):
             num_seqs = self.horizon_length // self.seq_length
             assert((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
             self.mb_rnn_states = [torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
+
+    def init_current_rewards(self, batch_size, current_rewards_shape):
+        self.current_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
+        self.current_shaped_rewards = torch.zeros(current_rewards_shape, dtype=torch.float32, device=self.ppo_device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self.ppo_device)
+        self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.ppo_device)
 
     def init_rnn_from_model(self, model):
         self.is_rnn = self.model.is_rnn()
@@ -571,12 +581,12 @@ class A2CBase(BaseAlgorithm):
             mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
         return mb_advs
 
-    def clear_stats(self):
-        batch_size = self.num_agents * self.num_actors
+    def clear_stats(self, clean_rewards= True):
         self.game_rewards.clear()
         self.game_shaped_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = self.last_mean_rewards = -100500
+        if clean_rewards:
+            self.mean_rewards = self.last_mean_rewards = -100500
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -772,6 +782,7 @@ class A2CBase(BaseAlgorithm):
             self.current_rewards += rewards
             self.current_shaped_rewards += shaped_rewards
             self.current_lengths += 1
+            
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
      
