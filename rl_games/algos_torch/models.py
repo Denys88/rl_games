@@ -349,24 +349,24 @@ class ModelA2CContinuousTanh(BaseModel):
                 entropy = main_distr.entropy(mu, logstd)
                 prev_neglogp = -main_distr.log_prob(mu, logstd, main_distr.inverse_post_process(prev_actions))
                 result = {
-                    'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'values' : value,
-                    'entropy' : entropy,
-                    'rnn_states' : states,
-                    'mus' : mu,
-                    'sigmas' : sigma
+                    'prev_neglogp': torch.squeeze(prev_neglogp),
+                    'values': value,
+                    'entropy': entropy,
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
                 }                
                 return result
             else:
                 selected_action = main_distr.sample_no_postprocessing(mu, logstd)
                 neglogp = -main_distr.log_prob(mu, logstd, selected_action)
                 result = {
-                    'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.denorm_value(value),
-                    'actions' : main_distr.post_process(selected_action),
-                    'rnn_states' : states,
-                    'mus' : mu,
-                    'sigmas' : sigma
+                    'neglogpacs': torch.squeeze(neglogp),
+                    'values': self.denorm_value(value),
+                    'actions': main_distr.post_process(selected_action),
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
                 }
                 return result
 
