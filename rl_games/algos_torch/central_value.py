@@ -62,7 +62,11 @@ class CentralValueTrain(nn.Module):
 
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
+                                        float(self.lr),
+                                        eps=1e-08,
+                                        weight_decay=self.weight_decay,
+                                        fused=True)
         self.frame = 0
         self.epoch_num = 0
         self.running_mean_std = None
