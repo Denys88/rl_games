@@ -27,11 +27,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         build_config = {
-            'actions_num' : self.actions_num,
-            'input_shape' : obs_shape,
-            'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1),
-            'normalize_value' : self.normalize_value,
+            'actions_num': self.actions_num,
+            'input_shape': obs_shape,
+            'num_seqs': self.num_actors * self.num_agents,
+            'value_size': self.env_info.get('value_size', 1),
+            'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
 
@@ -45,21 +45,21 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         if self.has_central_value:
             cv_config = {
-                'state_shape' : self.state_shape, 
-                'value_size' : self.value_size,
-                'ppo_device' : self.ppo_device, 
-                'num_agents' : self.num_agents, 
-                'horizon_length' : self.horizon_length,
-                'num_actors' : self.num_actors, 
-                'num_actions' : self.actions_num, 
-                'seq_length' : self.seq_length,
-                'normalize_value' : self.normalize_value,
-                'network' : self.central_value_config['network'],
-                'config' : self.central_value_config, 
-                'writter' : self.writer,
-                'max_epochs' : self.max_epochs,
-                'multi_gpu' : self.multi_gpu,
-                'zero_rnn_on_done' : self.zero_rnn_on_done
+                'state_shape': self.state_shape,
+                'value_size': self.value_size,
+                'ppo_device': self.ppo_device,
+                'num_agents': self.num_agents,
+                'horizon_length': self.horizon_length,
+                'num_actors': self.num_actors,
+                'num_actions': self.actions_num,
+                'seq_length': self.seq_length,
+                'normalize_value': self.normalize_value,
+                'network': self.central_value_config['network'],
+                'config': self.central_value_config,
+                'writter': self.writer,
+                'max_epochs': self.max_epochs,
+                'multi_gpu': self.multi_gpu,
+                'zero_rnn_on_done': self.zero_rnn_on_done
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 

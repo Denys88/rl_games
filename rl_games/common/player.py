@@ -342,7 +342,6 @@ class BasePlayer(object):
                 done_indices = all_done_indices[::self.num_agents]
                 done_count = len(done_indices)
                 games_played += done_count
-                print(games_played)
                 if done_count > 0:
                     if self.is_rnn:
                         for s in self.states:
@@ -424,7 +423,6 @@ class BasePlayer(object):
             else:
                 print('av reward:', sum_rewards / games_played * n_game_life,
                     'av steps:', sum_steps / games_played * n_game_life)
-
 
     def get_batch_size(self, obses, batch_size):
         obs_shape = self.obs_shape
