@@ -459,6 +459,8 @@ class A2CBase(BaseAlgorithm):
         return self.ppo_device
 
     def reset_envs(self):
+        if self.is_rnn:
+            self.rnn_states = self.model.get_default_rnn_state()
         self.obs = self.env_reset()
 
     def init_tensors(self):
@@ -477,7 +479,6 @@ class A2CBase(BaseAlgorithm):
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
-            self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
 
             total_agents = self.num_agents * self.num_actors
             num_seqs = self.horizon_length // self.seq_length

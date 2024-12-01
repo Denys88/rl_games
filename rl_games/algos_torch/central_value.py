@@ -77,7 +77,6 @@ class CentralValueTrain(nn.Module):
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
-            self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
             total_agents = self.num_actors #* self.num_agents
             num_seqs = self.horizon_length // self.seq_length
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)

@@ -490,19 +490,19 @@ class A2CBuilder(NetworkBuilder):
                 rnn_units = self.rnn_units
             if self.rnn_name == 'lstm':
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)),
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device))
             else:
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)))
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, rnn_units), device=self.device))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),)                
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units), ),)
 
         def load(self, params):
             self.separate = params.get('separate', False)
@@ -519,9 +519,9 @@ class A2CBuilder(NetworkBuilder):
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
 
             if self.has_space:
-                self.is_multi_discrete = 'multi_discrete'in params['space']
+                self.is_multi_discrete = 'multi_discrete' in params['space']
                 self.is_discrete = 'discrete' in params['space']
-                self.is_continuous = 'continuous'in params['space']
+                self.is_continuous = 'continuous' in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
                     self.fixed_sigma = self.space_config['fixed_sigma']
@@ -800,7 +800,7 @@ class A2CResnetBuilder(NetworkBuilder):
             self.initializer = params['mlp']['initializer']
             self.is_discrete = 'discrete' in params['space']
             self.is_continuous = 'continuous' in params['space']
-            self.is_multi_discrete = 'multi_discrete'in params['space']
+            self.is_multi_discrete = 'multi_discrete' in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
 
@@ -843,10 +843,10 @@ class A2CResnetBuilder(NetworkBuilder):
         def get_default_rnn_state(self):
             num_layers = self.rnn_layers
             if self.rnn_name == 'lstm':
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
-                            torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units), device=self.device),
+                            torch.zeros((num_layers, self.num_seqs, self.rnn_units), device=self.device))
             else:
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units), device=self.device),)
 
     def build(self, name, **kwargs):
         net = A2CResnetBuilder.Network(self.params, **kwargs)
