@@ -1,4 +1,3 @@
-import gymnasium
 import numpy as np
 from numpy.random import randint
 
@@ -11,11 +10,10 @@ from gym import spaces
 from copy import copy
 
 
-
 class InfoWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-        
+
         self.reward = 0
     def reset(self, **kwargs):
         self.reward = 0
@@ -149,8 +147,8 @@ class MaxAndSkipEnv(gym.Wrapper):
             self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.uint8)
         else:
             self._obs_buffer = np.zeros((2,)+env.observation_space.shape, dtype=np.float32)
-        self._skip       = skip
-        
+        self._skip = skip
+
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
@@ -262,7 +260,7 @@ class FrameStack(gym.Wrapper):
 
 
 class BatchedFrameStack(gym.Wrapper):
-    def __init__(self, env, k, transpose = False, flatten = False):
+    def __init__(self, env, k, transpose=False, flatten=False):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
@@ -303,8 +301,9 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
 
+
 class BatchedFrameStackWithStates(gym.Wrapper):
-    def __init__(self, env, k, transpose = False, flatten = False):
+    def __init__(self, env, k, transpose=False, flatten=False):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.obses = deque([], maxlen=k)
@@ -346,7 +345,7 @@ class BatchedFrameStackWithStates(gym.Wrapper):
         assert len(self.obses) == self.k
         obses = self.process_data(self.obses)
         states = self.process_data(self.states)
-        return {"obs": obses, "state" : states}
+        return {"obs": obses, "state": states}
 
     def process_data(self, data):
         if len(np.shape(data)) < 3:
@@ -363,14 +362,15 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 obses = np.transpose(data, (1, 0, 2))
         return obses
 
+
 class ProcgenStack(gym.Wrapper):
-    def __init__(self, env, k = 2, greyscale=True):
+    def __init__(self, env, k=2, greyscale=True):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.curr_frame = 0
         self.frames = deque([], maxlen=k)
 
-        self.greyscale=greyscale
+        self.greyscale = greyscale
         self.prev_frame = None
         shp = env.observation_space.shape
         if greyscale:
@@ -421,6 +421,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
 
+
 class LazyFrames(object):
     def __init__(self, frames):
         """This object ensures that common frames between the observations are only stored once.
@@ -449,6 +450,7 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
+
 class ReallyDoneWrapper(gym.Wrapper):
     def __init__(self, env):
         """
@@ -470,6 +472,7 @@ class ReallyDoneWrapper(gym.Wrapper):
             obs, _, done, _ = self.env.step(1)
         done = lives == 0
         return obs, reward, done, info
+
 
 class AllowBacktracking(gym.Wrapper):
     """
@@ -505,6 +508,7 @@ def unwrap(env):
         return unwrap(env.leg_env)
     else:
         return env
+
 
 class StickyActionEnv(gym.Wrapper):
     def __init__(self, env, p=0.25):
@@ -627,15 +631,22 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         return  observation * self.mask
 
+
 class OldGymWrapper(gym.Env):
     def __init__(self, env):
         self.env = env
+
+        import gymnasium
+
 
         # Convert Gymnasium spaces to Gym spaces
         self.observation_space = self.convert_space(env.observation_space)
         self.action_space = self.convert_space(env.action_space)
 
     def convert_space(self, space):
+        import gymnasium
+
+
         """Recursively convert Gymnasium spaces to Gym spaces."""
         if isinstance(space, gymnasium.spaces.Box):
             return gym.spaces.Box(
@@ -691,6 +702,7 @@ class OldGymWrapper(gym.Env):
     def close(self):
         return self.env.close()
 
+
 # Example usage:
 if __name__ == "__main__":
     # Create a MyoSuite environment
@@ -719,7 +731,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
         env = StickyActionEnv(env)
     env = InfoWrapper(env)
     if directory != None:
-        env = gym.wrappers.Monitor(env,directory=directory,force=True)
+        env = gym.wrappers.Monitor(env, directory=directory, force=True)
     if sticky:
         env = StickyActionEnv(env)
     if not timelimit:

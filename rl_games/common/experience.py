@@ -7,6 +7,7 @@ import torch
 
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
 
+
 class ReplayBuffer(object):
     def __init__(self, size, ob_space):
         """Create Replay buffer.
@@ -222,7 +223,6 @@ class VectorizedReplayBuffer:
         self.capacity = capacity
         self.idx = 0
         self.full = False
-        
 
     def add(self, obs, action, reward, next_obs, done):
 
@@ -268,7 +268,7 @@ class VectorizedReplayBuffer:
         """
 
         idxs = torch.randint(0,
-                            self.capacity if self.full else self.idx, 
+                            self.capacity if self.full else self.idx,
                             (batch_size,), device=self.device)
         obses = self.obses[idxs]
         actions = self.actions[idxs]
@@ -277,9 +277,6 @@ class VectorizedReplayBuffer:
         dones = self.dones[idxs]
 
         return obses, actions, rewards, next_obses, dones
-
-
-
 
 
 class ExperienceBuffer:
@@ -294,7 +291,7 @@ class ExperienceBuffer:
 
         self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
-        
+
         self.num_actors = algo_info['num_actors']
         self.horizon_length = algo_info['horizon_length']
         self.has_central_value = algo_info['has_central_value']
@@ -314,7 +311,7 @@ class ExperienceBuffer:
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
         if type(self.action_space) is gym.spaces.Box:
-            self.actions_shape = (self.action_space.shape[0],) 
+            self.actions_shape = (self.action_space.shape[0],)
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
         self.tensor_dict = {}
@@ -331,7 +328,7 @@ class ExperienceBuffer:
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
         if self.has_central_value:
             self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
-        
+
         val_space = gym.spaces.Box(low=0, high=1,shape=(env_info.get('value_size',1),))
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
@@ -349,55 +346,54 @@ class ExperienceBuffer:
 
     def _init_from_aux_dict(self, tensor_dict):
         obs_base_shape = self.obs_base_shape
-        for k,v in tensor_dict.items():
+        for k, v in tensor_dict.items():
             self.tensor_dict[k] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1,shape=(v), dtype=np.float32), obs_base_shape)
 
     def _create_tensor_from_space(self, space, base_shape):       
         if type(space) is gym.spaces.Box:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape + space.shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Discrete:
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape, dtype= dtype, device = self.device)
+            return torch.zeros(base_shape, dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Tuple:
             '''
             assuming that tuple is only Discrete tuple
             '''
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            return torch.zeros(base_shape +(tuple_len,), dtype= dtype, device = self.device)
+            return torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
         if type(space) is gym.spaces.Dict:
             t_dict = {}
-            for k,v in space.spaces.items():
+            for k, v in space.spaces.items():
                 t_dict[k] = self._create_tensor_from_space(v, base_shape)
             return t_dict
 
     def update_data(self, name, index, val):
         if type(val) is dict:
-            for k,v in val.items():
-                self.tensor_dict[name][k][index,:] = v
+            for k, v in val.items():
+                self.tensor_dict[name][k][index, :] = v
         else:
-            self.tensor_dict[name][index,:] = val
+            self.tensor_dict[name][index, :] = val
 
-
-    def update_data_rnn(self, name, indices,play_mask, val):
+    def update_data_rnn(self, name, indices, play_mask, val):
         if type(val) is dict:
             for k,v in val:
-                self.tensor_dict[name][k][indices,play_mask] = v
+                self.tensor_dict[name][k][indices, play_mask] = v
         else:
-            self.tensor_dict[name][indices,play_mask] = val
+            self.tensor_dict[name][indices, play_mask] = val
 
     def get_transformed(self, transform_op):
         res_dict = {}
         for k, v in self.tensor_dict.items():
             if type(v) is dict:
                 transformed_dict = {}
-                for kd,vd in v.items():
+                for kd, vd in v.items():
                     transformed_dict[kd] = transform_op(vd)
                 res_dict[k] = transformed_dict
             else:
                 res_dict[k] = transform_op(v)
-        
+
         return res_dict
 
     def get_transformed_list(self, transform_op, tensor_list):
@@ -408,10 +404,10 @@ class ExperienceBuffer:
                 continue
             if type(v) is dict:
                 transformed_dict = {}
-                for kd,vd in v.items():
+                for kd, vd in v.items():
                     transformed_dict[kd] = transform_op(vd)
                 res_dict[k] = transformed_dict
             else:
                 res_dict[k] = transform_op(v)
-        
+
         return res_dict

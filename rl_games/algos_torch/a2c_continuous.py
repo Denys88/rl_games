@@ -6,7 +6,7 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
+import torch
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -34,7 +34,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_value' : self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
@@ -74,7 +74,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-        
+
     def save(self, fn):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
@@ -114,8 +114,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         batch_dict = {
             'is_train': True,
-            'prev_actions': actions_batch, 
-            'obs' : obs_batch,
+            'prev_actions': actions_batch,
+            'obs': obs_batch,
         }
 
         rnn_masks = None
@@ -125,9 +125,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             batch_dict['seq_length'] = self.seq_length
 
             if self.zero_rnn_on_done:
-                batch_dict['dones'] = input_dict['dones']            
+                batch_dict['dones'] = input_dict['dones']
 
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -138,7 +138,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
-                c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
                 c_loss = torch.zeros(1, device=self.ppo_device)
             if self.bound_loss_type == 'regularisation':
@@ -183,7 +183,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'new_neglogp' : action_log_probs,
             'old_neglogp' : old_action_log_probs_batch,
             'masks' : rnn_masks
-        }, curr_e_clip, 0)      
+        }, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
@@ -209,5 +209,3 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             b_loss = 0
         return b_loss
-
-

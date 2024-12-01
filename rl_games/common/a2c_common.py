@@ -18,10 +18,10 @@ import gym
 
 from datetime import datetime
 from tensorboardX import SummaryWriter
-import torch 
+import torch
 from torch import nn
 import torch.distributed as dist
- 
+
 from time import sleep
 
 from rl_games.common import common_losses
@@ -35,6 +35,7 @@ def swap_and_flatten01(arr):
         return arr
     s = arr.size()
     return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
+
 
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
@@ -132,7 +133,7 @@ class A2CBase(BaseAlgorithm):
             self.vec_env = config.get('vec_env', None)
 
         self.ppo_device = config.get('device', 'cuda:0')
-        self.value_size = self.env_info.get('value_size',1)
+        self.value_size = self.env_info.get('value_size', 1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
         self.use_action_masks = config.get('use_action_masks', False)
@@ -144,9 +145,9 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             self.state_space = self.env_info.get('state_space', None)
-            if isinstance(self.state_space,gym.spaces.Dict):
+            if isinstance(self.state_space, gym.spaces.Dict):
                 self.state_shape = {}
-                for k,v in self.state_space.spaces.items():
+                for k, v in self.state_space.spaces.items():
                     self.state_shape[k] = v.shape
             else:
                 self.state_shape = self.state_space.shape
@@ -176,7 +177,7 @@ class A2CBase(BaseAlgorithm):
             self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
 
         elif self.linear_lr:
-            
+
             if self.max_epochs == -1 and self.max_frames == -1:
                 print("Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one.")
                 self.scheduler = schedulers.IdentityScheduler()
@@ -190,7 +191,7 @@ class A2CBase(BaseAlgorithm):
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']), 
                     max_steps = max_steps,
-                    use_epochs = use_epochs, 
+                    use_epochs = use_epochs,
                     apply_to_entropy = config.get('schedule_entropy', False),
                     start_entropy_coef = config.get('entropy_coef'))
         else:
@@ -220,11 +221,11 @@ class A2CBase(BaseAlgorithm):
 
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
-            for k,v in self.observation_space.spaces.items():
+            for k, v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape
         else:
             self.obs_shape = self.observation_space.shape
- 
+
         self.critic_coef = config['critic_coef']
         self.grad_norm = config['grad_norm']
         self.gamma = self.config['gamma']
@@ -257,7 +258,7 @@ class A2CBase(BaseAlgorithm):
         self.mini_epochs_num = self.config['mini_epochs']
 
         self.mixed_precision = self.config.get('mixed_precision', False)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.mixed_precision)
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -369,7 +370,7 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('losses/c_loss', torch_ext.mean_list(c_losses).item(), frame)
 
         self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), frame)
-        for k,v in self.aux_loss_dict.items():
+        for k, v in self.aux_loss_dict.items():
             self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
@@ -502,7 +503,7 @@ class A2CBase(BaseAlgorithm):
                 upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
-        if not obs_is_dict or 'obs' not in obs:    
+        if not obs_is_dict or 'obs' not in obs:
             upd_obs = {'obs' : upd_obs}
         return upd_obs
 
@@ -567,7 +568,7 @@ class A2CBase(BaseAlgorithm):
                 nextvalues = mb_extrinsic_values[t+1]
             nextnonterminal = nextnonterminal.unsqueeze(1)
             masks_t = mb_masks[t].unsqueeze(1)
-            delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal  - mb_extrinsic_values[t])
+            delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t])
             mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
         return mb_advs
 
@@ -576,7 +577,7 @@ class A2CBase(BaseAlgorithm):
         self.game_rewards.clear()
         self.game_shaped_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -1000000000
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -679,7 +680,7 @@ class A2CBase(BaseAlgorithm):
     def get_param(self, param_name):
         if param_name in [
             "grad_norm",
-            "critic_coef", 
+            "critic_coef",
             "bounds_loss_coef",
             "entropy_coef",
             "kl_threshold",
@@ -692,7 +693,7 @@ class A2CBase(BaseAlgorithm):
         elif param_name == "learning_rate":
             return self.last_lr
         else:
-            raise NotImplementedError(f"Can't get param {param_name}")       
+            raise NotImplementedError(f"Can't get param {param_name}")
 
     def set_param(self, param_name, param_value):
         if param_name in [
@@ -753,7 +754,7 @@ class A2CBase(BaseAlgorithm):
             self.experience_buffer.update_data('dones', n, self.dones)
 
             for k in update_list:
-                self.experience_buffer.update_data(k, n, res_dict[k]) 
+                self.experience_buffer.update_data(k, n, res_dict[k])
             if self.has_central_value:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
@@ -810,7 +811,7 @@ class A2CBase(BaseAlgorithm):
         for n in range(self.horizon_length):
             if n % self.seq_length == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                    mb_s[n // self.seq_length,:,:,:] = s
+                    mb_s[n // self.seq_length, :, :, :] = s
 
             if self.has_central_value:
                 self.central_value_net.pre_step_rnn(n)
@@ -884,7 +885,7 @@ class A2CBase(BaseAlgorithm):
         for mb_s in mb_rnn_states:
             t_size = mb_s.size()[0] * mb_s.size()[2]
             h_size = mb_s.size()[3]
-            states.append(mb_s.permute(1,2,0,3).reshape(-1,t_size, h_size))
+            states.append(mb_s.permute(1, 2, 0, 3).reshape(-1, t_size, h_size))
 
         batch_dict['rnn_states'] = states
         batch_dict['step_time'] = step_time
@@ -896,7 +897,7 @@ class DiscreteA2CBase(A2CBase):
 
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
-    
+
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
         if type(action_space) is gym.spaces.Discrete:
@@ -982,7 +983,7 @@ class DiscreteA2CBase(A2CBase):
         neglogpacs = batch_dict['neglogpacs']
         dones = batch_dict['dones']
         rnn_states = batch_dict.get('rnn_states', None)
-        
+
         obses = batch_dict['obses']
         advantages = returns - values
 
@@ -991,7 +992,7 @@ class DiscreteA2CBase(A2CBase):
             values = self.value_mean_std(values)
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
-        
+
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
@@ -1034,7 +1035,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.mean_rewards = self.last_mean_rewards = -100500
+        self.mean_rewards = self.last_mean_rewards = -1000000000
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
@@ -1093,7 +1094,6 @@ class DiscreteA2CBase(A2CBase):
                         self.writer.add_scalar('shaped_' + rewards_name + '/step'.format(i), mean_shaped_rewards[i], frame)
                         self.writer.add_scalar('shaped_' + rewards_name + '/iter'.format(i), mean_shaped_rewards[i], epoch_num)
                         self.writer.add_scalar('shaped_' + rewards_name + '/time'.format(i), mean_shaped_rewards[i], total_time)
-
 
                     self.writer.add_scalar('episode_lengths/step', mean_lengths, frame)
                     self.writer.add_scalar('episode_lengths/iter', mean_lengths, epoch_num)
@@ -1317,7 +1317,7 @@ class ContinuousA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.last_mean_rewards = -100500
+        self.last_mean_rewards = -1000000000
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
