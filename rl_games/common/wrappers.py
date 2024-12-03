@@ -138,7 +138,7 @@ class EpisodeStackedEnv(gym.Wrapper):
 
 
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env,skip=4, use_max = True):
+    def __init__(self, env, skip=4, use_max=True):
         """Return only every `skip`-th frame"""
         gym.Wrapper.__init__(self, env)
         self.use_max = use_max 
@@ -208,6 +208,7 @@ class WarpFrame(gym.ObservationWrapper):
         if self.grayscale:
             frame = np.expand_dims(frame, -1)
         return frame
+
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k, flat = False):
@@ -459,7 +460,7 @@ class ReallyDoneWrapper(gym.Wrapper):
         self.old_env = env
         gym.Wrapper.__init__(self, env)
         self.lives = 0
-        self.was_real_done  = True
+        self.was_real_done = True
 
     def step(self, action):
         old_lives = self.env.unwrapped.ale.lives()
@@ -595,7 +596,7 @@ class ImpalaEnvWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         obs = {
             'observation': obs,
-            'reward':np.clip(reward, -1, 1),
+            'reward': np.clip(reward, -1, 1),
             'last_action': action
         }
         return obs, reward, done, info
@@ -629,7 +630,7 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
             raise NotImplementedError
 
     def observation(self, observation):
-        return  observation * self.mask
+        return observation * self.mask
 
 
 class OldGymWrapper(gym.Env):
@@ -638,14 +639,12 @@ class OldGymWrapper(gym.Env):
 
         import gymnasium
 
-
         # Convert Gymnasium spaces to Gym spaces
         self.observation_space = self.convert_space(env.observation_space)
         self.action_space = self.convert_space(env.action_space)
 
     def convert_space(self, space):
         import gymnasium
-
 
         """Recursively convert Gymnasium spaces to Gym spaces."""
         if isinstance(space, gymnasium.spaces.Box):
@@ -743,6 +742,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
     #env = EpisodeStackedEnv(env)
     return env
 
+
 def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, scale =False, wrap_impala=False):
     """Configure environment for DeepMind-style Atari.
     """
@@ -761,6 +761,7 @@ def wrap_deepmind(env, episode_life=False, clip_rewards=True, frame_stack=True, 
         env = ImpalaEnvWrapper(env)
     return env
 
+
 def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
     """Configure environment for DeepMind-style Atari.
     """
@@ -773,11 +774,12 @@ def wrap_carracing(env, clip_rewards=True, frame_stack=True, scale=False):
         env = FrameStack(env, 4)
     return env
 
+
 def make_car_racing(env_id, skip=4):
     env = make_atari(env_id, noop_max=0, skip=skip)
     return wrap_carracing(env, clip_rewards=False)
 
+
 def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False, **kwargs):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
     return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
-

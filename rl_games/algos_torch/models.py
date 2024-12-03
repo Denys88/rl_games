@@ -120,7 +120,7 @@ class ModelA2C(BaseModel):
                     'logits': categorical.logits,
                     'rnn_states': states
                 }
-                return  result
+                return result
 
 
 class ModelA2CMultiDiscrete(BaseModel):
@@ -160,7 +160,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    action_masks = np.split(action_masks,len(logits), axis=1)
+                    action_masks = np.split(action_masks, len(logits), axis=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
                 prev_neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, prev_actions)]
@@ -193,7 +193,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     'logits': [c.logits for c in categorical],
                     'rnn_states': states
                 }
-                return  result
+                return result
 
 
 class ModelA2CContinuous(BaseModel):
@@ -290,24 +290,24 @@ class ModelA2CContinuousLogStd(BaseModel):
                 entropy = distr.entropy().sum(dim=-1)
                 prev_neglogp = self.neglogp(prev_actions, mu, sigma, logstd)
                 result = {
-                    'prev_neglogp' : torch.squeeze(prev_neglogp),
-                    'values' : value,
-                    'entropy' : entropy,
-                    'rnn_states' : states,
-                    'mus' : mu,
-                    'sigmas' : sigma
+                    'prev_neglogp': torch.squeeze(prev_neglogp),
+                    'values': value,
+                    'entropy': entropy,
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
                 }                
                 return result
             else:
                 selected_action = distr.sample()
                 neglogp = self.neglogp(selected_action, mu, sigma, logstd)
                 result = {
-                    'neglogpacs' : torch.squeeze(neglogp),
-                    'values' : self.denorm_value(value),
-                    'actions' : selected_action,
-                    'rnn_states' : states,
-                    'mus' : mu,
-                    'sigmas' : sigma
+                    'neglogpacs': torch.squeeze(neglogp),
+                    'values': self.denorm_value(value),
+                    'actions': selected_action,
+                    'rnn_states': states,
+                    'mus': mu,
+                    'sigmas': sigma
                 }
                 return result
 
@@ -326,6 +326,7 @@ class ModelA2CContinuousTanh(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
+
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
 

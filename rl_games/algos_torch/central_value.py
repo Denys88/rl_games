@@ -196,8 +196,8 @@ class CentralValueTrain(nn.Module):
 
         obs_batch = self._preproc_obs(obs_batch)
         res_dict = self.forward({'obs': obs_batch, 'actions': actions,
-                                    'rnn_states': self.rnn_states,
-                                    'is_train': False})
+                                'rnn_states': self.rnn_states,
+                                'is_train': False})
         value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
@@ -237,9 +237,9 @@ class CentralValueTrain(nn.Module):
         self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
-        if self.writter != None:
+        if self.writter is not None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
         return avg_loss
 
     def calc_gradients(self, batch):
