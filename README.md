@@ -69,14 +69,22 @@ Explore RL Games quick and easily in colab notebooks:
 
 For maximum training performance a preliminary installation of Pytorch 2.2 or newer with CUDA 12.1 or newer is highly recommended:
 
-```conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia``` or:
-```pip install pip3 install torch torchvision```
+```bash
+pip3 install torch torchvision
+```
 
 Then:
 
-```pip install rl-games```
+```bash
+pip install rl-games
+``` 
 
-To run CPU-based environments either Ray or envpool are required ```pip install envpool``` or ```pip install ray```
+Or clone the repo and install the latest version from source :
+```bash
+pip install -e .
+```
+
+To run CPU-based environments either envpool if supported or Ray are required ```pip install envpool``` or ```pip install ray```
 To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
 To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
@@ -114,13 +122,17 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 
 *Ant*
 
-```python train.py task=Ant headless=True```
-```python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100```
+```bash
+python train.py task=Ant headless=True
+python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100
+```
 
 *Humanoid*
 
-```python train.py task=Humanoid headless=True```
-```python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100```
+```bash
+python train.py task=Humanoid headless=True
+python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
+```
 
 *Shadow Hand block orientation task*
 
@@ -132,6 +144,13 @@ And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
 *Atari Pong*
 
 ```bash
+python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+```
+
+Or with poetry:
+
+```bash
 poetry install -E atari
 poetry run python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
 poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
@@ -140,10 +159,10 @@ poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml -
 *Brax Ant*
 
 ```bash
-poetry install -E brax
-poetry run pip install --upgrade "jax[cuda]==0.3.13" -f https://storage.googleapis.com/jax-releases/jax_releases.html
-poetry run python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
-poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
+pip install -U "jax[cuda12]"
+pip install brax
+python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
+python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
 ## Experiment tracking
@@ -151,11 +170,10 @@ poetry run python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --c
 rl_games support experiment tracking with [Weights and Biases](https://wandb.ai).
 
 ```bash
-poetry install -E atari
-poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
-WANDB_API_KEY=xxxx poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
-poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test --track
-poetry run python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
+python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+WANDB_API_KEY=xxxx python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --track
+python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test --track
+python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
 ```
 
 
