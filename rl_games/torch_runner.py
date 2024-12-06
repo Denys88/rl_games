@@ -18,8 +18,8 @@ from rl_games.algos_torch import sac_agent
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
         if args['train'] and args.get('load_critic_only', False):
-            if not hasattr(agent, 'has_central_value') or not agent.has_central_value:
-                raise AttributeError('Loading critic only works only for asymmetric actor critic')
+            if not getattr(agent, 'has_central_value', False):
+                raise ValueError('Loading critic only works only for asymmetric actor critic')
             agent.restore_central_value_function(args['checkpoint'])
             return
         agent.restore(args['checkpoint'])
@@ -32,7 +32,7 @@ def _override_sigma(agent, args):
                 with torch.no_grad():
                     net.sigma.fill_(float(args['sigma']))
             else:
-                print('Print cannot set new sigma because fixed_sigma is False')
+                print('Cannot set new sigma because fixed_sigma is False')
 
 
 class Runner:

@@ -125,7 +125,7 @@ class BasePlayer(object):
                 load_error = False
                 try:
                     torch.load(self.checkpoint_to_load)
-                except Exception as e:
+                except (OSError, IOError, torch.TorchError) as e:
                     print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
                     load_error = True
 
