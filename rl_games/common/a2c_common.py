@@ -484,7 +484,8 @@ class A2CBase(BaseAlgorithm):
 
             total_agents = self.num_agents * self.num_actors
             num_seqs = self.horizon_length // self.seq_length
-            assert((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
+            if not ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0):
+                raise ValueError(f"Horizon length ({self.horizon_length}) times total agents ({total_agents}) divided by num minibatches ({self.num_minibatches}) must be divisible by sequence length ({self.seq_length})")
             self.mb_rnn_states = [torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype = torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
     def init_current_rewards(self, batch_size, current_rewards_shape):
