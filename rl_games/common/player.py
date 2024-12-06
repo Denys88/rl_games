@@ -125,7 +125,7 @@ class BasePlayer(object):
                 load_error = False
                 try:
                     torch.load(self.checkpoint_to_load)
-                except Exception as e:
+                except (OSError, IOError, torch.TorchError) as e:
                     print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
                     load_error = True
 
@@ -423,7 +423,6 @@ class BasePlayer(object):
             else:
                 print('av reward:', sum_rewards / games_played * n_game_life,
                     'av steps:', sum_steps / games_played * n_game_life)
-
 
     def get_batch_size(self, obses, batch_size):
         obs_shape = self.obs_shape

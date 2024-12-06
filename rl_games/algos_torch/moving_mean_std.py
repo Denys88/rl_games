@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import rl_games.algos_torch.torch_ext as torch_ext
 
+
 '''
 updates moving statistics with momentum
 '''
@@ -76,7 +77,6 @@ class GeneralizedMovingStats(nn.Module):
         else:
             raise NotImplementedError(self.impl)
 
-
     def _update_stats(self, x):
         m = self.decay
         if self.impl == 'off':
@@ -108,7 +108,6 @@ class GeneralizedMovingStats(nn.Module):
             self._update_stats(input)
 
         offset, invscale = self._get_stats()
-
         if denorm:
             y = input * invscale + offset
         else:

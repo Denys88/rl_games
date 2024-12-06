@@ -115,12 +115,15 @@ class RayWorker:
 
 class RayVecEnv(IVecEnv):
     """Main env class that manages several `rl_games.common.vecenv.Rayworker` objects for parallel training
-    
+
     The RayVecEnv class manages a set of individual environments and wraps around the methods from RayWorker.
     Each worker is executed asynchronously.
 
     """
-    import ray
+    try:
+        import ray
+    except ImportError:
+        pass
 
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
