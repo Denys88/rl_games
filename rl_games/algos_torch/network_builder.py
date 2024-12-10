@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 
 from rl_games.algos_torch.d2rl import D2RLNet
-from rl_games.algos_torch.sac_helper import  SquashedNormal
-from rl_games.common.layers.recurrent import  GRUWithDones, LSTMWithDones
-from rl_games.common.layers.value import  TwoHotEncodedValue, DefaultValue
+from rl_games.algos_torch.sac_helper import SquashedNormal
+from rl_games.common.layers.recurrent import GRUWithDones, LSTMWithDones
+from rl_games.common.layers.value import TwoHotEncodedValue, DefaultValue
 from rl_games.algos_torch.spatial_softmax import SpatialSoftArgmax
 
 
@@ -192,7 +192,6 @@ class NetworkBuilder:
             raise ValueError('value type is not "default", "legacy" or "two_hot_encoded"')
 
 
-
 class A2CBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -213,21 +212,21 @@ class A2CBuilder(NetworkBuilder):
             self.critic_cnn = nn.Sequential()
             self.actor_mlp = nn.Sequential()
             self.critic_mlp = nn.Sequential()
-            
+
             if self.has_cnn:
                 if self.permute_input:
                     input_shape = torch_ext.shape_whc_to_cwh(input_shape)
                 cnn_args = {
-                    'ctype' : self.cnn['type'], 
-                    'input_shape' : input_shape, 
-                    'convs' :self.cnn['convs'], 
-                    'activation' : self.cnn['activation'], 
-                    'norm_func_name' : self.normalization,
+                    'ctype': self.cnn['type'],
+                    'input_shape': input_shape,
+                    'convs': self.cnn['convs'],
+                    'activation': self.cnn['activation'],
+                    'norm_func_name': self.normalization,
                 }
                 self.actor_cnn = self._build_conv(**cnn_args)
 
                 if self.separate:
-                    self.critic_cnn = self._build_conv( **cnn_args)
+                    self.critic_cnn = self._build_conv(**cnn_args)
 
             cnn_output_size = self._calc_input_size(input_shape, self.actor_cnn)
 
@@ -265,13 +264,13 @@ class A2CBuilder(NetworkBuilder):
                         self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
-                'input_size' : mlp_input_size,
-                'units' : self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear,
-                'd2rl' : self.is_d2rl,
-                'norm_only_first_layer' : self.norm_only_first_layer
+                'input_size': mlp_input_size,
+                'units': self.units,
+                'activation': self.activation,
+                'norm_func_name': self.normalization,
+                'dense_func': torch.nn.Linear,
+                'd2rl': self.is_d2rl,
+                'norm_only_first_layer': self.norm_only_first_layer
             }
             self.actor_mlp = self._build_mlp(**mlp_args)
             if self.separate:
@@ -311,14 +310,14 @@ class A2CBuilder(NetworkBuilder):
                 if isinstance(m, nn.Linear):
                     mlp_init(m.weight)
                     if getattr(m, "bias", None) is not None:
-                        torch.nn.init.zeros_(m.bias)    
+                        torch.nn.init.zeros_(m.bias)
 
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
-                    sigma_init(self.sigma.weight)  
+                    sigma_init(self.sigma.weight)
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
@@ -339,7 +338,7 @@ class A2CBuilder(NetworkBuilder):
                 a_out = a_out.contiguous().view(a_out.size(0), -1)
 
                 c_out = self.critic_cnn(c_out)
-                c_out = c_out.contiguous().view(c_out.size(0), -1)                    
+                c_out = c_out.contiguous().view(c_out.size(0), -1)
 
                 if self.has_rnn:
                     seq_length = obs_dict.get('seq_length', 1)
@@ -359,23 +358,23 @@ class A2CBuilder(NetworkBuilder):
                     a_out = a_out.reshape(num_seqs, seq_length, -1)
                     c_out = c_out.reshape(num_seqs, seq_length, -1)
 
-                    a_out = a_out.transpose(0,1)
-                    c_out = c_out.transpose(0,1)
+                    a_out = a_out.transpose(0, 1)
+                    c_out = c_out.transpose(0, 1)
                     if dones is not None:
                         dones = dones.reshape(num_seqs, seq_length, -1)
-                        dones = dones.transpose(0,1)
+                        dones = dones.transpose(0, 1)
 
                     if len(states) == 2:
                         a_states = states[0]
                         c_states = states[1]
                     else:
                         a_states = states[:2]
-                        c_states = states[2:]                        
+                        c_states = states[2:]
                     a_out, a_states = self.a_rnn(a_out, a_states, dones, bptt_len)
                     c_out, c_states = self.c_rnn(c_out, c_states, dones, bptt_len)
 
-                    a_out = a_out.transpose(0,1)
-                    c_out = c_out.transpose(0,1)
+                    a_out = a_out.transpose(0, 1)
+                    c_out = c_out.transpose(0, 1)
                     a_out = a_out.contiguous().reshape(a_out.size()[0] * a_out.size()[1], -1)
                     c_out = c_out.contiguous().reshape(c_out.size()[0] * c_out.size()[1], -1)
 
@@ -398,7 +397,7 @@ class A2CBuilder(NetworkBuilder):
                 else:
                     a_out = self.actor_mlp(a_out)
                     c_out = self.critic_mlp(c_out)
-                            
+
                 value = self.value_act(self.value(c_out))
 
                 if self.is_discrete:
@@ -420,7 +419,7 @@ class A2CBuilder(NetworkBuilder):
             else:
                 out = obs
                 out = self.actor_cnn(out)
-                out = out.flatten(1)                
+                out = out.flatten(1)
 
                 if self.has_rnn:
                     seq_length = obs_dict.get('seq_length', 1)
@@ -474,7 +473,7 @@ class A2CBuilder(NetworkBuilder):
                     else:
                         sigma = self.sigma_act(self.sigma(out))
                     return mu, mu*0 + sigma, value, states
-                    
+
         def is_separate_critic(self):
             return self.separate
 
@@ -485,25 +484,26 @@ class A2CBuilder(NetworkBuilder):
             if not self.has_rnn:
                 return None
             num_layers = self.rnn_layers
+
             if self.rnn_name == 'identity':
                 rnn_units = 1
             else:
                 rnn_units = self.rnn_units
             if self.rnn_name == 'lstm':
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),
                             torch.zeros((num_layers, self.num_seqs, rnn_units)),
-                            torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                            torch.zeros((num_layers, self.num_seqs, rnn_units)),
                             torch.zeros((num_layers, self.num_seqs, rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),
                             torch.zeros((num_layers, self.num_seqs, rnn_units)))
             else:
                 if self.separate:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)), 
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),
                             torch.zeros((num_layers, self.num_seqs, rnn_units)))
                 else:
-                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),)                
+                    return (torch.zeros((num_layers, self.num_seqs, rnn_units)),)
 
         def load(self, params):
             self.separate = params.get('separate', False)
@@ -520,9 +520,9 @@ class A2CBuilder(NetworkBuilder):
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
 
             if self.has_space:
-                self.is_multi_discrete = 'multi_discrete'in params['space']
+                self.is_multi_discrete = 'multi_discrete' in params['space']
                 self.is_discrete = 'discrete' in params['space']
-                self.is_continuous = 'continuous'in params['space']
+                self.is_continuous = 'continuous' in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
                     self.fixed_sigma = self.space_config['fixed_sigma']
@@ -554,6 +554,7 @@ class A2CBuilder(NetworkBuilder):
     def build(self, name, **kwargs):
         net = A2CBuilder.Network(self.params, **kwargs)
         return net
+
 
 class Conv2dAuto(nn.Conv2d):
     def __init__(self, *args, **kwargs):
@@ -623,6 +624,7 @@ class ImpalaSequential(nn.Module):
         x = self.res_block2(x)
         return x
 
+
 class A2CResnetBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -670,11 +672,11 @@ class A2CResnetBuilder(NetworkBuilder):
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
-                'input_size' : mlp_input_size,
-                'units' :self.units, 
-                'activation' : self.activation, 
-                'norm_func_name' : self.normalization,
-                'dense_func' : torch.nn.Linear
+                'input_size': mlp_input_size,
+                'units':self.units,
+                'activation': self.activation,
+                'norm_func_name': self.normalization,
+                'dense_func': torch.nn.Linear
             }
 
             self.mlp = self._build_mlp(**mlp_args)
@@ -740,7 +742,6 @@ class A2CResnetBuilder(NetworkBuilder):
             out = self.flatten_act(out)
 
             if self.has_rnn:
-                #seq_length = obs_dict['seq_length']
                 seq_length = obs_dict.get('seq_length', 1)
 
                 out_in = out
@@ -799,7 +800,7 @@ class A2CResnetBuilder(NetworkBuilder):
             self.initializer = params['mlp']['initializer']
             self.is_discrete = 'discrete' in params['space']
             self.is_continuous = 'continuous' in params['space']
-            self.is_multi_discrete = 'multi_discrete'in params['space']
+            self.is_multi_discrete = 'multi_discrete' in params['space']
             self.value_activation = params.get('value_activation', 'None')
             self.normalization = params.get('normalization', None)
 
@@ -842,10 +843,10 @@ class A2CResnetBuilder(NetworkBuilder):
         def get_default_rnn_state(self):
             num_layers = self.rnn_layers
             if self.rnn_name == 'lstm':
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)), 
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),
                             torch.zeros((num_layers, self.num_seqs, self.rnn_units)))
             else:
-                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)))                
+                return (torch.zeros((num_layers, self.num_seqs, self.rnn_units)),)
 
     def build(self, name, **kwargs):
         net = A2CResnetBuilder.Network(self.params, **kwargs)
@@ -952,7 +953,7 @@ class SACBuilder(NetworkBuilder):
                 self.critic = self._build_critic(1, **critic_mlp_args)
                 print("Building Critic Target")
                 self.critic_target = self._build_critic(1, **critic_mlp_args)
-                self.critic_target.load_state_dict(self.critic.state_dict())  
+                self.critic_target.load_state_dict(self.critic.state_dict())
 
             mlp_init = self.init_factory.create(**self.initializer)
             for m in self.modules():
@@ -976,7 +977,7 @@ class SACBuilder(NetworkBuilder):
             obs = obs_dict['obs']
             mu, sigma = self.actor(obs)
             return mu, sigma
- 
+
         def is_separate_critic(self):
             return self.separate
 
@@ -997,7 +998,7 @@ class SACBuilder(NetworkBuilder):
 
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']
-                self.is_continuous = 'continuous'in params['space']
+                self.is_continuous = 'continuous' in params['space']
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
                 elif self.is_discrete:
@@ -1005,4 +1006,3 @@ class SACBuilder(NetworkBuilder):
             else:
                 self.is_discrete = False
                 self.is_continuous = False
-

@@ -6,7 +6,7 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
-import torch 
+import torch
 
 
 class A2CAgent(a2c_common.ContinuousA2CBase):
@@ -27,39 +27,43 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         a2c_common.ContinuousA2CBase.__init__(self, base_name, params)
         obs_shape = self.obs_shape
         build_config = {
-            'actions_num' : self.actions_num,
-            'input_shape' : obs_shape,
-            'num_seqs' : self.num_actors * self.num_agents,
-            'value_size': self.env_info.get('value_size',1),
-            'normalize_value' : self.normalize_value,
+            'actions_num': self.actions_num,
+            'input_shape': obs_shape,
+            'num_seqs': self.num_actors * self.num_agents,
+            'value_size': self.env_info.get('value_size', 1),
+            'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
         }
-        
+
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
         self.init_rnn_from_model(self.model)
         self.last_lr = float(self.last_lr)
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
-        self.optimizer = optim.Adam(self.model.parameters(), float(self.last_lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.optimizer = optim.Adam(self.model.parameters(),
+                                    float(self.last_lr),
+                                    eps=1e-08,
+                                    weight_decay=self.weight_decay,
+                                    fused=True)
 
         if self.has_central_value:
             cv_config = {
-                'state_shape' : self.state_shape, 
-                'value_size' : self.value_size,
-                'ppo_device' : self.ppo_device, 
-                'num_agents' : self.num_agents, 
-                'horizon_length' : self.horizon_length,
-                'num_actors' : self.num_actors, 
-                'num_actions' : self.actions_num, 
-                'seq_length' : self.seq_length,
-                'normalize_value' : self.normalize_value,
-                'network' : self.central_value_config['network'],
-                'config' : self.central_value_config, 
-                'writter' : self.writer,
-                'max_epochs' : self.max_epochs,
-                'multi_gpu' : self.multi_gpu,
-                'zero_rnn_on_done' : self.zero_rnn_on_done
+                'state_shape': self.state_shape,
+                'value_size': self.value_size,
+                'ppo_device': self.ppo_device,
+                'num_agents': self.num_agents,
+                'horizon_length': self.horizon_length,
+                'num_actors': self.num_actors,
+                'num_actions': self.actions_num,
+                'seq_length': self.seq_length,
+                'normalize_value': self.normalize_value,
+                'network': self.central_value_config['network'],
+                'config': self.central_value_config,
+                'writter': self.writer,
+                'max_epochs': self.max_epochs,
+                'multi_gpu': self.multi_gpu,
+                'zero_rnn_on_done': self.zero_rnn_on_done
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -74,7 +78,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def update_epoch(self):
         self.epoch_num += 1
         return self.epoch_num
-        
+
     def save(self, fn):
         state = self.get_full_state_weights()
         torch_ext.save_checkpoint(fn, state)
@@ -88,7 +92,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.set_central_value_function_weights(checkpoint)
 
     def get_masked_action_values(self, obs, action_masks):
-        assert False
+        raise NotImplementedError("Masked action values are not implemented for continuous actions")
 
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
@@ -114,8 +118,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         batch_dict = {
             'is_train': True,
-            'prev_actions': actions_batch, 
-            'obs' : obs_batch,
+            'prev_actions': actions_batch,
+            'obs': obs_batch,
         }
 
         rnn_masks = None
@@ -125,9 +129,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             batch_dict['seq_length'] = self.seq_length
 
             if self.zero_rnn_on_done:
-                batch_dict['dones'] = input_dict['dones']            
+                batch_dict['dones'] = input_dict['dones']
 
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -138,7 +142,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
             if self.has_value_loss:
-                c_loss = common_losses.critic_loss(self.model,value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
             else:
                 c_loss = torch.zeros(1, device=self.ppo_device)
             if self.bound_loss_type == 'regularisation':
@@ -183,7 +187,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'new_neglogp' : action_log_probs,
             'old_neglogp' : old_action_log_probs_batch,
             'masks' : rnn_masks
-        }, curr_e_clip, 0)      
+        }, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy, \
             kl_dist, self.last_lr, lr_mul, \
@@ -209,5 +213,3 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         else:
             b_loss = 0
         return b_loss
-
-
