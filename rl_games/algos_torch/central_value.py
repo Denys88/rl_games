@@ -53,7 +53,14 @@ class CentralValueTrain(nn.Module):
             self.scheduler = schedulers.IdentityScheduler()
 
         self.mini_epoch = config['mini_epochs']
-        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        # Either minibatch_size_per_env or minibatch_size should be present in a config
+        # if both are present, minibatch_size is used
+        # otherwise minibatch_size_per_env is used to calculate minibatch_size
+        if 'minibatch_size' not in self.config and 'minibatch_size_per_env' not in self.config:
+            raise ValueError(
+                "Configuration must include either 'minibatch_size' or 'minibatch_size_per_env'. "
+                "Neither was found in the provided config."
+            )
 
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)

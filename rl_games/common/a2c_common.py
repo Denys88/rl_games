@@ -242,19 +242,33 @@ class A2CBase(BaseAlgorithm):
         self.batch_size = self.horizon_length * self.num_actors * self.num_agents
         self.batch_size_envs = self.horizon_length * self.num_actors
 
-        # either minibatch_size_per_env or minibatch_size should be present in a config
+        # Either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
-        # otherwise minibatch_size_per_env is used minibatch_size_per_env is used to calculate minibatch_size
-        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        # otherwise minibatch_size_per_env is used to calculate minibatch_size
+        if 'minibatch_size' not in self.config and 'minibatch_size_per_env' not in self.config:
+            raise ValueError(
+                "Configuration must include either 'minibatch_size' or 'minibatch_size_per_env'. "
+                "Neither was found in the provided config."
+            )
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
 
-        assert(self.minibatch_size > 0)
+        if self.minibatch_size <= 0:
+            raise ValueError(
+                f"'minibatch_size' must be greater than 0. Calculated value: {self.minibatch_size}. "
+                f"Check your configuration: 'num_actors': {self.num_actors}, "
+                f"'minibatch_size_per_env': {self.minibatch_size_per_env}."
+    )
 
         self.games_num = self.minibatch_size // self.seq_length # it is used only for current rnn implementation
 
         self.num_minibatches = self.batch_size // self.minibatch_size
-        assert(self.batch_size % self.minibatch_size == 0)
+        # Validate that batch size is divisible by minibatch size
+        if self.batch_size % self.minibatch_size != 0:
+            raise ValueError(
+                f"'batch_size' ({self.batch_size}) must be divisible by 'minibatch_size' ({self.minibatch_size}). "
+                "Ensure that 'batch_size' is a multiple of 'minibatch_size'."
+            )
 
         self.mini_epochs_num = self.config['mini_epochs']
 
