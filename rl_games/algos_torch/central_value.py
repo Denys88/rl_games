@@ -5,7 +5,7 @@ from torch import nn
 import torch.distributed as dist
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
-from rl_games.common  import common_losses
+from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
 
@@ -30,12 +30,12 @@ class CentralValueTrain(nn.Module):
         self.zero_rnn_on_done = zero_rnn_on_done
 
         state_config = {
-            'value_size' : value_size,
-            'input_shape' : state_shape,
-            'actions_num' : num_actions,
-            'num_agents' : num_agents,
-            'num_seqs' : num_actors,
-            'normalize_input' : self.normalize_input,
+            'value_size': value_size,
+            'input_shape': state_shape,
+            'actions_num': num_actions,
+            'num_agents': num_agents,
+            'num_seqs': num_actors,
+            'normalize_input': self.normalize_input,
             'normalize_value': self.normalize_value,
         }
 
@@ -45,15 +45,22 @@ class CentralValueTrain(nn.Module):
 
         # todo: support max frames as well
         if self.linear_lr:
-            self.scheduler = schedulers.LinearScheduler(self.lr, 
-                max_steps = self.max_epochs, 
-                apply_to_entropy = False,
-                start_entropy_coef = 0)
+            self.scheduler = schedulers.LinearScheduler(self.lr,
+                max_steps=self.max_epochs,
+                apply_to_entropy=False,
+                start_entropy_coef=0)
         else:
             self.scheduler = schedulers.IdentityScheduler()
-        
+
         self.mini_epoch = config['mini_epochs']
-        assert(('minibatch_size_per_env' in self.config) or ('minibatch_size' in self.config))
+        # Either minibatch_size_per_env or minibatch_size should be present in a config
+        # if both are present, minibatch_size is used
+        # otherwise minibatch_size_per_env is used to calculate minibatch_size
+        if 'minibatch_size' not in self.config and 'minibatch_size_per_env' not in self.config:
+            raise ValueError(
+                "Configuration must include either 'minibatch_size' or 'minibatch_size_per_env'. "
+                "Neither was found in the provided config."
+            )
 
         self.minibatch_size_per_env = self.config.get('minibatch_size_per_env', 0)
         self.minibatch_size = self.config.get('minibatch_size', self.num_actors * self.minibatch_size_per_env)
@@ -62,7 +69,11 @@ class CentralValueTrain(nn.Module):
 
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), float(self.lr), eps=1e-08, weight_decay=self.weight_decay)
+        self.optimizer = torch.optim.Adam(self.model.parameters(),
+                                        float(self.lr),
+                                        eps=1e-08,
+                                        weight_decay=self.weight_decay,
+                                        fused=True)
         self.frame = 0
         self.epoch_num = 0
         self.running_mean_std = None
@@ -78,10 +89,11 @@ class CentralValueTrain(nn.Module):
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
+
             total_agents = self.num_actors #* self.num_agents
             num_seqs = self.horizon_length // self.seq_length
             assert ((self.horizon_length * total_agents // self.num_minibatches) % self.seq_length == 0)
-            self.mb_rnn_states = [ torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
+            self.mb_rnn_states = [torch.zeros((num_seqs, s.size()[0], total_agents, s.size()[2]), dtype=torch.float32, device=self.ppo_device) for s in self.rnn_states]
 
         self.local_rank = 0
         self.global_rank = 0
@@ -121,9 +133,9 @@ class CentralValueTrain(nn.Module):
                 state['reward_mean_std'] = self.model.value_mean_std.state_dict()
         return state
 
-    def set_stats_weights(self, weights): 
+    def set_stats_weights(self, weights):
         pass
-        
+
     def update_dataset(self, batch_dict):
         value_preds = batch_dict['old_values']     
         returns = batch_dict['returns']   
@@ -136,13 +148,13 @@ class CentralValueTrain(nn.Module):
             batch_dict['returns'] = res[1]
             batch_dict['actions'] = res[2]
             batch_dict['dones'] = res[3]
-        
+
         if self.is_rnn:
             states = []
             for mb_s in self.mb_rnn_states:
                 t_size = mb_s.size()[0] * mb_s.size()[2]
                 h_size = mb_s.size()[3]
-                states.append(mb_s.permute(1,2,0,3).reshape(-1, t_size, h_size))
+                states.append(mb_s.permute(1, 2, 0, 3).reshape(-1, t_size, h_size))
 
             batch_dict['rnn_states'] = states
             '''
@@ -155,7 +167,7 @@ class CentralValueTrain(nn.Module):
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
             obs_batch = copy.copy(obs_batch)
-            for k,v in obs_batch.items():
+            for k, v in obs_batch.items():
                 if v.dtype == torch.uint8:
                     obs_batch[k] = v.float() / 255.0
                 else:
@@ -170,7 +182,7 @@ class CentralValueTrain(nn.Module):
             return
         if n % self.seq_length == 0:
             for s, mb_s in zip(self.rnn_states, self.mb_rnn_states):
-                mb_s[n // self.seq_length,:,:,:] = s
+                mb_s[n // self.seq_length, :, :, :] = s
 
     def post_step_rnn(self, all_done_indices, zero_rnn_on_done=True):
         if not self.is_rnn:
@@ -179,7 +191,7 @@ class CentralValueTrain(nn.Module):
             return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
-            s[:,all_done_indices,:] = s[:,all_done_indices,:] * 0.0
+            s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
 
     def forward(self, input_dict):
         return self.model(input_dict)
@@ -190,9 +202,9 @@ class CentralValueTrain(nn.Module):
         actions = input_dict.get('actions', None)
 
         obs_batch = self._preproc_obs(obs_batch)
-        res_dict = self.forward({'obs' : obs_batch, 'actions': actions,
-                                    'rnn_states': self.rnn_states,
-                                    'is_train' : False})
+        res_dict = self.forward({'obs': obs_batch, 'actions': actions,
+                                'rnn_states': self.rnn_states,
+                                'is_train': False})
         value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
@@ -232,9 +244,9 @@ class CentralValueTrain(nn.Module):
         self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
-        if self.writter != None:
+        if self.writter is not None:
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
-            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)        
+            self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
         return avg_loss
 
     def calc_gradients(self, batch):
@@ -245,20 +257,19 @@ class CentralValueTrain(nn.Module):
         dones_batch = batch['dones']
         rnn_masks_batch = batch.get('rnn_masks')
 
-        batch_dict = {'obs' : obs_batch, 
-                    'actions' : actions_batch,
-                    'seq_length' : self.seq_length,
-                    'dones' : dones_batch}
+        batch_dict = {'obs': obs_batch,
+                        'actions': actions_batch,
+                        'seq_length': self.seq_length,
+                        'dones': dones_batch}
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
         res_dict = self.model(batch_dict)
         values = res_dict['values']
         loss = common_losses.critic_loss(self.model, value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
-        #print(loss.min(), loss.max(), loss.size(), rnn_masks_batch)
         losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
         loss = losses[0]
-        #6print('aaa', loss.min(), loss.max(), loss.size())
+
         if self.multi_gpu:
             self.optimizer.zero_grad()
         else:
