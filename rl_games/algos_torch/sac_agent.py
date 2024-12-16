@@ -257,7 +257,8 @@ class SACAgent(BaseAlgorithm):
             self.vec_env.set_env_state(env_state)
 
     def restore(self, fn, set_epoch=True):
-        print("SAC restore")
+        if not os.path.exists(fn):
+            raise FileNotFoundError(f"Checkpoint file not found: {fn}")
         checkpoint = torch_ext.load_checkpoint(fn)
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
@@ -268,7 +269,7 @@ class SACAgent(BaseAlgorithm):
         pass
 
     def get_masked_action_values(self, obs, action_masks):
-        assert False
+        raise NotImplementedError("Masked action values are not supported in SAC agent")
 
     def set_eval(self):
         self.model.eval()
@@ -425,7 +426,8 @@ class SACAgent(BaseAlgorithm):
 
         actions = dist.sample() if sample else dist.mean
         actions = actions.clamp(*self.action_range)
-        assert actions.ndim == 2
+        if actions.ndim != 2:
+            raise ValueError(f"Actions tensor must be 2-dimensional, got shape {actions.shape}")
 
         return actions
 

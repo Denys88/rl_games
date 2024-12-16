@@ -378,7 +378,7 @@ class ExperienceBuffer:
 
     def update_data_rnn(self, name, indices, play_mask, val):
         if type(val) is dict:
-            for k,v in val:
+            for k, v in val:
                 self.tensor_dict[name][k][indices, play_mask] = v
         else:
             self.tensor_dict[name][indices, play_mask] = val

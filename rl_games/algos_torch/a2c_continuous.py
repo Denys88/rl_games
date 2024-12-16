@@ -92,7 +92,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.set_central_value_function_weights(checkpoint)
 
     def get_masked_action_values(self, obs, action_masks):
-        assert False
+        raise NotImplementedError("Masked action values are not implemented for continuous actions")
 
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
