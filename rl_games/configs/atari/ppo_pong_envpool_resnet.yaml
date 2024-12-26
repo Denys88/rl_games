@@ -1,4 +1,5 @@
-params:  
+params:
+  seed: 42
   algo:
     name: a2c_discrete
 
@@ -34,21 +35,27 @@ params:
       name: lstm
       units: 256
       layers: 1
+
   config:
+    name: Pong-v5_envpool_resnet_16_seq_length
+    env_name: envpool
     reward_shaper:
       min_val: -1
       max_val: 1
-        
+    normalize_input: False
+    mixed_precision: False
+    normalize_value: True
     normalize_advantage: True
+    value_bootstrap: False
     gamma: 0.995
     tau: 0.95
     learning_rate: 3e-4
-    name: pong_resnet
-    score_to_win: 100000
+    lr_schedule: None
+    kl_threshold: 0.01
+    score_to_win: 20
+    truncate_grads: True
     grad_norm: 1.5
     entropy_coef: 0.01
-    truncate_grads: True
-    env_name: envpool #'openai_gym' #'PongNoFrameskip-v4' #
     e_clip: 0.2
     clip_value: True
     num_actors: 64
@@ -56,12 +63,9 @@ params:
     minibatch_size: 2048
     mini_epochs: 2
     critic_coef: 1
-    lr_schedule: None
-    kl_threshold: 0.01
-    normalize_input: False
+    seq_length: 16
+    max_epochs: 1000
     use_diagnostics: True
-    seq_length: 32
-    max_epochs: 200000
 
     env_config:
       env_name: Pong-v5
@@ -70,7 +74,7 @@ params:
 
     player:
         render: True
-        games_num: 10
+        games_num: 100
         n_game_life: 1
         deterministic: True
 

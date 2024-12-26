@@ -27,7 +27,7 @@ class PpoDiagnostics(DefaultDiagnostics):
             return
         for k, v in self.diag_dict.items():
             writter.add_scalar(k, v.cpu().numpy(), self.current_epoch)
-    
+
     def epoch(self, agent, current_epoch):
         self.current_epoch = current_epoch
         if agent.normalize_rms_advantage:
@@ -45,7 +45,6 @@ class PpoDiagnostics(DefaultDiagnostics):
         clip_frac = torch.stack(self.clip_fracs, axis=0).mean()
         self.clip_fracs = []
         self.diag_dict['diagnostics/clip_frac/{0}'.format(miniepoch)] = clip_frac
-
 
     def mini_batch(self, agent, batch, e_clip, minibatch):
         with torch.no_grad():

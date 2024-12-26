@@ -446,7 +446,7 @@ class SACAgent(BaseAlgorithm):
         self.mean_rewards = self.last_mean_rewards = -1000000000
         self.algo_observer.after_clear_stats()
 
-    def play_steps(self, random_exploration = False):
+    def play_steps(self, random_exploration=False):
         total_time_start = time.perf_counter()
         total_update_time = 0
         total_time = 0

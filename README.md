@@ -111,7 +111,7 @@ howpublished = {\url{https://github.com/Denys88/rl_games}},
 ```bash
 poetry install
 # install cuda related dependencies
-poetry run pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+poetry run pip install torch torchvision
 ```
 
 ## Training
@@ -144,8 +144,8 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 *Atari Pong*
 
 ```bash
-python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
-python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+python runner.py --train --file rl_games/configs/atari/ppo_pong_envpool.yaml
+python runner.py --play --file rl_games/configs/atari/ppo_pong_envpool.yaml --checkpoint nn/Pong-v5_envpool.pth
 ```
 
 Or with poetry:
