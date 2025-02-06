@@ -7,6 +7,7 @@ from torch.optim.optimizer import Optimizer
 import math
 import time
 
+
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
     np.dtype('uint8')      : torch.uint8,
@@ -17,14 +18,15 @@ numpy_to_torch_dtype_dict = {
     np.dtype('float16')    : torch.float16,
     np.dtype('float64')    : torch.float32,
     np.dtype('float32')    : torch.float32,
-    #np.dtype('float64')    : torch.float64,
     np.dtype('complex64')  : torch.complex64,
     np.dtype('complex128') : torch.complex128,
 }
 
 torch_to_numpy_dtype_dict = {value : key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
-def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce=True):
+# Unfortunately mode='max-autotune' does not work with torch.compile() here
+@torch.compile()
+def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
     c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
     c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
     c3 = -1.0 / 2.0
@@ -41,7 +43,7 @@ def mean_mask(input, mask, sum_mask):
 def shape_whc_to_cwh(shape):
     if len(shape) == 3:
         return (shape[2], shape[0], shape[1])
-    
+
     return shape
 
 
@@ -107,14 +109,13 @@ def truncated_normal(uniform, mu=0.0, sigma=1.0, a=-2, b=2):
 def sample_truncated_normal(shape=(), mu=0.0, sigma=1.0, a=-2, b=2):
     return truncated_normal(torch.from_numpy(np.random.uniform(0, 1, shape)), mu, sigma, a, b)
 
-def variance_scaling_initializer(tensor, mode='fan_in',scale = 2.0):
+def variance_scaling_initializer(tensor, mode='fan_in', scale=2.0):
     fan = torch.nn.init._calculate_correct_fan(tensor, mode)
     print(fan, scale)
     sigma = np.sqrt(scale / fan)
     with torch.no_grad():
         tensor[:] = sample_truncated_normal(tensor.size(), sigma=sigma)
         return tensor
-
 
 def random_sample(obs_batch, prob):
     num_batches = obs_batch.size()[0]
@@ -131,12 +132,11 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.numel()#
-        #sum_mask = mask.sum()
+        sum_mask = mask.numel()
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
-    
+
     return res_losses, sum_mask
 
 def normalization_with_masks(values, masks):
@@ -157,7 +157,11 @@ def get_mean_var_with_masks(values, masks):
     values_var = min_sqr * sum_mask / (sum_mask-1)
     return values_mean, values_var
 
-def explained_variance(y_pred,y, masks=None):
+def get_mean_std_with_masks(values, masks):
+    values_mean, values_var = get_mean_var_with_masks(values, masks)
+    return values_mean, torch.sqrt(values_var)
+
+def explained_variance(y_pred, y, masks=None):
     """
     Computes fraction of variance that ypred explains about y.
     Returns 1 - Var[y-ypred] / Var[y]
@@ -169,7 +173,7 @@ def explained_variance(y_pred,y, masks=None):
 
     if masks is not None:
         masks = masks.unsqueeze(1)
-        _, var_y = get_mean_var_with_masks(y_pred,masks)
+        _, var_y = get_mean_var_with_masks(y_pred, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
         var_y = torch.var(y)
@@ -187,7 +191,8 @@ def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
     else:
         clip_frac = clip_frac.mean()
     return clip_frac
-    
+
+
 class CoordConv2d(nn.Conv2d):
     pool = {}
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
@@ -206,6 +211,7 @@ class CoordConv2d(nn.Conv2d):
     def forward(self, x):
         return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
+
 
 class LayerNorm2d(nn.Module):
     """
@@ -240,7 +246,6 @@ class LayerNorm2d(nn.Module):
         return self.gamma.expand_as(x) * (x - mean) / (std + self.eps) + self.beta.expand_as(x)
 
 
-
 class DiscreteActionsEncoder(nn.Module):
     def __init__(self, actions_max, mlp_out, emb_size, num_agents, use_embedding):
         super().__init__()
@@ -252,7 +257,7 @@ class DiscreteActionsEncoder(nn.Module):
             self.embedding = torch.nn.Embedding(actions_max, emb_size)
         else:
             self.emb_size = actions_max
-        
+
         self.linear = torch.nn.Linear(self.emb_size * num_agents, mlp_out)
 
     def forward(self, discrete_actions):
@@ -260,9 +265,10 @@ class DiscreteActionsEncoder(nn.Module):
             emb = self.embedding(discrete_actions)
         else:
             emb = torch.nn.functional.one_hot(discrete_actions, num_classes=self.actions_max)
-        emb = emb.view( -1, self.emb_size * self.num_agents).float()
+        emb = emb.view(-1, self.emb_size * self.num_agents).float()
         emb = self.linear(emb)
         return emb
+
 
 def get_model_gradients(model):
     grad_list = []
@@ -283,7 +289,7 @@ class AverageMeter(nn.Module):
         super(AverageMeter, self).__init__()
         self.max_size = max_size
         self.current_size = 0
-        self.register_buffer("mean", torch.zeros(in_shape, dtype = torch.float32))
+        self.register_buffer("mean", torch.zeros(in_shape, dtype=torch.float32))
 
     def update(self, values):
         size = values.size()[0]
@@ -315,5 +321,3 @@ class IdentityRNN(nn.Module):
 
     def forward(self, x, h):
         return self.identity(x), h
-
- 

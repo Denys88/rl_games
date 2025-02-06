@@ -25,7 +25,8 @@ class BasePlayer(object):
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
         self.seed = self.env_config.pop('seed', None)
-        self.balance_env_rewards  = self.player_config.get('balance_env_rewards', False)
+        self.balance_env_rewards = self.player_config.get('balance_env_rewards', False)
+
         if self.env_info is None:
             use_vecenv = self.player_config.get('use_vecenv', False)
             if use_vecenv:

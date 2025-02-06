@@ -12,6 +12,7 @@ from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
 from rl_games.algos_torch import  model_builder
 from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+
 import numpy as np
 import time
 import gym
@@ -20,6 +21,7 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 import torch
 from torch import nn
+from torch.nn.utils import clip_grad_norm_
 import torch.distributed as dist
 
 from time import sleep
@@ -356,7 +358,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.truncate_grads:
             self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -994,7 +996,7 @@ class DiscreteA2CBase(A2CBase):
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
-                self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
+                self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
@@ -1271,7 +1273,7 @@ class ContinuousA2CBase(A2CBase):
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
-                self.model.running_mean_std.eval() # don't need to update statstics more than one miniepoch
+                self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start

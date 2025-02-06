@@ -67,10 +67,12 @@ class Runner:
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
+
+        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
+        # For maximum perfromance
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
-        ### it did not help for lots for openai gym envs anyway :(
-        #torch.backends.cudnn.deterministic = True
-        #torch.use_deterministic_algorithms(True)
 
     def reset(self):
         pass
@@ -145,6 +147,12 @@ class Runner:
         """
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
+
+        # If torch.compile is available, compile the model to optimize its forward pass.
+        # if hasattr(torch, "compile"):
+        # mode="max-autotune" is theoretically the fastest, but it compiles the longest
+        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+
         _restore(agent, args)
         _override_sigma(agent, args)
         agent.train()
@@ -174,7 +182,7 @@ class Runner:
         Args:
             args (:obj:`dict`):  Args passed in as a dict obtained from a yaml file or some other config format.
 
-        """        
+        """
         if args['train']:
             self.run_train(args)
         elif args['play']:

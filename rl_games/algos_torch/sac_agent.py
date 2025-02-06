@@ -1,21 +1,18 @@
-from rl_games.algos_torch import torch_ext
-
-from rl_games.common import vecenv
-from rl_games.common import schedulers
-from rl_games.common import experience
-from rl_games.common.a2c_common import print_statistics
-
-from rl_games.interfaces.base_algorithm import BaseAlgorithm
-from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
-from rl_games.algos_torch import model_builder
-from torch import optim
-import torch
-from torch import nn
-import torch.nn.functional as F
-import numpy as np
-import time
 import os
+import time
+import numpy as np
+from datetime import datetime
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import optim
+from torch.utils.tensorboard import SummaryWriter
+
+from rl_games.algos_torch import model_builder, torch_ext
+from rl_games.common import vecenv, schedulers, experience
+from rl_games.common.a2c_common import print_statistics
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 
 
 class SACAgent(BaseAlgorithm):

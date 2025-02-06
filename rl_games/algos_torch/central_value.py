@@ -2,6 +2,7 @@ import os
 import copy
 import torch
 from torch import nn
+from torch.nn.utils import clip_grad_norm_
 import torch.distributed as dist
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
@@ -12,7 +13,7 @@ from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
 
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions, 
+    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions,
                 seq_length, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
         nn.Module.__init__(self)
 
@@ -137,8 +138,8 @@ class CentralValueTrain(nn.Module):
         pass
 
     def update_dataset(self, batch_dict):
-        value_preds = batch_dict['old_values']     
-        returns = batch_dict['returns']   
+        value_preds = batch_dict['old_values']
+        returns = batch_dict['returns']
         actions = batch_dict['actions']
         dones = batch_dict['dones']
         rnn_masks = batch_dict['rnn_masks']
@@ -220,8 +221,8 @@ class CentralValueTrain(nn.Module):
     def update_multiagent_tensors(self, value_preds, returns, actions, dones):
         batch_size = self.batch_size
         ma_batch_size = self.num_actors * self.num_agents * self.horizon_length
-        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
-        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0,1)
+        value_preds = value_preds.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
+        returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
@@ -234,10 +235,13 @@ class CentralValueTrain(nn.Module):
         for _ in range(self.mini_epoch):
             if self.config.get('freeze_critic', False):
                 break
-            for idx in range(len(self.dataset)):
-                loss += self.train_critic(self.dataset[idx])
+            for data in self.dataset:
+                loss += self.train_critic(data)
+
             if self.normalize_input:
-                self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
+                # don't need to update statistics more than one miniepoch
+                self.model.running_mean_std.eval()
+
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
@@ -248,6 +252,20 @@ class CentralValueTrain(nn.Module):
             self.writter.add_scalar('losses/cval_loss', avg_loss, self.frame)
             self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
         return avg_loss
+
+    # Unfortunately mode='max-autotune' does not work with torch.compile() here
+    @torch.compile()
+    def calc_loss(self, value_preds_batch, values, returns_batch, rnn_masks_batch):
+        loss = common_losses.critic_loss(
+            self.model,
+            value_preds_batch,
+            values,
+            self.e_clip,
+            returns_batch,
+            self.clip_value
+        )
+        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
+        return losses[0]
 
     def calc_gradients(self, batch):
         obs_batch = self._preproc_obs(batch['obs'])
@@ -265,10 +283,9 @@ class CentralValueTrain(nn.Module):
             batch_dict['rnn_states'] = batch['rnn_states']
 
         res_dict = self.model(batch_dict)
+
         values = res_dict['values']
-        loss = common_losses.critic_loss(self.model, value_preds_batch, values, self.e_clip, returns_batch, self.clip_value)
-        losses, _ = torch_ext.apply_masks([loss], rnn_masks_batch)
-        loss = losses[0]
+        loss = self.calc_loss(value_preds_batch, values, returns_batch, rnn_masks_batch)
 
         if self.multi_gpu:
             self.optimizer.zero_grad()
@@ -289,12 +306,12 @@ class CentralValueTrain(nn.Module):
             for param in self.model.parameters():
                 if param.grad is not None:
                     param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
+                        all_grads[offset: offset + param.numel()].view_as(param.grad.data) / self.world_size
                     )
                     offset += param.numel()
 
         if self.truncate_grads:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
 

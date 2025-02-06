@@ -44,12 +44,12 @@ class BaseModelNetwork(nn.Module):
         self.value_size = value_size
 
         if normalize_value:
-            self.value_mean_std = RunningMeanStd((self.value_size,)) #   GeneralizedMovingStats((self.value_size,)) #   
+            self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = RunningMeanStdObs(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
             else:
-                self.running_mean_std = RunningMeanStd(obs_shape)
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -180,7 +180,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
                     action_masks = np.split(action_masks, len(logits), axis=1)
-                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]                
+                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
 
                 selected_action = [c.sample().long() for c in categorical]
                 neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, selected_action)]
@@ -280,6 +280,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             return self.a2c_network.get_default_rnn_state()
 
         def forward(self, input_dict):
+            torch.compiler.cudagraph_mark_step_begin()
+
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
@@ -296,7 +298,7 @@ class ModelA2CContinuousLogStd(BaseModel):
                     'rnn_states': states,
                     'mus': mu,
                     'sigmas': sigma
-                }                
+                }
                 return result
             else:
                 selected_action = distr.sample()
@@ -311,9 +313,11 @@ class ModelA2CContinuousLogStd(BaseModel):
                 }
                 return result
 
+        # Unfortunately mode='max-autotune' does not work with torch.compile() here
+        @torch.compile()
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
-                + 0.5 * np.log(2.0 * np.pi) * x.size()[-1] \
+                + 0.5 * np.log(2.0 * np.pi) * x.size(-1) \
                 + logstd.sum(dim=-1)
 
 
@@ -346,6 +350,7 @@ class ModelA2CContinuousTanh(BaseModel):
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.nn.functional.softplus(logstd + 0.001)
             main_distr = NormalTanhDistribution(mu.size(-1))
+
             if is_train:
                 entropy = main_distr.entropy(mu, logstd)
                 prev_neglogp = -main_distr.log_prob(mu, logstd, main_distr.inverse_post_process(prev_actions))

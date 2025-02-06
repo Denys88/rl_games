@@ -55,7 +55,6 @@ class TestNetBuilder(NetworkBuilder):
         return self.build(name, **kwargs)
 
 
-
 class TestNetWithAuxLoss(NetworkBuilder.BaseNetwork):
     def __init__(self, params, **kwargs):
         nn.Module.__init__(self)
@@ -79,7 +78,7 @@ class TestNetWithAuxLoss(NetworkBuilder.BaseNetwork):
         self.mean_linear = nn.Linear(64, actions_num)
         self.value_linear = nn.Linear(64, 1)
         self.aux_loss_linear = nn.Linear(64, self.target_shape)
-        
+
         self.aux_loss_map = {
             'aux_dist_loss' : None
         }
@@ -104,6 +103,7 @@ class TestNetWithAuxLoss(NetworkBuilder.BaseNetwork):
             return value, None
         return action, value, None
 
+
 class TestNetAuxLossBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -116,7 +116,6 @@ class TestNetAuxLossBuilder(NetworkBuilder):
 
     def __call__(self, name, **kwargs):
         return self.build(name, **kwargs)
-    
 
 
 class SimpleNet(NetworkBuilder.BaseNetwork):
@@ -124,7 +123,7 @@ class SimpleNet(NetworkBuilder.BaseNetwork):
         nn.Module.__init__(self)
         actions_num = kwargs.pop('actions_num')
         input_shape = kwargs.pop('input_shape')
-        num_inputs =input_shape[0]
+        num_inputs = input_shape[0]
         self.actions_num = actions_num
         self.central_value = params.get('central_value', False)
         self.value_size = kwargs.pop('value_size', 1)
@@ -141,14 +140,13 @@ class SimpleNet(NetworkBuilder.BaseNetwork):
 
     def is_rnn(self):
         return False
+
     @torch.compile
     def forward(self, obs):
         obs = obs['obs']
         x = self.linear(obs)
         mu, value = torch.split(x, [self.actions_num, 1], dim=-1)
         return mu, self.sigma.unsqueeze(0).expand(mu.size()[0], self.actions_num), value, None
-
-
 
 
 class SimpleNetBuilder(NetworkBuilder):
