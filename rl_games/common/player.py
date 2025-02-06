@@ -62,7 +62,8 @@ class BasePlayer(object):
             'central_value_config') is not None
         self.device_name = self.config.get('device_name', 'cuda')
         self.render_env = self.player_config.get('render', False)
-        self.games_num = self.player_config.get('games_num', 2000)
+        # 1000000000 is a large number that should be enough for any practical purpose
+        self.games_num = self.player_config.get('games_num', 1000000000)
 
         if 'deterministic' in self.player_config:
             self.is_deterministic = self.player_config['deterministic']
@@ -271,17 +272,17 @@ class BasePlayer(object):
             )[2]), dtype=torch.float32).to(self.device) for s in rnn_states]
 
     def run(self):
-        n_games = self.games_num
         render = self.render_env
         n_game_life = self.n_game_life
+        n_games = self.games_num * n_game_life
         is_deterministic = self.is_deterministic
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
-        n_games = n_games * n_game_life
         games_played = 0
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
             agent_inited = True
