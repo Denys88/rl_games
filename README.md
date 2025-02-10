@@ -312,7 +312,21 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+1.6.5
+
+* Torch compile support. Requires torch 2.2 or newer now.
+* Fixed get_mean_std_with_masks function.
+* Added myosuite support.
+* Added auxilary loss support.
+* Update for tacsl release: CNN tower processing, critic weights loading and freezing.
+* Fixed SAC input normalization.
+* Fixed default player config num_games value.
+* Fixed applying minibatch size per env.
+* Added concat_output support for RNN.
+
+
 1.6.1
+
 * Fixed Central Value RNN bug which occurs if you train ma multi agent environment.
 * Added Deepmind Control PPO benchmark.
 * Added a few more experimental ways to train value prediction (OneHot, TwoHot encoding and crossentropy loss instead of L2).
