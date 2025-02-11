@@ -1,12 +1,20 @@
+import math
+import time
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
-import math
-import time
 
+
+# Register safe globals for numpy dtypes and scalars.
+# This tells the safe unpickler how to rebuild these objects.
+torch.serialization.add_safe_globals({
+    "numpy.core.multiarray.scalar": lambda: np.core.multiarray.scalar,
+    "numpy.dtype": lambda: np.dtype,
+    "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
+})
 
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
@@ -22,7 +30,7 @@ numpy_to_torch_dtype_dict = {
     np.dtype('complex128') : torch.complex128,
 }
 
-torch_to_numpy_dtype_dict = {value : key for (key, value) in numpy_to_torch_dtype_dict.items()}
+torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
 # Unfortunately mode='max-autotune' does not work with torch.compile() here
 @torch.compile()
@@ -56,25 +64,34 @@ def shape_cwh_to_whc(shape):
 def safe_filesystem_op(func, *args, **kwargs):
     """
     This is to prevent spurious crashes related to saving checkpoints or restoring from checkpoints in a Network
-    Filesystem environment (i.e. NGC cloud or SLURM)
+    Filesystem environment (i.e. NGC cloud or SLURM), but with a maximum number of retries.
     """
+    wait_sec = 1
     num_attempts = 5
-    for attempt in range(num_attempts):
+    attempt = 0
+    while attempt < num_attempts:
         try:
             return func(*args, **kwargs)
-        except Exception as exc:
-            print(f'Exception {exc} when trying to execute {func} with args:{args} and kwargs:{kwargs}...')
-            wait_sec = 2 ** attempt
-            print(f'Waiting {wait_sec} before trying again...')
+        except Exception as e:
+            print(f"Exception during filesystem op: {e}")
             time.sleep(wait_sec)
+            wait_sec *= 2
+            attempt += 1
 
-    raise RuntimeError(f'Could not execute {func}, give up after {num_attempts} attempts...')
+    raise RuntimeError(f'Could not execute {func}, gave up after {num_attempts} attempts...')
 
 def safe_save(state, filename):
     return safe_filesystem_op(torch.save, state, filename)
 
 def safe_load(filename):
-    return safe_filesystem_op(torch.load, filename)
+    with torch.serialization.safe_globals({
+        "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
+        "numpy.dtype": np.dtype,
+        "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
+    }):
+        # Disable weights_only to avoid the unpickler bug
+        checkpoint = torch.load(filename, weights_only=False)
+    return checkpoint
 
 def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
@@ -83,6 +100,21 @@ def save_checkpoint(filename, state):
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
     state = safe_load(filename)
+
+    # ----------------------------
+    # Fix for missing/unexpected keys:
+    # Remove the '_orig_mod.' prefix so model keys match your uncompiled model
+    if "model" in state:
+        new_model = {}
+        for k, v in state["model"].items():
+            if k.startswith("_orig_mod."):
+                new_key = k[len("_orig_mod."):]
+            else:
+                new_key = k
+            new_model[new_key] = v
+        state["model"] = new_model
+    # ----------------------------
+
     return state
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
