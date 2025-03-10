@@ -51,13 +51,13 @@ class GeneralizedMovingStats(nn.Module):
             return 0.0, 1.0
         elif self.impl == 'mean_std':
             mean = self.mean
-            var = (self.sqrs) - self.mean ** 2
+            var = self.sqrs - mean.pow(2)
             std = torch.sqrt(torch.clamp_min(var, 1 / self.max ** 2) + self.eps)
             return mean, std
         elif self.impl == 'mean_std_corr':
             corr = 1.0 - self.decay ** self.step.float()
             mean = self.mean / corr
-            var = (self.sqrs / corr) - self.mean ** 2
+            var = (self.sqrs / corr) - (self.mean / corr).pow(2)
             std = torch.sqrt(torch.clamp_min(var, 1 / self.max ** 2) + self.eps)
             return mean, std
         elif self.impl == 'min_max':
@@ -109,8 +109,12 @@ class GeneralizedMovingStats(nn.Module):
 
         offset, invscale = self._get_stats()
         if denorm:
-            y = input * invscale + offset
+            output = torch.empty_like(input)
+            output.copy_(input)
+            output.mul_(invscale).add_(offset)
         else:
-            y = (input - offset) / invscale
-            y = torch.clamp(y, min=-5.0, max=5.0)
-        return y
+            output = torch.empty_like(input)
+            output.copy_(input)
+            output.sub_(offset).div_(invscale)
+            output.clamp_(-5.0, 5.0)
+        return output
