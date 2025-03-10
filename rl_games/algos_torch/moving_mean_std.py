@@ -4,10 +4,10 @@ import numpy as np
 import rl_games.algos_torch.torch_ext as torch_ext
 
 
-'''
-updates moving statistics with momentum
-'''
 class GeneralizedMovingStats(nn.Module):
+    '''
+    Updates moving statistics with momentum
+    '''
     def __init__(
         self, insize, impl='mean_std', decay=0.99, max=1e5, eps=0.0, perclo=0.05,
         perchi=0.95
@@ -83,25 +83,25 @@ class GeneralizedMovingStats(nn.Module):
             pass
         elif self.impl == 'mean_std':
             self.step.data += 1
-            self.mean.data = m * self.mean.data + (1 - m) * torch.mean(x)
-            self.sqrs.data = m * self.sqrs.data + (1 - m) * torch.mean(x ** 2)
+            self.mean.data.mul_(m).add_((1 - m) * torch.mean(x))
+            self.sqrs.data.mul_(m).add_((1 - m) * torch.mean(x ** 2))
         elif self.impl == 'mean_std_corr':
             self.step.data += 1
-            self.mean.data = m * self.mean.data + (1 - m) * torch.mean(x)
-            self.sqrs.data = m * self.sqrs.data + (1 - m) * torch.mean(x ** 2)
+            self.mean.data.mul_(m).add_((1 - m) * torch.mean(x))
+            self.sqrs.data.mul_(m).add_((1 - m) * torch.mean(x ** 2))
         elif self.impl == 'min_max':
             low, high = torch.min(x), torch.max(x)
-            self.low.data = m * torch.minimum(self.low.data, low) + (1 - m) * low
-            self.high.data = m * torch.maximum(self.high.data, high) + (1 - m) * high
+            self.low.data.mul_(m).add_((1 - m) * torch.minimum(self.low.data, low))
+            self.high.data.mul_(m).add_((1 - m) * torch.maximum(self.high.data, high))
         elif self.impl == 'perc_ema':
             low, high = torch.quantile(x, self.perclo), torch.quantile(x, self.perchi)
-            self.low.data = m * self.low.data + (1 - m) * low
-            self.high.data = m * self.high.data + (1 - m) * high
+            self.low.data.mul_(m).add_((1 - m) * low)
+            self.high.data.mul_(m).add_((1 - m) * high)
         elif self.impl == 'perc_ema_corr':
             self.step.data += 1
             low, high = torch.quantile(x, self.perclo), torch.quantile(x, self.perchi)
-            self.low.data = m * self.low.data + (1 - m) * low
-            self.high.data = m * self.high.data + (1 - m) * high
+            self.low.data.mul_(m).add_((1 - m) * low)
+            self.high.data.mul_(m).add_((1 - m) * high)
 
     def forward(self, input, mask=None, denorm=False):
         if self.training:
