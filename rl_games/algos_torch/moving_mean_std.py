@@ -77,18 +77,40 @@ class GeneralizedMovingStats(nn.Module):
         else:
             raise NotImplementedError(self.impl)
 
+    @torch.compile(mode="reduce-overhead")
+    def update_moving_stats(self, mean, sqrs, x, m):
+        """
+        Optimized moving statistics update using torch.compile for better performance.
+        
+        Args:
+            mean: The current mean parameter
+            sqrs: The current squared values parameter
+            x: Input data to update statistics with
+            m: Momentum factor
+        
+        Returns:
+            Updated mean and sqrs values
+        """
+        x_mean = torch.mean(x, dim=0)
+        # Avoid creating temporary tensor with x**2
+        x_sqr_mean = torch.mean(x * x, dim=0)
+        mean_factor = 1 - m
+        mean.mul_(m).add_(mean_factor * x_mean)
+        sqrs.mul_(m).add_(mean_factor * x_sqr_mean)
+        return mean, sqrs
+
     def _update_stats(self, x):
         m = self.decay
         if self.impl == 'off':
             pass
         elif self.impl == 'mean_std':
             self.step.data += 1
-            self.mean.data.mul_(m).add_((1 - m) * torch.mean(x))
-            self.sqrs.data.mul_(m).add_((1 - m) * torch.mean(x ** 2))
+            # Use the compiled function instead of separate operations
+            self.mean, self.sqrs = self.update_moving_stats(self.mean.data, self.sqrs.data, x, m)
         elif self.impl == 'mean_std_corr':
             self.step.data += 1
-            self.mean.data.mul_(m).add_((1 - m) * torch.mean(x))
-            self.sqrs.data.mul_(m).add_((1 - m) * torch.mean(x ** 2))
+            # Use the compiled function
+            self.mean, self.sqrs = self.update_moving_stats(self.mean.data, self.sqrs.data, x, m)
         elif self.impl == 'min_max':
             low, high = torch.min(x), torch.max(x)
             self.low.data.mul_(m).add_((1 - m) * torch.minimum(self.low.data, low))

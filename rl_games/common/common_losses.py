@@ -1,8 +1,10 @@
 import torch
 from torch import nn
 import math
+import torch.nn.functional as F
 
 
+@torch.compile(mode="reduce-overhead")
 def critic_loss(model, value_preds_batch, values, curr_e_clip: float, return_batch, clip_value: float):
     """
     Computes the critic loss using the default critic loss function.
@@ -104,3 +106,13 @@ def decoupled_actor_loss(
     pg_losses = torch.max(pg_losses1, pg_losses2)
 
     return pg_losses
+
+
+@torch.compile()
+def normalize_advantage(advantage):
+    """
+    Normalize advantages using compiled operations for better performance.
+    """
+    mean = advantage.mean()
+    std = advantage.std() + 1e-8
+    return (advantage - mean) / std

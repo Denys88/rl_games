@@ -54,6 +54,7 @@ class RunningMeanStd(nn.Module):
             else:
                 mean = input.mean(self.axis) # along channel axis
                 var = input.var(self.axis)
+
             self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(
                 self.running_mean,
                 self.running_var,

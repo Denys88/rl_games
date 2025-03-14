@@ -13,12 +13,18 @@ from rl_games.common import schedulers
 
 class CentralValueTrain(nn.Module):
 
-    def __init__(self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors, num_actions,
-                seq_length, normalize_value, network, config, writter, max_epochs, multi_gpu, zero_rnn_on_done):
+    def __init__(
+        self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors,
+        num_actions, seq_length, normalize_value, network, config, writter, max_epochs,
+        multi_gpu, zero_rnn_on_done
+    ):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
-        self.num_agents, self.horizon_length, self.num_actors, self.seq_length = num_agents, horizon_length, num_actors, seq_length
+        self.num_agents = num_agents
+        self.horizon_length = horizon_length
+        self.num_actors = num_actors
+        self.seq_length = seq_length
         self.normalize_value = normalize_value
         self.num_actions = num_actions
         self.state_shape = state_shape
@@ -70,11 +76,13 @@ class CentralValueTrain(nn.Module):
 
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
-        self.optimizer = torch.optim.Adam(self.model.parameters(),
-                                        float(self.lr),
-                                        eps=1e-08,
-                                        weight_decay=self.weight_decay,
-                                        fused=True)
+        self.optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            float(self.lr),
+            eps=1e-08,
+            weight_decay=self.weight_decay,
+            fused=True
+        )
         self.frame = 0
         self.epoch_num = 0
         self.running_mean_std = None
@@ -158,11 +166,9 @@ class CentralValueTrain(nn.Module):
                 states.append(mb_s.permute(1, 2, 0, 3).reshape(-1, t_size, h_size))
 
             batch_dict['rnn_states'] = states
-            '''
-            if self.num_agents > 1:
-                rnn_masks = res[3]
-            batch_dict['rnn_masks'] = rnn_masks
-            '''
+            # if self.num_agents > 1:
+            #     rnn_masks = res[3]
+            # batch_dict['rnn_masks'] = rnn_masks
         self.dataset.update_values_dict(batch_dict)
 
     def _preproc_obs(self, obs_batch):
@@ -275,10 +281,12 @@ class CentralValueTrain(nn.Module):
         dones_batch = batch['dones']
         rnn_masks_batch = batch.get('rnn_masks')
 
-        batch_dict = {'obs': obs_batch,
-                        'actions': actions_batch,
-                        'seq_length': self.seq_length,
-                        'dones': dones_batch}
+        batch_dict = {
+            'obs': obs_batch,
+            'actions': actions_batch,
+            'seq_length': self.seq_length,
+            'dones': dones_batch
+        }
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
@@ -316,3 +324,13 @@ class CentralValueTrain(nn.Module):
         self.optimizer.step()
 
         return loss
+
+    def train(self, input_dict):
+        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+            values = self.model(input_dict)['values']
+            loss = (values - input_dict['returns']).pow(2).mean()
+
+        self.optimizer.zero_grad(set_to_none=True)
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()

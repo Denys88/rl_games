@@ -330,10 +330,19 @@ class SACAgent(BaseAlgorithm):
 
         return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
 
+    @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(tau * param.data +
                                     (1.0 - tau) * target_param.data)
+
+    def update_target_weights(self):
+        tau = self.critic_tau
+        self.soft_update_params(
+            self.model.sac_network.critic,
+            self.model.sac_network.critic_target,
+            tau
+        )
 
     def update(self, step):
         obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
@@ -346,9 +355,7 @@ class SACAgent(BaseAlgorithm):
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
 
         actor_loss_info = actor_loss, entropy, alpha, alpha_loss
-        self.soft_update_params(self.model.sac_network.critic,
-                                self.model.sac_network.critic_target,
-                                self.critic_tau)
+        self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
 
     def preproc_obs(self, obs):
