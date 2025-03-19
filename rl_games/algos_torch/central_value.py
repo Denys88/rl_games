@@ -23,9 +23,6 @@ class CentralValueTrain(nn.Module):
 
         self.ppo_device = ppo_device
         self.mixed_precision = config.get('mixed_precision', False)
-        print(f"CentralValueTrain: mixed_precision={self.mixed_precision}")
-        from time import sleep
-        sleep(2)
 
         self.scaler = GradScaler(enabled=self.mixed_precision)
 
