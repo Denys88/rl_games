@@ -8,14 +8,6 @@ import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 
 
-# Register safe globals for numpy dtypes and scalars.
-# This tells the safe unpickler how to rebuild these objects.
-torch.serialization.add_safe_globals({
-    "numpy.core.multiarray.scalar": lambda: np.core.multiarray.scalar,
-    "numpy.dtype": lambda: np.dtype,
-    "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
-})
-
 numpy_to_torch_dtype_dict = {
     np.dtype('bool')       : torch.bool,
     np.dtype('uint8')      : torch.uint8,

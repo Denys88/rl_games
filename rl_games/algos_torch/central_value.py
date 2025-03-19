@@ -3,6 +3,7 @@ import copy
 import torch
 from torch import nn
 from torch.nn.utils import clip_grad_norm_
+from torch.amp import GradScaler
 import torch.distributed as dist
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStdObs
@@ -21,6 +22,13 @@ class CentralValueTrain(nn.Module):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
+        self.mixed_precision = config.get('mixed_precision', False)
+        print(f"CentralValueTrain: mixed_precision={self.mixed_precision}")
+        from time import sleep
+        sleep(2)
+
+        self.scaler = GradScaler(enabled=self.mixed_precision)
+
         self.num_agents = num_agents
         self.horizon_length = horizon_length
         self.num_actors = num_actors
@@ -76,6 +84,7 @@ class CentralValueTrain(nn.Module):
 
         self.writter = writter
         self.weight_decay = config.get('weight_decay', 0.0)
+        self.model = self.model.to(self.ppo_device)  # Move explicitly to the device
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             float(self.lr),
@@ -326,11 +335,12 @@ class CentralValueTrain(nn.Module):
         return loss
 
     def train(self, input_dict):
+        self.optimizer.zero_grad(set_to_none=True)
+
         with torch.amp.autocast('cuda', enabled=self.mixed_precision):
             values = self.model(input_dict)['values']
             loss = (values - input_dict['returns']).pow(2).mean()
 
-        self.optimizer.zero_grad(set_to_none=True)
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
