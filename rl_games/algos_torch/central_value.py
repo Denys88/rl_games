@@ -210,14 +210,20 @@ class CentralValueTrain(nn.Module):
         return self.model(input_dict)
 
     def get_value(self, input_dict):
+        """
+        Get value estimates for the given observations.
+        """
         self.eval()
         obs_batch = input_dict['states']
         actions = input_dict.get('actions', None)
 
         obs_batch = self._preproc_obs(obs_batch)
-        res_dict = self.forward({'obs': obs_batch, 'actions': actions,
-                                'rnn_states': self.rnn_states,
-                                'is_train': False})
+        res_dict = self.forward({
+            'obs': obs_batch,
+            'actions': actions,
+            'rnn_states': self.rnn_states,
+            'is_train': False
+        })
         value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
@@ -242,7 +248,10 @@ class CentralValueTrain(nn.Module):
         return value_preds, returns, actions, dones
 
     def train_net(self):
-        self.train()
+        """
+        Train the value network on multiple mini-batches.
+        """
+        self.train()  # Set module to training mode
         loss = 0
         for _ in range(self.mini_epoch):
             if self.config.get('freeze_critic', False):
@@ -265,9 +274,10 @@ class CentralValueTrain(nn.Module):
             self.writter.add_scalar('info/cval_lr', self.lr, self.frame)
         return avg_loss
 
-    # Unfortunately mode='max-autotune' does not work with torch.compile() here
-    @torch.compile()
     def calc_loss(self, value_preds_batch, values, returns_batch, rnn_masks_batch):
+        """
+        Calculate value function loss with optional clipping.
+        """
         loss = common_losses.critic_loss(
             self.model,
             value_preds_batch,
@@ -280,6 +290,9 @@ class CentralValueTrain(nn.Module):
         return losses[0]
 
     def calc_gradients(self, batch):
+        """
+        Calculate gradients for the given batch of data.
+        """
         obs_batch = self._preproc_obs(batch['obs'])
         value_preds_batch = batch['old_values']
         returns_batch = batch['returns']
@@ -299,13 +312,17 @@ class CentralValueTrain(nn.Module):
         res_dict = self.model(batch_dict)
 
         values = res_dict['values']
-        loss = self.calc_loss(value_preds_batch, values, returns_batch, rnn_masks_batch)
+        loss = self.calc_loss(
+            value_preds_batch, values, returns_batch, rnn_masks_batch
+        )
 
+        # Efficiently clear gradients
         if self.multi_gpu:
             self.optimizer.zero_grad()
         else:
             for param in self.model.parameters():
                 param.grad = None
+
         loss.backward()
 
         if self.multi_gpu:
@@ -314,15 +331,24 @@ class CentralValueTrain(nn.Module):
             for param in self.model.parameters():
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
-            all_grads = torch.cat(all_grads_list)
-            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-            offset = 0
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.data.copy_(
-                        all_grads[offset: offset + param.numel()].view_as(param.grad.data) / self.world_size
-                    )
-                    offset += param.numel()
+
+            if not all_grads_list:
+                # This is a critical error condition - we should have gradients during training
+                import warnings
+                warnings.warn("No gradients found during update step! Check model configuration and loss computation.")
+            else:
+                all_grads = torch.cat(all_grads_list)
+                dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+
+                offset = 0
+                for param in self.model.parameters():
+                    if param.grad is not None:
+                        numel = param.numel()
+                        param.grad.data.copy_(
+                            all_grads[offset:offset + numel].view_as(param.grad.data)
+                            / self.world_size
+                        )
+                        offset += numel
 
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
@@ -331,7 +357,13 @@ class CentralValueTrain(nn.Module):
 
         return loss
 
-    def train(self, input_dict):
+    def train_on_batch(self, input_dict):
+        """
+        Train the value network on a single batch of data.
+
+        Args:
+            input_dict: Dictionary containing 'obs' and 'returns'
+        """
         self.optimizer.zero_grad(set_to_none=True)
 
         with torch.amp.autocast('cuda', enabled=self.mixed_precision):
@@ -341,3 +373,22 @@ class CentralValueTrain(nn.Module):
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
+
+        return loss
+
+    def to(self, device):
+        """
+        Move the network to the specified device.
+        """
+        self.ppo_device = device
+        self.model = self.model.to(device)
+        if self.is_rnn:
+            self.rnn_states = [s.to(device) for s in self.rnn_states]
+        return self
+
+    def train(self, mode=True):
+        """
+        Override the default nn.Module train method to ensure proper behavior when
+        switching between training/evaluation modes.
+        """
+        return nn.Module.train(self, mode)
