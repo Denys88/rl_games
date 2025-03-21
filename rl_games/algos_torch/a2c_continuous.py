@@ -94,8 +94,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def get_masked_action_values(self, obs, action_masks):
         raise NotImplementedError("Masked action values are not implemented for continuous actions")
 
-    # Unfortunately mode='max-autotune' does not work with torch.compile() here
-    @torch.compile()
     def calc_losses(
         self,
         actor_loss_func,
@@ -134,8 +132,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
-    # Unfortunately mode='max-autotune' does not work with torch.compile() here
-    @torch.compile()
+    @torch.compile(mode="reduce-overhead")
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
 
