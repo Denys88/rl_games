@@ -257,7 +257,9 @@ class CentralValueTrain(nn.Module):
             if self.config.get('freeze_critic', False):
                 break
             for data in self.dataset:
-                loss += self.train_critic(data)
+                # Use mixed precision for training
+                with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+                    loss += self.train_critic(data)
 
             if self.normalize_input:
                 # don't need to update statistics more than one miniepoch

@@ -108,7 +108,7 @@ def decoupled_actor_loss(
     return pg_losses
 
 
-@torch.compile()
+@torch.compile(mode="reduce-overhead")
 def normalize_advantage(advantage):
     """
     Normalize advantages using compiled operations for better performance.

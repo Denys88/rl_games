@@ -132,7 +132,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
-    @torch.compile(mode="reduce-overhead")
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
 
@@ -178,9 +177,19 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(self.actor_loss_func, 
-                old_action_log_probs_batch, action_log_probs, advantage, curr_e_clip, 
-                value_preds_batch, values, return_batch, mu, entropy, rnn_masks)
+            loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(
+                self.actor_loss_func,
+                old_action_log_probs_batch,
+                action_log_probs,
+                advantage,
+                curr_e_clip,
+                value_preds_batch,
+                values,
+                return_batch,
+                mu,
+                entropy,
+                rnn_masks
+            )
 
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
@@ -217,8 +226,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'masks': rnn_masks
         }, curr_e_clip, 0)
 
-        self.train_result = (a_loss, c_loss, entropy, \
-            kl_dist, self.last_lr, lr_mul, \
+        self.train_result = (a_loss, c_loss, entropy,
+            kl_dist, self.last_lr, lr_mul,
             mu.detach(), sigma.detach(), b_loss)
 
     def train_actor_critic(self, input_dict):

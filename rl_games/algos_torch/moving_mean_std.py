@@ -81,13 +81,13 @@ class GeneralizedMovingStats(nn.Module):
     def update_moving_stats(self, mean, sqrs, x, m):
         """
         Optimized moving statistics update using torch.compile for better performance.
-        
+
         Args:
             mean: The current mean parameter
             sqrs: The current squared values parameter
             x: Input data to update statistics with
             m: Momentum factor
-        
+
         Returns:
             Updated mean and sqrs values
         """
