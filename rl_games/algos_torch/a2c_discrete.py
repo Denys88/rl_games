@@ -6,9 +6,8 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 
-from torch import optim
 import torch
-from torch import nn
+from torch import nn, optim, autocast
 import numpy as np
 
 
@@ -117,6 +116,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.set_train()
         self.calc_gradients(input_dict)
 
+        # Unpack diagnostics explicitly
+        (a_loss, c_loss, entropy, kl_dist, last_lr, lr_mul, exp_var, clip_frac) = self.train_result
+
+        # Safe mutations outside compiled context
+        self.diagnostics.exp_vars.append(exp_var.detach())
+        self.diagnostics.clip_fracs.append(clip_frac.detach())
+
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = self.last_lr
 
@@ -159,7 +165,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+        with autocast(device_type='cuda', enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -200,8 +206,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             else:
                 kl_dist = kl_dist.mean()
 
-        self.diagnostics.mini_batch(self,
-        {
+        # explicitly return diagnostics values
+        exp_var, clip_frac = self.diagnostics.mini_batch(self, {
             'values': value_preds_batch,
             'returns': return_batch,
             'new_neglogp': action_log_probs,
@@ -209,4 +215,17 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'masks': rnn_masks
         }, curr_e_clip, 0)
 
-        self.train_result = (a_loss, c_loss, entropy, kl_dist,self.last_lr, lr_mul)
+        # return diagnostics explicitly (no mutation)
+        # self.train_result = (
+        #     a_loss, c_loss, entropy, kl_dist, self.last_lr, lr_mul, exp_var, clip_frac
+        # )
+        self.train_result = (
+            a_loss.detach().clone(), 
+            c_loss.detach().clone(), 
+            entropy.detach().clone(), 
+            kl_dist.detach().clone(), 
+            self.last_lr, 
+            lr_mul, 
+            exp_var.detach().clone(), 
+            clip_frac.detach().clone()
+)

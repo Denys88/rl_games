@@ -5,7 +5,7 @@ from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
 
-from torch import optim
+from torch import optim, autocast
 import torch
 
 
@@ -132,6 +132,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
+    @torch.compile(mode="reduce-overhead")
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
 
@@ -169,7 +170,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+        with autocast(device_type='cuda', enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -217,8 +218,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if rnn_masks is not None:
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
 
-        self.diagnostics.mini_batch(self,
-        {
+        # explicitly return diagnostics values
+        exp_var, clip_frac = self.diagnostics.mini_batch(self, {
             'values': value_preds_batch,
             'returns': return_batch,
             'new_neglogp': action_log_probs,
@@ -226,12 +227,38 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'masks': rnn_masks
         }, curr_e_clip, 0)
 
-        self.train_result = (a_loss, c_loss, entropy,
-            kl_dist, self.last_lr, lr_mul,
-            mu.detach(), sigma.detach(), b_loss)
+        # self.train_result = (a_loss, c_loss, entropy,
+        #     kl_dist, self.last_lr, lr_mul,
+        #     mu.detach(), sigma.detach(), b_loss)
+        
+        # return diagnostics explicitly (no mutation)
+        # self.train_result = (
+        #     a_loss, c_loss, entropy, kl_dist, self.last_lr, lr_mul, mu.detach(), sigma.detach(), b_loss,
+        #     exp_var, clip_frac
+        # )
+
+        self.train_result = (
+            a_loss.detach().clone(), 
+            c_loss.detach().clone(), 
+            entropy.detach().clone(), 
+            kl_dist.detach().clone(), 
+            self.last_lr, 
+            lr_mul, 
+            mu.detach().clone(), 
+            sigma.detach().clone(), 
+            b_loss.detach().clone(), 
+            exp_var.detach().clone(), 
+            clip_frac.detach().clone()
+        )
 
     def train_actor_critic(self, input_dict):
-        self.calc_gradients(input_dict)
+        # Unpack returned diagnostics explicitly
+        (a_loss, c_loss, entropy, kl_dist, last_lr, lr_mul, mu, sigma, b_loss, exp_var, clip_frac) = self.train_result
+
+        # Safe Python-side mutations here
+        self.diagnostics.exp_vars.append(exp_var.detach())
+        self.diagnostics.clip_fracs.append(clip_frac.detach())
+
         return self.train_result
 
     def reg_loss(self, mu):

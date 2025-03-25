@@ -46,6 +46,21 @@ class PpoDiagnostics(DefaultDiagnostics):
         self.clip_fracs = []
         self.diag_dict['diagnostics/clip_frac/{0}'.format(miniepoch)] = clip_frac
 
+    # def mini_batch(self, agent, batch, e_clip, minibatch):
+    #     with torch.no_grad():
+    #         values = batch['values'].detach()
+    #         returns = batch['returns'].detach()
+    #         new_neglogp = batch['new_neglogp'].detach()
+    #         old_neglogp = batch['old_neglogp'].detach()
+    #         masks = batch['masks']
+
+    #         exp_var = torch_ext.explained_variance(values, returns, masks)
+
+    #         clip_frac = torch_ext.policy_clip_fraction(new_neglogp, old_neglogp, e_clip, masks)
+    #         self.exp_vars.append(exp_var)
+    #         self.clip_fracs.append(clip_frac)
+
+    # safe for compile, no direct mutations
     def mini_batch(self, agent, batch, e_clip, minibatch):
         with torch.no_grad():
             values = batch['values'].detach()
@@ -53,8 +68,8 @@ class PpoDiagnostics(DefaultDiagnostics):
             new_neglogp = batch['new_neglogp'].detach()
             old_neglogp = batch['old_neglogp'].detach()
             masks = batch['masks']
-            exp_var = torch_ext.explained_variance(values, returns, masks)
 
+            exp_var = torch_ext.explained_variance(values, returns, masks)
             clip_frac = torch_ext.policy_clip_fraction(new_neglogp, old_neglogp, e_clip, masks)
-            self.exp_vars.append(exp_var)
-            self.clip_fracs.append(clip_frac)
+
+        return exp_var.detach(), clip_frac.detach()

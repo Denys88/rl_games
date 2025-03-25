@@ -1,7 +1,7 @@
 import os
 import copy
 import torch
-from torch import nn
+from torch import nn, autocast
 from torch.nn.utils import clip_grad_norm_
 from torch.amp import GradScaler
 import torch.distributed as dist
@@ -258,7 +258,7 @@ class CentralValueTrain(nn.Module):
                 break
             for data in self.dataset:
                 # Use mixed precision for training
-                with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+                with autocast(device_type='cuda', enabled=self.mixed_precision):
                     loss += self.train_critic(data)
 
             if self.normalize_input:
@@ -368,7 +368,7 @@ class CentralValueTrain(nn.Module):
         """
         self.optimizer.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+        with autocast(device_type='cuda', enabled=self.mixed_precision):
             values = self.model(input_dict)['values']
             loss = (values - input_dict['returns']).pow(2).mean()
 
