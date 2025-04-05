@@ -56,5 +56,5 @@ class PpoDiagnostics(DefaultDiagnostics):
             exp_var = torch_ext.explained_variance(values, returns, masks)
 
             clip_frac = torch_ext.policy_clip_fraction(new_neglogp, old_neglogp, e_clip, masks)
-            self.exp_vars.append(exp_var)
-            self.clip_fracs.append(clip_frac)
+            self.exp_vars.append(exp_var.detach().cpu())
+            self.clip_fracs.append(clip_frac.detach().cpu())

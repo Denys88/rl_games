@@ -122,7 +122,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         return self.train_result
 
-    @torch.compile(mode="reduce-overhead")
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
 

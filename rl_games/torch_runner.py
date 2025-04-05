@@ -4,6 +4,8 @@ import numpy as np
 import random
 from copy import deepcopy
 import torch
+import torch._dynamo
+torch._dynamo.config.cache_size_limit = 64
 
 from rl_games.common import object_factory
 from rl_games.common import tr_helpers
