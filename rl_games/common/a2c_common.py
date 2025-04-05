@@ -980,7 +980,7 @@ class DiscreteA2CBase(A2CBase):
             ep_kls = []
             self.dataset.apply_permutation()
             for i in range(len(self.dataset)):
-                (a_loss, c_loss, entropy, kl, last_lr, lr_mul, exp_var, clip_frac) = self.train_actor_critic(self.dataset[i])
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
@@ -1245,7 +1245,7 @@ class ContinuousA2CBase(A2CBase):
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             for i in range(len(self.dataset)):
-                (a_loss, c_loss, entropy, kl, last_lr, lr_mul, mu, sigma, b_loss, exp_var, clip_frac) = self.train_actor_critic(self.dataset[i])
+                a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
