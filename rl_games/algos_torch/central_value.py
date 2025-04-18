@@ -11,6 +11,8 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
 
+# Limit tensor printouts to 3 decimal places globally
+torch.set_printoptions(precision=3, sci_mode=False)
 
 class CentralValueTrain(nn.Module):
 

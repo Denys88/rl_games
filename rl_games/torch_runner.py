@@ -150,13 +150,22 @@ class Runner:
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
 
-        # If torch.compile is available, compile the model to optimize its forward pass.
-        # if hasattr(torch, "compile"):
-        # mode="max-autotune" is theoretically the fastest, but it compiles the longest
-        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+        # Restore weights (if any) BEFORE compiling the model.  Compiling first
+        # wraps the model in an `OptimizedModule`, which changes parameter
+        # names (adds the `_orig_mod.` prefix) and breaks `load_state_dict`
+        # when loading checkpoints that were saved from an *un‑compiled*
+        # model.
 
         _restore(agent, args)
         _override_sigma(agent, args)
+
+        # Now compile the (already restored) model. Doing it after the restore
+        # keeps parameter names consistent with the checkpoint.
+
+        # mode="max-autotune" would be faster at runtime, but it has a much
+        # longer compilation time.  "reduce-overhead" gives a good trade‑off.
+        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+
         agent.train()
 
     def run_play(self, args):
