@@ -16,6 +16,9 @@ from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
 
+# Limit tensor printouts to 3 decimal places globally
+torch.set_printoptions(precision=3, sci_mode=False)
+
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
@@ -163,7 +166,7 @@ class Runner:
         # keeps parameter names consistent with the checkpoint.
 
         # mode="max-autotune" would be faster at runtime, but it has a much
-        # longer compilation time.  "reduce-overhead" gives a good trade‑off.
+        # longer compilation time. "reduce-overhead" gives a good trade‑off.
         agent.model = torch.compile(agent.model, mode="reduce-overhead")
 
         agent.train()
