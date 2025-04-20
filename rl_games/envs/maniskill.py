@@ -34,20 +34,25 @@ class ManiskillEnv(IVecEnv):
         import gymnasium
         import mani_skill.envs
         from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
+        from mani_skill.utils.wrappers.flatten import FlattenRGBDObservationWrapper
         self.batch_size = num_actors
         env_name=kwargs.pop('env_name')
         self.seed = kwargs.pop('seed', 0) # not sure how to set this in mani_skill
-        env = gymnasium.make(
+        self.env = gymnasium.make(
             env_name,
             num_envs=num_actors,
             **kwargs
         )
+        #self.env = FlattenRGBDObservationWrapper(self.env, rgb=True, depth=False, state=False, sep_depth=False)
         # need to use this wrapper to have automatic reset for done envs
-        self.env = ManiSkillVectorEnv(env)
+        self.env = ManiSkillVectorEnv(self.env)
+        
+        print(f"ManiSkill env: {env_name} with {num_actors} actors")
+        print(f"Original observation space: {self.env.observation_space}")
         self.action_space = wrappers.OldGymWrapper.convert_space(remove_batch_dim(self.env.action_space))
         self.observation_space = wrappers.OldGymWrapper.convert_space(remove_batch_dim(self.env.observation_space))
-        
-        # remove first batch dim from obs spacce and action space
+        print(f"Converted action space: {self.action_space}")
+        print(f"Converted observation space: {self.observation_space}")
 
 
 
