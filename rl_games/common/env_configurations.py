@@ -425,6 +425,10 @@ configurations = {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
         'vecenv_type': 'BRAX' 
     },
+    'maniskill' : {
+        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'vecenv_type': 'MANISKILL' 
+    },
     'envpool': {
         'env_creator': lambda **kwargs: create_envpool(**kwargs),
         'vecenv_type': 'ENVPOOL'
