@@ -37,6 +37,7 @@ setup(name='rl-games',
             # this setup is only for pytorch
             # 
             'gym>=0.17.2',
+            'gymnasium'
             'torch>=1.7.0',
             'numpy>=1.16.0',
             'tensorboard>=1.14.0',
