@@ -643,9 +643,10 @@ class OldGymWrapper(gym.Env):
         self.observation_space = self.convert_space(env.observation_space)
         self.action_space = self.convert_space(env.action_space)
 
-    def convert_space(self, space):
-        import gymnasium
 
+    # static function to convert Gymnasium spaces to Gym spaces
+    @staticmethod
+    def convert_space(space):
         """Recursively convert Gymnasium spaces to Gym spaces."""
         if isinstance(space, gymnasium.spaces.Box):
             return gym.spaces.Box(
@@ -661,9 +662,9 @@ class OldGymWrapper(gym.Env):
         elif isinstance(space, gymnasium.spaces.MultiBinary):
             return gym.spaces.MultiBinary(n=space.n)
         elif isinstance(space, gymnasium.spaces.Tuple):
-            return gym.spaces.Tuple([self.convert_space(s) for s in space.spaces])
+            return gym.spaces.Tuple([OldGymWrapper.convert_space(s) for s in space.spaces])
         elif isinstance(space, gymnasium.spaces.Dict):
-            return gym.spaces.Dict({k: self.convert_space(s) for k, s in space.spaces.items()})
+            return gym.spaces.Dict({k: OldGymWrapper.convert_space(s) for k, s in space.spaces.items()})
         else:
             raise NotImplementedError(f"Space type {type(space)} is not supported.")
 

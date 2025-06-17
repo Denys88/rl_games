@@ -284,3 +284,6 @@ register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_nam
 
 from rl_games.envs.cule import CuleEnv
 register('CULE', lambda config_name, num_actors, **kwargs: CuleEnv(config_name, num_actors, **kwargs))
+
+from rl_games.envs.maniskill import ManiskillEnv
+register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(config_name, num_actors, **kwargs))
