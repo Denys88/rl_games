@@ -3,6 +3,7 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
+from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.envs.cule import create_cule
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
@@ -437,7 +438,7 @@ configurations = {
         'vecenv_type': 'BRAX' 
     },
     'maniskill' : {
-        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'env_creator': lambda **kwargs: create_maniskill_env(**kwargs),
         'vecenv_type': 'MANISKILL' 
     },
     'envpool': {

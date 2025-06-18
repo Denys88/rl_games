@@ -4,6 +4,7 @@ from rl_games.common.ivecenv import IVecEnv
 # wrap your vector env so it resets for you under the hood
 from gymnasium import spaces
 
+
 def remove_batch_dim(space: spaces.Space) -> spaces.Space:
     """Recursively remove the first (batch) dimension from a Gym space."""
     if isinstance(space, spaces.Box):
@@ -28,6 +29,7 @@ def remove_batch_dim(space: spaces.Space) -> spaces.Space:
         return spaces.Dict({k: remove_batch_dim(s) for k, s in space.spaces.items()})
     else:
         raise ValueError(f"Unsupported space type: {type(space)}")
+
 
 class ManiskillEnv(IVecEnv):
     def __init__(self, config_name, num_actors,  **kwargs):
@@ -54,9 +56,6 @@ class ManiskillEnv(IVecEnv):
         print(f"Converted action space: {self.action_space}")
         print(f"Converted observation space: {self.observation_space}")
 
-
-
-
     def step(self, action):
         next_obs, reward, done, truncated, info = self.env.step(action)
         is_done = done | truncated
@@ -77,5 +76,5 @@ class ManiskillEnv(IVecEnv):
         return info
 
 
-def create_maniskill_env(config_name, num_actors, **kwargs):
-    return ManiskillEnv(config_name, num_actors, **kwargs)
+def create_maniskill_env(**kwargs):
+    return ManiskillEnv(kwargs.pop('full_experiment_name', ''), kwargs.pop('num_actors', 16), **kwargs)
