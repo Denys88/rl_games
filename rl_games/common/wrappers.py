@@ -647,6 +647,8 @@ class OldGymWrapper(gym.Env):
     # static function to convert Gymnasium spaces to Gym spaces
     @staticmethod
     def convert_space(space):
+        import gymnasium
+
         """Recursively convert Gymnasium spaces to Gym spaces."""
         if isinstance(space, gymnasium.spaces.Box):
             return gym.spaces.Box(
