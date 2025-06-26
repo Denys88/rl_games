@@ -1,6 +1,7 @@
 import torch
 import rl_games.algos_torch.torch_ext as torch_ext
 
+
 class DefaultDiagnostics(object):
     def __init__(self):
         pass
@@ -24,9 +25,9 @@ class PpoDiagnostics(DefaultDiagnostics):
     def send_info(self, writter):
         if writter is None:
             return
-        for k,v in self.diag_dict.items():
+        for k, v in self.diag_dict.items():
             writter.add_scalar(k, v.cpu().numpy(), self.current_epoch)
-    
+
     def epoch(self, agent, current_epoch):
         self.current_epoch = current_epoch
         if agent.normalize_rms_advantage:
@@ -45,7 +46,6 @@ class PpoDiagnostics(DefaultDiagnostics):
         self.clip_fracs = []
         self.diag_dict['diagnostics/clip_frac/{0}'.format(miniepoch)] = clip_frac
 
-
     def mini_batch(self, agent, batch, e_clip, minibatch):
         with torch.no_grad():
             values = batch['values'].detach()
@@ -56,9 +56,5 @@ class PpoDiagnostics(DefaultDiagnostics):
             exp_var = torch_ext.explained_variance(values, returns, masks)
 
             clip_frac = torch_ext.policy_clip_fraction(new_neglogp, old_neglogp, e_clip, masks)
-            self.exp_vars.append(exp_var)
-            self.clip_fracs.append(clip_frac)
-            
-
-            
-
+            self.exp_vars.append(exp_var.detach().cpu())
+            self.clip_fracs.append(clip_frac.detach().cpu())

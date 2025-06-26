@@ -1,11 +1,9 @@
 import torch
 import copy
-from torch.utils.data import Dataset
-
-
 import torch
 from torch.utils.data import Dataset
 import random
+
 
 class PPODataset(Dataset):
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_length, permute=False):
@@ -23,7 +21,7 @@ class PPODataset(Dataset):
         self.is_discrete = is_discrete
         self.is_continuous = not is_discrete
         self.num_games_batch = self.minibatch_size // self.seq_length
-        
+
         self.special_names = ['rnn_states']
         self.permute = permute
         if self.permute:
@@ -37,11 +35,11 @@ class PPODataset(Dataset):
         """Update the mu and sigma values in the dataset."""
         start, end = self.last_range
         # Ensure the permutation does not break the logic for updating.
-        #if self.permute:
+        # if self.permute:
         #    original_indices = self.permutation_indices[start:end]
         #    self.values_dict['mu'][original_indices] = mu
         #    self.values_dict['sigma'][original_indices] = sigma
-        #else:
+        # else:
         self.values_dict['mu'][start:end] = mu
         self.values_dict['sigma'][start:end] = sigma
 
@@ -91,8 +89,6 @@ class PPODataset(Dataset):
     def __len__(self):
         """Return the number of minibatches."""
         return self.length
-
-
 
 
 class DatasetList(Dataset):

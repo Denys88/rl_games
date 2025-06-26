@@ -4,6 +4,8 @@ import numpy as np
 import random
 from copy import deepcopy
 import torch
+import torch._dynamo
+torch._dynamo.config.cache_size_limit = 64
 
 from rl_games.common import object_factory
 from rl_games.common import tr_helpers
@@ -14,11 +16,15 @@ from rl_games.algos_torch import players
 from rl_games.common.algo_observer import DefaultAlgoObserver
 from rl_games.algos_torch import sac_agent
 
+# Limit tensor printouts to 3 decimal places globally
+torch.set_printoptions(precision=3, sci_mode=False)
+
 
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
         if args['train'] and args.get('load_critic_only', False):
-            assert agent.has_central_value, 'This should only work for asymmetric actor critic'
+            if not getattr(agent, 'has_central_value', False):
+                raise ValueError('Loading critic only works only for asymmetric actor critic')
             agent.restore_central_value_function(args['checkpoint'])
             return
         agent.restore(args['checkpoint'])
@@ -31,7 +37,7 @@ def _override_sigma(agent, args):
                 with torch.no_grad():
                     net.sigma.fill_(float(args['sigma']))
             else:
-                print('Print cannot set new sigma because fixed_sigma is False')
+                print('Cannot set new sigma because fixed_sigma is False')
 
 
 class Runner:
@@ -66,10 +72,12 @@ class Runner:
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
+
+        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
+        # For maximum perfromance
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
-        ### it did not help for lots for openai gym envs anyway :(
-        #torch.backends.cudnn.deterministic = True
-        #torch.use_deterministic_algorithms(True)
 
     def reset(self):
         pass
@@ -144,8 +152,23 @@ class Runner:
         """
         print('Started to train')
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
+
+        # Restore weights (if any) BEFORE compiling the model.  Compiling first
+        # wraps the model in an `OptimizedModule`, which changes parameter
+        # names (adds the `_orig_mod.` prefix) and breaks `load_state_dict`
+        # when loading checkpoints that were saved from an *un‑compiled*
+        # model.
+
         _restore(agent, args)
         _override_sigma(agent, args)
+
+        # Now compile the (already restored) model. Doing it after the restore
+        # keeps parameter names consistent with the checkpoint.
+
+        # mode="max-autotune" would be faster at runtime, but it has a much
+        # longer compilation time. "reduce-overhead" gives a good trade‑off.
+        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+
         agent.train()
 
     def run_play(self, args):
@@ -173,7 +196,7 @@ class Runner:
         Args:
             args (:obj:`dict`):  Args passed in as a dict obtained from a yaml file or some other config format.
 
-        """        
+        """
         if args['train']:
             self.run_train(args)
         elif args['play']:

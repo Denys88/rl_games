@@ -3,12 +3,12 @@ from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.envpool import create_envpool
+from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.envs.cule import create_cule
 import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
-
 
 
 class HCRewardEnv(gym.RewardWrapper):
@@ -32,8 +32,6 @@ class DMControlWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
         return observation, reward, done, info
-
-
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
@@ -60,6 +58,7 @@ def create_default_gym_env(**kwargs):
         env = wrappers.LimitStepsWrapper(env)
     return env
 
+
 def create_goal_gym_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
@@ -72,7 +71,8 @@ def create_goal_gym_env(**kwargs):
         env = wrappers.FrameStack(env, frames, False)
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
-    return env 
+    return env
+
 
 def create_slime_gym_env(**kwargs):
     import slimevolleygym
@@ -86,12 +86,14 @@ def create_slime_gym_env(**kwargs):
         env = gym.make(name, **kwargs)
     return env
 
+
 def create_myo(**kwargs):
     from myosuite.utils import gym
     name = kwargs.pop('name')
     env = gym.make(name, **kwargs)
     env = wrappers.OldGymWrapper(env)
     return env
+
 
 def create_atari_gym_env(**kwargs):
     #frames = kwargs.pop('frames', 1)
@@ -100,7 +102,8 @@ def create_atari_gym_env(**kwargs):
     episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
     env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
-    return env    
+    return env
+
 
 def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
@@ -113,6 +116,7 @@ def create_dm_control_env(**kwargs):
         env = wrappers.FrameStack(env, frames, False)
     return env
 
+
 def create_super_mario_env(name='SuperMarioBros-v1'):
     import gym
     from nes_py.wrappers import JoypadSpace
@@ -124,6 +128,7 @@ def create_super_mario_env(name='SuperMarioBros-v1'):
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     return env
+
 
 def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
     import gym
@@ -140,12 +145,13 @@ def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
 
     env = gym_super_mario_bros.make(stage_names[1])
     env = JoypadSpace(env, SIMPLE_MOVEMENT)
-    
+
     env = wrappers.MaxAndSkipEnv(env, skip=4)
     env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
     #env = wrappers.AllowBacktracking(env)
-    
+
     return env
+
 
 def create_quadrupped_env():
     import gym
@@ -153,10 +159,12 @@ def create_quadrupped_env():
     import quadruppedEnv
     return wrappers.FrameStack(wrappers.MaxAndSkipEnv(gym.make('QuadruppedWalk-v1'), 4, False), 2, True)
 
+
 def create_roboschool_env(name):
     import gym
     import roboschool
     return gym.make(name)
+
 
 def create_smac(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
@@ -166,8 +174,7 @@ def create_smac(name, **kwargs):
     has_cv = kwargs.get('central_value', False)
     as_single_agent = kwargs.pop('as_single_agent', False)
     env = SMACEnv(name, **kwargs)
-    
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
@@ -178,6 +185,7 @@ def create_smac(name, **kwargs):
         env = MultiDiscreteSmacWrapper(env)
     return env
 
+
 def create_smac_v2(name, **kwargs):
     from rl_games.envs.smac_v2_env import SMACEnvV2
     frames = kwargs.pop('frames', 1)
@@ -185,13 +193,14 @@ def create_smac_v2(name, **kwargs):
     flatten = kwargs.pop('flatten', True)
     has_cv = kwargs.get('central_value', False)
     env = SMACEnvV2(name, **kwargs)
-    
+
     if frames > 1:
         if has_cv:
             env = wrappers.BatchedFrameStackWithStates(env, frames, transpose=False, flatten=flatten)
         else:
             env = wrappers.BatchedFrameStack(env, frames, transpose=False, flatten=flatten)
     return env
+
 
 def create_smac_cnn(name, **kwargs):
     from rl_games.envs.smac_env import SMACEnv, MultiDiscreteSmacWrapper
@@ -208,6 +217,7 @@ def create_smac_cnn(name, **kwargs):
         env = MultiDiscreteSmacWrapper(env)
     return env
 
+
 def create_test_env(name, **kwargs):
     import rl_games.envs.test
     env = gym.make(name, **kwargs)
@@ -217,14 +227,12 @@ def create_minigrid_env(name, **kwargs):
     import gym_minigrid
     import gym_minigrid.wrappers
 
-
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
     rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
     rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
     env = gym.make(name, **kwargs)
-
 
     if state_bonus:
         env = gym_minigrid.wrappers.StateBonus(env)
@@ -241,16 +249,19 @@ def create_minigrid_env(name, **kwargs):
     print('minigird_env observation space shape:', env.observation_space)
     return env
 
+
 def create_multiwalker_env(**kwargs):
     from rl_games.envs.multiwalker import MultiWalker
-    env = MultiWalker('', **kwargs) 
+    env = MultiWalker('', **kwargs)
 
     return env
+
 
 def create_diambra_env(**kwargs):
     from rl_games.envs.diambra.diambra import DiambraEnv
     env = DiambraEnv(**kwargs)
     return env
+
 
 def create_env(name, **kwargs):
     steps_limit = kwargs.pop('steps_limit', None)
@@ -258,6 +269,7 @@ def create_env(name, **kwargs):
     if steps_limit is not None:
         env = wrappers.TimeLimit(env, steps_limit)
     return env
+
 
 # Dictionary of env_name as key and a sub-dict containing env_type and a env-creator function
 configurations = {
@@ -426,7 +438,7 @@ configurations = {
         'vecenv_type': 'BRAX' 
     },
     'maniskill' : {
-        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
+        'env_creator': lambda **kwargs: create_maniskill_env(**kwargs),
         'vecenv_type': 'MANISKILL' 
     },
     'envpool': {
@@ -454,15 +466,16 @@ def get_env_info(env):
     '''
     if isinstance(result_shapes['observation_space'], gym.spaces.dict.Dict):
         result_shapes['observation_space'] = observation_space['observations']
-    
+
     if isinstance(result_shapes['observation_space'], dict):
         result_shapes['observation_space'] = observation_space['observations']
         result_shapes['state_space'] = observation_space['states']
     '''
-    if hasattr(env, "value_size"):    
+    if hasattr(env, "value_size"):
         result_shapes['value_size'] = env.value_size
     print(result_shapes)
     return result_shapes
+
 
 def get_obs_and_action_spaces_from_config(config):
     env_config = config.get('env_config', {})

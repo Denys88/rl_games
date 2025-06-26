@@ -1,21 +1,18 @@
-from rl_games.algos_torch import torch_ext
-
-from rl_games.common import vecenv
-from rl_games.common import schedulers
-from rl_games.common import experience
-from rl_games.common.a2c_common import print_statistics
-
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
-from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
-from rl_games.algos_torch import  model_builder
-from torch import optim
-import torch 
-from torch import nn
-import torch.nn.functional as F
-import numpy as np
-import time
 import os
+import time
+import numpy as np
+from datetime import datetime
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import optim
+from torch.utils.tensorboard import SummaryWriter
+
+from rl_games.algos_torch import model_builder, torch_ext
+from rl_games.common import vecenv, schedulers, experience
+from rl_games.common.a2c_common import print_statistics
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 
 
 class SACAgent(BaseAlgorithm):
@@ -59,8 +56,8 @@ class SACAgent(BaseAlgorithm):
         net_config = {
             'obs_dim': self.env_info["observation_space"].shape[0],
             'action_dim': self.env_info["action_space"].shape[0],
-            'actions_num' : self.actions_num,
-            'input_shape' : obs_shape,
+            'actions_num': self.actions_num,
+            'input_shape': obs_shape,
             'normalize_input': self.normalize_input,
         }
         self.model = self.network.build(net_config)
@@ -70,15 +67,18 @@ class SACAgent(BaseAlgorithm):
 
         self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
                                                 lr=float(self.config['actor_lr']),
-                                                betas=self.config.get("actor_betas", [0.9, 0.999]))
+                                                betas=self.config.get("actor_betas", [0.9, 0.999]),
+                                                fused=True)
 
         self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
                                                  lr=float(self.config["critic_lr"]),
-                                                 betas=self.config.get("critic_betas", [0.9, 0.999]))
+                                                 betas=self.config.get("critic_betas", [0.9, 0.999]),
+                                                 fused=True)
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
                                                     lr=float(self.config["alpha_lr"]),
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]))
+                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]),
+                                                    fused=True)
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
         self.env_info['action_space'].shape,
@@ -206,7 +206,7 @@ class SACAgent(BaseAlgorithm):
     def get_weights(self):
         print("Loading weights")
         state = {'actor': self.model.sac_network.actor.state_dict(),
-         'critic': self.model.sac_network.critic.state_dict(), 
+         'critic': self.model.sac_network.critic.state_dict(),
          'critic_target': self.model.sac_network.critic_target.state_dict()}
         if self.normalize_input:
             state['running_mean_std'] = self.model.running_mean_std.state_dict()
@@ -254,7 +254,8 @@ class SACAgent(BaseAlgorithm):
             self.vec_env.set_env_state(env_state)
 
     def restore(self, fn, set_epoch=True):
-        print("SAC restore")
+        if not os.path.exists(fn):
+            raise FileNotFoundError(f"Checkpoint file not found: {fn}")
         checkpoint = torch_ext.load_checkpoint(fn)
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
@@ -265,7 +266,7 @@ class SACAgent(BaseAlgorithm):
         pass
 
     def get_masked_action_values(self, obs, action_masks):
-        assert False
+        raise NotImplementedError("Masked action values are not supported in SAC agent")
 
     def set_eval(self):
         self.model.eval()
@@ -329,10 +330,19 @@ class SACAgent(BaseAlgorithm):
 
         return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
 
+    @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(tau * param.data +
                                     (1.0 - tau) * target_param.data)
+
+    def update_target_weights(self):
+        tau = self.critic_tau
+        self.soft_update_params(
+            self.model.sac_network.critic,
+            self.model.sac_network.critic_target,
+            tau
+        )
 
     def update(self, step):
         obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
@@ -345,8 +355,7 @@ class SACAgent(BaseAlgorithm):
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
 
         actor_loss_info = actor_loss, entropy, alpha, alpha_loss
-        self.soft_update_params(self.model.sac_network.critic, self.model.sac_network.critic_target,
-                                     self.critic_tau)
+        self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
 
     def preproc_obs(self, obs):
@@ -377,8 +386,8 @@ class SACAgent(BaseAlgorithm):
                 upd_obs[key] = self._obs_to_tensors_internal(value)
         else:
             upd_obs = self.cast_obs(obs)
-        if not obs_is_dict or 'obs' not in obs:    
-            upd_obs = {'obs' : upd_obs}
+        if not obs_is_dict or 'obs' not in obs:
+            upd_obs = {'obs': upd_obs}
 
         return upd_obs
 
@@ -421,7 +430,8 @@ class SACAgent(BaseAlgorithm):
 
         actions = dist.sample() if sample else dist.mean
         actions = actions.clamp(*self.action_range)
-        assert actions.ndim == 2
+        if actions.ndim != 2:
+            raise ValueError(f"Actions tensor must be 2-dimensional, got shape {actions.shape}")
 
         return actions
 
@@ -440,7 +450,7 @@ class SACAgent(BaseAlgorithm):
         self.mean_rewards = self.last_mean_rewards = -1000000000
         self.algo_observer.after_clear_stats()
 
-    def play_steps(self, random_exploration = False):
+    def play_steps(self, random_exploration=False):
         total_time_start = time.perf_counter()
         total_update_time = 0
         total_time = 0

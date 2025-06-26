@@ -2,16 +2,18 @@ import gym
 import numpy as np
 from rl_games.common.wrappers import MaskVelocityWrapper
 
+
 class TestAsymmetricCritic(gym.Env):
     def __init__(self, wrapped_env_name,  **kwargs):
         gym.Env.__init__(self)
         self.apply_mask = kwargs.pop('apply_mask', True)
         self.use_central_value = kwargs.pop('use_central_value', True)
         self.env = gym.make(wrapped_env_name)
-        
+
         if self.apply_mask:
-            if wrapped_env_name not in ["CartPole-v1", "Pendulum-v0", "LunarLander-v2", "LunarLanderContinuous-v2"]:
-                raise 'unsupported env'    
+            supported_envs = ["CartPole-v1", "Pendulum-v0", "LunarLander-v2", "LunarLanderContinuous-v2"]
+            if wrapped_env_name not in supported_envs:
+                raise ValueError(f"Environment {wrapped_env_name} not supported. Supported environments: {supported_envs}")
             self.mask = MaskVelocityWrapper(self.env, wrapped_env_name).mask
         else:
             self.mask = 1
@@ -47,6 +49,6 @@ class TestAsymmetricCritic(gym.Env):
         else:
             obses = obs_dict["obs"].astype(np.float32)
         return obses, rewards, dones, info
-    
+
     def has_action_mask(self):
         return False

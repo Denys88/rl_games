@@ -11,6 +11,7 @@ def flatten_dict(obs):
     res = np.column_stack(res)
     return res
 
+
 class Envpool(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import envpool
@@ -97,8 +98,6 @@ class Envpool(IVecEnv):
         info['action_space'] = self.action_space
         info['observation_space'] = self.observation_space
         return info
-
-
 
 
 def create_envpool(**kwargs):
