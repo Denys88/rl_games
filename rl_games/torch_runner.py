@@ -73,11 +73,20 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
 
-        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
-        # For maximum perfromance
+        # Performance optimizations
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
+
+        # If False faster but non-deterministic
+        torch.backends.cudnn.deterministic = self.params.get('torch_deterministic', False)
+
+        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
+        torch.set_float32_matmul_precision('high')
+
+        # Set number of threads - default to 4 which is optimal for most RL workloads
+        num_threads = self.params.get('torch_threads', 4)
+        torch.set_num_threads(num_threads)
 
     def reset(self):
         pass
@@ -151,6 +160,21 @@ class Runner:
 
         """
         print('Started to train')
+
+        # Add profiling support
+        profiler = None
+        if args.get('profile', False):
+            profiler = torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True
+            )
+            profiler.__enter__()
+
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
 
         # Restore weights (if any) BEFORE compiling the model.  Compiling first
@@ -170,6 +194,12 @@ class Runner:
         agent.model = torch.compile(agent.model, mode="reduce-overhead")
 
         agent.train()
+
+        # Save profiling results if enabled
+        if profiler is not None:
+            profiler.__exit__(None, None, None)
+            print(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+            profiler.export_chrome_trace("profile_trace.json")
 
     def run_play(self, args):
         """Run the inference procedure from the algorithm passed in.

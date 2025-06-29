@@ -22,6 +22,8 @@ if __name__ == '__main__':
         help="the wandb's project name")
     ap.add_argument("--wandb-entity", type=str, default=None,
         help="the entity (team) of wandb's project")
+    ap.add_argument("--profile", action='store_true',
+        help="enable PyTorch profiler to identify performance bottlenecks")
     os.makedirs("nn", exist_ok=True)
     os.makedirs("runs", exist_ok=True)
 
