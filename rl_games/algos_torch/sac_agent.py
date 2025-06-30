@@ -5,9 +5,9 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.cuda.amp import GradScaler
 
 from rl_games.algos_torch import model_builder, torch_ext
 from rl_games.common import vecenv, schedulers, experience
@@ -65,30 +65,34 @@ class SACAgent(BaseAlgorithm):
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
-        self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
-                                                lr=float(self.config['actor_lr']),
-                                                betas=self.config.get("actor_betas", [0.9, 0.999]),
-                                                fused=True)
+        self.actor_optimizer = optim.Adam(self.model.sac_network.actor.parameters(),
+                                        lr=float(self.config['actor_lr']),
+                                        betas=self.config.get("actor_betas", [0.9, 0.999]),
+                                        fused=True)
 
-        self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
-                                                 lr=float(self.config["critic_lr"]),
-                                                 betas=self.config.get("critic_betas", [0.9, 0.999]),
-                                                 fused=True)
+        self.critic_optimizer = optim.Adam(self.model.sac_network.critic.parameters(),
+                                        lr=float(self.config["critic_lr"]),
+                                        betas=self.config.get("critic_betas", [0.9, 0.999]),
+                                        fused=True)
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=float(self.config["alpha_lr"]),
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]),
-                                                    fused=True)
+                                        lr=float(self.config["alpha_lr"]),
+                                        betas=self.config.get("alphas_betas", [0.9, 0.999]),
+                                        fused=True)
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
-        self.env_info['action_space'].shape,
-        self.replay_buffer_size,
-        self._device)
+            self.env_info['action_space'].shape,
+            self.replay_buffer_size,
+            self._device)
         self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
 
         self.algo_observer = config['features']['observer']
+
+        print("Mixed precision", self.enable_mixed_precision)
+        import time; time.sleep(10)
+        self.scaler = GradScaler(enabled=self.enable_mixed_precision)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -184,10 +188,6 @@ class SACAgent(BaseAlgorithm):
         self.last_state_indices = None
 
     def init_tensors(self):
-        if self.observation_space.dtype == np.uint8:
-            torch_dtype = torch.uint8
-        else:
-            torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
 
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
@@ -287,14 +287,16 @@ class SACAgent(BaseAlgorithm):
             target_Q = target_Q.detach()
 
         # get current Q estimates
-        current_Q1, current_Q2 = self.model.critic(obs, action)
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision):
+            current_Q1, current_Q2 = self.model.critic(obs, action)
+            critic1_loss = self.c_loss(current_Q1, target_Q)
+            critic2_loss = self.c_loss(current_Q2, target_Q)
+            critic_loss = critic1_loss + critic2_loss
 
-        critic1_loss = self.c_loss(current_Q1, target_Q)
-        critic2_loss = self.c_loss(current_Q2, target_Q)
-        critic_loss = critic1_loss + critic2_loss 
         self.critic_optimizer.zero_grad(set_to_none=True)
-        critic_loss.backward()
-        self.critic_optimizer.step()
+        self.scaler.scale(critic_loss).backward()
+        self.scaler.step(self.critic_optimizer)
+        self.scaler.update()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
@@ -312,29 +314,28 @@ class SACAgent(BaseAlgorithm):
         actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
         actor_loss = actor_loss.mean()
 
+        if self.learnable_temperature:
+            alpha_loss = (self.alpha *
+                          (-log_prob - self.target_entropy).detach()).mean()
+        else:
+            alpha_loss = None
+
+        total_actor_loss = actor_loss + (alpha_loss if alpha_loss is not None else 0.)
+
         self.actor_optimizer.zero_grad(set_to_none=True)
-        actor_loss.backward()
+        total_actor_loss.backward()
         self.actor_optimizer.step()
 
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = True
 
-        if self.learnable_temperature:
-            alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
-            self.log_alpha_optimizer.zero_grad(set_to_none=True)
-            alpha_loss.backward()
-            self.log_alpha_optimizer.step()
-        else:
-            alpha_loss = None
-
         return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
 
     @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
-        for param, target_param in zip(net.parameters(), target_net.parameters()):
-            target_param.data.copy_(tau * param.data +
-                                    (1.0 - tau) * target_param.data)
+        with torch.no_grad():
+            for src, tgt in zip(net.parameters(), target_net.parameters()):
+                tgt.mul_(1.0 - tau).add_(src, alpha=tau)
 
     def update_target_weights(self):
         tau = self.critic_tau
