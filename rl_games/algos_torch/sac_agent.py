@@ -34,6 +34,7 @@ class SACAgent(BaseAlgorithm):
         self.replay_buffer_size = config["replay_buffer_size"]
         self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
+        self.enable_mixed_precision = config.get("mixed_precision", False)
 
         # TODO: double-check! To use bootstrap instead?
         self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
@@ -84,6 +85,7 @@ class SACAgent(BaseAlgorithm):
             self.env_info['action_space'].shape,
             self.replay_buffer_size,
             self._device)
+
         self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)

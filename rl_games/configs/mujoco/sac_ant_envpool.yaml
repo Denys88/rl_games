@@ -23,9 +23,9 @@ params:
     name: Ant-v4_SAC
     env_name: envpool
     normalize_input: True
+    mixed_precision: True
     reward_shaper:
       scale_value: 1.0
-
     max_epochs: 10000
     num_steps_per_episode: 8
     save_best_after: 500
