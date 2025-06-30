@@ -94,6 +94,21 @@ class SACAgent(BaseAlgorithm):
         import time; time.sleep(10)
         self.scaler = GradScaler(enabled=self.enable_mixed_precision)
 
+        # ────────────────────────────────────
+        # Summary writer
+        # ────────────────────────────────────
+        self.global_rank = int(os.getenv("RANK", "0"))
+
+        if self.global_rank == 0:
+            self.writer = SummaryWriter(
+                f"runs/{config['name']}{datetime.now().strftime('_%d-%H-%M-%S')}"
+            )
+        else:
+            class _DummyWriter:
+                def add_scalar(self, *_, **__): pass
+                def close(self): pass
+            self.writer = _DummyWriter()
+
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
@@ -111,7 +126,7 @@ class SACAgent(BaseAlgorithm):
 
         self._device = config.get('device', 'cuda:0')
 
-        #temporary for Isaac gym compatibility
+        # For Isaac gym compatibility
         self.ppo_device = self._device
         print('Env info:')
         print(self.env_info)
@@ -119,11 +134,14 @@ class SACAgent(BaseAlgorithm):
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
-        #self.use_action_masks = config.get('use_action_masks', False)
+        # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        self.c_loss = nn.MSELoss()
-        # self.c2_loss = nn.SmoothL1Loss()
+        # Smooth-L1 (Huber) behaves like MSE for small errors (keeps precise fits) 
+        # but switches to L1 for large errors, preventing huge gradients when Q-targets jump. 
+        # In practice that improves stability, especially early in training 
+        # or with stochastic returns.
+        self.c_loss = nn.SmoothL1Loss(beta=1.0) # Huber loss (robust-MSE)
 
         self.save_best_after = config.get('save_best_after', 500)
         self.print_stats = config.get('print_stats', True)
@@ -178,9 +196,6 @@ class SACAgent(BaseAlgorithm):
         os.makedirs(self.experiment_dir, exist_ok=True)
         os.makedirs(self.nn_dir, exist_ok=True)
         os.makedirs(self.summaries_dir, exist_ok=True)
-
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
 
         self.is_tensor_obses = False
         self.is_rnn = False

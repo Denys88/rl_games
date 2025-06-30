@@ -3,8 +3,6 @@ import random
 import gym
 import torch
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
-import torch
-
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
 
 
@@ -33,6 +31,7 @@ class ReplayBuffer(object):
     def __len__(self):
         return self._curr_size
 
+    @torch.no_grad()
     def add(self, obs_t, action, reward, obs_tp1, done):
 
         self._curr_size = min(self._curr_size + 1, self._maxsize )
@@ -222,6 +221,7 @@ class VectorizedReplayBuffer:
         """
 
         self.device = device
+        self._on_cpu = torch.device(self.device).type == 'cpu'
 
         self.obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
         self.next_obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
@@ -233,23 +233,24 @@ class VectorizedReplayBuffer:
         self.idx = 0
         self.full = False
 
+    @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done):
-
         num_observations = obs.shape[0]
         remaining_capacity = min(self.capacity - self.idx, num_observations)
         overflow = num_observations - remaining_capacity
         if remaining_capacity < num_observations:
-            self.obses[0: overflow] = obs[-overflow:]
-            self.actions[0: overflow] = action[-overflow:]
-            self.rewards[0: overflow] = reward[-overflow:]
-            self.next_obses[0: overflow] = next_obs[-overflow:]
-            self.dones[0: overflow] = done[-overflow:]
+            self.obses[0:overflow].copy_(obs[-overflow:])
+            self.actions[0:overflow].copy_(action[-overflow:])
+            self.rewards[0:overflow].copy_(reward[-overflow:])
+            self.next_obses[0:overflow].copy_(next_obs[-overflow:])
+            self.dones[0:overflow].copy_(done[-overflow:])
             self.full = True
-        self.obses[self.idx: self.idx + remaining_capacity] = obs[:remaining_capacity]
-        self.actions[self.idx: self.idx + remaining_capacity] = action[:remaining_capacity]
-        self.rewards[self.idx: self.idx + remaining_capacity] = reward[:remaining_capacity]
-        self.next_obses[self.idx: self.idx + remaining_capacity] = next_obs[:remaining_capacity]
-        self.dones[self.idx: self.idx + remaining_capacity] = done[:remaining_capacity]
+
+        self.obses[self.idx:self.idx + remaining_capacity].copy_(obs[:remaining_capacity])
+        self.actions[self.idx:self.idx + remaining_capacity].copy_(action[:remaining_capacity])
+        self.rewards[self.idx:self.idx + remaining_capacity].copy_(reward[:remaining_capacity])
+        self.next_obses[self.idx:self.idx + remaining_capacity].copy_(next_obs[:remaining_capacity])
+        self.dones[self.idx:self.idx + remaining_capacity].copy_(done[:remaining_capacity])
 
         self.idx = (self.idx + num_observations) % self.capacity
         self.full = self.full or self.idx == 0
@@ -296,6 +297,7 @@ class ExperienceBuffer:
         self.env_info = env_info
         self.algo_info = algo_info
         self.device = device
+        self._on_cpu = torch.device(self.device).type == 'cpu'
 
         self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
@@ -315,7 +317,7 @@ class ExperienceBuffer:
             self.actions_num = self.action_space.n
             self.is_discrete = True
         if isinstance(self.action_space, gym.spaces.Tuple):
-            self.actions_shape = (len(self.action_space),) 
+            self.actions_shape = (len(self.action_space),)
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
         if isinstance(self.action_space, gym.spaces.Box):
@@ -323,6 +325,10 @@ class ExperienceBuffer:
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
         self.tensor_dict = {}
+
+        # Add pinned-memory support for faster CPU→GPU copies
+        self.use_pinned_memory = torch.cuda.is_available() and algo_info.get('use_pinned_memory', True)
+
         self._init_from_env_info(self.env_info)
 
         self.aux_tensor_dict = aux_tensor_dict
@@ -337,7 +343,7 @@ class ExperienceBuffer:
         if self.has_central_value:
             self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
 
-        val_space = gym.spaces.Box(low=0, high=1,shape=(env_info.get('value_size', 1),))
+        val_space = gym.spaces.Box(low=0, high=1, shape=(env_info.get('value_size', 1),))
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['values'] = self._create_tensor_from_space(val_space, obs_base_shape)
         self.tensor_dict['neglogpacs'] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1, shape=(), dtype=np.float32), obs_base_shape)
@@ -360,17 +366,24 @@ class ExperienceBuffer:
     def _create_tensor_from_space(self, space, base_shape):       
         if isinstance(space, gym.spaces.Box):
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
+            if self.use_pinned_memory and self._on_cpu:
+                tensor = tensor.pin_memory()
+            return tensor
         if isinstance(space, gym.spaces.Discrete):
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            return torch.zeros(base_shape, dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape, dtype=dtype, device=self.device)
+            if self.use_pinned_memory and self._on_cpu:
+                tensor = tensor.pin_memory()
+            return tensor
         if isinstance(space, gym.spaces.Tuple):
-            '''
-            assuming that tuple is only Discrete tuple
-            '''
+            # Assuming that tuple is only Discrete tuple
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            return torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
+            if self.use_pinned_memory and self._on_cpu:
+                tensor = tensor.pin_memory()
+            return tensor
         if isinstance(space, gym.spaces.Dict):
             t_dict = {}
             for k, v in space.spaces.items():

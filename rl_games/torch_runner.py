@@ -78,15 +78,11 @@ class Runner:
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
 
-        # If False faster but non-deterministic
-        torch.backends.cudnn.deterministic = self.params.get('torch_deterministic', False)
-
         # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
         torch.set_float32_matmul_precision('high')
 
         # Set number of threads - default to 4 which is optimal for most RL workloads
-        num_threads = self.params.get('torch_threads', 4)
-        torch.set_num_threads(num_threads)
+        torch.set_num_threads(4)
 
     def reset(self):
         pass
