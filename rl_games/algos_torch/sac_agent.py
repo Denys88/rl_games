@@ -92,8 +92,6 @@ class SACAgent(BaseAlgorithm):
 
         self.algo_observer = config['features']['observer']
 
-        print("Mixed precision", self.enable_mixed_precision)
-        import time; time.sleep(10)
         self.scaler = GradScaler(enabled=self.enable_mixed_precision)
 
         # ────────────────────────────────────
