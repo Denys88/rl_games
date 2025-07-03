@@ -298,12 +298,12 @@ class SACAgent(BaseAlgorithm):
             target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
 
-            target_Q = reward + (not_done * self.gamma * target_V)
-            target_Q = target_Q.detach()
+            target_V = target_V.detach()
 
-        # get current Q estimates
+        # get current Q estimates and build target_Q inside autocast to keep dtypes consistent
         with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision):
             current_Q1, current_Q2 = self.model.critic(obs, action)
+            target_Q = reward + (not_done * self.gamma * target_V)  # built under autocast, same dtype as critic outputs
             critic1_loss = self.c_loss(current_Q1, target_Q)
             critic2_loss = self.c_loss(current_Q2, target_Q)
             critic_loss = critic1_loss + critic2_loss
@@ -319,27 +319,33 @@ class SACAgent(BaseAlgorithm):
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = False
 
-        dist = self.model.actor(obs)
-        action = dist.rsample()
-        log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        entropy = -log_prob.mean() #dist.entropy().sum(-1, keepdim=True).mean()
-        actor_Q1, actor_Q2 = self.model.critic(obs, action)
-        actor_Q = torch.min(actor_Q1, actor_Q2)
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision):
+            dist = self.model.actor(obs)
+            action = dist.rsample()
+            log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+            entropy = -log_prob.mean()
+            actor_Q1, actor_Q2 = self.model.critic(obs, action)
+            actor_Q = torch.min(actor_Q1, actor_Q2)
 
-        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
-        actor_loss = actor_loss.mean()
+            actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q).mean()
 
-        if self.learnable_temperature:
-            alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
-        else:
-            alpha_loss = None
+            if self.learnable_temperature:
+                alpha_loss = (self.alpha * (-log_prob - self.target_entropy).detach()).mean()
+            else:
+                alpha_loss = None
 
+        # computed outside autocast so the variable is always defined
         total_actor_loss = actor_loss + (alpha_loss if alpha_loss is not None else 0.)
 
         self.actor_optimizer.zero_grad(set_to_none=True)
-        total_actor_loss.backward()
-        self.actor_optimizer.step()
+        if self.learnable_temperature:
+            self.log_alpha_optimizer.zero_grad(set_to_none=True)
+
+        self.scaler.scale(total_actor_loss).backward()
+        self.scaler.step(self.actor_optimizer)
+        if self.learnable_temperature:
+            self.scaler.step(self.log_alpha_optimizer)
+        self.scaler.update()
 
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = True

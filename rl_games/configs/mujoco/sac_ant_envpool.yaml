@@ -1,5 +1,5 @@
 params:
-  seed: 5
+  seed: 11
   algo:
     name: sac
 
@@ -20,7 +20,7 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant-v4_SAC
+    name: Ant-v4_SAC_FP32
     env_name: envpool
     normalize_input: True
     mixed_precision: True
