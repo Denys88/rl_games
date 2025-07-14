@@ -169,7 +169,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -202,7 +202,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                         self.aux_loss_dict[k] = [v.detach()]
 
             if self.multi_gpu:
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
             else:
                 for param in self.model.parameters():
                     param.grad = None

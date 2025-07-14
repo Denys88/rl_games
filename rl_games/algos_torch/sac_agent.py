@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import GradScaler
 
 from rl_games.algos_torch import model_builder, torch_ext
 from rl_games.common import vecenv, schedulers, experience
@@ -25,14 +24,15 @@ class SACAgent(BaseAlgorithm):
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
-        self.num_warmup_steps = config["num_warmup_steps"]
-        self.gamma = config["gamma"]
-        self.critic_tau = float(config["critic_tau"])
+        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # Small tau for stable smoothing
+        self.gamma = self.config.get("gamma", 0.99)
+        self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
+        self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        self.num_warmup_steps = self.config.get("num_warmup_steps", 1000)  # Sufficient random data for buffer
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
         self.replay_buffer_size = config["replay_buffer_size"]
-        self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
@@ -48,6 +48,11 @@ class SACAgent(BaseAlgorithm):
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
 
+        # Store proper action bounds per dimension
+        self.action_low = torch.tensor(action_space.low, device=self._device, dtype=torch.float32)
+        self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
+        self.action_scale = (self.action_high - self.action_low) / 2.0
+        self.action_bias = (self.action_high + self.action_low) / 2.0
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
@@ -92,7 +97,7 @@ class SACAgent(BaseAlgorithm):
 
         self.algo_observer = config['features']['observer']
 
-        self.scaler = GradScaler(enabled=self.enable_mixed_precision)
+        self.amp_dtype = torch.bfloat16 if self.enable_mixed_precision else torch.float32
 
         # ────────────────────────────────────
         # Summary writer
@@ -108,6 +113,8 @@ class SACAgent(BaseAlgorithm):
                 def add_scalar(self, *_, **__): pass
                 def close(self): pass
             self.writer = _DummyWriter()
+
+        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=self.amp_dtype)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -137,8 +144,8 @@ class SACAgent(BaseAlgorithm):
         # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        # Smooth-L1 (Huber) behaves like MSE for small errors (keeps precise fits) 
-        # but switches to L1 for large errors, preventing huge gradients when Q-targets jump. 
+        # Smooth-L1 (Huber) behaves like MSE for small errors (keeps precise fits)
+        # but switches to L1 for large errors, preventing huge gradients when Q-targets jump.
         # In practice that improves stability, especially early in training 
         # or with stochastic returns.
         self.c_loss = nn.SmoothL1Loss(beta=1.0) # Huber loss (robust-MSE)
@@ -163,7 +170,7 @@ class SACAgent(BaseAlgorithm):
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self._device)
         self.obs = None
 
-        self.min_alpha = torch.tensor(np.log(1)).float().to(self._device)
+        self.min_alpha = torch.tensor(np.log(0.01)).float().to(self._device)
 
         self.frame = 0
         self.epoch_num = 0
@@ -289,29 +296,39 @@ class SACAgent(BaseAlgorithm):
     def set_train(self):
         self.model.train()
 
+    def rescale_actions(self, actions):
+        """Rescale actions from [-1, 1] to actual action space bounds."""
+        return actions * self.action_scale + self.action_bias
+
     def update_critic(self, obs, action, reward, next_obs, not_done, step):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
+            # Rescale actions to match the scale used during environment interaction
+            next_action_rescaled = self.rescale_actions(next_action)
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
 
-            target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
+            target_Q1, target_Q2 = self.model.critic_target(
+                next_obs.float(), 
+                next_action_rescaled.float()
+            )
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
-
             target_V = target_V.detach()
 
-        # get current Q estimates and build target_Q inside autocast to keep dtypes consistent
-        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision):
+        # get current Q estimates and build target_Q inside autocast
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
             current_Q1, current_Q2 = self.model.critic(obs, action)
-            target_Q = reward + (not_done * self.gamma * target_V)  # built under autocast, same dtype as critic outputs
+
+            # Build target_Q inside autocast to match dtypes
+            target_Q = reward + (not_done * self.gamma_tensor * target_V)
+
             critic1_loss = self.c_loss(current_Q1, target_Q)
             critic2_loss = self.c_loss(current_Q2, target_Q)
             critic_loss = critic1_loss + critic2_loss
 
         self.critic_optimizer.zero_grad(set_to_none=True)
-        self.scaler.scale(critic_loss).backward()
-        self.scaler.step(self.critic_optimizer)
-        self.scaler.update()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
@@ -319,42 +336,43 @@ class SACAgent(BaseAlgorithm):
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = False
 
-        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision):
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
             dist = self.model.actor(obs)
             action = dist.rsample()
+            # Rescale actions for critic evaluation
+            action_rescaled = self.rescale_actions(action)
             log_prob = dist.log_prob(action).sum(-1, keepdim=True)
             entropy = -log_prob.mean()
-            actor_Q1, actor_Q2 = self.model.critic(obs, action)
+            actor_Q1, actor_Q2 = self.model.critic(obs, action_rescaled)
             actor_Q = torch.min(actor_Q1, actor_Q2)
 
             actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q).mean()
 
             if self.learnable_temperature:
                 alpha_loss = (self.alpha * (-log_prob - self.target_entropy).detach()).mean()
+                total_loss = actor_loss + alpha_loss
             else:
                 alpha_loss = None
-
-        # computed outside autocast so the variable is always defined
-        total_actor_loss = actor_loss + (alpha_loss if alpha_loss is not None else 0.)
+                total_loss = actor_loss
 
         self.actor_optimizer.zero_grad(set_to_none=True)
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad(set_to_none=True)
 
-        self.scaler.scale(total_actor_loss).backward()
-        self.scaler.step(self.actor_optimizer)
+        total_loss.backward()
+
+        self.actor_optimizer.step()
         if self.learnable_temperature:
-            self.scaler.step(self.log_alpha_optimizer)
-        self.scaler.update()
+            self.log_alpha_optimizer.step()
 
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = True
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss
 
     @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
             for src, tgt in zip(net.parameters(), target_net.parameters()):
                 tgt.mul_(1.0 - tau).add_(src, alpha=tau)
 
@@ -372,6 +390,7 @@ class SACAgent(BaseAlgorithm):
 
         obs = self.preproc_obs(obs)
         next_obs = self.preproc_obs(next_obs)
+
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
 
         actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
@@ -451,7 +470,8 @@ class SACAgent(BaseAlgorithm):
         dist = self.model.actor(obs)
 
         actions = dist.sample() if sample else dist.mean
-        actions = actions.clamp(*self.action_range)
+        # Rescale from [-1, 1] to actual bounds
+        actions = self.rescale_actions(actions)
         if actions.ndim != 2:
             raise ValueError(f"Actions tensor must be 2-dimensional, got shape {actions.shape}")
 
@@ -493,7 +513,9 @@ class SACAgent(BaseAlgorithm):
         for s in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
-                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device) * 2.0 - 1.0
+                # Sample uniformly from the correct action bounds
+                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device)
+                action = self.action_low + (self.action_high - self.action_low) * action
             else:
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
@@ -501,13 +523,13 @@ class SACAgent(BaseAlgorithm):
             step_start = time.perf_counter()
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
+
             step_end = time.perf_counter()
+            total_time += (step_end - step_start)
+            step_time += (step_end - step_start)
 
             self.current_rewards += rewards
             self.current_lengths += 1
-
-            total_time += (step_end - step_start)
-            step_time += (step_end - step_start)
 
             all_done_indices = dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -540,13 +562,14 @@ class SACAgent(BaseAlgorithm):
                 self.set_train()
 
                 update_time_start = time.perf_counter()
-                actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
+                # Perform multiple gradient updates per environment step
+                for _ in range(self.num_updates_per_step):
+                    actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
+                    self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
+                    critic1_losses.append(critic1_loss)
+                    critic2_losses.append(critic2_loss)
                 update_time_end = time.perf_counter()
                 update_time = update_time_end - update_time_start
-
-                self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
-                critic1_losses.append(critic1_loss)
-                critic2_losses.append(critic2_loss)
             else:
                 update_time = 0
 

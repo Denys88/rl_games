@@ -223,15 +223,30 @@ class VectorizedReplayBuffer:
         self.device = device
         self._on_cpu = torch.device(self.device).type == 'cpu'
 
-        self.obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
-        self.next_obses = torch.empty((capacity, *obs_shape), dtype=torch.float32, device=self.device)
-        self.actions = torch.empty((capacity, *action_shape), dtype=torch.float32, device=self.device)
-        self.rewards = torch.empty((capacity, 1), dtype=torch.float32, device=self.device)
+        # Add missing initialization
+        self.use_pinned_memory = self._on_cpu and torch.cuda.is_available()
+
+        # Always use float32 for storage - autocast will handle precision during training
+        dtype = torch.float32
+
+        self.obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device)
+        self.next_obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device)
+        self.actions = torch.empty((capacity, *action_shape), dtype=dtype, device=self.device)
+        self.rewards = torch.empty((capacity, 1), dtype=dtype, device=self.device)
         self.dones = torch.empty((capacity, 1), dtype=torch.bool, device=self.device)
 
         self.capacity = capacity
         self.idx = 0
         self.full = False
+
+        # Pre-allocate with pinned memory for faster transfers
+        if self._on_cpu and self.use_pinned_memory:
+            # All tensor allocations with pin_memory()
+            self.obses = self.obses.pin_memory()
+            self.next_obses = self.next_obses.pin_memory()
+            self.actions = self.actions.pin_memory()
+            self.rewards = self.rewards.pin_memory()
+            self.dones = self.dones.pin_memory()
 
     @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done):

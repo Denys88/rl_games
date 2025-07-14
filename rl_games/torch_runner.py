@@ -81,9 +81,6 @@ class Runner:
         # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
         torch.set_float32_matmul_precision('high')
 
-        # Set number of threads - default to 4 which is optimal for most RL workloads
-        torch.set_num_threads(4)
-
     def reset(self):
         pass
 
@@ -142,6 +139,10 @@ class Runner:
             config['features'] = {}
         config['features']['observer'] = self.algo_observer
         self.params = params
+
+        num_threads = params.get('torch_threads', 4)  # Default to 4 instead of None
+        if num_threads is not None:
+            torch.set_num_threads(num_threads)
 
     def load(self, yaml_config):
         config = deepcopy(yaml_config)
