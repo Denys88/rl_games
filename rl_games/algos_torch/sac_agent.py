@@ -450,7 +450,7 @@ class SACAgent(BaseAlgorithm):
 
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
-        obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
+        obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
             return self.obs_to_tensors(obs), rewards.to(self._device), dones.to(self._device), infos
@@ -460,7 +460,6 @@ class SACAgent(BaseAlgorithm):
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
-
         obs = self.obs_to_tensors(obs)
 
         return obs

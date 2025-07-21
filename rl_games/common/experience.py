@@ -223,7 +223,6 @@ class VectorizedReplayBuffer:
         self.device = device
         self._on_cpu = torch.device(self.device).type == 'cpu'
 
-        # Add missing initialization
         self.use_pinned_memory = self._on_cpu and torch.cuda.is_available()
 
         # Always use float32 for storage - autocast will handle precision during training

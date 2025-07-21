@@ -26,7 +26,8 @@ setup(name='rl-games',
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
             "Programming Language :: Python :: 3.11",
-            "Programming Language :: Python :: 3.12"
+            "Programming Language :: Python :: 3.12",
+            "Programming Language :: Python :: 3.13"
       ],
       packages=find_packages(include=["rl_games", "rl_games.*"]),
       include_package_data=True,
@@ -35,11 +36,18 @@ setup(name='rl-games',
             "docs": ["*.md", "*.rst"],
       },
       install_requires=[
-            'gym>=0.17.2',
+            # Conditional dependencies for Gym/Gymnasium
+            'gym>=0.17.2,<=0.26.2; python_version < "3.9"',
+            'gymnasium>=0.29.1; python_version >= "3.9"',
+            'packaging', # Used by the compatibility layer
+
+            # Core runtime deps
             'torch>=2.2.0',
             'numpy>=1.16.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
+
+            # Misc utilities
             'setproctitle',
             'psutil',
             'pyyaml',

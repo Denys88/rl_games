@@ -47,7 +47,7 @@ class RayWorker:
 
         """
         next_state, reward, is_done, info = self.env.step(action)
-        
+
         if np.isscalar(is_done):
             episode_done = is_done
         else:
@@ -64,7 +64,7 @@ class RayWorker:
             np.random.seed(seed)
             random.seed(seed)
             self.env.seed(seed)
-            
+
     def render(self):
         self.env.render()
 
@@ -139,7 +139,6 @@ class RayVecEnv(IVecEnv):
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        
         self.remote_worker = self.ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
@@ -165,7 +164,7 @@ class RayVecEnv(IVecEnv):
             self.concat_func = np.stack
         else:
             self.concat_func = np.concatenate
-    
+
     def step(self, actions):
         """Step all individual environments (using the created workers). 
         Returns a concatenated array of observations, rewards, done states, and infos if the env allows concatenation.
@@ -204,7 +203,7 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
@@ -251,7 +250,7 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:

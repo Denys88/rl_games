@@ -310,7 +310,8 @@ class A2CBase(BaseAlgorithm):
         else:
             self.writer = None
 
-        self.value_bootstrap = self.config.get('value_bootstrap')
+        # Now the default is is True
+        self.value_bootstrap = self.config.get('value_bootstrap', True)
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
         if self.use_smooth_clamp:
