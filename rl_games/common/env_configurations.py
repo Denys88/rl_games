@@ -6,6 +6,7 @@ from rl_games.envs.envpool import create_envpool
 from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.envs.cule import create_cule
 import gym
+from rl_games.common.gym_compat import make
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
@@ -47,7 +48,7 @@ def create_default_gym_env(**kwargs):
     name = kwargs.pop('name')
     is_procgen = kwargs.pop('procgen', False)
     limit_steps = kwargs.pop('limit_steps', False)
-    env = gym.make(name, **kwargs)
+    env = make(name, **kwargs)
 
     if frames > 1:
         if is_procgen:

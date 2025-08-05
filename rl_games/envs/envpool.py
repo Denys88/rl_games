@@ -1,5 +1,4 @@
 from rl_games.common.ivecenv import IVecEnv
-import gym
 import numpy as np
 
 
@@ -17,7 +16,7 @@ class Envpool(IVecEnv):
         import envpool
 
         self.batch_size = num_actors
-        env_name=kwargs.pop('env_name')
+        env_name = kwargs.pop('env_name')
         self.has_lives = kwargs.pop('has_lives', False)
         self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', False)
         self.flatten_obs = kwargs.pop('flatten_obs', False) # for the dm control
@@ -64,7 +63,7 @@ class Envpool(IVecEnv):
             self.scores *= 1 - dones
 
     def step(self, action):
-        next_obs, reward, is_done, info = self.env.step(action , self.ids)
+        next_obs, reward, is_done, info = self.env.step(action, self.ids)
         info['time_outs'] = info['TimeLimit.truncated']
         self._set_scores(info, is_done)
         if self.flatten_obs:
