@@ -36,7 +36,6 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -95,7 +94,6 @@ class CentralValueTrain(nn.Module):
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
-        self.truncate_grad = self.config.get('truncate_grads', False)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
