@@ -9,7 +9,7 @@ import gym
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
-
+import rl_games.envs.poker
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
