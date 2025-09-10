@@ -1070,7 +1070,7 @@ class DiscreteA2CBase(A2CBase):
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
-        # self.frame = 0  # loading from checkpoint
+
         self.obs = self.env_reset()
 
         if self.multi_gpu:
@@ -1365,6 +1365,7 @@ class ContinuousA2CBase(A2CBase):
             self.model.load_state_dict(model_params[0])
             if self.has_central_value:
                 self.central_value_net.load_state_dict(model_params[1])
+            print("====================broadcast done")
 
         while True:
             epoch_num = self.update_epoch()

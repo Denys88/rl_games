@@ -188,8 +188,15 @@ class Runner:
 
         # mode="max-autotune" would be faster at runtime, but it has a much
         # longer compilation time. "reduce-overhead" gives a good trade‑off.
-        agent.model = torch.compile(agent.model, mode="reduce-overhead")
 
+        # Enable torch.compile for performance
+        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+        if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
+            # Compile central value separately to avoid CUDA graph conflicts
+            agent.central_value_net.model = torch.compile(
+                agent.central_value_net.model,
+                mode="default"  # Use default mode for central value to avoid CUDA graph issues
+            )
         agent.train()
 
         # Save profiling results if enabled

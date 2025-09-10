@@ -130,7 +130,7 @@ class CentralValueTrain(nn.Module):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device_name)
+            lr_tensor = torch.tensor([lr], device=self.ppo_device)
             dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
@@ -251,13 +251,17 @@ class CentralValueTrain(nn.Module):
         """
         self.train()  # Set module to training mode
         loss = 0
-        for _ in range(self.mini_epoch):
+        for epoch_idx in range(self.mini_epoch):
             if self.config.get('freeze_critic', False):
                 break
-            for data in self.dataset:
+            for batch_idx in range(len(self.dataset)):
+                data = self.dataset[batch_idx]
                 # Use mixed precision for training
                 with torch.amp.autocast('cuda', enabled=self.mixed_precision):
-                    loss += self.train_critic(data)
+                    batch_loss = self.train_critic(data)
+                    # Check for nan and skip if found
+                    if not torch.isnan(torch.tensor(batch_loss)):
+                        loss += batch_loss
 
             if self.normalize_input:
                 # don't need to update statistics more than one miniepoch
@@ -278,6 +282,13 @@ class CentralValueTrain(nn.Module):
         """
         Calculate value function loss with optional clipping.
         """
+        # Check for nan in inputs and handle gracefully
+        if torch.isnan(values).any() or torch.isnan(returns_batch).any() or torch.isnan(value_preds_batch).any():
+            print("Warning: NaN detected in loss inputs")
+            values = torch.nan_to_num(values, nan=0.0)
+            returns_batch = torch.nan_to_num(returns_batch, nan=0.0)
+            value_preds_batch = torch.nan_to_num(value_preds_batch, nan=0.0)
+
         loss = common_losses.critic_loss(
             self.model,
             value_preds_batch,
@@ -299,6 +310,12 @@ class CentralValueTrain(nn.Module):
         actions_batch = batch['actions']
         dones_batch = batch['dones']
         rnn_masks_batch = batch.get('rnn_masks')
+
+        # Add nan checking for debugging
+        if torch.isnan(returns_batch).any():
+            print(f"NaN in returns_batch: min={returns_batch.min()}, max={returns_batch.max()}")
+        if torch.isnan(value_preds_batch).any():
+            print(f"NaN in value_preds_batch: min={value_preds_batch.min()}, max={value_preds_batch.max()}")
 
         batch_dict = {
             'obs': obs_batch,
@@ -332,23 +349,15 @@ class CentralValueTrain(nn.Module):
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
 
-            if not all_grads_list:
-                # This is a critical error condition - we should have gradients during training
-                import warnings
-                warnings.warn("No gradients found during update step! Check model configuration and loss computation.")
-            else:
-                all_grads = torch.cat(all_grads_list)
-                dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-
-                offset = 0
-                for param in self.model.parameters():
-                    if param.grad is not None:
-                        numel = param.numel()
-                        param.grad.data.copy_(
-                            all_grads[offset:offset + numel].view_as(param.grad.data)
-                            / self.world_size
-                        )
-                        offset += numel
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
+                    )
+                    offset += param.numel()
 
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
