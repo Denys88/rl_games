@@ -20,13 +20,12 @@ setup(name='rl-games',
       license="MIT",
       classifiers=[
             "License :: OSI Approved :: MIT License",
-            "Programming Language :: Python :: 3",
-            "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
             "Programming Language :: Python :: 3.11",
-            "Programming Language :: Python :: 3.12"
+            "Programming Language :: Python :: 3.12",
+            "Programming Language :: Python :: 3.13"
       ],
       packages=find_packages(include=["rl_games", "rl_games.*"]),
       include_package_data=True,
@@ -35,11 +34,23 @@ setup(name='rl-games',
             "docs": ["*.md", "*.rst"],
       },
       install_requires=[
-            'gym>=0.17.2',
-            'torch>=2.2.0',
+            # Gym legacy for Isaac‑Gym
+            'gym[classic-control]>=0.23,<0.24 ; python_version < "3.9"',
+
+            # Gymnasium everywhere ─ but cap on Python 3.8 so wheels exist
+            'gymnasium[classic-control]>=0.29.1,<0.30 ; python_version < "3.9"',
+            'gymnasium[classic-control]>=0.29.1       ; python_version >= "3.9"',
+
+            'packaging', # Used by the compatibility layer
+
+            # Core runtime deps
+            'torch>=2.2.2,<2.5.0; python_version < "3.9"',  # Clearly restrict upper bound for Python 3.8
+            'torch>=2.2.2; python_version >= "3.9"',
             'numpy>=1.16.0',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
+
+            # Misc utilities
             'setproctitle',
             'psutil',
             'pyyaml',

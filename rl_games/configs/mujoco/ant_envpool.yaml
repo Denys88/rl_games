@@ -33,9 +33,9 @@ params:
     normalize_value: True
     value_bootstrap: True
     normalize_advantage: True
+    mixed_precision: True
     reward_shaper:
       scale_value: 1
-
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4

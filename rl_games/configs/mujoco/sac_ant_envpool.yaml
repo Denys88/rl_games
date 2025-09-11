@@ -1,5 +1,5 @@
 params:
-  seed: 5
+  seed: 11
   algo:
     name: sac
 
@@ -12,7 +12,7 @@ params:
     space:
       continuous:
     mlp:
-      units: [256, 128, 64]
+      units: [512, 256]
       activation: relu
       
       initializer:
@@ -23,22 +23,23 @@ params:
     name: Ant-v4_SAC
     env_name: envpool
     normalize_input: True
+    mixed_precision: False
     reward_shaper:
       scale_value: 1.0
-
-    max_epochs: 10000
+    max_epochs: 5000
     num_steps_per_episode: 8
-    save_best_after: 500
-    save_frequency: 1000
+    save_best_after: 200
+    save_frequency: 500
     gamma: 0.99
-    init_alpha: 1
+    init_alpha: 1.0
     alpha_lr: 5e-3
     actor_lr: 5e-4
     critic_lr: 5e-4
     critic_tau: 5e-3
-    batch_size: 2048
+    batch_size: 4096
     learnable_temperature: True
-    num_warmup_steps: 10 # total number of warmup steps: num_actors * num_steps_per_episode * num_warmup_steps
+    num_updates_per_step: 4
+    num_warmup_steps: 100 # total number of warmup steps: num_actors * num_steps_per_episode * num_warmup_steps
     replay_buffer_size: 1000000
     num_actors: 64
 

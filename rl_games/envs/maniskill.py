@@ -37,6 +37,7 @@ class ManiskillEnv(IVecEnv):
         import mani_skill.envs
         from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
         from mani_skill.utils.wrappers.flatten import FlattenRGBDObservationWrapper
+
         self.batch_size = num_actors
         env_name=kwargs.pop('env_name')
         self.seed = kwargs.pop('seed', 0) # not sure how to set this in mani_skill

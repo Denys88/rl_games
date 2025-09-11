@@ -15,6 +15,7 @@ class InfoWrapper(gym.Wrapper):
         gym.RewardWrapper.__init__(self, env)
 
         self.reward = 0
+
     def reset(self, **kwargs):
         self.reward = 0
         return self.env.reset(**kwargs)
@@ -211,7 +212,7 @@ class WarpFrame(gym.ObservationWrapper):
 
 
 class FrameStack(gym.Wrapper):
-    def __init__(self, env, k, flat = False):
+    def __init__(self, env, k, flat=False):
         """
         Stack k last frames.
         Returns lazy array, which is much more memory efficient.
@@ -634,22 +635,31 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 
 class OldGymWrapper(gym.Env):
+    """
+    Wraps a gymnasium-based environment to be compatible with the old gym API.
+    This is intended for the edge case where Python < 3.9 (using gym) but the
+    environment (e.g., ManiSkill) is gymnasium-only.
+    """
     def __init__(self, env):
         self.env = env
-
-        import gymnasium
+        try:
+            import gymnasium
+        except ImportError:
+            raise ImportError("OldGymWrapper requires gymnasium to be installed.")
 
         # Convert Gymnasium spaces to Gym spaces
-        self.observation_space = self.convert_space(env.observation_space)
-        self.action_space = self.convert_space(env.action_space)
+        self.observation_space = self._convert_space(env.observation_space)
+        self.action_space = self._convert_space(env.action_space)
 
-
-    # static function to convert Gymnasium spaces to Gym spaces
+    # Static function to convert Gymnasium spaces to Gym spaces
     @staticmethod
-    def convert_space(space):
-        import gymnasium
-
+    def _convert_space(space):
         """Recursively convert Gymnasium spaces to Gym spaces."""
+        try:
+            import gymnasium
+        except ImportError:
+            raise ImportError("OldGymWrapper requires gymnasium to be installed.")
+
         if isinstance(space, gymnasium.spaces.Box):
             return gym.spaces.Box(
                 low=space.low,
@@ -708,10 +718,10 @@ class OldGymWrapper(gym.Env):
 # Example usage:
 if __name__ == "__main__":
     # Create a MyoSuite environment
-    env = myosuite.make('myoChallengeDieReorientP2-v0')
+    _env = myosuite.make('myoChallengeDieReorientP2-v0')
 
     # Wrap it with the old Gym-style wrapper
-    env = OldGymWrapper(env)
+    env = OldGymWrapper(_env)
 
     # Use the environment as usual
     observation = env.reset()
@@ -732,7 +742,7 @@ def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directo
         env = MontezumaInfoWrapper(env, room_address=3 if 'Montezuma' in env_id else 1)
         env = StickyActionEnv(env)
     env = InfoWrapper(env)
-    if directory != None:
+    if directory is not None:
         env = gym.wrappers.Monitor(env, directory=directory, force=True)
     if sticky:
         env = StickyActionEnv(env)

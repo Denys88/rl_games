@@ -310,7 +310,8 @@ class A2CBase(BaseAlgorithm):
         else:
             self.writer = None
 
-        self.value_bootstrap = self.config.get('value_bootstrap')
+        # Now the default is is True
+        self.value_bootstrap = self.config.get('value_bootstrap', True)
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
         if self.use_smooth_clamp:
@@ -641,6 +642,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+            state['assymetric_vf_optimizer'] = self.central_value_net.optimizer.state_dict()
 
         # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
@@ -661,6 +663,8 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+            if 'assymetric_vf_optimizer' in weights:
+                self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
 
         self.optimizer.load_state_dict(weights['optimizer'])
 
@@ -1069,7 +1073,7 @@ class DiscreteA2CBase(A2CBase):
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
-        # self.frame = 0  # loading from checkpoint
+
         self.obs = self.env_reset()
 
         if self.multi_gpu:
@@ -1364,6 +1368,7 @@ class ContinuousA2CBase(A2CBase):
             self.model.load_state_dict(model_params[0])
             if self.has_central_value:
                 self.central_value_net.load_state_dict(model_params[1])
+            print("====================broadcast done")
 
         while True:
             epoch_num = self.update_epoch()
@@ -1458,8 +1463,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num

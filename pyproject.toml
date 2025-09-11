@@ -9,15 +9,27 @@ authors = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.7.1"
-gym = {version = "^0.23.0", extras = ["classic_control"]}
+python = ">=3.8.0"
+
+# ───── RL‑Games core deps ──────────────────────────────────────────────────────
+gym        = { version = ">=0.23,<0.24", markers = "python_version < '3.9'"}
+gymnasium  = [
+  { version = ">=0.29.1,<0.30", extras = ["classic_control"], markers = "python_version < '3.9'" },
+  { version = ">=0.29.1",       extras = ["classic_control"], markers = "python_version >= '3.9'" }
+]
+
+torch      = [
+  { version = ">=2.2.2,<2.5.0", markers = "python_version < '3.9'" },
+  { version = ">=2.2.2",        markers = "python_version >= '3.9'" }
+]
+
 tensorboard = "^2.8.0"
 tensorboardX = "^2.5"
 PyYAML = "^6.0"
 psutil = "^5.9.0"
 setproctitle = "^1.2.2"
 opencv-python = "^4.5.5"
-wandb = "^0.12.11"
+wandb = ">=0.19.0"
 
 ale-py = {version = "^0.7", optional = true}
 AutoROM = {version = "^0.4.2", optional = true, extras = ["accept-rom-license"]}
