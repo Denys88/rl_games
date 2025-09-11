@@ -642,6 +642,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+            state['assymetric_vf_optimizer'] = self.central_value_net.optimizer.state_dict()
 
         # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
@@ -662,6 +663,8 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+            if 'assymetric_vf_optimizer' in weights:
+                self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
 
         self.optimizer.load_state_dict(weights['optimizer'])
 

@@ -105,9 +105,7 @@ class SACAgent(BaseAlgorithm):
         self.global_rank = int(os.getenv("RANK", "0"))
 
         if self.global_rank == 0:
-            self.writer = SummaryWriter(
-                f"runs/{config['name']}{datetime.now().strftime('_%d-%H-%M-%S')}"
-            )
+            self.writer = SummaryWriter(self.summaries_dir)
         else:
             class _DummyWriter:
                 def add_scalar(self, *_, **__): pass

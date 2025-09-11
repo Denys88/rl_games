@@ -325,10 +325,12 @@ Additional environment supported properties and functions
   * Added proper `__iter__` method to `PPODataset` class
 * Fixed variance calculation in `RunningMeanStd` to use population variance
 * Fixed get_mean_std_with_masks function.
+* Fixed missing central value optimizer state in checkpoint save/load
 * Added myosuite support.
 * Added auxilary loss support.
 * Update for tacsl release: CNN tower processing, critic weights loading and freezing.
 * Fixed SAC input normalization.
+* Fixed SAC agent summary writer to use configured directory instead of hardcoded 'runs/'
 * Fixed default player config num_games value.
 * Fixed applying minibatch size per env.
 * Added concat_output support for RNN.
