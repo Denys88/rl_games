@@ -120,11 +120,6 @@ class RayVecEnv(IVecEnv):
     Each worker is executed asynchronously.
 
     """
-    try:
-        import ray
-    except ImportError:
-        pass
-
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
 
@@ -134,6 +129,33 @@ class RayVecEnv(IVecEnv):
             **kwargs: Misc. kwargs passed on to the environment creator function within the RayWorker __init__
 
         """
+        # Import and initialize Ray only when RayVecEnv is actually used
+        try:
+            import ray
+            self.ray = ray
+        except ImportError:
+            raise ImportError("Ray is required for RayVecEnv. Please install it with: pip install ray")
+        
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            # Get Ray initialization parameters from config
+            # Example usage in YAML under params.config.env_config:
+            #   ray_config:
+            #     num_cpus: 8                      # Number of CPUs Ray can use
+            #     num_gpus: 1                      # Number of GPUs Ray can use  
+            #     object_store_memory: 2000000000  # Object store memory in bytes (2GB)
+            #     local_mode: True                 # Run Ray in local mode for debugging
+            #     ignore_reinit_error: True        # Suppress errors if Ray is already initialized
+            #     include_dashboard: False         # Disable Ray dashboard
+            #     dashboard_host: '0.0.0.0'        # Ray dashboard host
+            ray_config = kwargs.pop('ray_config', {})
+            
+            # Set default object store memory if not specified
+            if 'object_store_memory' not in ray_config:
+                ray_config['object_store_memory'] = 1024*1024*1000
+                
+            ray.init(**ray_config)
+            
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
@@ -257,6 +279,20 @@ class RayVecEnv(IVecEnv):
                 newobsdict["states"] = np.stack(newstates)            
             ret_obs = newobsdict
         return ret_obs
+    
+    def close(self):
+        """Close all workers and shutdown Ray if we initialized it."""
+        # Close all worker environments
+        for worker in self.workers:
+            self.ray.get(worker.close.remote())
+        
+        # Shutdown Ray if we initialized it
+        if hasattr(self, 'ray') and self.ray.is_initialized():
+            # Only shutdown if no other processes are using Ray
+            try:
+                self.ray.shutdown()
+            except:
+                pass  # Ray might be used by other processes
 
 vecenv_config = {}
 
