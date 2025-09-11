@@ -314,7 +314,16 @@ Additional environment supported properties and functions
 
 1.6.5
 
-* Torch compile support. Requires torch 2.2 or newer now.
+* Added torch.compile support with configurable modes. Provides 10-15% performance improvement. Requires torch 2.2 or newer.
+  * Default mode is now `max-autotune` for best performance
+  * Configurable via `torch_compile` parameter in yaml configs
+  * Separate compilation modes for actor and central value networks
+  * See [torch.compile documentation](docs/TORCH_COMPILE.md) for configuration details
+* Fixed critical bugs in asymmetric actor-critic (central_value) training:
+  * Fixed incorrect device reference in `update_lr()` method
+  * Fixed infinite loop when iterating over dataset
+  * Added proper `__iter__` method to `PPODataset` class
+* Fixed variance calculation in `RunningMeanStd` to use population variance
 * Fixed get_mean_std_with_masks function.
 * Added myosuite support.
 * Added auxilary loss support.
@@ -334,7 +343,7 @@ Additional environment supported properties and functions
 * Added shaped reward graph to the tensorboard.
 * Fixed bug with SAC not saving weights with save_frequency.
 * Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
-* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
+* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.Enhanced
 * Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
 * Fixed SAC not loading weights properly.
 * Removed Ray dependency for use cases it's not required.

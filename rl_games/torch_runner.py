@@ -186,17 +186,48 @@ class Runner:
         # Now compile the (already restored) model. Doing it after the restore
         # keeps parameter names consistent with the checkpoint.
 
-        # mode="max-autotune" would be faster at runtime, but it has a much
-        # longer compilation time. "reduce-overhead" gives a good trade‑off.
+        # torch.compile modes:
+        # - "default": Good compatibility, moderate speedup
+        # - "reduce-overhead": Balanced performance and compilation time
+        # - "max-autotune": Best runtime performance (now default), longer initial compilation
 
-        # Enable torch.compile for performance
-        agent.model = torch.compile(agent.model, mode="reduce-overhead")
-        if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
-            # Compile central value separately to avoid CUDA graph conflicts
-            agent.central_value_net.model = torch.compile(
-                agent.central_value_net.model,
-                mode="default"  # Use default mode for central value to avoid CUDA graph issues
-            )
+        # Enable torch.compile for performance if requested
+        compile_config = self.params.get('config', {}).get('torch_compile', True)
+
+        if compile_config is False:
+            print("torch.compile: Disabled")
+        else:
+            # Parse configuration
+            if isinstance(compile_config, bool):
+                # Default mode if just True
+                actor_mode = "max-autotune"
+                critic_mode = "max-autotune"
+            elif isinstance(compile_config, str):
+                # String mode directly
+                actor_mode = compile_config
+                critic_mode = compile_config
+            elif isinstance(compile_config, dict):
+                # Advanced configuration
+                actor_mode = compile_config.get('mode', 'max-autotune')
+                critic_mode = compile_config.get('critic_mode', actor_mode)  # Default to same as actor
+            else:
+                print(f"Warning: Invalid torch_compile config {compile_config}, using default")
+                actor_mode = "max-autotune"
+                critic_mode = "max-autotune"
+
+            # Compile actor model
+            print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")
+            agent.model = torch.compile(agent.model, mode=actor_mode)
+
+            # Compile critic model if using central value network
+            # Used for: 1) asymmetric actor-critic (different obs for actor/critic)
+            #          2) multi-agent with centralized critic (all agents' obs + privileged obs)
+            if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
+                print(f"torch.compile: Enabled for central value critic with mode='{critic_mode}'")
+                agent.central_value_net.model = torch.compile(
+                    agent.central_value_net.model,
+                    mode=critic_mode
+                )
         agent.train()
 
         # Save profiling results if enabled

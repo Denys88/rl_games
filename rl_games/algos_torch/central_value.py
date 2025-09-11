@@ -259,9 +259,7 @@ class CentralValueTrain(nn.Module):
                 # Use mixed precision for training
                 with torch.amp.autocast('cuda', enabled=self.mixed_precision):
                     batch_loss = self.train_critic(data)
-                    # Check for nan and skip if found
-                    if not torch.isnan(torch.tensor(batch_loss)):
-                        loss += batch_loss
+                    loss += batch_loss
 
             if self.normalize_input:
                 # don't need to update statistics more than one miniepoch
@@ -282,13 +280,6 @@ class CentralValueTrain(nn.Module):
         """
         Calculate value function loss with optional clipping.
         """
-        # Check for nan in inputs and handle gracefully
-        if torch.isnan(values).any() or torch.isnan(returns_batch).any() or torch.isnan(value_preds_batch).any():
-            print("Warning: NaN detected in loss inputs")
-            values = torch.nan_to_num(values, nan=0.0)
-            returns_batch = torch.nan_to_num(returns_batch, nan=0.0)
-            value_preds_batch = torch.nan_to_num(value_preds_batch, nan=0.0)
-
         loss = common_losses.critic_loss(
             self.model,
             value_preds_batch,

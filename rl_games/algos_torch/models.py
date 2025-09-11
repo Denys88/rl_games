@@ -321,8 +321,6 @@ class ModelA2CContinuousLogStd(BaseModel):
                 }
                 return result
 
-        # Unfortunately mode='max-autotune' does not work with torch.compile() here
-        @torch.compile()
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size(-1) \
