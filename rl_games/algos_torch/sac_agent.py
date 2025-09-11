@@ -26,6 +26,7 @@ class SACAgent(BaseAlgorithm):
         self.base_init(base_name, config)
         self.critic_tau = float(self.config.get("critic_tau", 0.005))  # Small tau for stable smoothing
         self.gamma = self.config.get("gamma", 0.99)
+        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
         self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
         self.num_warmup_steps = self.config.get("num_warmup_steps", 1000)  # Sufficient random data for buffer
@@ -36,8 +37,8 @@ class SACAgent(BaseAlgorithm):
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
-        # TODO: double-check! To use bootstrap instead?
-        self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
+        # Timeout handling - consistent with PPO
+        self.value_bootstrap = config.get('value_bootstrap', True)
 
         print(self.batch_size, self.num_actors, self.num_agents)
 
@@ -302,9 +303,9 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
-            # Rescale actions to match the scale used during environment interaction
-            next_action_rescaled = self.rescale_actions(next_action)
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+            # Rescale next_action for critic (as it outputs [-1, 1])
+            next_action_rescaled = self.rescale_actions(next_action)
 
             target_Q1, target_Q2 = self.model.critic_target(
                 next_obs.float(), 
@@ -368,11 +369,10 @@ class SACAgent(BaseAlgorithm):
 
         return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss
 
-    @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
-        with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
+        with torch.no_grad():
             for src, tgt in zip(net.parameters(), target_net.parameters()):
-                tgt.mul_(1.0 - tau).add_(src, alpha=tau)
+                tgt.data.lerp_(src.data, tau)
 
     def update_target_weights(self):
         tau = self.critic_tau
@@ -505,8 +505,6 @@ class SACAgent(BaseAlgorithm):
         if isinstance(obs, dict):
             obs = self.obs['obs']
 
-        next_obs_processed = obs.clone()
-
         for s in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
@@ -537,23 +535,38 @@ class SACAgent(BaseAlgorithm):
 
             self.algo_observer.process_infos(infos, done_indices)
 
-            no_timeouts = self.current_lengths != self.max_env_steps
-            dones = dones * no_timeouts
+            # Handle timeouts for proper value bootstrapping
+            if self.value_bootstrap and 'time_outs' in infos:
+                # Use cast_obs for efficient conversion (reuses existing tensor if possible)
+                timeouts = self.cast_obs(infos['time_outs'])
+                # Ensure boolean type for bitwise operations
+                if timeouts.dtype != torch.bool:
+                    timeouts = timeouts.bool()
+                # For SAC, we don't want to bootstrap value on timeouts
+                # but we do want to reset the environment
+                terminated = dones & ~timeouts
+            else:
+                # If value_bootstrap is disabled or no timeout info, treat all dones as terminations
+                terminated = dones
 
             self.current_rewards = self.current_rewards * not_dones
             self.current_lengths = self.current_lengths * not_dones
 
             if isinstance(next_obs, dict):    
                 next_obs_processed = next_obs['obs']
-                self.obs = next_obs_processed.clone()
+                self.obs = next_obs
             else:
-                self.obs = next_obs.clone()
+                next_obs_processed = next_obs
+                self.obs = next_obs
 
             rewards = self.rewards_shaper(rewards)
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs_processed, torch.unsqueeze(dones, 1))
+            # Batch unsqueeze operations
+            rewards_unsqueezed = rewards.unsqueeze(1)
+            # Use terminated (not timeouts) for replay buffer
+            terminated_unsqueezed = terminated.unsqueeze(1)
+            self.replay_buffer.add(obs, action, rewards_unsqueezed, next_obs_processed, terminated_unsqueezed)
 
-            if isinstance(obs, dict):
-                obs = self.obs['obs']
+            obs = next_obs_processed  # Use the already processed observation
 
             if not random_exploration:
                 self.set_train()

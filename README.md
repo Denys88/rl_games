@@ -334,6 +334,19 @@ Additional environment supported properties and functions
 * Fixed default player config num_games value.
 * Fixed applying minibatch size per env.
 * Added concat_output support for RNN.
+* SAC improvements:
+  * Fixed missing `gamma_tensor` initialization bug
+  * Removed hardcoded torch.compile decorators (now respects YAML config)
+  * Optimized tensor operations and removed unnecessary clones
+* Environment wrapper fixes:
+  * Fixed tuple/list observation handling for compatibility with various gym environments
+  * Added proper numpy to torch tensor conversion in `cast_obs`
+  * Fixed missing gym import in envpool wrapper
+* Ray integration improvements:
+  * Moved Ray import to lazy loading (only when RayVecEnv is used)
+  * Added configurable Ray initialization with `ray_config` parameter
+  * Added proper cleanup with `close()` method for Ray actors
+  * Default 1GB object store memory allocation
 
 
 1.6.1

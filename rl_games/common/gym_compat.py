@@ -1,6 +1,7 @@
 """Minimal compatibility layer for Gym/Gymnasium."""
 import sys
 
+
 # Use Gymnasium for Python >= 3.9, Gym for older versions
 if sys.version_info >= (3, 9):
     import gymnasium as gym
@@ -24,7 +25,13 @@ def make(env_id, **kwargs):
         class CompatEnv(type(env)):
             def reset(self, **kwargs):
                 obs, info = super().reset(**kwargs)
+                # Store info for environments that need it
+                self._last_reset_info = info
                 return obs  # Drop info for compatibility
+
+            def get_reset_info(self):
+                """Get the info dict from the last reset() call."""
+                return getattr(self, '_last_reset_info', {})
 
             def step(self, action):
                 obs, reward, terminated, truncated, info = super().step(action)

@@ -10,10 +10,10 @@ Add `torch_compile` to your yaml config under `params.config`:
 
 ```yaml
 # Enable with default mode (max-autotune) - recommended
-torch_compile: true
+torch_compile: True
 
 # Disable compilation
-torch_compile: false
+torch_compile: False
 
 # Specify mode as string
 torch_compile: "default"        # Good compatibility, moderate speedup
@@ -44,4 +44,4 @@ torch_compile:
 
 ## Performance
 
-torch.compile typically provides 10-15% performance improvement in total training throughput. The exact speedup depends on your model architecture, batch size, and hardware configuration.
+torch.compile typically provides 15-40% performance improvement in total training throughput. The exact speedup vary significantly by environment type and configuration and depends on your model architecture, batch size, and hardware configuration.

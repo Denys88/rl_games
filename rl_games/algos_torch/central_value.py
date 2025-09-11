@@ -258,8 +258,7 @@ class CentralValueTrain(nn.Module):
                 data = self.dataset[batch_idx]
                 # Use mixed precision for training
                 with torch.amp.autocast('cuda', enabled=self.mixed_precision):
-                    batch_loss = self.train_critic(data)
-                    loss += batch_loss
+                    loss += self.train_critic(data)
 
             if self.normalize_input:
                 # don't need to update statistics more than one miniepoch
@@ -301,12 +300,6 @@ class CentralValueTrain(nn.Module):
         actions_batch = batch['actions']
         dones_batch = batch['dones']
         rnn_masks_batch = batch.get('rnn_masks')
-
-        # Add nan checking for debugging
-        if torch.isnan(returns_batch).any():
-            print(f"NaN in returns_batch: min={returns_batch.min()}, max={returns_batch.max()}")
-        if torch.isnan(value_preds_batch).any():
-            print(f"NaN in value_preds_batch: min={value_preds_batch.min()}, max={value_preds_batch.max()}")
 
         batch_dict = {
             'obs': obs_batch,

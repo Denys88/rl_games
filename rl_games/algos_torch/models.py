@@ -288,8 +288,6 @@ class ModelA2CContinuousLogStd(BaseModel):
             return self.a2c_network.get_default_rnn_state()
 
         def forward(self, input_dict):
-            torch.compiler.cudagraph_mark_step_begin()
-
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
