@@ -70,6 +70,9 @@ class NetworkBuilder:
         def get_aux_loss(self):
             return None
 
+        def get_actions_num(self):
+            return 0
+
         def _calc_input_size(self, input_shape,cnn_layers=None):
             if cnn_layers is None:
                 assert(len(input_shape) == 1)
@@ -205,7 +208,7 @@ class A2CBuilder(NetworkBuilder):
             input_shape = kwargs.pop('input_shape')
             self.value_size = kwargs.pop('value_size', 1)
             self.num_seqs = num_seqs = kwargs.pop('num_seqs', 1)
-
+            self.actions_num = actions_num
             NetworkBuilder.BaseNetwork.__init__(self)
             self.load(params)
             self.actor_cnn = nn.Sequential()
@@ -285,7 +288,8 @@ class A2CBuilder(NetworkBuilder):
                 for multidiscrete actions num is a tuple
             '''
             if self.is_multi_discrete:
-                self.logits = torch.nn.ModuleList([torch.nn.Linear(out_size, num) for num in actions_num])
+                self.logits = torch.nn.Linear(out_size, sum(actions_num))
+                
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
@@ -318,6 +322,9 @@ class A2CBuilder(NetworkBuilder):
                     sigma_init(self.sigma)
                 else:
                     sigma_init(self.sigma.weight)
+
+        def get_actions_num(self):
+            return self.actions_num 
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
@@ -400,12 +407,8 @@ class A2CBuilder(NetworkBuilder):
 
                 value = self.value_act(self.value(c_out))
 
-                if self.is_discrete:
+                if self.is_discrete or self.is_multi_discrete:
                     logits = self.logits(a_out)
-                    return logits, value, states
-
-                if self.is_multi_discrete:
-                    logits = [logit(a_out) for logit in self.logits]
                     return logits, value, states
 
                 if self.is_continuous:
