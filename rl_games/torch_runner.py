@@ -129,7 +129,7 @@ class Runner:
                     params['config']['env_config']['seed'] = self.seed
                 else:
                     if params["config"].get('multi_gpu', False):
-                        params['config']['env_config']['seed'] += self
+                        params['config']['env_config']['seed'] += self.seed
 
         config = params['config']
         config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
