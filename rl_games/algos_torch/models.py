@@ -131,71 +131,198 @@ class ModelA2CMultiDiscrete(BaseModel):
 
     class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
+            super().__init__(**kwargs)
             self.a2c_network = a2c_network
+            self.actions_num = a2c_network.get_actions_num()  # list[int], e.g. [5,5,5] or [3,5,7]
+            print(f"ModelA2CMultiDiscrete with actions_num = {self.actions_num}")
+            self._uniform = len(self.actions_num) > 0 and all(a == self.actions_num[0] for a in self.actions_num)
+            self._H = len(self.actions_num)
+            self._K = self.actions_num[0] if self._uniform else None
+            self._cum = torch.tensor([0] + list(torch.cumsum(torch.tensor(self.actions_num), dim=0).tolist()))
+            # compile after methods exist
             self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
-        def get_aux_loss(self):
-            return self.a2c_network.get_aux_loss()
-
-        def is_rnn(self):
-            return self.a2c_network.is_rnn()
-
-        def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
-
-        def get_value_layer(self):
-            return self.a2c_network.get_value_layer()
+        # --- simple proxies ---
+        def get_aux_loss(self): return self.a2c_network.get_aux_loss()
+        def is_rnn(self): return self.a2c_network.is_rnn()
+        def get_default_rnn_state(self): return self.a2c_network.get_default_rnn_state()
+        def get_value_layer(self): return self.a2c_network.get_value_layer()
 
         def kl(self, p_dict, q_dict):
-            p = p_dict['logits']
-            q = q_dict['logits']
-            return divergence.d_kl_discrete_list(p, q)
+            # p_dict['logits'] and q_dict['logits'] are concatenated tensors
+            # If your kl expects per-head lists, update divergence util accordingly.
+            return divergence.d_kl_discrete_list(p_dict['logits'], q_dict['logits'])
+
+        @staticmethod
+        def _apply_mask_concat(logits_concat, mask_concat):
+            if mask_concat is None:
+                return logits_concat
+            # mask is 0/1; turn 0s into a big negative number
+            # supports broadcasting over batch dim
+            big_neg = torch.finfo(logits_concat.dtype).min / 8  # avoid -inf
+            return torch.where(mask_concat.bool(), logits_concat, big_neg)
+
+        def _train_uniform(self, logits_concat, value, states, prev_actions, action_masks):
+            """
+            Uniform heads: reshape to [B,H,K] but DO NOT split into per-head tensors.
+            """
+            B = logits_concat.shape[0]
+            H, K = self._H, self._K
+            logits_bhk = logits_concat.view(B, H, K)
+
+            if action_masks is not None:
+                # masks expected shape [B, sum(A)] -> reshape to [B,H,K]
+                masks_bhk = action_masks.view(B, H, K).to(dtype=torch.bool)
+                big_neg = torch.finfo(logits_bhk.dtype).min / 8
+                logits_bhk = torch.where(masks_bhk, logits_bhk, big_neg)
+
+            cat = Categorical(logits=logits_bhk)  # batched over [B,H]
+            # prev_actions expected [B,H] (if [B,H,1], squeeze)
+            if prev_actions is None:
+                raise ValueError("prev_actions must be provided during training")
+            if prev_actions.dim() == 3 and prev_actions.size(-1) == 1:
+                prev_actions = prev_actions.squeeze(-1)
+            prev_actions = prev_actions.long()
+
+            prev_neglogp = -cat.log_prob(prev_actions).sum(dim=-1)  # [B]
+            entropy = cat.entropy().sum(dim=-1)                     # [B]
+
+            # Keep outputs concatenated, no per-head splitting:
+            return {
+                'prev_neglogp': prev_neglogp.squeeze(-1),
+                'logits': logits_concat,            # single concatenated tensor
+                'values': value,
+                'entropy': entropy.squeeze(-1),
+                'rnn_states': states,
+            }
+
+
+        @torch.no_grad()
+        def _act_uniform(self, logits_concat, value, states, prev_actions=None, action_masks=None):
+            B = logits_concat.shape[0]
+            H, K = self._H, self._K
+            logits_bhk = logits_concat.view(B, H, K)
+
+            if action_masks is not None:
+                masks_bhk = action_masks.view(B, H, K).to(dtype=torch.bool)
+                big_neg = torch.finfo(logits_bhk.dtype).min / 8
+                logits_bhk = torch.where(masks_bhk, logits_bhk, big_neg)
+
+            cat = torch.distributions.Categorical(logits=logits_bhk)
+            actions_bh = cat.sample().long()                 # [B,H]
+            neglogp = -cat.log_prob(actions_bh).sum(-1)      # [B]
+
+            return {
+                'neglogpacs': neglogp,
+                'values': self.denorm_value(value),
+                'actions': actions_bh,                       # [B,H]
+                'logits': logits_concat,                     # concatenated
+                'rnn_states': states,
+            }
+
+        def _train_ragged(self, logits_concat, value, states, prev_actions, action_masks):
+            """
+            Non-uniform heads: operate on concatenated logits using segment math.
+            No splits or lists are created; we only use .narrow slices.
+            """
+            if prev_actions is None:
+                raise ValueError("prev_actions must be provided during training")
+            B = logits_concat.shape[0]
+            device = logits_concat.device
+            dtype = logits_concat.dtype
+
+            if action_masks is not None:
+                logits_concat = self._apply_mask_concat(logits_concat, action_masks)
+
+            # Compute sum of per-head negative log-probs and entropies
+            neglogp_sum = torch.zeros(B, device=device, dtype=dtype)
+            entropy_sum = torch.zeros(B, device=device, dtype=dtype)
+
+            # prev_actions shape [B,H] (or [B,H,1])
+            if prev_actions.dim() == 3 and prev_actions.size(-1) == 1:
+                prev_actions = prev_actions.squeeze(-1)
+            prev_actions = prev_actions.long()
+
+            # loop over heads with narrow slices (no tensor splits/lists)
+            start = 0
+            for h, Ah in enumerate(self.actions_num):
+                sl = logits_concat.narrow(dim=-1, start=start, length=Ah)  # [B,Ah]
+                # logZ = logsumexp over segment
+                m = sl.max(dim=-1, keepdim=True).values
+                lse = m.squeeze(-1) + torch.log(torch.exp(sl - m).sum(dim=-1) + 1e-12)  # [B]
+                # prob of chosen action index
+                idx = prev_actions[:, h].unsqueeze(-1)                                  # [B,1]
+                chosen = sl.gather(dim=-1, index=idx).squeeze(-1)                       # [B]
+                neglogp_sum += -(chosen - lse)
+
+                # entropy: H = logZ - sum_i p_i * z_i
+                p = torch.softmax(sl, dim=-1)                                           # [B,Ah]
+                exp_z = (p * sl).sum(dim=-1)                                            # [B]
+                entropy_sum += (lse - exp_z)
+
+                start += Ah
+
+            return {
+                'prev_neglogp': neglogp_sum,
+                'logits': logits_concat,             # concatenated
+                'values': value,
+                'entropy': entropy_sum,
+                'rnn_states': states,
+            }
+        @torch.no_grad()
+        def _act_ragged(self, logits_concat, value, states, prev_actions=None, action_masks=None):
+            B = logits_concat.shape[0]
+            device = logits_concat.device
+            dtype = logits_concat.dtype
+
+            if action_masks is not None:
+                logits_concat = self._apply_mask_concat(logits_concat, action_masks)
+
+            actions = torch.empty((B, self._H), device=device, dtype=torch.long)
+            neglogp_sum = torch.zeros(B, device=device, dtype=dtype)
+
+            start = 0
+            for h, Ah in enumerate(self.actions_num):
+                sl = logits_concat.narrow(dim=-1, start=start, length=Ah)  # [B,Ah]
+
+                # Gumbel-max sampling
+                u = torch.rand_like(sl)
+                g = -torch.log(-torch.log(u + 1e-12) + 1e-12)
+                sel = (sl + g).argmax(dim=-1, keepdim=True)               # [B,1]
+                actions[:, h] = sel.squeeze(-1)
+
+                # neg log prob of chosen: -(z_sel - logsumexp(z))
+                m = sl.max(dim=-1, keepdim=True).values
+                lse = m.squeeze(-1) + torch.log(torch.exp(sl - m).sum(dim=-1) + 1e-12)  # [B]
+                chosen = sl.gather(dim=-1, index=sel).squeeze(-1)                        # [B]
+                neglogp_sum += -(chosen - lse)
+
+                start += Ah
+
+            return {
+                'neglogpacs': neglogp_sum,
+                'values': self.denorm_value(value),
+                'actions': actions,                 # [B,H]
+                'logits': logits_concat,            # concatenated
+                'rnn_states': states,
+            }
 
         def forward(self, input_dict):
-            is_train = input_dict.get('is_train', True)
-            action_masks = input_dict.get('action_masks', None)
-            prev_actions = input_dict.get('prev_actions', None)
-            input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            logits, value, states = self.a2c_network(input_dict)
-            if is_train:
-                if action_masks is None:
-                    categorical = [Categorical(logits=logit) for logit in logits]
-                else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
-                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
-                prev_actions = torch.split(prev_actions, 1, dim=-1)
-                prev_neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, prev_actions)]
-                prev_neglogp = torch.stack(prev_neglogp, dim=-1).sum(dim=-1)
-                entropy = [c.entropy() for c in categorical]
-                entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
-                result = {
-                    'prev_neglogp': torch.squeeze(prev_neglogp),
-                    'logits': [c.logits for c in categorical],
-                    'values': value,
-                    'entropy': torch.squeeze(entropy),
-                    'rnn_states': states
-                }
-                return result
-            else:
-                if action_masks is None:
-                    categorical = [Categorical(logits=logit) for logit in logits]
-                else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
-                    categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
+            is_train: bool = input_dict.get('is_train', True)
+            action_masks = input_dict.get('action_masks', None)   # expect [B, sum(A)] or None
+            prev_actions = input_dict.get('prev_actions', None)   # expect [B, H] (or [B,H,1] in train)
 
-                selected_action = [c.sample().long() for c in categorical]
-                neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, selected_action)]
-                selected_action = torch.stack(selected_action, dim=-1)
-                neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
-                result = {
-                    'neglogpacs': torch.squeeze(neglogp),
-                    'values': self.denorm_value(value),
-                    'actions': selected_action,
-                    'logits': [c.logits for c in categorical],
-                    'rnn_states': states
-                }
-                return result
+            input_dict['obs'] = self.norm_obs(input_dict['obs'])
+            logits_concat, value, states = self.a2c_network(input_dict)  # logits_concat: [B, sum(A)]
+
+            if self._uniform:
+                return (self._train_uniform if is_train else self._act_uniform)(
+                    logits_concat, value, states, prev_actions, action_masks
+                )
+            else:
+                return (self._train_ragged if is_train else self._act_ragged)(
+                    logits_concat, value, states, prev_actions, action_masks
+                )
 
 
 class ModelA2CContinuous(BaseModel):
