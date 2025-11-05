@@ -36,7 +36,6 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -95,7 +94,6 @@ class CentralValueTrain(nn.Module):
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
-        self.truncate_grad = self.config.get('truncate_grads', False)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
@@ -132,7 +130,7 @@ class CentralValueTrain(nn.Module):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device_name)
+            lr_tensor = torch.tensor([lr], device=self.ppo_device)
             dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
@@ -253,10 +251,11 @@ class CentralValueTrain(nn.Module):
         """
         self.train()  # Set module to training mode
         loss = 0
-        for _ in range(self.mini_epoch):
+        for epoch_idx in range(self.mini_epoch):
             if self.config.get('freeze_critic', False):
                 break
-            for data in self.dataset:
+            for batch_idx in range(len(self.dataset)):
+                data = self.dataset[batch_idx]
                 # Use mixed precision for training
                 with torch.amp.autocast('cuda', enabled=self.mixed_precision):
                     loss += self.train_critic(data)
@@ -334,23 +333,15 @@ class CentralValueTrain(nn.Module):
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
 
-            if not all_grads_list:
-                # This is a critical error condition - we should have gradients during training
-                import warnings
-                warnings.warn("No gradients found during update step! Check model configuration and loss computation.")
-            else:
-                all_grads = torch.cat(all_grads_list)
-                dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-
-                offset = 0
-                for param in self.model.parameters():
-                    if param.grad is not None:
-                        numel = param.numel()
-                        param.grad.data.copy_(
-                            all_grads[offset:offset + numel].view_as(param.grad.data)
-                            / self.world_size
-                        )
-                        offset += numel
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
+                    )
+                    offset += param.numel()
 
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)

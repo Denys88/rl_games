@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+
+
 def repackage_hidden(h):
     """Wraps hidden states in new Tensors, to detach them from their history."""
 
@@ -14,11 +16,11 @@ def multiply_hidden(h, mask):
     else:
         return tuple(multiply_hidden(v, mask) for v in h)
 
+
 class RnnWithDones(nn.Module):
     def __init__(self, rnn_layer):
         nn.Module.__init__(self)
         self.rnn = rnn_layer
-
 
     #got idea from ikostrikov :)
     def forward(self, input, states, done_masks=None, bptt_len = 0):
@@ -71,10 +73,12 @@ class RnnWithDones(nn.Module):
         return torch.cat(out_batch, dim=0), states
     """
 
+
 class LSTMWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):
         lstm = torch.nn.LSTM(*args, **kwargs)
         RnnWithDones.__init__(self, lstm)
+
 
 class GRUWithDones(RnnWithDones):
     def __init__(self, *args, **kwargs):

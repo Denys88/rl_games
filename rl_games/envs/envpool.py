@@ -1,6 +1,6 @@
 from rl_games.common.ivecenv import IVecEnv
-import gym
 import numpy as np
+import gym
 
 
 def flatten_dict(obs):
@@ -17,7 +17,7 @@ class Envpool(IVecEnv):
         import envpool
 
         self.batch_size = num_actors
-        env_name=kwargs.pop('env_name')
+        env_name = kwargs.pop('env_name')
         self.has_lives = kwargs.pop('has_lives', False)
         self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', False)
         self.flatten_obs = kwargs.pop('flatten_obs', False) # for the dm control
@@ -64,8 +64,16 @@ class Envpool(IVecEnv):
             self.scores *= 1 - dones
 
     def step(self, action):
-        next_obs, reward, is_done, info = self.env.step(action , self.ids)
-        info['time_outs'] = info['TimeLimit.truncated']
+        step_result = self.env.step(action, self.ids)
+        # Handle both old (4 values) and new (5 values) return formats
+        if len(step_result) == 5:
+            next_obs, reward, terminated, truncated, info = step_result
+            is_done = terminated | truncated
+            info['time_outs'] = truncated
+        else:
+            next_obs, reward, is_done, info = step_result
+            info['time_outs'] = info.get('TimeLimit.truncated', False)
+
         self._set_scores(info, is_done)
         if self.flatten_obs:
             next_obs = flatten_dict(next_obs)
@@ -78,7 +86,13 @@ class Envpool(IVecEnv):
         return next_obs, reward, is_done, info
 
     def reset(self):
-        obs = self.env.reset(self.ids)
+        reset_result = self.env.reset(self.ids)
+        # Handle both old (obs) and new (obs, info) return formats
+        if isinstance(reset_result, tuple):
+            obs = reset_result[0]
+        else:
+            obs = reset_result
+
         if self.flatten_obs:
             obs = flatten_dict(obs)
         if self.use_dict_obs_space:

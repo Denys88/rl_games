@@ -73,11 +73,13 @@ class Runner:
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
 
-        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
-        # For maximum perfromance
+        # Performance optimizations
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.backends.cudnn.benchmark = True
+
+        # Enable TensorFloat32 (TF32) for faster matrix multiplications on NVIDIA GPUs
+        torch.set_float32_matmul_precision('high')
 
     def reset(self):
         pass
@@ -138,6 +140,10 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
+        num_threads = params.get('torch_threads', 4)  # Default to 4 instead of None
+        if num_threads is not None:
+            torch.set_num_threads(num_threads)
+
     def load(self, yaml_config):
         config = deepcopy(yaml_config)
         self.default_config = deepcopy(config['params'])
@@ -151,6 +157,21 @@ class Runner:
 
         """
         print('Started to train')
+
+        # Add profiling support
+        profiler = None
+        if args.get('profile', False):
+            profiler = torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True
+            )
+            profiler.__enter__()
+
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
 
         # Restore weights (if any) BEFORE compiling the model.  Compiling first
@@ -165,11 +186,55 @@ class Runner:
         # Now compile the (already restored) model. Doing it after the restore
         # keeps parameter names consistent with the checkpoint.
 
-        # mode="max-autotune" would be faster at runtime, but it has a much
-        # longer compilation time. "reduce-overhead" gives a good trade‑off.
-        agent.model = torch.compile(agent.model, mode="reduce-overhead")
+        # torch.compile modes:
+        # - "default": Good compatibility, moderate speedup
+        # - "reduce-overhead": Balanced performance and compilation time
+        # - "max-autotune": Best runtime performance (now default), longer initial compilation
 
+        # Enable torch.compile for performance if requested
+        compile_config = self.params.get('config', {}).get('torch_compile', True)
+
+        if compile_config is False:
+            print("torch.compile: Disabled")
+        else:
+            # Parse configuration
+            if isinstance(compile_config, bool):
+                # Default mode if just True
+                actor_mode = "max-autotune"
+                critic_mode = "max-autotune"
+            elif isinstance(compile_config, str):
+                # String mode directly
+                actor_mode = compile_config
+                critic_mode = compile_config
+            elif isinstance(compile_config, dict):
+                # Advanced configuration
+                actor_mode = compile_config.get('mode', 'max-autotune')
+                critic_mode = compile_config.get('critic_mode', actor_mode)  # Default to same as actor
+            else:
+                print(f"Warning: Invalid torch_compile config {compile_config}, using default")
+                actor_mode = "max-autotune"
+                critic_mode = "max-autotune"
+
+            # Compile actor model
+            print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")
+            agent.model = torch.compile(agent.model, mode=actor_mode)
+
+            # Compile critic model if using central value network
+            # Used for: 1) asymmetric actor-critic (different obs for actor/critic)
+            #          2) multi-agent with centralized critic (all agents' obs + privileged obs)
+            if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
+                print(f"torch.compile: Enabled for central value critic with mode='{critic_mode}'")
+                agent.central_value_net.model = torch.compile(
+                    agent.central_value_net.model,
+                    mode=critic_mode
+                )
         agent.train()
+
+        # Save profiling results if enabled
+        if profiler is not None:
+            profiler.__exit__(None, None, None)
+            print(profiler.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+            profiler.export_chrome_trace("profile_trace.json")
 
     def run_play(self, args):
         """Run the inference procedure from the algorithm passed in.

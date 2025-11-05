@@ -90,6 +90,11 @@ class PPODataset(Dataset):
         """Return the number of minibatches."""
         return self.length
 
+    def __iter__(self):
+        """Iterate over all minibatches in order."""
+        for idx in range(self.length):
+            yield self[idx]
+
 
 class DatasetList(Dataset):
     def __init__(self):

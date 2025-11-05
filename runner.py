@@ -22,6 +22,8 @@ if __name__ == '__main__':
         help="the wandb's project name")
     ap.add_argument("--wandb-entity", type=str, default=None,
         help="the entity (team) of wandb's project")
+    ap.add_argument("--profile", action='store_true',
+        help="enable PyTorch profiler to identify performance bottlenecks")
     os.makedirs("nn", exist_ok=True)
     os.makedirs("runs", exist_ok=True)
 
@@ -40,13 +42,6 @@ if __name__ == '__main__':
             config['params']['config']['env_config']['seed'] = args['seed']
 
         from rl_games.torch_runner import Runner
-
-        try:
-            import ray
-        except ImportError:
-            pass
-        else:
-            ray.init(object_store_memory=1024*1024*1000)
 
         runner = Runner()
         try:
@@ -67,13 +62,6 @@ if __name__ == '__main__':
         )
 
     runner.run(args)
-
-    try:
-        import ray
-    except ImportError:
-        pass
-    else:
-        ray.shutdown()
 
     if args["track"] and global_rank == 0:
         wandb.finish()

@@ -87,7 +87,7 @@ pip install -e .
 To run CPU-based environments either envpool if supported or Ray are required ```pip install envpool``` or ```pip install ray```
 To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
-To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
+To run Atari also ```pip install opencv-python``` is required. For modern Gymnasium/ALE Atari environments, install ```pip install ale-py```. In addition installation of envpool for maximum simulation and training performance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
 
 ## Citing
 
@@ -314,15 +314,39 @@ Additional environment supported properties and functions
 
 1.6.5
 
-* Torch compile support. Requires torch 2.2 or newer now.
+* Added torch.compile support with configurable modes. Provides 10-15% performance improvement. Requires torch 2.2 or newer.
+  * Default mode is now `max-autotune` for best performance
+  * Configurable via `torch_compile` parameter in yaml configs
+  * Separate compilation modes for actor and central value networks
+  * See [torch.compile documentation](docs/TORCH_COMPILE.md) for configuration details
+* Fixed critical bugs in asymmetric actor-critic (central_value) training:
+  * Fixed incorrect device reference in `update_lr()` method
+  * Fixed infinite loop when iterating over dataset
+  * Added proper `__iter__` method to `PPODataset` class
+* Fixed variance calculation in `RunningMeanStd` to use population variance
 * Fixed get_mean_std_with_masks function.
+* Fixed missing central value optimizer state in checkpoint save/load
 * Added myosuite support.
 * Added auxilary loss support.
 * Update for tacsl release: CNN tower processing, critic weights loading and freezing.
 * Fixed SAC input normalization.
+* Fixed SAC agent summary writer to use configured directory instead of hardcoded 'runs/'
 * Fixed default player config num_games value.
 * Fixed applying minibatch size per env.
 * Added concat_output support for RNN.
+* SAC improvements:
+  * Fixed missing `gamma_tensor` initialization bug
+  * Removed hardcoded torch.compile decorators (now respects YAML config)
+  * Optimized tensor operations and removed unnecessary clones
+* Environment wrapper fixes:
+  * Fixed tuple/list observation handling for compatibility with various gym environments
+  * Added proper numpy to torch tensor conversion in `cast_obs`
+  * Fixed missing gym import in envpool wrapper
+* Ray integration improvements:
+  * Moved Ray import to lazy loading (only when RayVecEnv is used)
+  * Added configurable Ray initialization with `ray_config` parameter
+  * Added proper cleanup with `close()` method for Ray actors
+  * Default 1GB object store memory allocation
 
 
 1.6.1
@@ -334,7 +358,7 @@ Additional environment supported properties and functions
 * Added shaped reward graph to the tensorboard.
 * Fixed bug with SAC not saving weights with save_frequency.
 * Added multi-node training support for GPU-accelerated training environments like Isaac Gym. No changes in training scripts are required. Thanks to @ankurhanda and @ArthurAllshire for assistance in implementation.
-* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.
+* Added evaluation feature for inferencing during training. Checkpoints from training process can be automatically picked up and updated in the inferencing process when enabled.Enhanced
 * Added get/set API for runtime update of rl training parameters. Thanks to @ArthurAllshire for the initial version of fast PBT code.
 * Fixed SAC not loading weights properly.
 * Removed Ray dependency for use cases it's not required.
