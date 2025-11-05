@@ -87,7 +87,7 @@ pip install -e .
 To run CPU-based environments either envpool if supported or Ray are required ```pip install envpool``` or ```pip install ray```
 To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
 
-To run Atari also ```pip install opencv-python``` is required. In addition installation of envpool for maximum simulation and training perfromance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
+To run Atari also ```pip install opencv-python``` is required. For modern Gymnasium/ALE Atari environments, install ```pip install ale-py```. In addition installation of envpool for maximum simulation and training performance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
 
 ## Citing
 

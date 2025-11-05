@@ -9,7 +9,6 @@ import gym
 from rl_games.common.gym_compat import make
 from gym.wrappers import FlattenObservation, FilterObservation
 import numpy as np
-import math
 
 
 class HCRewardEnv(gym.RewardWrapper):
@@ -97,10 +96,17 @@ def create_myo(**kwargs):
 
 
 def create_atari_gym_env(**kwargs):
+    # Register ALE environments if available (for Ray workers)
+    try:
+        import ale_py
+        gym.register_envs(ale_py)
+    except:
+        pass  # ale_py not available or already registered
+
     #frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    skip = kwargs.pop('skip',4)
-    episode_life = kwargs.pop('episode_life',True)
+    skip = kwargs.pop('skip', 4)
+    episode_life = kwargs.pop('episode_life', True)
     wrap_impala = kwargs.pop('wrap_impala', False)
     env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
     return env
@@ -303,15 +309,28 @@ configurations = {
         'vecenv_type' : 'RAY'
     },
     'PongNoFrameskip-v4' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('PongNoFrameskip-v4', skip=4),
+        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('ALE/Pong-v5', skip=4, frameskip=1, repeat_action_probability=0.0),
         'vecenv_type' : 'RAY'
     },
     'BreakoutNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('BreakoutNoFrameskip-v4', skip=4,sticky=False),
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/Breakout-v5', skip=4, sticky=False, frameskip=1, repeat_action_probability=0.0),
         'vecenv_type' : 'RAY'
     },
     'MsPacmanNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('MsPacmanNoFrameskip-v4', skip=4),
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/MsPacman-v5', skip=4, frameskip=1, repeat_action_probability=0.0),
+        'vecenv_type' : 'RAY'
+    },
+    # New Gymnasium v5 Atari environments
+    'Pong-v5' : {
+        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('ALE/Pong-v5', skip=4),
+        'vecenv_type' : 'RAY'
+    },
+    'Breakout-v5' : {
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/Breakout-v5', skip=4, sticky=False),
+        'vecenv_type' : 'RAY'
+    },
+    'MsPacman-v5' : {
+        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/MsPacman-v5', skip=4),
         'vecenv_type' : 'RAY'
     },
     'CarRacing-v0' : {

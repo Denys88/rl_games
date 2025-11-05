@@ -10,12 +10,12 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
-from rl_games.algos_torch import  model_builder
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.algos_torch import model_builder
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 
 import numpy as np
 import time
-import gym
+from rl_games.common.gym_compat import gym
 
 from datetime import datetime
 from tensorboardX import SummaryWriter
@@ -146,7 +146,12 @@ class A2CBase(BaseAlgorithm):
         self.truncate_grads = self.config.get('truncate_grads', False)
 
         if self.has_central_value:
+            # Prefer explicit state_space from the env; fall back to observation_space if missing
             self.state_space = self.env_info.get('state_space', None)
+            if self.state_space is None:
+                self.state_space = self.observation_space
+                # Propagate fallback so ExperienceBuffer allocates correctly
+                self.env_info['state_space'] = self.state_space
             if isinstance(self.state_space, gym.spaces.Dict):
                 self.state_shape = {}
                 for k, v in self.state_space.spaces.items():
@@ -934,14 +939,16 @@ class DiscreteA2CBase(A2CBase):
 
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
-        if type(action_space) is gym.spaces.Discrete:
+        if isinstance(action_space, gym.spaces.Discrete):
             self.actions_shape = (self.horizon_length, batch_size)
             self.actions_num = action_space.n
             self.is_multi_discrete = False
-        if type(action_space) is gym.spaces.Tuple:
+        elif isinstance(action_space, gym.spaces.Tuple):
             self.actions_shape = (self.horizon_length, batch_size, len(action_space)) 
             self.actions_num = [action.n for action in action_space]
             self.is_multi_discrete = True
+        else:
+            raise ValueError(f"Unsupported action space type for DiscreteA2CBase: {type(action_space)}")
         self.is_discrete = True
 
     def init_tensors(self):

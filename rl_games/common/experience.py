@@ -1,6 +1,6 @@
 import numpy as np
 import random
-import gym
+from rl_games.common.gym_compat import gym
 import torch
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict
@@ -355,7 +355,12 @@ class ExperienceBuffer:
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
         if self.has_central_value:
-            self.tensor_dict['states'] = self._create_tensor_from_space(env_info['state_space'], state_base_shape)
+            # Some envs omit state_space despite central_value being enabled.
+            # Fall back to observation_space and raise a clear error if even that is missing.
+            state_space = env_info.get('state_space', None)
+            if state_space is None:
+                state_space = env_info.get('observation_space', None)
+            self.tensor_dict['states'] = self._create_tensor_from_space(state_space, state_base_shape)
 
         val_space = gym.spaces.Box(low=0, high=1, shape=(env_info.get('value_size', 1),))
         self.tensor_dict['rewards'] = self._create_tensor_from_space(val_space, obs_base_shape)
@@ -378,6 +383,9 @@ class ExperienceBuffer:
             self.tensor_dict[k] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1, shape=(v), dtype=np.float32), obs_base_shape)
 
     def _create_tensor_from_space(self, space, base_shape):       
+        if space is None:
+            # Make the failure explicit early instead of propagating None
+            raise ValueError("Space is None while allocating tensors. Ensure env_info provides required spaces.")
         if isinstance(space, gym.spaces.Box):
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
@@ -413,11 +421,25 @@ class ExperienceBuffer:
             index: Index at which to update the tensor.
             val (dict or torch.Tensor): New value(s) to store.
         """
-        if isinstance(val, dict):
-            for k, v in val.items():
-                self.tensor_dict[name][k][index, :] = v
+        stored_val = self.tensor_dict[name]
+        if isinstance(stored_val, dict):
+            # If the stored value is a dict (from Dict observation space)
+            if isinstance(val, dict):
+                # Update each tensor in the dict
+                for k, v in val.items():
+                    if torch.is_tensor(v):
+                        v = v.detach().clone()
+                    stored_val[k][index, :] = v
+            else:
+                raise ValueError(f"Expected dict value for '{name}' but got {type(val)}")
         else:
-            self.tensor_dict[name][index, :] = val
+            # Regular tensor update
+            if isinstance(val, dict):
+                raise ValueError(f"Expected tensor value for '{name}' but got dict")
+            else:
+                if torch.is_tensor(val):
+                    val = val.detach().clone()
+                stored_val[index, :] = val
 
     def update_data_rnn(self, name, indices, play_mask, val):
         """
@@ -439,13 +461,26 @@ class ExperienceBuffer:
         if not isinstance(val, (dict, torch.Tensor)):
             raise TypeError(f"Expected dict or tensor, got {type(val)}")
 
-        if isinstance(val, dict):
-            for k, v in val.items():
-                if k not in self.tensor_dict[name]:
-                    raise KeyError(f"Key {k} not found in tensor_dict[{name}]")
-                self.tensor_dict[name][k][indices, play_mask] = v
+        stored_val = self.tensor_dict[name]
+        if isinstance(stored_val, dict):
+            # If the stored value is a dict (from Dict observation space)
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    if k not in stored_val:
+                        raise KeyError(f"Key {k} not found in tensor_dict[{name}]")
+                    if torch.is_tensor(v):
+                        v = v.detach().clone()
+                    stored_val[k][indices, play_mask] = v
+            else:
+                raise ValueError(f"Expected dict value for '{name}' but got {type(val)}")
         else:
-            self.tensor_dict[name][indices, play_mask] = val
+            # Regular tensor update
+            if isinstance(val, dict):
+                raise ValueError(f"Expected tensor value for '{name}' but got dict")
+            else:
+                if torch.is_tensor(val):
+                    val = val.detach().clone()
+                stored_val[indices, play_mask] = val
 
     def get_transformed(self, transform_op):
         res_dict = {}

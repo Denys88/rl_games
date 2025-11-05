@@ -7,6 +7,7 @@ import random
 from time import sleep
 import torch
 
+
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
 
@@ -135,7 +136,7 @@ class RayVecEnv(IVecEnv):
             self.ray = ray
         except ImportError:
             raise ImportError("Ray is required for RayVecEnv. Please install it with: pip install ray")
-        
+
         # Initialize Ray if not already initialized
         if not ray.is_initialized():
             # Get Ray initialization parameters from config
@@ -149,13 +150,13 @@ class RayVecEnv(IVecEnv):
             #     include_dashboard: False         # Disable Ray dashboard
             #     dashboard_host: '0.0.0.0'        # Ray dashboard host
             ray_config = kwargs.pop('ray_config', {})
-            
+
             # Set default object store memory if not specified
             if 'object_store_memory' not in ray_config:
                 ray_config['object_store_memory'] = 1024*1024*1000
-                
+
             ray.init(**ray_config)
-            
+
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
@@ -180,8 +181,8 @@ class RayVecEnv(IVecEnv):
         can_concat_infos = self.ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
         self.concat_infos = can_concat_infos
-        self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
-        self.state_type_dict = type(env_info.get('state_space')) is gym.spaces.Dict
+        self.obs_type_dict = isinstance(env_info.get('observation_space'), gym.spaces.Dict)
+        self.state_type_dict = isinstance(env_info.get('state_space'), gym.spaces.Dict)
         if self.num_agents == 1:
             self.concat_func = np.stack
         else:

@@ -16,11 +16,18 @@ else:
 __all__ = ["gym", "spaces", "make", "GYM_BACKEND", "wrap_gymnasium_env"]
 
 
-def make(env_id, **kwargs):
-    """Create env with normalized API."""
+def make(env_id, old_gym_api=True, **kwargs):
+    """Create env with normalized API.
+
+    Args:
+        env_id: Environment ID to create
+        old_gym_api: If True (default), wrap gymnasium envs to provide old Gym API.
+                     If False, return gymnasium envs with new API.
+        **kwargs: Additional arguments for gym.make()
+    """
     env = gym.make(env_id, **kwargs)
 
-    if GYM_BACKEND == "gymnasium":
+    if GYM_BACKEND == "gymnasium" and old_gym_api:
         # Wrap to provide old-style API for consistency
         class CompatEnv(type(env)):
             def reset(self, **kwargs):
