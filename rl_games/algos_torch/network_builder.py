@@ -178,7 +178,7 @@ class NetworkBuilder:
                 if norm_func_name == 'layer_norm':
                     layers.append(torch.nn.LayerNorm(in_channels))
                 elif norm_func_name == 'batch_norm':
-                    layers.append(torch.nn.BatchNorm2d(in_channels))  
+                    layers.append(torch.nn.BatchNorm1d(in_channels))  
             return nn.Sequential(*layers)
 
         def _build_value_layer(self, input_size, output_size, value_type='legacy'):

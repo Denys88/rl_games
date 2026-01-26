@@ -1,7 +1,6 @@
 import torch
-import copy
-import torch
 from torch.utils.data import Dataset
+import copy
 import random
 
 

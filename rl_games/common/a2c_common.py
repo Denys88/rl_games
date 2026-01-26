@@ -703,10 +703,10 @@ class A2CBase(BaseAlgorithm):
 
     def set_stats_weights(self, weights):
         if self.normalize_rms_advantage:
-            self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
+            self.advantage_mean_std.load_state_dict(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value and 'normalize_value' in weights:
+        if self.normalize_value and 'reward_mean_std' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
             self.scaler.load_state_dict(weights['scaler'])
@@ -1034,8 +1034,6 @@ class DiscreteA2CBase(A2CBase):
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
 
-        advantages = torch.sum(advantages, axis=1)
-
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -1047,6 +1045,8 @@ class DiscreteA2CBase(A2CBase):
                     advantages = self.advantage_mean_std(advantages)
                 else:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        else:
+            advantages = torch.sum(advantages, axis=1)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
