@@ -1,10 +1,10 @@
-import gym
+import gymnasium as gym
 import numpy as np
 from smac.env import StarCraft2Env
 from smac.env import MultiAgentEnv
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m",  **kwargs):
+    def __init__(self, name="3m", **kwargs):
         gym.Env.__init__(self)
         self._seed = kwargs.pop('seed', None)
         self.reward_sparse = kwargs.get('reward_sparse', False)

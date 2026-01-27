@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 from pettingzoo.sisl import multiwalker_v6
 import yaml
@@ -7,7 +7,7 @@ import os
 from collections import deque
 
 class MultiWalker(gym.Env):
-    def __init__(self, name="multiwalker",  **kwargs):
+    def __init__(self, name="multiwalker", **kwargs):
         gym.Env.__init__(self)
         self.name = name
         self.env = multiwalker_v6.parallel_env()

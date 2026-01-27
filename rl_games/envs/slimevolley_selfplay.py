@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 import slimevolleygym
 import yaml
@@ -6,7 +6,7 @@ from rl_games.torch_runner import Runner
 import os
 
 class SlimeVolleySelfplay(gym.Env):
-    def __init__(self, name="SlimeVolleyDiscrete-v0",  **kwargs):
+    def __init__(self, name="SlimeVolleyDiscrete-v0", **kwargs):
         gym.Env.__init__(self)
         self.name = name
         self.is_deterministic = kwargs.pop('is_deterministic', False)

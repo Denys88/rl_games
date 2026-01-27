@@ -15,7 +15,7 @@ from rl_games.interfaces.base_algorithm import  BaseAlgorithm
 
 import numpy as np
 import time
-import gym
+import gymnasium as gym
 
 from datetime import datetime
 from tensorboardX import SummaryWriter

@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 import yaml
 from smacv2.env import StarCraft2Env
@@ -6,7 +6,7 @@ from smacv2.env import MultiAgentEnv
 from smacv2.env.starcraft2.wrapper import StarCraftCapabilityEnvWrapper
 
 class SMACEnvV2(gym.Env):
-    def __init__(self, name="3m",  **kwargs):
+    def __init__(self, name="3m", **kwargs):
         gym.Env.__init__(self)
         self._seed = kwargs.pop('seed', None)
         self.path = kwargs.pop('path')

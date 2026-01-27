@@ -2,7 +2,7 @@ import os
 import shutil
 import threading
 import time
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 import copy

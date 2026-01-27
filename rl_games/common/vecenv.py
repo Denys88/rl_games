@@ -2,7 +2,7 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
-import gym
+import gymnasium as gym
 import random
 from time import sleep
 import torch
@@ -46,8 +46,16 @@ class RayWorker:
             action (type depends on env): Action to take.
 
         """
-        next_state, reward, is_done, info = self.env.step(action)
-        
+        result = self.env.step(action)
+        # Handle both gymnasium 5-tuple and old gym 4-tuple
+        if len(result) == 5:
+            next_state, reward, terminated, truncated, info = result
+            is_done = terminated or truncated if np.isscalar(terminated) else terminated | truncated
+            if 'time_outs' not in info:
+                info['time_outs'] = truncated
+        else:
+            next_state, reward, is_done, info = result
+
         if np.isscalar(is_done):
             episode_done = is_done
         else:
@@ -58,18 +66,23 @@ class RayWorker:
         return next_state, reward, is_done, info
 
     def seed(self, seed):
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         if hasattr(self.env, 'seed'):
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-            np.random.seed(seed)
-            random.seed(seed)
             self.env.seed(seed)
-            
+
     def render(self):
         self.env.render()
 
     def reset(self):
-        obs = self.env.reset()
+        result = self.env.reset()
+        # Handle both gymnasium (obs, info) and old gym (obs) returns
+        if isinstance(result, tuple) and len(result) == 2:
+            obs, info = result
+        else:
+            obs = result
         obs = self._obs_to_fp32(obs)
         return obs
 
@@ -271,19 +284,22 @@ def register(config_name, func):
     vecenv_config[config_name] = func
 
 def create_vec_env(config_name, num_actors, **kwargs):
-    vec_env_name = configurations[config_name]['vecenv_type']
-    return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
+    config = configurations[config_name]
+    vec_env_name = config['vecenv_type']
+    # Merge default_env_config from configuration with user kwargs
+    if 'default_env_config' in config:
+        merged_kwargs = {**config['default_env_config'], **kwargs}
+    else:
+        merged_kwargs = kwargs
+    return vecenv_config[vec_env_name](config_name, num_actors, **merged_kwargs)
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 
 from rl_games.envs.brax import BraxEnv
 register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
 
-from rl_games.envs.envpool import Envpool
-register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))
-
-from rl_games.envs.cule import CuleEnv
-register('CULE', lambda config_name, num_actors, **kwargs: CuleEnv(config_name, num_actors, **kwargs))
-
 from rl_games.envs.maniskill import ManiskillEnv
 register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(config_name, num_actors, **kwargs))
+
+from rl_games.common.gymnasium_vecenv import GymnasiumVecEnv
+register('GYMNASIUM', lambda config_name, num_actors, **kwargs: GymnasiumVecEnv(config_name, num_actors, **kwargs))

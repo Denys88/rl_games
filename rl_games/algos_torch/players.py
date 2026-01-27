@@ -2,7 +2,7 @@ from rl_games.common.player import BasePlayer
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common.tr_helpers import unsqueeze_obs
-import gym
+import gymnasium as gym
 import torch 
 from torch import nn
 import numpy as np

@@ -1,11 +1,11 @@
-import gym
+import gymnasium as gym
 import numpy as np
 
 
 class TestRNNEnv(gym.Env):
-    def __init__(self,  **kwargs):
+    def __init__(self, **kwargs):
         gym.Env.__init__(self)
- 
+
         self.obs_dict = {}
         self.max_steps = kwargs.pop('max_steps', 21)
         self.show_time = kwargs.pop('show_time', 1)
@@ -24,7 +24,7 @@ class TestRNNEnv(gym.Env):
 
         self.multi_discrete_space = kwargs.pop('multi_discrete_space', False)
         if self.multi_discrete_space:
-            self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2),gym.spaces.Discrete(3)])
+            self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2), gym.spaces.Discrete(3)])
         else:
             self.action_space = gym.spaces.Discrete(4)
 
