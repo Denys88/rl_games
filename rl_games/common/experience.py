@@ -228,24 +228,18 @@ class VectorizedReplayBuffer:
         # Always use float32 for storage - autocast will handle precision during training
         dtype = torch.float32
 
-        self.obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device)
-        self.next_obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device)
-        self.actions = torch.empty((capacity, *action_shape), dtype=dtype, device=self.device)
-        self.rewards = torch.empty((capacity, 1), dtype=dtype, device=self.device)
-        self.dones = torch.empty((capacity, 1), dtype=torch.bool, device=self.device)
+        # Determine if we should use pinned memory for faster CPU->GPU transfers
+        use_pin = self._on_cpu and self.use_pinned_memory
+
+        self.obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
+        self.next_obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
+        self.actions = torch.empty((capacity, *action_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
+        self.rewards = torch.empty((capacity, 1), dtype=dtype, device=self.device, pin_memory=use_pin)
+        self.dones = torch.empty((capacity, 1), dtype=torch.bool, device=self.device, pin_memory=use_pin)
 
         self.capacity = capacity
         self.idx = 0
         self.full = False
-
-        # Pre-allocate with pinned memory for faster transfers
-        if self._on_cpu and self.use_pinned_memory:
-            # All tensor allocations with pin_memory()
-            self.obses = self.obses.pin_memory()
-            self.next_obses = self.next_obses.pin_memory()
-            self.actions = self.actions.pin_memory()
-            self.rewards = self.rewards.pin_memory()
-            self.dones = self.dones.pin_memory()
 
     @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done):
@@ -382,19 +376,20 @@ class ExperienceBuffer:
         for k, v in tensor_dict.items():
             self.tensor_dict[k] = self._create_tensor_from_space(gym.spaces.Box(low=0, high=1, shape=(v), dtype=np.float32), obs_base_shape)
 
-    def _create_tensor_from_space(self, space, base_shape):       
+    def _create_tensor_from_space(self, space, base_shape):
         if space is None:
             # Make the failure explicit early instead of propagating None
             raise ValueError("Space is None while allocating tensors. Ensure env_info provides required spaces.")
         if isinstance(space, gym.spaces.Box):
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
+            # Use empty instead of zeros - values will be overwritten
+            tensor = torch.empty(base_shape + space.shape, dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor
         if isinstance(space, gym.spaces.Discrete):
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape, dtype=dtype, device=self.device)
+            tensor = torch.empty(base_shape, dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor
@@ -402,7 +397,7 @@ class ExperienceBuffer:
             # Assuming that tuple is only Discrete tuple
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            tensor = torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
+            tensor = torch.empty(base_shape + (tuple_len,), dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor

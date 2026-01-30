@@ -453,7 +453,7 @@ class SACAgent(BaseAlgorithm):
         if self.is_tensor_obses:
             return self.obs_to_tensors(obs), rewards.to(self._device), dones.to(self._device), infos
         else:
-            return torch.from_numpy(obs).to(self._device), torch.from_numpy(rewards).to(self._device), torch.from_numpy(dones).to(self._device), infos
+            return torch.from_numpy(obs).to(self._device), torch.from_numpy(rewards).to(self._device, dtype=torch.float32), torch.from_numpy(dones).to(self._device), infos
 
     def env_reset(self):
         with torch.no_grad():
@@ -523,8 +523,8 @@ class SACAgent(BaseAlgorithm):
             total_time += (step_end - step_start)
             step_time += (step_end - step_start)
 
-            self.current_rewards += rewards
-            self.current_lengths += 1
+            self.current_rewards.add_(rewards)
+            self.current_lengths.add_(1)
 
             all_done_indices = dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -549,8 +549,8 @@ class SACAgent(BaseAlgorithm):
                 # If value_bootstrap is disabled or no timeout info, treat all dones as terminations
                 terminated = dones
 
-            self.current_rewards = self.current_rewards * not_dones
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones)
+            self.current_lengths.mul_(not_dones)
 
             if isinstance(next_obs, dict):    
                 next_obs_processed = next_obs['obs']

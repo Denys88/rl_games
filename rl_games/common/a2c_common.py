@@ -567,7 +567,7 @@ class A2CBase(BaseAlgorithm):
         else:
             if self.value_size == 1:
                 rewards = np.expand_dims(rewards, axis=1)
-            return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device).float(), torch.from_numpy(dones).to(self.ppo_device), infos
+            return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device, dtype=torch.float32), torch.from_numpy(dones).to(self.ppo_device), infos
 
     def env_reset(self):
         obs = self.vec_env.reset()
@@ -804,13 +804,13 @@ class A2CBase(BaseAlgorithm):
 
             shaped_rewards = self.rewards_shaper(rewards)
             if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
+            self.current_rewards.add_(rewards)
+            self.current_shaped_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1)
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
@@ -820,11 +820,11 @@ class A2CBase(BaseAlgorithm):
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
-            not_dones = 1.0 - self.dones.float()
+            not_dones_unsq = (1.0 - self.dones.float()).unsqueeze(1)
 
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones_unsq)
+            self.current_shaped_rewards.mul_(not_dones_unsq)
+            self.current_lengths.mul_(not_dones_unsq.squeeze(1))
 
         last_values = self.get_values(self.obs)
 
@@ -879,20 +879,20 @@ class A2CBase(BaseAlgorithm):
             shaped_rewards = self.rewards_shaper(rewards)
 
             if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
+            self.current_rewards.add_(rewards)
+            self.current_shaped_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1)
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
 
             if len(all_done_indices) > 0:
                 if self.zero_rnn_on_done:
                     for s in self.rnn_states:
-                        s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+                        s[:, all_done_indices, :].zero_()
                 if self.has_central_value:
                     self.central_value_net.post_step_rnn(all_done_indices)
 
@@ -901,11 +901,11 @@ class A2CBase(BaseAlgorithm):
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
-            not_dones = 1.0 - self.dones.float()
+            not_dones_unsq = (1.0 - self.dones.float()).unsqueeze(1)
 
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones_unsq)
+            self.current_shaped_rewards.mul_(not_dones_unsq)
+            self.current_lengths.mul_(not_dones_unsq.squeeze(1))
 
         last_values = self.get_values(self.obs)
 

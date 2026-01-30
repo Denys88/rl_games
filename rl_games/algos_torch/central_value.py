@@ -202,7 +202,7 @@ class CentralValueTrain(nn.Module):
             return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
-            s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+            s[:, all_done_indices, :].zero_()
 
     def forward(self, input_dict):
         return self.model(input_dict)
@@ -317,11 +317,7 @@ class CentralValueTrain(nn.Module):
         )
 
         # Efficiently clear gradients
-        if self.multi_gpu:
-            self.optimizer.zero_grad()
-        else:
-            for param in self.model.parameters():
-                param.grad = None
+        self.optimizer.zero_grad(set_to_none=True)
 
         loss.backward()
 

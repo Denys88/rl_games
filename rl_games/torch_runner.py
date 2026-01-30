@@ -187,9 +187,9 @@ class Runner:
         # keeps parameter names consistent with the checkpoint.
 
         # torch.compile modes:
-        # - "default": Good compatibility, moderate speedup
-        # - "reduce-overhead": Balanced performance and compilation time
-        # - "max-autotune": Best runtime performance (now default), longer initial compilation
+        # - "default": Fastest compilation, moderate runtime improvement
+        # - "reduce-overhead": Balanced performance and compilation time (default)
+        # - "max-autotune": Best runtime performance, longest initial compilation
 
         # Enable torch.compile for performance if requested
         compile_config = self.params.get('config', {}).get('torch_compile', True)
@@ -200,20 +200,20 @@ class Runner:
             # Parse configuration
             if isinstance(compile_config, bool):
                 # Default mode if just True
-                actor_mode = "max-autotune"
-                critic_mode = "max-autotune"
+                actor_mode = "reduce-overhead"
+                critic_mode = "reduce-overhead"
             elif isinstance(compile_config, str):
                 # String mode directly
                 actor_mode = compile_config
                 critic_mode = compile_config
             elif isinstance(compile_config, dict):
                 # Advanced configuration
-                actor_mode = compile_config.get('mode', 'max-autotune')
+                actor_mode = compile_config.get('mode', 'reduce-overhead')
                 critic_mode = compile_config.get('critic_mode', actor_mode)  # Default to same as actor
             else:
                 print(f"Warning: Invalid torch_compile config {compile_config}, using default")
-                actor_mode = "max-autotune"
-                critic_mode = "max-autotune"
+                actor_mode = "reduce-overhead"
+                critic_mode = "reduce-overhead"
 
             # Compile actor model
             print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")

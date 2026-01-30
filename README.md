@@ -314,11 +314,11 @@ Additional environment supported properties and functions
 
 1.6.5
 
-* Added torch.compile support with configurable modes. Provides 10-15% performance improvement. Requires torch 2.2 or newer.
-  * Default mode is now `max-autotune` for best performance
-  * Configurable via `torch_compile` parameter in yaml configs
+* Added torch.compile support with configurable modes. Provides 10-40% performance improvement. Requires torch 2.2 or newer.
+  * Default mode is `reduce-overhead` for balanced compilation time and runtime performance
+  * Configurable via `torch_compile` parameter in yaml configs (true/false/"default"/"reduce-overhead"/"max-autotune")
   * Separate compilation modes for actor and central value networks
-  * See [torch.compile documentation](docs/TORCH_COMPILE.md) for configuration details
+  * See [torch.compile documentation](docs/TORCH_COMPILE.md) for detailed configuration and mode selection guidance
 * Fixed critical bugs in asymmetric actor-critic (central_value) training:
   * Fixed incorrect device reference in `update_lr()` method
   * Fixed infinite loop when iterating over dataset
