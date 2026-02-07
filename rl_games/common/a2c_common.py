@@ -152,7 +152,7 @@ class A2CBase(BaseAlgorithm):
                 self.state_space = self.observation_space
                 # Propagate fallback so ExperienceBuffer allocates correctly
                 self.env_info['state_space'] = self.state_space
-            if isinstance(self.state_space, gym.spaces.Dict):
+            if type(self.state_space).__name__ == 'Dict':
                 self.state_shape = {}
                 for k, v in self.state_space.spaces.items():
                     self.state_shape[k] = v.shape
@@ -227,7 +227,7 @@ class A2CBase(BaseAlgorithm):
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
 
-        if isinstance(self.observation_space, gym.spaces.Dict):
+        if type(self.observation_space).__name__ == 'Dict':
             self.obs_shape = {}
             for k, v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape
@@ -939,12 +939,13 @@ class DiscreteA2CBase(A2CBase):
 
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
-        if isinstance(action_space, gym.spaces.Discrete):
+        action_space_type = type(action_space).__name__
+        if action_space_type == 'Discrete':
             self.actions_shape = (self.horizon_length, batch_size)
             self.actions_num = action_space.n
             self.is_multi_discrete = False
-        elif isinstance(action_space, gym.spaces.Tuple):
-            self.actions_shape = (self.horizon_length, batch_size, len(action_space)) 
+        elif action_space_type == 'Tuple':
+            self.actions_shape = (self.horizon_length, batch_size, len(action_space))
             self.actions_num = [action.n for action in action_space]
             self.is_multi_discrete = True
         else:
@@ -1034,6 +1035,8 @@ class DiscreteA2CBase(A2CBase):
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
 
+        advantages = torch.sum(advantages, axis=1)
+
         if self.normalize_advantage:
             if self.is_rnn:
                 if self.normalize_rms_advantage:
@@ -1045,8 +1048,6 @@ class DiscreteA2CBase(A2CBase):
                     advantages = self.advantage_mean_std(advantages)
                 else:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        else:
-            advantages = torch.sum(advantages, axis=1)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values

@@ -89,6 +89,16 @@ To run Mujoco, Atari games or Box2d based environments training they need to be 
 
 To run Atari also ```pip install opencv-python``` is required. For modern Gymnasium/ALE Atari environments, install ```pip install ale-py```. In addition installation of envpool for maximum simulation and training performance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
 
+### EnvPool + NumPy 2+ Incompatibility
+
+**IMPORTANT:** If using EnvPool, you **must** use NumPy 1.x. NumPy 2.0+ is **NOT compatible** with EnvPool and will cause training failures ([see issue](https://github.com/sail-sg/envpool/issues/312)).
+
+Downgrade to NumPy 1.26.4:
+```bash
+pip uninstall numpy
+pip install numpy==1.26.4
+```
+
 ## Citing
 
 If you use rl-games in your research please use the following citation:

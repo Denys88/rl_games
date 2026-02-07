@@ -876,18 +876,15 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     def forward(self, obs):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
-        # constrain log_std inside [log_std_min, log_std_max]
-        #log_std = torch.tanh(log_std)
+        # Constrain log_std using tanh + linear scaling (CleanRL approach)
+        # This provides smooth gradients at boundaries unlike hard clamp
         log_std_min, log_std_max = self.log_std_bounds
-        log_std = torch.clamp(log_std, log_std_min, log_std_max)
-        #log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+        log_std = torch.tanh(log_std)
+        log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
         std = log_std.exp()
 
-        # TODO: Refactor
-
         dist = SquashedNormal(mu, std)
-        # Modify to only return mu and std
         return dist
 
 

@@ -89,10 +89,11 @@ class PpoPlayerDiscrete(BasePlayer):
         BasePlayer.__init__(self, params)
 
         self.network = self.config['network']
-        if isinstance(self.action_space, gym.spaces.Discrete):
+        action_space_type = type(self.action_space).__name__
+        if action_space_type == 'Discrete':
             self.actions_num = self.action_space.n
             self.is_multi_discrete = False
-        if isinstance(self.action_space, gym.spaces.Tuple):
+        elif action_space_type == 'Tuple':
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
 

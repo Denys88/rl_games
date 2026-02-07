@@ -32,18 +32,20 @@ python runner.py --train --file rl_games/configs/mujoco/halfcheetah_envpool.yaml
 
 ## Known Issues
 
-### NumPy Version Compatibility
+### NumPy 2+ Incompatibility (CRITICAL)
 
-**Issue:** Some NumPy versions have compatibility problems with EnvPool ([see issue](https://github.com/sail-sg/envpool/issues/312)).
+**Issue:** NumPy 2.0 and later versions are **NOT compatible** with EnvPool ([see issue](https://github.com/sail-sg/envpool/issues/312)). EnvPool will fail to work correctly with NumPy 2+.
 
-**Solution:** Use NumPy 1.26.4, which is confirmed to work correctly:
+**Required Solution:** You **must** downgrade to NumPy 1.26.4 when using EnvPool:
 
 ```bash
 pip uninstall numpy
 pip install numpy==1.26.4
 ```
 
-**Symptoms:** If you encounter import errors, segmentation faults, or strange environment behavior, try downgrading NumPy.
+**Symptoms:** Zero observations, environments not training, or unexpected behavior.
+
+**Note:** This is not optional - EnvPool requires NumPy 1.x and will not work with NumPy 2+.
 
 ## Training Results
 

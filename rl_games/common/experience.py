@@ -228,18 +228,23 @@ class VectorizedReplayBuffer:
         # Always use float32 for storage - autocast will handle precision during training
         dtype = torch.float32
 
-        # Determine if we should use pinned memory for faster CPU->GPU transfers
-        use_pin = self._on_cpu and self.use_pinned_memory
-
-        self.obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
-        self.next_obses = torch.empty((capacity, *obs_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
-        self.actions = torch.empty((capacity, *action_shape), dtype=dtype, device=self.device, pin_memory=use_pin)
-        self.rewards = torch.empty((capacity, 1), dtype=dtype, device=self.device, pin_memory=use_pin)
-        self.dones = torch.empty((capacity, 1), dtype=torch.bool, device=self.device, pin_memory=use_pin)
+        self.obses = torch.zeros((capacity, *obs_shape), dtype=dtype, device=self.device)
+        self.next_obses = torch.zeros((capacity, *obs_shape), dtype=dtype, device=self.device)
+        self.actions = torch.zeros((capacity, *action_shape), dtype=dtype, device=self.device)
+        self.rewards = torch.zeros((capacity, 1), dtype=dtype, device=self.device)
+        self.dones = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
 
         self.capacity = capacity
         self.idx = 0
         self.full = False
+
+        # Pin memory after creation for faster CPU->GPU transfers
+        if self._on_cpu and self.use_pinned_memory:
+            self.obses = self.obses.pin_memory()
+            self.next_obses = self.next_obses.pin_memory()
+            self.actions = self.actions.pin_memory()
+            self.rewards = self.rewards.pin_memory()
+            self.dones = self.dones.pin_memory()
 
     @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done):
@@ -320,15 +325,19 @@ class ExperienceBuffer:
         self.is_continuous = False
         self.obs_base_shape = (self.horizon_length, self.num_agents * self.num_actors)
         self.state_base_shape = (self.horizon_length, self.num_actors)
-        if isinstance(self.action_space, gym.spaces.Discrete):
+
+        # Check action space type by class name for gym/gymnasium compatibility
+        action_space_type = type(self.action_space).__name__
+
+        if action_space_type == 'Discrete':
             self.actions_shape = ()
             self.actions_num = self.action_space.n
             self.is_discrete = True
-        if isinstance(self.action_space, gym.spaces.Tuple):
+        elif action_space_type == 'Tuple':
             self.actions_shape = (len(self.action_space),)
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
-        if isinstance(self.action_space, gym.spaces.Box):
+        elif action_space_type == 'Box':
             self.actions_shape = (self.action_space.shape[0],)
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
@@ -380,32 +389,38 @@ class ExperienceBuffer:
         if space is None:
             # Make the failure explicit early instead of propagating None
             raise ValueError("Space is None while allocating tensors. Ensure env_info provides required spaces.")
-        if isinstance(space, gym.spaces.Box):
+
+        # Check space type by class name for gym/gymnasium compatibility
+        space_type = type(space).__name__
+
+        if space_type == 'Box':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            # Use empty instead of zeros - values will be overwritten
-            tensor = torch.empty(base_shape + space.shape, dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor
-        if isinstance(space, gym.spaces.Discrete):
+        elif space_type == 'Discrete':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.empty(base_shape, dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape, dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor
-        if isinstance(space, gym.spaces.Tuple):
+        elif space_type == 'Tuple':
             # Assuming that tuple is only Discrete tuple
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            tensor = torch.empty(base_shape + (tuple_len,), dtype=dtype, device=self.device)
+            tensor = torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
             if self.use_pinned_memory and self._on_cpu:
                 tensor = tensor.pin_memory()
             return tensor
-        if isinstance(space, gym.spaces.Dict):
+        elif space_type == 'Dict':
             t_dict = {}
             for k, v in space.spaces.items():
                 t_dict[k] = self._create_tensor_from_space(v, base_shape)
             return t_dict
+        else:
+            # If we reach here, unsupported space type
+            raise ValueError(f"Unsupported space type: {type(space).__name__} ({type(space)}). Expected Box, Discrete, Tuple, or Dict.")
 
     def update_data(self, name, index, val):
         """

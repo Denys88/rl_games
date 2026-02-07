@@ -37,6 +37,13 @@ class SACAgent(BaseAlgorithm):
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
+        # Policy frequency: update actor every N critic updates (CleanRL uses 2)
+        self.policy_frequency = config.get("policy_frequency", 2)
+        self.update_counter = 0  # Track number of critic updates
+
+        # Gradient clipping for stability (0 = disabled)
+        self.critic_grad_clip = config.get("critic_grad_clip", 5.0)
+
         # Timeout handling - consistent with PPO
         self.value_bootstrap = config.get('value_bootstrap', True)
 
@@ -143,11 +150,8 @@ class SACAgent(BaseAlgorithm):
         # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        # Smooth-L1 (Huber) behaves like MSE for small errors (keeps precise fits)
-        # but switches to L1 for large errors, preventing huge gradients when Q-targets jump.
-        # In practice that improves stability, especially early in training 
-        # or with stochastic returns.
-        self.c_loss = nn.SmoothL1Loss(beta=1.0) # Huber loss (robust-MSE)
+        # MSELoss is standard for SAC - matches CleanRL and original paper
+        self.c_loss = nn.MSELoss()
 
         self.save_best_after = config.get('save_best_after', 500)
         self.print_stats = config.get('print_stats', True)
@@ -169,7 +173,8 @@ class SACAgent(BaseAlgorithm):
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self._device)
         self.obs = None
 
-        self.min_alpha = torch.tensor(np.log(0.01)).float().to(self._device)
+        # Min alpha in EXP space (not log space!) for comparison with self.alpha
+        self.min_alpha = torch.tensor(0.01).float().to(self._device)
 
         self.frame = 0
         self.epoch_num = 0
@@ -212,7 +217,7 @@ class SACAgent(BaseAlgorithm):
         batch_size = self.num_agents * self.num_actors
 
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self._device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
 
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self._device)
 
@@ -297,7 +302,9 @@ class SACAgent(BaseAlgorithm):
 
     def rescale_actions(self, actions):
         """Rescale actions from [-1, 1] to actual action space bounds."""
-        return actions * self.action_scale + self.action_bias
+        rescaled = actions * self.action_scale + self.action_bias
+        # Clamp to handle floating point errors
+        return rescaled.clamp(self.action_low, self.action_high)
 
     def update_critic(self, obs, action, reward, next_obs, not_done, step):
         with torch.no_grad():
@@ -327,6 +334,8 @@ class SACAgent(BaseAlgorithm):
 
         self.critic_optimizer.zero_grad(set_to_none=True)
         critic_loss.backward()
+        if self.critic_grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.sac_network.critic.parameters(), self.critic_grad_clip)
         self.critic_optimizer.step()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
@@ -390,10 +399,16 @@ class SACAgent(BaseAlgorithm):
         next_obs = self.preproc_obs(next_obs)
 
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
+        self.update_counter += 1
 
-        actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
+        # Update actor and alpha only every policy_frequency critic updates (CleanRL uses 2)
+        if self.update_counter % self.policy_frequency == 0:
+            actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
+            actor_loss_info = actor_loss, entropy, alpha, alpha_loss
+        else:
+            # Return previous values (or zeros) when not updating actor
+            actor_loss_info = torch.tensor(0.0, device=self._device), torch.tensor(0.0, device=self._device), self.alpha, None
 
-        actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
 
@@ -523,7 +538,10 @@ class SACAgent(BaseAlgorithm):
             total_time += (step_end - step_start)
             step_time += (step_end - step_start)
 
-            self.current_rewards.add_(rewards)
+            # Shape rewards BEFORE tracking (so logged rewards match training rewards)
+            shaped_rewards = self.rewards_shaper(rewards)
+
+            self.current_rewards.add_(shaped_rewards)
             self.current_lengths.add_(1)
 
             all_done_indices = dones.nonzero(as_tuple=False)
@@ -535,33 +553,36 @@ class SACAgent(BaseAlgorithm):
 
             self.algo_observer.process_infos(infos, done_indices)
 
-            # Handle timeouts for proper value bootstrapping
+            # Handle timeouts with PPO-style value bootstrapping.
+            # Auto-resetting envs (envpool, Isaac Gym) return the reset obs as next_obs
+            # for truncated episodes, making it wrong to bootstrap V(next_obs).
+            # Instead, embed γ·V(s) into the reward and mark all dones as terminal.
             if self.value_bootstrap and 'time_outs' in infos:
-                # Use cast_obs for efficient conversion (reuses existing tensor if possible)
                 timeouts = self.cast_obs(infos['time_outs'])
-                # Ensure boolean type for bitwise operations
                 if timeouts.dtype != torch.bool:
                     timeouts = timeouts.bool()
-                # For SAC, we don't want to bootstrap value on timeouts
-                # but we do want to reset the environment
-                terminated = dones & ~timeouts
-            else:
-                # If value_bootstrap is disabled or no timeout info, treat all dones as terminations
-                terminated = dones
+                if timeouts.any():
+                    with torch.no_grad():
+                        obs_proc = self.preproc_obs(obs.float())
+                        q1, q2 = self.model.critic_target(obs_proc, action)
+                        v_bootstrap = torch.min(q1, q2).squeeze(-1)
+                        shaped_rewards[timeouts] += self.gamma * v_bootstrap[timeouts]
+
+            # All dones treated as terminal (bootstrap embedded in reward for truncated)
+            terminated = dones
 
             self.current_rewards.mul_(not_dones)
             self.current_lengths.mul_(not_dones)
 
-            if isinstance(next_obs, dict):    
+            if isinstance(next_obs, dict):
                 next_obs_processed = next_obs['obs']
                 self.obs = next_obs
             else:
                 next_obs_processed = next_obs
                 self.obs = next_obs
 
-            rewards = self.rewards_shaper(rewards)
-            # Batch unsqueeze operations
-            rewards_unsqueezed = rewards.unsqueeze(1)
+            # Batch unsqueeze operations (rewards already shaped above)
+            rewards_unsqueezed = shaped_rewards.unsqueeze(1)
             # Use terminated (not timeouts) for replay buffer
             terminated_unsqueezed = terminated.unsqueeze(1)
             self.replay_buffer.add(obs, action, rewards_unsqueezed, next_obs_processed, terminated_unsqueezed)

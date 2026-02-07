@@ -181,8 +181,10 @@ class RayVecEnv(IVecEnv):
         can_concat_infos = self.ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
         self.concat_infos = can_concat_infos
-        self.obs_type_dict = isinstance(env_info.get('observation_space'), gym.spaces.Dict)
-        self.state_type_dict = isinstance(env_info.get('state_space'), gym.spaces.Dict)
+        obs_space = env_info.get('observation_space')
+        state_space = env_info.get('state_space')
+        self.obs_type_dict = obs_space is not None and type(obs_space).__name__ == 'Dict'
+        self.state_type_dict = state_space is not None and type(state_space).__name__ == 'Dict'
         if self.num_agents == 1:
             self.concat_func = np.stack
         else:

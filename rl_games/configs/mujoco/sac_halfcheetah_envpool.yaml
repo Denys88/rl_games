@@ -12,7 +12,7 @@ params:
     space:
       continuous:
     mlp:
-      units: [256, 128, 64]
+      units: [256, 256]
       activation: relu
 
       initializer:
@@ -20,27 +20,29 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: HalfCheetah-v4_SAC
+    name: HalfCheetah-v4
     env_name: envpool
     normalize_input: True
-    mixed_precision: True
+    mixed_precision: False
     reward_shaper:
       scale_value: 1.0
-    max_epochs: 40000
-    num_steps_per_episode: 2
-    save_best_after: 500
+    max_frames: 1000000  # 1M env steps, independent of num_actors
+    num_steps_per_episode: 1
+    save_best_after: 200
     save_frequency: 1000
     gamma: 0.99
     init_alpha: 1.0
-    alpha_lr: 5e-3
-    actor_lr: 5e-4
-    critic_lr: 5e-4
-    critic_tau: 0.005
-    batch_size: 2048
+    alpha_lr: 3e-4
+    actor_lr: 3e-4
+    critic_lr: 1e-3
+    critic_tau: 5e-3
+    batch_size: 256
     learnable_temperature: True
-    num_warmup_steps: 50 # total number of warmup steps: num_actors * num_steps_per_episode * num_warmup_steps
+    num_updates_per_step: 32  # UTD = 32/32 = 1.0 (matches CleanRL)
+    policy_frequency: 2
+    num_warmup_steps: 160  # 32*1*160=5120 steps
     replay_buffer_size: 1000000
-    num_actors: 32
+    num_actors: 32  # Fewer actors → fewer updates needed for UTD=1
 
     env_config:
       env_name: HalfCheetah-v4
