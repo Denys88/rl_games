@@ -12,7 +12,7 @@ params:
     space:
       continuous:
     mlp:
-      units: [256, 256]  # Changed from [512, 256] - CleanRL standard
+      units: [256, 256]
       activation: relu
 
       initializer:
@@ -20,31 +20,35 @@ params:
     log_std_bounds: [-5, 2]
 
   config:
-    name: Ant-v4_SAC_envpool_64envs_20K_epochs
+    name: Ant-v4_SAC
     env_name: envpool
-    normalize_input: True  # Off-policy: running stats drift causes replay inconsistency
+    normalize_input: True
     mixed_precision: False
     reward_shaper:
       scale_value: 1.0
-    max_epochs: 20000 #16000  # 64 actors * 1 step * 16000 = 1,024,000 frames (CleanRL standard)
-    num_steps_per_episode: 1  # SAC benefits from immediate updates
-    save_best_after: 200
-    save_frequency: 500
+    max_frames: 1000000  # 1M env steps
+    num_steps_per_episode: 1
+    save_best_after: 1000
+    save_frequency: 1000
     gamma: 0.99
     init_alpha: 1.0
-    alpha_lr: 6e-4
-    actor_lr: 6e-4
-    critic_lr: 2e-3
+    alpha_lr: 3e-4
+    actor_lr: 3e-4
+    critic_lr: 1e-3
     critic_tau: 5e-3
-    batch_size: 1024  # Larger batch for speed
+    batch_size: 256
     learnable_temperature: True
-    num_updates_per_step: 16  # 16 updates with 1024 batch (balanced speed/quality)
-    policy_frequency: 2  # Update actor every 2 critic updates
-    num_warmup_steps: 80  # 64*1*80=5120 steps
+    num_updates_per_step: 32  # UTD = 32/32 = 1.0
+    policy_frequency: 2
+    num_warmup_steps: 160  # 32*1*160=5120 steps
     replay_buffer_size: 1000000
-    num_actors: 64
+    num_actors: 32
 
     env_config:
       env_name: Ant-v4
       seed: 5
-  
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 100

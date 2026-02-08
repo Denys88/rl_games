@@ -553,23 +553,21 @@ class SACAgent(BaseAlgorithm):
 
             self.algo_observer.process_infos(infos, done_indices)
 
-            # Handle timeouts with PPO-style value bootstrapping.
-            # Auto-resetting envs (envpool, Isaac Gym) return the reset obs as next_obs
-            # for truncated episodes, making it wrong to bootstrap V(next_obs).
-            # Instead, embed γ·V(s) into the reward and mark all dones as terminal.
+            # Handle truncated episodes (timeouts) for auto-resetting envs.
+            # Auto-resetting envs (envpool, Isaac Gym) replace next_obs with the reset obs,
+            # so bootstrapping V(next_obs) would use the wrong state.
+            # Fix: for truncated envs, use obs (pre-reset) as next_obs and mark done=False.
+            # The critic will compute V(s_t) with fresh weights at training time.
+            terminated = dones.clone()
+            timeouts = None
             if self.value_bootstrap and 'time_outs' in infos:
                 timeouts = self.cast_obs(infos['time_outs'])
                 if timeouts.dtype != torch.bool:
                     timeouts = timeouts.bool()
                 if timeouts.any():
-                    with torch.no_grad():
-                        obs_proc = self.preproc_obs(obs.float())
-                        q1, q2 = self.model.critic_target(obs_proc, action)
-                        v_bootstrap = torch.min(q1, q2).squeeze(-1)
-                        shaped_rewards[timeouts] += self.gamma * v_bootstrap[timeouts]
-
-            # All dones treated as terminal (bootstrap embedded in reward for truncated)
-            terminated = dones
+                    terminated[timeouts] = 0.0
+                else:
+                    timeouts = None
 
             self.current_rewards.mul_(not_dones)
             self.current_lengths.mul_(not_dones)
@@ -581,11 +579,18 @@ class SACAgent(BaseAlgorithm):
                 next_obs_processed = next_obs
                 self.obs = next_obs
 
+            # For truncated envs, store pre-reset obs as next_obs in replay buffer
+            # so the critic bootstraps V(s_t) with fresh weights at training time.
+            # self.obs keeps the actual reset obs for the next step.
+            replay_next_obs = next_obs_processed
+            if timeouts is not None:
+                replay_next_obs = next_obs_processed.clone()
+                replay_next_obs[timeouts] = obs[timeouts]
+
             # Batch unsqueeze operations (rewards already shaped above)
             rewards_unsqueezed = shaped_rewards.unsqueeze(1)
-            # Use terminated (not timeouts) for replay buffer
             terminated_unsqueezed = terminated.unsqueeze(1)
-            self.replay_buffer.add(obs, action, rewards_unsqueezed, next_obs_processed, terminated_unsqueezed)
+            self.replay_buffer.add(obs, action, rewards_unsqueezed, replay_next_obs, terminated_unsqueezed)
 
             obs = next_obs_processed  # Use the already processed observation
 
