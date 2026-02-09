@@ -40,7 +40,7 @@ params:
     learnable_temperature: True
     num_updates_per_step: 32  # UTD = 32/32 = 1.0
     policy_frequency: 2
-    num_warmup_steps: 160  # 32*1*160=5120 steps
+    num_warmup_frames: 5000
     replay_buffer_size: 1000000
     num_actors: 32  # Fewer actors → fewer updates needed for UTD=1
 

@@ -29,7 +29,13 @@ class SACAgent(BaseAlgorithm):
         self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
         self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
-        self.num_warmup_steps = self.config.get("num_warmup_steps", 1000)  # Sufficient random data for buffer
+        # Warmup: num_warmup_frames (total env frames) takes priority over num_warmup_steps (epochs)
+        num_warmup_frames = self.config.get("num_warmup_frames", None)
+        if num_warmup_frames is not None:
+            frames_per_epoch = self.num_actors * self.num_steps_per_episode
+            self.num_warmup_steps = int(np.ceil(num_warmup_frames / frames_per_epoch))
+        else:
+            self.num_warmup_steps = self.config.get("num_warmup_steps", 1000)
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
@@ -315,7 +321,7 @@ class SACAgent(BaseAlgorithm):
             next_action_rescaled = self.rescale_actions(next_action)
 
             target_Q1, target_Q2 = self.model.critic_target(
-                next_obs.float(), 
+                next_obs.float(),
                 next_action_rescaled.float()
             )
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
@@ -330,7 +336,7 @@ class SACAgent(BaseAlgorithm):
 
             critic1_loss = self.c_loss(current_Q1, target_Q)
             critic2_loss = self.c_loss(current_Q2, target_Q)
-            critic_loss = critic1_loss + critic2_loss
+            critic_loss = 0.5 * (critic1_loss + critic2_loss)
 
         self.critic_optimizer.zero_grad(set_to_none=True)
         critic_loss.backward()
