@@ -74,12 +74,16 @@ def safe_save(state, filename):
     return safe_filesystem_op(torch.save, state, filename)
 
 def safe_load(filename):
-    with torch.serialization.safe_globals({
-        "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
-        "numpy.dtype": np.dtype,
-        "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
-    }):
-        # Disable weights_only to avoid the unpickler bug
+    if hasattr(torch.serialization, 'safe_globals'):
+        # PyTorch 2.6+: use safe_globals context manager
+        with torch.serialization.safe_globals({
+            "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
+            "numpy.dtype": np.dtype,
+            "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
+        }):
+            checkpoint = torch.load(filename, weights_only=False)
+    else:
+        # PyTorch < 2.6: safe_globals not available
         checkpoint = torch.load(filename, weights_only=False)
     return checkpoint
 

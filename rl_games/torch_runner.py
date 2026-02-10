@@ -187,9 +187,13 @@ class Runner:
         # keeps parameter names consistent with the checkpoint.
 
         # torch.compile modes:
-        # - "default": Fastest compilation, moderate runtime improvement
-        # - "reduce-overhead": Balanced performance and compilation time (default)
-        # - "max-autotune": Best runtime performance, longest initial compilation
+        # - "default": kernel fusion + operator optimization (recommended default)
+        # - "reduce-overhead": adds CUDA graph capture/replay on top of default
+        # - "max-autotune": best runtime, longest compilation
+        # WARNING: 'reduce-overhead' and 'max-autotune' use CUDA graphs which are
+        # incompatible with RNN/LSTM models — graph output buffers get overwritten
+        # across sequential rollout calls and LSTM internal allocations violate
+        # CUDA graph memory pool constraints during backward pass.
 
         # Enable torch.compile for performance if requested
         compile_config = self.params.get('config', {}).get('torch_compile', True)
@@ -199,29 +203,22 @@ class Runner:
         else:
             # Parse configuration
             if isinstance(compile_config, bool):
-                # Default mode if just True
-                actor_mode = "reduce-overhead"
-                critic_mode = "reduce-overhead"
+                actor_mode = "default"
+                critic_mode = "default"
             elif isinstance(compile_config, str):
-                # String mode directly
                 actor_mode = compile_config
                 critic_mode = compile_config
             elif isinstance(compile_config, dict):
-                # Advanced configuration
-                actor_mode = compile_config.get('mode', 'reduce-overhead')
-                critic_mode = compile_config.get('critic_mode', actor_mode)  # Default to same as actor
+                actor_mode = compile_config.get('mode', 'default')
+                critic_mode = compile_config.get('critic_mode', actor_mode)
             else:
                 print(f"Warning: Invalid torch_compile config {compile_config}, using default")
-                actor_mode = "reduce-overhead"
-                critic_mode = "reduce-overhead"
+                actor_mode = "default"
+                critic_mode = "default"
 
-            # Compile actor model
             print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")
             agent.model = torch.compile(agent.model, mode=actor_mode)
 
-            # Compile critic model if using central value network
-            # Used for: 1) asymmetric actor-critic (different obs for actor/critic)
-            #          2) multi-agent with centralized critic (all agents' obs + privileged obs)
             if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
                 print(f"torch.compile: Enabled for central value critic with mode='{critic_mode}'")
                 agent.central_value_net.model = torch.compile(
