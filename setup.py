@@ -46,7 +46,8 @@ setup(name='rl-games',
             # Core runtime deps
             'torch>=2.2.2,<2.5.0; python_version < "3.9"',  # Clearly restrict upper bound for Python 3.8
             'torch>=2.2.2; python_version >= "3.9"',
-            'numpy>=1.16.0',
+            'numpy>=1.16.0,<1.24 ; python_version < "3.9"',  # Isaac Gym deps (networkx/urdfpy) need np.int
+            'numpy>=1.16.0 ; python_version >= "3.9"',
             'tensorboard>=1.14.0',
             'tensorboardX>=1.6',
 

@@ -9,16 +9,16 @@ RL-Games supports PyTorch's `torch.compile` for enhanced performance, providing 
 Add `torch_compile` to your YAML config under `params.config`:
 
 ```yaml
-# Enable with default mode (reduce-overhead) - recommended for most cases
+# Enable with default mode - recommended for most cases
 torch_compile: true
 
 # Disable compilation
 torch_compile: false
 
 # Specify mode as string
-torch_compile: "default"         # Fastest compilation, moderate speedup
-torch_compile: "reduce-overhead" # Balanced performance and compilation time (default)
-torch_compile: "max-autotune"    # Best runtime performance, longest compilation
+torch_compile: "default"         # Kernel fusion + operator optimization (default)
+torch_compile: "reduce-overhead" # Adds CUDA graph capture/replay (FF models only)
+torch_compile: "max-autotune"    # Best runtime, longest compilation (FF models only)
 
 # Advanced configuration (dict format)
 torch_compile:
@@ -28,35 +28,43 @@ torch_compile:
 
 ## Performance Modes
 
-- **`reduce-overhead`** (default): Best balance between compilation time and runtime performance. Recommended for most users.
-- **`max-autotune`**: Maximum runtime performance with extensive kernel tuning. First epoch will be significantly slower (~2-5x) due to compilation overhead. Use when training for many epochs and maximum throughput is critical.
-- **`default`**: Fastest compilation with moderate runtime improvement. Use for quick iterations during development.
+- **`default`** (default): Kernel fusion, operator optimization, and graph-level optimizations. Recommended for all model types.
+- **`reduce-overhead`**: Adds CUDA graph capture/replay on top of `default`. **Not compatible with RNN/LSTM models** (see warning below).
+- **`max-autotune`**: Maximum runtime performance with extensive kernel tuning. First epoch will be significantly slower (~2-5x). **Not compatible with RNN/LSTM models** (see warning below).
+
+### WARNING: RNN/LSTM Incompatibility
+
+`reduce-overhead` and `max-autotune` modes use CUDA graphs, which are **incompatible with RNN/LSTM models**. Two issues arise:
+
+1. **Rollout buffer corruption**: CUDA graph output tensors are graph-owned buffers that get overwritten on the next graph replay. In sequential RNN rollout loops, each timestep's outputs get corrupted by the next call.
+2. **Backward pass failure**: LSTM internal allocations create tensors outside the CUDA graph memory pool, causing `RuntimeError: storage data ptrs are not allocated in pool` during `loss.backward()`.
+
+**Use `default` mode for any config with RNN/LSTM** (including asymmetric actor-critic with LSTM central value networks). For feed-forward models, `reduce-overhead` works well.
 
 ## Compilation Overhead
 
 The first epoch will be slower due to JIT compilation overhead:
+- **`default`**: ~10-20% slower first epoch
 - **`reduce-overhead`**: ~20-50% slower first epoch
 - **`max-autotune`**: ~100-400% slower first epoch (tries many kernel variants)
-- **`default`**: ~10-20% slower first epoch
 
 CUDA Graph warnings during startup are normal and can be ignored.
 
 ## When to Use Each Mode
 
-**Use `reduce-overhead` (default) when:**
-- Training for moderate duration (100-10,000 epochs)
+**Use `default` (recommended) when:**
+- Training any model type (FF or RNN/LSTM)
+- You want reliable performance across all configurations
 - Iterating during development/tuning
-- You want good performance without excessive startup time
+
+**Use `reduce-overhead` when:**
+- Training **feed-forward only** models (no RNN/LSTM)
+- Training for moderate to long duration (100-10,000 epochs)
+- You want the best performance for FF models
 
 **Use `max-autotune` when:**
-- Training for very long runs (10,000+ epochs)
-- Running large-scale experiments where throughput is critical
+- Training **feed-forward only** models for very long runs (10,000+ epochs)
 - You can afford 2-5x slower startup for maximum steady-state performance
-
-**Use `default` when:**
-- Quick experiments and debugging
-- Rapid prototyping with frequent code changes
-- Compilation time is more important than runtime performance
 
 ## Advanced Configuration
 
@@ -84,9 +92,9 @@ Typical speedup over non-compiled training:
 
 | Mode | First Epoch | Steady State | Use Case |
 |------|-------------|--------------|----------|
-| `default` | 0.9x | 1.10-1.15x | Development |
-| `reduce-overhead` | 0.5-0.8x | 1.15-1.30x | Production (recommended) |
-| `max-autotune` | 0.2-0.5x | 1.25-1.40x | Large-scale training |
+| `default` | 0.9x | 1.10-1.15x | All models (recommended) |
+| `reduce-overhead` | 0.5-0.8x | 1.15-1.30x | FF models only |
+| `max-autotune` | 0.2-0.5x | 1.25-1.40x | FF models, long training |
 
 Actual speedup varies significantly based on:
 - **Model architecture**: Larger models benefit more from compilation
@@ -102,6 +110,17 @@ If you encounter compilation errors:
 1. Set `torch_compile: false` to disable compilation
 2. Update to PyTorch 2.2 or newer
 3. Check for custom operations that may not support torch.compile
+
+### CUDA Graph Errors with RNN/LSTM
+
+If you see errors like:
+- `RuntimeError: accessing tensor output of CUDAGraphs that has been overwritten`
+- `RuntimeError: storage data ptrs are not allocated in pool`
+
+Switch to `default` mode:
+```yaml
+torch_compile: "default"
+```
 
 ### Performance Regression
 
