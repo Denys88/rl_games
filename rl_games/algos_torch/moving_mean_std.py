@@ -77,7 +77,6 @@ class GeneralizedMovingStats(nn.Module):
         else:
             raise NotImplementedError(self.impl)
 
-    @torch.compile(mode="reduce-overhead")
     def update_moving_stats(self, mean, sqrs, x, m):
         """
         Args:
