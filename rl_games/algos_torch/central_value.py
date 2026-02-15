@@ -328,6 +328,8 @@ class CentralValueTrain(nn.Module):
                 if param.grad is not None:
                     all_grads_list.append(param.grad.view(-1))
 
+            if not all_grads_list:
+                return loss
             all_grads = torch.cat(all_grads_list)
             dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
             offset = 0

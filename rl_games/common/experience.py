@@ -437,8 +437,6 @@ class ExperienceBuffer:
             if isinstance(val, dict):
                 # Update each tensor in the dict
                 for k, v in val.items():
-                    if torch.is_tensor(v):
-                        v = v.detach().clone()
                     stored_val[k][index, :] = v
             else:
                 raise ValueError(f"Expected dict value for '{name}' but got {type(val)}")
@@ -447,8 +445,6 @@ class ExperienceBuffer:
             if isinstance(val, dict):
                 raise ValueError(f"Expected tensor value for '{name}' but got dict")
             else:
-                if torch.is_tensor(val):
-                    val = val.detach().clone()
                 stored_val[index, :] = val
 
     def update_data_rnn(self, name, indices, play_mask, val):
@@ -478,8 +474,6 @@ class ExperienceBuffer:
                 for k, v in val.items():
                     if k not in stored_val:
                         raise KeyError(f"Key {k} not found in tensor_dict[{name}]")
-                    if torch.is_tensor(v):
-                        v = v.detach().clone()
                     stored_val[k][indices, play_mask] = v
             else:
                 raise ValueError(f"Expected dict value for '{name}' but got {type(val)}")
@@ -488,8 +482,6 @@ class ExperienceBuffer:
             if isinstance(val, dict):
                 raise ValueError(f"Expected tensor value for '{name}' but got dict")
             else:
-                if torch.is_tensor(val):
-                    val = val.detach().clone()
                 stored_val[indices, play_mask] = val
 
     def get_transformed(self, transform_op):

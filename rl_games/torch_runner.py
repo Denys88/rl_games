@@ -140,8 +140,15 @@ class Runner:
         config['features']['observer'] = self.algo_observer
         self.params = params
 
-        num_threads = params.get('torch_threads', 4)  # Default to 4 instead of None
-        if num_threads is not None:
+        # Set CPU thread count for intra-op parallelism (OpenMP/MKL).
+        # Default (auto): min(4, cores_per_rank) — avoids oversubscription in multi-GPU.
+        # Set torch_threads: 0 in config to disable (use PyTorch default).
+        num_threads = params.get('torch_threads', 'auto')
+        if num_threads == 'auto':
+            cpu = os.cpu_count() or 1
+            per_rank = cpu // max(1, self.world_size)
+            num_threads = max(1, min(4, per_rank))
+        if num_threads:
             torch.set_num_threads(num_threads)
 
     def load(self, yaml_config):
