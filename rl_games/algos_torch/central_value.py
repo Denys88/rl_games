@@ -202,7 +202,7 @@ class CentralValueTrain(nn.Module):
             return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
-            s[:, all_done_indices, :].zero_()
+            s[:, all_done_indices, :] = 0
 
     def forward(self, input_dict):
         return self.model(input_dict)

@@ -892,7 +892,7 @@ class A2CBase(BaseAlgorithm):
             if len(all_done_indices) > 0:
                 if self.zero_rnn_on_done:
                     for s in self.rnn_states:
-                        s[:, all_done_indices, :].zero_()
+                        s[:, all_done_indices, :] = 0
                 if self.has_central_value:
                     self.central_value_net.post_step_rnn(all_done_indices)
 
