@@ -204,6 +204,10 @@ class ClipRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
 
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return obs, self.reward(reward), done, info
+
     def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
         return np.sign(reward)
@@ -226,6 +230,10 @@ class WarpFrame(gym.ObservationWrapper):
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         return self.observation(obs)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return self.observation(obs), reward, done, info
 
     def observation(self, frame):
         import cv2
@@ -444,6 +452,14 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         gym.ObservationWrapper.__init__(self, env)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=env.observation_space.shape, dtype=np.float32)
 
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return self.observation(obs)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return self.observation(obs), reward, done, info
+
     def observation(self, observation):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
@@ -655,6 +671,14 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
             self.mask = np.array([1., 1., 0., 0., 1., 0., 1., 1,])
         else:
             raise NotImplementedError
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return self.observation(obs)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return self.observation(obs), reward, done, info
 
     def observation(self, observation):
         return observation * self.mask

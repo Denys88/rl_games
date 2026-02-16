@@ -28,7 +28,6 @@ params:
   config:
     name: Hopper-v4_envpool
     env_name: envpool
-    score_to_win: 20000
     normalize_input: True
     normalize_value: True
     value_bootstrap: True

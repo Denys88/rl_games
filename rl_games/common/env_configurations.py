@@ -13,6 +13,10 @@ class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
 
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return obs, self.reward(reward), done, info
+
     def reward(self, reward):
         return np.max([-10, reward])
 
@@ -34,7 +38,15 @@ class DMControlWrapper(gym.Wrapper):
 
 class DMControlObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
+        gym.ObservationWrapper.__init__(self, env)
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return self.observation(obs)
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        return self.observation(obs), reward, done, info
 
     def observation(self, obs):
         return obs['observations']
