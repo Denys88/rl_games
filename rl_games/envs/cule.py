@@ -1,5 +1,5 @@
 from rl_games.common.ivecenv import IVecEnv
-import gym
+from rl_games.common.gym_compat import gym
 import torch
 import numpy as np
 

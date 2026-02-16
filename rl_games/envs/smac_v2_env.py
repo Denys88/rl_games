@@ -1,4 +1,4 @@
-import gym
+from rl_games.common.gym_compat import gym
 import numpy as np
 import yaml
 from smacv2.env import StarCraft2Env

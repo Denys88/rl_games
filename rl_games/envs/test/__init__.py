@@ -1,4 +1,4 @@
-import gym
+from rl_games.common.gym_compat import gym
 
 gym.envs.register(
      id='TestRnnEnv-v0',

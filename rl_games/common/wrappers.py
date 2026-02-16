@@ -674,12 +674,12 @@ class OldGymWrapper(gym.Env):
             raise ImportError("OldGymWrapper requires gymnasium to be installed.")
 
         # Convert Gymnasium spaces to Gym spaces
-        self.observation_space = self._convert_space(env.observation_space)
-        self.action_space = self._convert_space(env.action_space)
+        self.observation_space = self.convert_space(env.observation_space)
+        self.action_space = self.convert_space(env.action_space)
 
     # Static function to convert Gymnasium spaces to Gym spaces
     @staticmethod
-    def _convert_space(space):
+    def convert_space(space):
         """Recursively convert Gymnasium spaces to Gym spaces."""
         try:
             import gymnasium

@@ -2,7 +2,6 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
-import gym
 import random
 from time import sleep
 import torch
@@ -85,6 +84,10 @@ class RayWorker:
 
     def set_weights(self, weights):
         self.env.update_weights(weights)
+
+    def close(self):
+        if hasattr(self.env, 'close'):
+            self.env.close()
 
     def can_concat_infos(self):
         if hasattr(self.env, 'concat_infos'):

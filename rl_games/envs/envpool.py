@@ -1,6 +1,6 @@
 from rl_games.common.ivecenv import IVecEnv
 import numpy as np
-import gym
+from rl_games.common.gym_compat import gym
 
 
 def flatten_dict(obs):

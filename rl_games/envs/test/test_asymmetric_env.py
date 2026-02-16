@@ -1,4 +1,4 @@
-import gym
+from rl_games.common.gym_compat import gym, make
 import numpy as np
 from rl_games.common.wrappers import MaskVelocityWrapper
 
@@ -8,7 +8,7 @@ class TestAsymmetricCritic(gym.Env):
         gym.Env.__init__(self)
         self.apply_mask = kwargs.pop('apply_mask', True)
         self.use_central_value = kwargs.pop('use_central_value', True)
-        self.env = gym.make(wrapped_env_name)
+        self.env = make(wrapped_env_name)
 
         if self.apply_mask:
             supported_envs = ["CartPole-v1", "Pendulum-v0", "LunarLander-v2", "LunarLanderContinuous-v2"]

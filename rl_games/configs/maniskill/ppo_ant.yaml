@@ -1,4 +1,5 @@
 params:
+  torch_threads: 4
   seed: 7
 
   #devices: [0, 0]

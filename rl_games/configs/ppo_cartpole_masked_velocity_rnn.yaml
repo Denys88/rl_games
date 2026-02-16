@@ -2,6 +2,7 @@
 #Cartpole without velocities lstm test
 
 params:  
+  torch_threads: 4
   algo:
     name: a2c_discrete
 
