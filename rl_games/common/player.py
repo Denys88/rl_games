@@ -2,7 +2,6 @@ import os
 import shutil
 import threading
 import time
-import gymnasium as gym
 import numpy as np
 import torch
 import copy
@@ -46,7 +45,7 @@ class BasePlayer(object):
         self.action_space = self.env_info['action_space']
 
         self.observation_space = self.env_info['observation_space']
-        if isinstance(self.observation_space, gym.spaces.Dict):
+        if type(self.observation_space).__name__ == 'Dict':
             self.obs_shape = {}
             for k, v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape

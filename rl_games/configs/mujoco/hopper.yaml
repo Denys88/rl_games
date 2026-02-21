@@ -1,4 +1,5 @@
 params:
+  torch_threads: 4
   seed: 5
   algo:
     name: a2c_continuous
@@ -28,7 +29,6 @@ params:
   config:
     name: Hopper-v4_ray
     env_name: openai_gym
-    score_to_win: 20000
     normalize_input: True
     normalize_value: True
     value_bootstrap: True

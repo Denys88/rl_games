@@ -24,8 +24,6 @@ numpy_to_torch_dtype_dict = {
 
 torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
-# Unfortunately mode='max-autotune' does not work with torch.compile() here
-@torch.compile()
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
     c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
     c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
@@ -76,12 +74,16 @@ def safe_save(state, filename):
     return safe_filesystem_op(torch.save, state, filename)
 
 def safe_load(filename):
-    with torch.serialization.safe_globals({
-        "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
-        "numpy.dtype": np.dtype,
-        "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
-    }):
-        # Disable weights_only to avoid the unpickler bug
+    if hasattr(torch.serialization, 'safe_globals'):
+        # PyTorch 2.6+: use safe_globals context manager
+        with torch.serialization.safe_globals({
+            "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
+            "numpy.dtype": np.dtype,
+            "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
+        }):
+            checkpoint = torch.load(filename, weights_only=False)
+    else:
+        # PyTorch < 2.6: safe_globals not available
         checkpoint = torch.load(filename, weights_only=False)
     return checkpoint
 
@@ -200,8 +202,9 @@ def explained_variance(y_pred, y, masks=None):
         _, var_y = get_mean_var_with_masks(y_pred, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
-        var_y = torch.var(y)
-        var_dy = torch.var(y-y_pred)
+        # Use population variance to avoid DoF warnings when batch size is 1
+        var_y = torch.var(y, unbiased=False)
+        var_dy = torch.var(y-y_pred, unbiased=False)
     return 1.0 - var_dy/var_y
 
 def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):

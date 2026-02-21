@@ -72,7 +72,8 @@ class ModelA2C(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -133,7 +134,8 @@ class ModelA2CMultiDiscrete(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -207,7 +209,8 @@ class ModelA2CContinuous(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -269,7 +272,8 @@ class ModelA2CContinuousLogStd(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -284,8 +288,6 @@ class ModelA2CContinuousLogStd(BaseModel):
             return self.a2c_network.get_default_rnn_state()
 
         def forward(self, input_dict):
-            torch.compiler.cudagraph_mark_step_begin()
-
             is_train = input_dict.get('is_train', True)
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
@@ -317,8 +319,6 @@ class ModelA2CContinuousLogStd(BaseModel):
                 }
                 return result
 
-        # Unfortunately mode='max-autotune' does not work with torch.compile() here
-        @torch.compile()
         def neglogp(self, x, mean, std, logstd):
             return 0.5 * (((x - mean) / std)**2).sum(dim=-1) \
                 + 0.5 * np.log(2.0 * np.pi) * x.size(-1) \
@@ -334,7 +334,8 @@ class ModelA2CContinuousTanh(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -391,7 +392,8 @@ class ModelCentralValue(BaseModel):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.a2c_network.get_aux_loss()
@@ -433,7 +435,8 @@ class ModelSACContinuous(BaseModel):
         def __init__(self, sac_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.sac_network = sac_network
-            self.forward = torch.compile(mode="reduce-overhead")(self.forward)
+            # Compilation is handled in torch_runner.py to avoid double compilation
+            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
 
         def get_aux_loss(self):
             return self.sac_network.get_aux_loss()

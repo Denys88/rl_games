@@ -10,8 +10,8 @@ from rl_games.common import schedulers
 from rl_games.common.experience import ExperienceBuffer
 from rl_games.common.interval_summary_writer import IntervalSummaryWriter
 from rl_games.common.diagnostics import DefaultDiagnostics, PpoDiagnostics
-from rl_games.algos_torch import  model_builder
-from rl_games.interfaces.base_algorithm import  BaseAlgorithm
+from rl_games.algos_torch import model_builder
+from rl_games.interfaces.base_algorithm import BaseAlgorithm
 
 import numpy as np
 import time
@@ -146,8 +146,13 @@ class A2CBase(BaseAlgorithm):
         self.truncate_grads = self.config.get('truncate_grads', False)
 
         if self.has_central_value:
+            # Prefer explicit state_space from the env; fall back to observation_space if missing
             self.state_space = self.env_info.get('state_space', None)
-            if isinstance(self.state_space, gym.spaces.Dict):
+            if self.state_space is None:
+                self.state_space = self.observation_space
+                # Propagate fallback so ExperienceBuffer allocates correctly
+                self.env_info['state_space'] = self.state_space
+            if type(self.state_space).__name__ == 'Dict':
                 self.state_shape = {}
                 for k, v in self.state_space.spaces.items():
                     self.state_shape[k] = v.shape
@@ -222,7 +227,7 @@ class A2CBase(BaseAlgorithm):
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
 
-        if isinstance(self.observation_space, gym.spaces.Dict):
+        if type(self.observation_space).__name__ == 'Dict':
             self.obs_shape = {}
             for k, v in self.observation_space.spaces.items():
                 self.obs_shape[k] = v.shape
@@ -310,7 +315,8 @@ class A2CBase(BaseAlgorithm):
         else:
             self.writer = None
 
-        self.value_bootstrap = self.config.get('value_bootstrap')
+        # Now the default is is True
+        self.value_bootstrap = self.config.get('value_bootstrap', True)
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
         if self.use_smooth_clamp:
@@ -561,7 +567,7 @@ class A2CBase(BaseAlgorithm):
         else:
             if self.value_size == 1:
                 rewards = np.expand_dims(rewards, axis=1)
-            return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device).float(), torch.from_numpy(dones).to(self.ppo_device), infos
+            return self.obs_to_tensors(obs), torch.from_numpy(rewards).to(self.ppo_device, dtype=torch.float32), torch.from_numpy(dones).to(self.ppo_device), infos
 
     def env_reset(self):
         obs = self.vec_env.reset()
@@ -641,6 +647,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
+            state['assymetric_vf_optimizer'] = self.central_value_net.optimizer.state_dict()
 
         # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
         # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
@@ -661,6 +668,8 @@ class A2CBase(BaseAlgorithm):
 
         if self.has_central_value:
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+            if 'assymetric_vf_optimizer' in weights:
+                self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
 
         self.optimizer.load_state_dict(weights['optimizer'])
 
@@ -694,10 +703,10 @@ class A2CBase(BaseAlgorithm):
 
     def set_stats_weights(self, weights):
         if self.normalize_rms_advantage:
-            self.advantage_mean_std.load_state_dic(weights['advantage_mean_std'])
+            self.advantage_mean_std.load_state_dict(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
-        if self.normalize_value and 'normalize_value' in weights:
+        if self.normalize_value and 'reward_mean_std' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
         if self.mixed_precision and 'scaler' in weights:
             self.scaler.load_state_dict(weights['scaler'])
@@ -795,13 +804,13 @@ class A2CBase(BaseAlgorithm):
 
             shaped_rewards = self.rewards_shaper(rewards)
             if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
+            self.current_rewards.add_(rewards)
+            self.current_shaped_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1)
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
@@ -811,11 +820,11 @@ class A2CBase(BaseAlgorithm):
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
-            not_dones = 1.0 - self.dones.float()
+            not_dones_unsq = (1.0 - self.dones.float()).unsqueeze(1)
 
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones_unsq)
+            self.current_shaped_rewards.mul_(not_dones_unsq)
+            self.current_lengths.mul_(not_dones_unsq.squeeze(1))
 
         last_values = self.get_values(self.obs)
 
@@ -870,20 +879,20 @@ class A2CBase(BaseAlgorithm):
             shaped_rewards = self.rewards_shaper(rewards)
 
             if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards += self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float()
+                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards += rewards
-            self.current_shaped_rewards += shaped_rewards
-            self.current_lengths += 1
+            self.current_rewards.add_(rewards)
+            self.current_shaped_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1)
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
 
             if len(all_done_indices) > 0:
                 if self.zero_rnn_on_done:
                     for s in self.rnn_states:
-                        s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+                        s[:, all_done_indices, :] = 0
                 if self.has_central_value:
                     self.central_value_net.post_step_rnn(all_done_indices)
 
@@ -892,11 +901,11 @@ class A2CBase(BaseAlgorithm):
             self.game_lengths.update(self.current_lengths[env_done_indices])
             self.algo_observer.process_infos(infos, env_done_indices)
 
-            not_dones = 1.0 - self.dones.float()
+            not_dones_unsq = (1.0 - self.dones.float()).unsqueeze(1)
 
-            self.current_rewards = self.current_rewards * not_dones.unsqueeze(1)
-            self.current_shaped_rewards = self.current_shaped_rewards * not_dones.unsqueeze(1)
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones_unsq)
+            self.current_shaped_rewards.mul_(not_dones_unsq)
+            self.current_lengths.mul_(not_dones_unsq.squeeze(1))
 
         last_values = self.get_values(self.obs)
 
@@ -930,14 +939,17 @@ class DiscreteA2CBase(A2CBase):
 
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
-        if type(action_space) is gym.spaces.Discrete:
+        action_space_type = type(action_space).__name__
+        if action_space_type == 'Discrete':
             self.actions_shape = (self.horizon_length, batch_size)
             self.actions_num = action_space.n
             self.is_multi_discrete = False
-        if type(action_space) is gym.spaces.Tuple:
-            self.actions_shape = (self.horizon_length, batch_size, len(action_space)) 
+        elif action_space_type == 'Tuple':
+            self.actions_shape = (self.horizon_length, batch_size, len(action_space))
             self.actions_num = [action.n for action in action_space]
             self.is_multi_discrete = True
+        else:
+            raise ValueError(f"Unsupported action space type for DiscreteA2CBase: {type(action_space)}")
         self.is_discrete = True
 
     def init_tensors(self):
@@ -1069,7 +1081,7 @@ class DiscreteA2CBase(A2CBase):
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
-        # self.frame = 0  # loading from checkpoint
+
         self.obs = self.env_reset()
 
         if self.multi_gpu:
@@ -1364,6 +1376,7 @@ class ContinuousA2CBase(A2CBase):
             self.model.load_state_dict(model_params[0])
             if self.has_central_value:
                 self.central_value_net.load_state_dict(model_params[1])
+            print("====================broadcast done")
 
         while True:
             epoch_num = self.update_epoch()
@@ -1458,8 +1471,6 @@ class ContinuousA2CBase(A2CBase):
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
-            if should_exit:
-                return self.last_mean_rewards, epoch_num
 
             if should_exit:
                 return self.last_mean_rewards, epoch_num

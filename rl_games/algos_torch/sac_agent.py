@@ -5,7 +5,6 @@ from datetime import datetime
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
@@ -25,18 +24,34 @@ class SACAgent(BaseAlgorithm):
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
-        self.num_warmup_steps = config["num_warmup_steps"]
-        self.gamma = config["gamma"]
-        self.critic_tau = float(config["critic_tau"])
+        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # Small tau for stable smoothing
+        self.gamma = self.config.get("gamma", 0.99)
+        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
+        self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
+        self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        # Warmup: num_warmup_frames (total env frames) takes priority over num_warmup_steps (epochs)
+        num_warmup_frames = self.config.get("num_warmup_frames", None)
+        if num_warmup_frames is not None:
+            frames_per_epoch = self.num_actors * self.num_steps_per_episode
+            self.num_warmup_steps = int(np.ceil(num_warmup_frames / frames_per_epoch))
+        else:
+            self.num_warmup_steps = self.config.get("num_warmup_steps", 1000)
         self.batch_size = config["batch_size"]
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
         self.replay_buffer_size = config["replay_buffer_size"]
-        self.num_steps_per_episode = config.get("num_steps_per_episode", 1)
         self.normalize_input = config.get("normalize_input", False)
+        self.enable_mixed_precision = config.get("mixed_precision", False)
 
-        # TODO: double-check! To use bootstrap instead?
-        self.max_env_steps = config.get("max_env_steps", 1000) # temporary, in future we will use other approach
+        # Policy frequency: update actor every N critic updates (CleanRL uses 2)
+        self.policy_frequency = config.get("policy_frequency", 2)
+        self.update_counter = 0  # Track number of critic updates
+
+        # Gradient clipping for stability (0 = disabled)
+        self.critic_grad_clip = config.get("critic_grad_clip", 5.0)
+
+        # Timeout handling - consistent with PPO
+        self.value_bootstrap = config.get('value_bootstrap', True)
 
         print(self.batch_size, self.num_actors, self.num_agents)
 
@@ -47,6 +62,11 @@ class SACAgent(BaseAlgorithm):
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
 
+        # Store proper action bounds per dimension
+        self.action_low = torch.tensor(action_space.low, device=self._device, dtype=torch.float32)
+        self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
+        self.action_scale = (self.action_high - self.action_low) / 2.0
+        self.action_bias = (self.action_high + self.action_low) / 2.0
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
@@ -65,30 +85,48 @@ class SACAgent(BaseAlgorithm):
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
-        self.actor_optimizer = torch.optim.Adam(self.model.sac_network.actor.parameters(),
-                                                lr=float(self.config['actor_lr']),
-                                                betas=self.config.get("actor_betas", [0.9, 0.999]),
-                                                fused=True)
+        self.actor_optimizer = optim.Adam(self.model.sac_network.actor.parameters(),
+                                        lr=float(self.config['actor_lr']),
+                                        betas=self.config.get("actor_betas", [0.9, 0.999]),
+                                        fused=True)
 
-        self.critic_optimizer = torch.optim.Adam(self.model.sac_network.critic.parameters(),
-                                                 lr=float(self.config["critic_lr"]),
-                                                 betas=self.config.get("critic_betas", [0.9, 0.999]),
-                                                 fused=True)
+        self.critic_optimizer = optim.Adam(self.model.sac_network.critic.parameters(),
+                                        lr=float(self.config["critic_lr"]),
+                                        betas=self.config.get("critic_betas", [0.9, 0.999]),
+                                        fused=True)
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                                    lr=float(self.config["alpha_lr"]),
-                                                    betas=self.config.get("alphas_betas", [0.9, 0.999]),
-                                                    fused=True)
+                                        lr=float(self.config["alpha_lr"]),
+                                        betas=self.config.get("alphas_betas", [0.9, 0.999]),
+                                        fused=True)
 
         self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
-        self.env_info['action_space'].shape,
-        self.replay_buffer_size,
-        self._device)
+            self.env_info['action_space'].shape,
+            self.replay_buffer_size,
+            self._device)
+
         self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
         self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
         print("Target entropy", self.target_entropy)
 
         self.algo_observer = config['features']['observer']
+
+        self.amp_dtype = torch.bfloat16 if self.enable_mixed_precision else torch.float32
+
+        # ────────────────────────────────────
+        # Summary writer
+        # ────────────────────────────────────
+        self.global_rank = int(os.getenv("RANK", "0"))
+
+        if self.global_rank == 0:
+            self.writer = SummaryWriter(self.summaries_dir)
+        else:
+            class _DummyWriter:
+                def add_scalar(self, *_, **__): pass
+                def close(self): pass
+            self.writer = _DummyWriter()
+
+        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=self.amp_dtype)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -107,7 +145,7 @@ class SACAgent(BaseAlgorithm):
 
         self._device = config.get('device', 'cuda:0')
 
-        #temporary for Isaac gym compatibility
+        # For Isaac gym compatibility
         self.ppo_device = self._device
         print('Env info:')
         print(self.env_info)
@@ -115,11 +153,11 @@ class SACAgent(BaseAlgorithm):
         self.rewards_shaper = config['reward_shaper']
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
-        #self.use_action_masks = config.get('use_action_masks', False)
+        # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
+        # MSELoss is standard for SAC - matches CleanRL and original paper
         self.c_loss = nn.MSELoss()
-        # self.c2_loss = nn.SmoothL1Loss()
 
         self.save_best_after = config.get('save_best_after', 500)
         self.print_stats = config.get('print_stats', True)
@@ -141,7 +179,8 @@ class SACAgent(BaseAlgorithm):
         self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(self._device)
         self.obs = None
 
-        self.min_alpha = torch.tensor(np.log(1)).float().to(self._device)
+        # Min alpha in EXP space (not log space!) for comparison with self.alpha
+        self.min_alpha = torch.tensor(0.01).float().to(self._device)
 
         self.frame = 0
         self.epoch_num = 0
@@ -175,23 +214,16 @@ class SACAgent(BaseAlgorithm):
         os.makedirs(self.nn_dir, exist_ok=True)
         os.makedirs(self.summaries_dir, exist_ok=True)
 
-        self.writer = SummaryWriter('runs/' + config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-        print("Run Directory:", config['name'] + datetime.now().strftime("_%d-%H-%M-%S"))
-
         self.is_tensor_obses = False
         self.is_rnn = False
         self.last_rnn_indices = None
         self.last_state_indices = None
 
     def init_tensors(self):
-        if self.observation_space.dtype == np.uint8:
-            torch_dtype = torch.uint8
-        else:
-            torch_dtype = torch.float32
         batch_size = self.num_agents * self.num_actors
 
         self.current_rewards = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
-        self.current_lengths = torch.zeros(batch_size, dtype=torch.long, device=self._device)
+        self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
 
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self._device)
 
@@ -274,26 +306,42 @@ class SACAgent(BaseAlgorithm):
     def set_train(self):
         self.model.train()
 
+    def rescale_actions(self, actions):
+        """Rescale actions from [-1, 1] to actual action space bounds."""
+        rescaled = actions * self.action_scale + self.action_bias
+        # Clamp to handle floating point errors
+        return rescaled.clamp(self.action_low, self.action_high)
+
     def update_critic(self, obs, action, reward, next_obs, not_done, step):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+            # Rescale next_action for critic (as it outputs [-1, 1])
+            next_action_rescaled = self.rescale_actions(next_action)
 
-            target_Q1, target_Q2 = self.model.critic_target(next_obs, next_action)
+            target_Q1, target_Q2 = self.model.critic_target(
+                next_obs.float(),
+                next_action_rescaled.float()
+            )
             target_V = torch.min(target_Q1, target_Q2) - self.alpha * log_prob
+            target_V = target_V.detach()
 
-            target_Q = reward + (not_done * self.gamma * target_V)
-            target_Q = target_Q.detach()
+        # get current Q estimates and build target_Q inside autocast
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
+            current_Q1, current_Q2 = self.model.critic(obs, action)
 
-        # get current Q estimates
-        current_Q1, current_Q2 = self.model.critic(obs, action)
+            # Build target_Q inside autocast to match dtypes
+            target_Q = reward + (not_done * self.gamma_tensor * target_V)
 
-        critic1_loss = self.c_loss(current_Q1, target_Q)
-        critic2_loss = self.c_loss(current_Q2, target_Q)
-        critic_loss = critic1_loss + critic2_loss 
+            critic1_loss = self.c_loss(current_Q1, target_Q)
+            critic2_loss = self.c_loss(current_Q2, target_Q)
+            critic_loss = 0.5 * (critic1_loss + critic2_loss)
+
         self.critic_optimizer.zero_grad(set_to_none=True)
         critic_loss.backward()
+        if self.critic_grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.sac_network.critic.parameters(), self.critic_grad_clip)
         self.critic_optimizer.step()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
@@ -302,39 +350,44 @@ class SACAgent(BaseAlgorithm):
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = False
 
-        dist = self.model.actor(obs)
-        action = dist.rsample()
-        log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        entropy = -log_prob.mean() #dist.entropy().sum(-1, keepdim=True).mean()
-        actor_Q1, actor_Q2 = self.model.critic(obs, action)
-        actor_Q = torch.min(actor_Q1, actor_Q2)
+        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
+            dist = self.model.actor(obs)
+            action = dist.rsample()
+            # Rescale actions for critic evaluation
+            action_rescaled = self.rescale_actions(action)
+            log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+            entropy = -log_prob.mean()
+            actor_Q1, actor_Q2 = self.model.critic(obs, action_rescaled)
+            actor_Q = torch.min(actor_Q1, actor_Q2)
 
-        actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q)
-        actor_loss = actor_loss.mean()
+            actor_loss = (torch.max(self.alpha.detach(), self.min_alpha) * log_prob - actor_Q).mean()
+
+            if self.learnable_temperature:
+                alpha_loss = (self.alpha * (-log_prob - self.target_entropy).detach()).mean()
+                total_loss = actor_loss + alpha_loss
+            else:
+                alpha_loss = None
+                total_loss = actor_loss
 
         self.actor_optimizer.zero_grad(set_to_none=True)
-        actor_loss.backward()
+        if self.learnable_temperature:
+            self.log_alpha_optimizer.zero_grad(set_to_none=True)
+
+        total_loss.backward()
+
         self.actor_optimizer.step()
+        if self.learnable_temperature:
+            self.log_alpha_optimizer.step()
 
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = True
 
-        if self.learnable_temperature:
-            alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
-            self.log_alpha_optimizer.zero_grad(set_to_none=True)
-            alpha_loss.backward()
-            self.log_alpha_optimizer.step()
-        else:
-            alpha_loss = None
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss # TODO: maybe not self.alpha
-
-    @torch.compile(mode="reduce-overhead")
     def soft_update_params(self, net, target_net, tau):
-        for param, target_param in zip(net.parameters(), target_net.parameters()):
-            target_param.data.copy_(tau * param.data +
-                                    (1.0 - tau) * target_param.data)
+        with torch.no_grad():
+            for src, tgt in zip(net.parameters(), target_net.parameters()):
+                tgt.data.lerp_(src.data, tau)
 
     def update_target_weights(self):
         tau = self.critic_tau
@@ -350,11 +403,18 @@ class SACAgent(BaseAlgorithm):
 
         obs = self.preproc_obs(obs)
         next_obs = self.preproc_obs(next_obs)
+
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
+        self.update_counter += 1
 
-        actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
+        # Update actor and alpha only every policy_frequency critic updates (CleanRL uses 2)
+        if self.update_counter % self.policy_frequency == 0:
+            actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
+            actor_loss_info = actor_loss, entropy, alpha, alpha_loss
+        else:
+            # Return previous values (or zeros) when not updating actor
+            actor_loss_info = torch.tensor(0.0, device=self._device), torch.tensor(0.0, device=self._device), self.alpha, None
 
-        actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
 
@@ -409,17 +469,16 @@ class SACAgent(BaseAlgorithm):
 
     def env_step(self, actions):
         actions = self.preprocess_actions(actions)
-        obs, rewards, dones, infos = self.vec_env.step(actions) # (obs_space) -> (n, obs_space)
+        obs, rewards, dones, infos = self.vec_env.step(actions)
 
         if self.is_tensor_obses:
             return self.obs_to_tensors(obs), rewards.to(self._device), dones.to(self._device), infos
         else:
-            return torch.from_numpy(obs).to(self._device), torch.from_numpy(rewards).to(self._device), torch.from_numpy(dones).to(self._device), infos
+            return torch.from_numpy(obs).to(self._device), torch.from_numpy(rewards).to(self._device, dtype=torch.float32), torch.from_numpy(dones).to(self._device), infos
 
     def env_reset(self):
         with torch.no_grad():
             obs = self.vec_env.reset()
-
         obs = self.obs_to_tensors(obs)
 
         return obs
@@ -429,7 +488,8 @@ class SACAgent(BaseAlgorithm):
         dist = self.model.actor(obs)
 
         actions = dist.sample() if sample else dist.mean
-        actions = actions.clamp(*self.action_range)
+        # Rescale from [-1, 1] to actual bounds
+        actions = self.rescale_actions(actions)
         if actions.ndim != 2:
             raise ValueError(f"Actions tensor must be 2-dimensional, got shape {actions.shape}")
 
@@ -466,12 +526,12 @@ class SACAgent(BaseAlgorithm):
         if isinstance(obs, dict):
             obs = self.obs['obs']
 
-        next_obs_processed = obs.clone()
-
         for s in range(self.num_steps_per_episode):
             self.set_eval()
             if random_exploration:
-                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device) * 2.0 - 1.0
+                # Sample uniformly from the correct action bounds
+                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device)
+                action = self.action_low + (self.action_high - self.action_low) * action
             else:
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
@@ -479,13 +539,16 @@ class SACAgent(BaseAlgorithm):
             step_start = time.perf_counter()
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
+
             step_end = time.perf_counter()
-
-            self.current_rewards += rewards
-            self.current_lengths += 1
-
             total_time += (step_end - step_start)
             step_time += (step_end - step_start)
+
+            # Shape rewards BEFORE tracking (so logged rewards match training rewards)
+            shaped_rewards = self.rewards_shaper(rewards)
+
+            self.current_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1)
 
             all_done_indices = dones.nonzero(as_tuple=False)
             done_indices = all_done_indices[::self.num_agents]
@@ -496,35 +559,59 @@ class SACAgent(BaseAlgorithm):
 
             self.algo_observer.process_infos(infos, done_indices)
 
-            no_timeouts = self.current_lengths != self.max_env_steps
-            dones = dones * no_timeouts
+            # Handle truncated episodes (timeouts) for auto-resetting envs.
+            # Auto-resetting envs (envpool, Isaac Gym) replace next_obs with the reset obs,
+            # so bootstrapping V(next_obs) would use the wrong state.
+            # Fix: for truncated envs, use obs (pre-reset) as next_obs and mark done=False.
+            # The critic will compute V(s_t) with fresh weights at training time.
+            terminated = dones.clone()
+            timeouts = None
+            if self.value_bootstrap and 'time_outs' in infos:
+                timeouts = self.cast_obs(infos['time_outs'])
+                if timeouts.dtype != torch.bool:
+                    timeouts = timeouts.bool()
+                if timeouts.any():
+                    terminated[timeouts] = 0.0
+                else:
+                    timeouts = None
 
-            self.current_rewards = self.current_rewards * not_dones
-            self.current_lengths = self.current_lengths * not_dones
+            self.current_rewards.mul_(not_dones)
+            self.current_lengths.mul_(not_dones)
 
-            if isinstance(next_obs, dict):    
+            if isinstance(next_obs, dict):
                 next_obs_processed = next_obs['obs']
-                self.obs = next_obs_processed.clone()
+                self.obs = next_obs
             else:
-                self.obs = next_obs.clone()
+                next_obs_processed = next_obs
+                self.obs = next_obs
 
-            rewards = self.rewards_shaper(rewards)
-            self.replay_buffer.add(obs, action, torch.unsqueeze(rewards, 1), next_obs_processed, torch.unsqueeze(dones, 1))
+            # For truncated envs, store pre-reset obs as next_obs in replay buffer
+            # so the critic bootstraps V(s_t) with fresh weights at training time.
+            # self.obs keeps the actual reset obs for the next step.
+            replay_next_obs = next_obs_processed
+            if timeouts is not None:
+                replay_next_obs = next_obs_processed.clone()
+                replay_next_obs[timeouts] = obs[timeouts]
 
-            if isinstance(obs, dict):
-                obs = self.obs['obs']
+            # Batch unsqueeze operations (rewards already shaped above)
+            rewards_unsqueezed = shaped_rewards.unsqueeze(1)
+            terminated_unsqueezed = terminated.unsqueeze(1)
+            self.replay_buffer.add(obs, action, rewards_unsqueezed, replay_next_obs, terminated_unsqueezed)
+
+            obs = next_obs_processed  # Use the already processed observation
 
             if not random_exploration:
                 self.set_train()
 
                 update_time_start = time.perf_counter()
-                actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
+                # Perform multiple gradient updates per environment step
+                for _ in range(self.num_updates_per_step):
+                    actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
+                    self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
+                    critic1_losses.append(critic1_loss)
+                    critic2_losses.append(critic2_loss)
                 update_time_end = time.perf_counter()
                 update_time = update_time_end - update_time_start
-
-                self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
-                critic1_losses.append(critic1_loss)
-                critic2_losses.append(critic2_loss)
             else:
                 update_time = 0
 

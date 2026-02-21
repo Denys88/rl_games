@@ -2,8 +2,7 @@ from rl_games.common.player import BasePlayer
 from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common.tr_helpers import unsqueeze_obs
-import gymnasium as gym
-import torch 
+import torch
 from torch import nn
 import numpy as np
 
@@ -89,10 +88,11 @@ class PpoPlayerDiscrete(BasePlayer):
         BasePlayer.__init__(self, params)
 
         self.network = self.config['network']
-        if type(self.action_space) is gym.spaces.Discrete:
+        action_space_type = type(self.action_space).__name__
+        if action_space_type == 'Discrete':
             self.actions_num = self.action_space.n
             self.is_multi_discrete = False
-        if type(self.action_space) is gym.spaces.Tuple:
+        elif action_space_type == 'Tuple':
             self.actions_num = [action.n for action in self.action_space]
             self.is_multi_discrete = True
 

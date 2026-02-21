@@ -1,4 +1,5 @@
 params:
+  torch_threads: 4
   seed: 5
   algo:
     name: a2c_continuous
@@ -36,7 +37,6 @@ params:
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.008

@@ -53,7 +53,7 @@ class RunningMeanStd(nn.Module):
                 mean, var = torch_ext.get_mean_var_with_masks(input, mask)
             else:
                 mean = input.mean(self.axis) # along channel axis
-                var = input.var(self.axis)
+                var = input.var(self.axis, unbiased=False)
 
             self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(
                 self.running_mean,

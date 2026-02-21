@@ -36,7 +36,6 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self.truncate_grads = config.get('truncate_grads', False)
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -95,7 +94,6 @@ class CentralValueTrain(nn.Module):
         self.grad_norm = config.get('grad_norm', 1)
         self.truncate_grads = config.get('truncate_grads', False)
         self.e_clip = config.get('e_clip', 0.2)
-        self.truncate_grad = self.config.get('truncate_grads', False)
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
@@ -132,7 +130,7 @@ class CentralValueTrain(nn.Module):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device_name)
+            lr_tensor = torch.tensor([lr], device=self.ppo_device)
             dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
 
@@ -204,7 +202,7 @@ class CentralValueTrain(nn.Module):
             return
         all_done_indices = all_done_indices[::self.num_agents] // self.num_agents
         for s in self.rnn_states:
-            s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
+            s[:, all_done_indices, :] = 0
 
     def forward(self, input_dict):
         return self.model(input_dict)
@@ -253,7 +251,7 @@ class CentralValueTrain(nn.Module):
         """
         self.train()  # Set module to training mode
         loss = 0
-        for _ in range(self.mini_epoch):
+        for epoch_idx in range(self.mini_epoch):
             if self.config.get('freeze_critic', False):
                 break
             for i in range(len(self.dataset)):
@@ -319,11 +317,7 @@ class CentralValueTrain(nn.Module):
         )
 
         # Efficiently clear gradients
-        if self.multi_gpu:
-            self.optimizer.zero_grad()
-        else:
-            for param in self.model.parameters():
-                param.grad = None
+        self.optimizer.zero_grad(set_to_none=True)
 
         loss.backward()
 
@@ -335,22 +329,16 @@ class CentralValueTrain(nn.Module):
                     all_grads_list.append(param.grad.view(-1))
 
             if not all_grads_list:
-                # This is a critical error condition - we should have gradients during training
-                import warnings
-                warnings.warn("No gradients found during update step! Check model configuration and loss computation.")
-            else:
-                all_grads = torch.cat(all_grads_list)
-                dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-
-                offset = 0
-                for param in self.model.parameters():
-                    if param.grad is not None:
-                        numel = param.numel()
-                        param.grad.data.copy_(
-                            all_grads[offset:offset + numel].view_as(param.grad.data)
-                            / self.world_size
-                        )
-                        offset += numel
+                return loss
+            all_grads = torch.cat(all_grads_list)
+            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+            offset = 0
+            for param in self.model.parameters():
+                if param.grad is not None:
+                    param.grad.data.copy_(
+                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
+                    )
+                    offset += param.numel()
 
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)

@@ -1,7 +1,6 @@
 import torch
-import copy
-import torch
 from torch.utils.data import Dataset
+import copy
 import random
 
 
@@ -89,6 +88,11 @@ class PPODataset(Dataset):
     def __len__(self):
         """Return the number of minibatches."""
         return self.length
+
+    def __iter__(self):
+        """Iterate over all minibatches in order."""
+        for idx in range(self.length):
+            yield self[idx]
 
 
 class DatasetList(Dataset):

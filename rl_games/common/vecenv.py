@@ -2,10 +2,10 @@ from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
-import gymnasium as gym
 import random
 from time import sleep
 import torch
+
 
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
@@ -98,6 +98,10 @@ class RayWorker:
     def set_weights(self, weights):
         self.env.update_weights(weights)
 
+    def close(self):
+        if hasattr(self.env, 'close'):
+            self.env.close()
+
     def can_concat_infos(self):
         if hasattr(self.env, 'concat_infos'):
             return self.env.concat_infos
@@ -133,11 +137,6 @@ class RayVecEnv(IVecEnv):
     Each worker is executed asynchronously.
 
     """
-    try:
-        import ray
-    except ImportError:
-        pass
-
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
 
@@ -147,12 +146,38 @@ class RayVecEnv(IVecEnv):
             **kwargs: Misc. kwargs passed on to the environment creator function within the RayWorker __init__
 
         """
+        # Import and initialize Ray only when RayVecEnv is actually used
+        try:
+            import ray
+            self.ray = ray
+        except ImportError:
+            raise ImportError("Ray is required for RayVecEnv. Please install it with: pip install ray")
+
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            # Get Ray initialization parameters from config
+            # Example usage in YAML under params.config.env_config:
+            #   ray_config:
+            #     num_cpus: 8                      # Number of CPUs Ray can use
+            #     num_gpus: 1                      # Number of GPUs Ray can use  
+            #     object_store_memory: 2000000000  # Object store memory in bytes (2GB)
+            #     local_mode: True                 # Run Ray in local mode for debugging
+            #     ignore_reinit_error: True        # Suppress errors if Ray is already initialized
+            #     include_dashboard: False         # Disable Ray dashboard
+            #     dashboard_host: '0.0.0.0'        # Ray dashboard host
+            ray_config = kwargs.pop('ray_config', {})
+
+            # Set default object store memory if not specified
+            if 'object_store_memory' not in ray_config:
+                ray_config['object_store_memory'] = 1024*1024*1000
+
+            ray.init(**ray_config)
+
         self.config_name = config_name
         self.num_actors = num_actors
         self.use_torch = False
         self.seed = kwargs.pop('seed', None)
 
-        
         self.remote_worker = self.ray.remote(RayWorker)
         self.workers = [self.remote_worker.remote(self.config_name, kwargs) for i in range(self.num_actors)]
 
@@ -172,13 +197,15 @@ class RayVecEnv(IVecEnv):
         can_concat_infos = self.ray.get(res)
         self.use_global_obs = env_info['use_global_observations']
         self.concat_infos = can_concat_infos
-        self.obs_type_dict = type(env_info.get('observation_space')) is gym.spaces.Dict
-        self.state_type_dict = type(env_info.get('state_space')) is gym.spaces.Dict
+        obs_space = env_info.get('observation_space')
+        state_space = env_info.get('state_space')
+        self.obs_type_dict = obs_space is not None and type(obs_space).__name__ == 'Dict'
+        self.state_type_dict = state_space is not None and type(state_space).__name__ == 'Dict'
         if self.num_agents == 1:
             self.concat_func = np.stack
         else:
             self.concat_func = np.concatenate
-    
+
     def step(self, actions):
         """Step all individual environments (using the created workers). 
         Returns a concatenated array of observations, rewards, done states, and infos if the env allows concatenation.
@@ -217,7 +244,7 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
@@ -264,13 +291,27 @@ class RayVecEnv(IVecEnv):
         if self.use_global_obs:
             newobsdict = {}
             newobsdict["obs"] = ret_obs
-            
+
             if self.state_type_dict:
                 newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
             else:
                 newobsdict["states"] = np.stack(newstates)            
             ret_obs = newobsdict
         return ret_obs
+    
+    def close(self):
+        """Close all workers and shutdown Ray if we initialized it."""
+        # Close all worker environments
+        for worker in self.workers:
+            self.ray.get(worker.close.remote())
+        
+        # Shutdown Ray if we initialized it
+        if hasattr(self, 'ray') and self.ray.is_initialized():
+            # Only shutdown if no other processes are using Ray
+            try:
+                self.ray.shutdown()
+            except:
+                pass  # Ray might be used by other processes
 
 vecenv_config = {}
 

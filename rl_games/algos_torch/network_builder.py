@@ -178,7 +178,7 @@ class NetworkBuilder:
                 if norm_func_name == 'layer_norm':
                     layers.append(torch.nn.LayerNorm(in_channels))
                 elif norm_func_name == 'batch_norm':
-                    layers.append(torch.nn.BatchNorm2d(in_channels))  
+                    layers.append(torch.nn.BatchNorm1d(in_channels))  
             return nn.Sequential(*layers)
 
         def _build_value_layer(self, input_size, output_size, value_type='legacy'):
@@ -434,7 +434,16 @@ class A2CBuilder(NetworkBuilder):
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
 
-                    if len(states) == 1:
+                    # Some export or tracing utilities may call the network with
+                    # ``states`` equal to ``None`` even for RNN models. Guard
+                    # against that case so that auxiliary utilities (e.g. ONNX
+                    # export during training observers) do not crash the whole
+                    # training run. If no RNN state is supplied we simply
+                    # treat it as an empty tuple which will be initialized to
+                    # zeros inside the RNN module.
+                    if states is None:
+                        states = tuple()
+                    elif len(states) == 1:
                         states = states[0]
 
                     out = out.transpose(0, 1)
@@ -867,18 +876,15 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     def forward(self, obs):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
-        # constrain log_std inside [log_std_min, log_std_max]
-        #log_std = torch.tanh(log_std)
+        # Constrain log_std using tanh + linear scaling (CleanRL approach)
+        # This provides smooth gradients at boundaries unlike hard clamp
         log_std_min, log_std_max = self.log_std_bounds
-        log_std = torch.clamp(log_std, log_std_min, log_std_max)
-        #log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
+        log_std = torch.tanh(log_std)
+        log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
         std = log_std.exp()
 
-        # TODO: Refactor
-
         dist = SquashedNormal(mu, std)
-        # Modify to only return mu and std
         return dist
 
 
