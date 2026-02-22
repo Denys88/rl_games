@@ -1,4 +1,6 @@
-# RL Games: High performance RL library  
+# RL Games: High performance RL library
+
+**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium` and removes legacy environment integrations (envpool, cule).
 
 ## Discord Channel Link 
 * https://discord.gg/hnYRq7DsQh
