@@ -77,18 +77,6 @@ def create_goal_gym_env(**kwargs):
     return env
 
 
-def create_slime_gym_env(**kwargs):
-    import slimevolleygym
-    from rl_games.envs.slimevolley_selfplay import SlimeVolleySelfplay
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-    self_play = kwargs.pop('self_play', False)
-    if self_play:
-        env = SlimeVolleySelfplay(name, **kwargs) 
-    else:
-        env = gym.make(name, **kwargs)
-    return env
-
 
 def create_myo(**kwargs):
     from myosuite.utils import gym
@@ -315,10 +303,6 @@ configurations = {
     },
     'atari_gym' : {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
-    'slime_gym' : {
-        'env_creator' : lambda **kwargs : create_slime_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
     'test_env' : {
