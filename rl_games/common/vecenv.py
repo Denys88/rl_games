@@ -86,25 +86,31 @@ class RayWorker:
         obs = self._obs_to_fp32(obs)
         return obs
 
+    def _unwrapped(self):
+        """Get the unwrapped env, bypassing gymnasium wrappers that don't forward custom attributes."""
+        return getattr(self.env, 'unwrapped', self.env)
+
     def get_action_mask(self):
-        return self.env.get_action_mask()
+        return self._unwrapped().get_action_mask()
 
     def get_number_of_agents(self):
-        if hasattr(self.env, 'get_number_of_agents'):
-            return self.env.get_number_of_agents()
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'get_number_of_agents'):
+            return unwrapped.get_number_of_agents()
         else:
             return 1
 
     def set_weights(self, weights):
-        self.env.update_weights(weights)
+        self._unwrapped().update_weights(weights)
 
     def close(self):
         if hasattr(self.env, 'close'):
             self.env.close()
 
     def can_concat_infos(self):
-        if hasattr(self.env, 'concat_infos'):
-            return self.env.concat_infos
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'concat_infos'):
+            return unwrapped.concat_infos
         else:
             return False
 
@@ -112,21 +118,20 @@ class RayWorker:
         info = {}
         observation_space = self.env.observation_space
 
-        #if isinstance(observation_space, gym.spaces.dict.Dict):
-        #    observation_space = observation_space['observations']
-
         info['action_space'] = self.env.action_space
         info['observation_space'] = observation_space
         info['state_space'] = None
         info['use_global_observations'] = False
         info['agents'] = self.get_number_of_agents()
         info['value_size'] = 1
-        if hasattr(self.env, 'use_central_value'):
-            info['use_global_observations'] = self.env.use_central_value
-        if hasattr(self.env, 'value_size'):
-            info['value_size'] = self.env.value_size
-        if hasattr(self.env, 'state_space'):
-            info['state_space'] = self.env.state_space
+        # Use unwrapped env to access custom attributes through gymnasium wrappers
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'use_central_value'):
+            info['use_global_observations'] = unwrapped.use_central_value
+        if hasattr(unwrapped, 'value_size'):
+            info['value_size'] = unwrapped.value_size
+        if hasattr(unwrapped, 'state_space'):
+            info['state_space'] = unwrapped.state_space
         return info
 
 

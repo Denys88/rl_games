@@ -28,8 +28,8 @@ class TestAsymmetricCritic(gym.Env):
     def get_number_of_agents(self):
         return self.n_agents
 
-    def reset(self):
-        obs = self.env.reset()
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
         obs_dict = {}
         obs_dict["obs"] = obs * self.mask
         obs_dict["state"] = obs
@@ -37,10 +37,10 @@ class TestAsymmetricCritic(gym.Env):
             obses = obs_dict
         else:
             obses = obs_dict["obs"].astype(np.float32)
-        return obses
+        return obses, info
 
     def step(self, actions):
-        obs, rewards, dones, info = self.env.step(actions)
+        obs, rewards, terminated, truncated, info = self.env.step(actions)
         obs_dict = {}
         obs_dict["obs"] = obs * self.mask
         obs_dict["state"] = obs
@@ -48,7 +48,7 @@ class TestAsymmetricCritic(gym.Env):
             obses = obs_dict
         else:
             obses = obs_dict["obs"].astype(np.float32)
-        return obses, rewards, dones, info
+        return obses, rewards, terminated, truncated, info
 
     def has_action_mask(self):
         return False
