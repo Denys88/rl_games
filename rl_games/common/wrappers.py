@@ -11,21 +11,17 @@ from copy import copy
 
 
 def _parse_reset_result(result):
-    """Handle both old gym (obs) and new gymnasium (obs, info) reset returns."""
-    if isinstance(result, tuple) and len(result) == 2:
-        return result[0]  # gymnasium: (obs, info)
-    return result  # old gym: obs
+    """Extract obs from gymnasium reset() return of (obs, info)."""
+    return result[0]
 
 
 def _parse_step_result(result):
-    """Handle both old gym (4-tuple) and new gymnasium (5-tuple) step returns."""
-    if len(result) == 5:
-        obs, reward, terminated, truncated, info = result
-        done = terminated or truncated
-        if 'time_outs' not in info:
-            info['time_outs'] = truncated
-        return obs, reward, done, info
-    return result  # old gym: (obs, reward, done, info)
+    """Convert gymnasium 5-tuple step() return to (obs, reward, done, info)."""
+    obs, reward, terminated, truncated, info = result
+    done = terminated or truncated
+    if 'time_outs' not in info:
+        info['time_outs'] = truncated
+    return obs, reward, done, info
 
 
 class InfoWrapper(gym.Wrapper):
