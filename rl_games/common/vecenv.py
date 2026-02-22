@@ -46,15 +46,10 @@ class RayWorker:
             action (type depends on env): Action to take.
 
         """
-        result = self.env.step(action)
-        # Handle both gymnasium 5-tuple and old gym 4-tuple
-        if len(result) == 5:
-            next_state, reward, terminated, truncated, info = result
-            is_done = terminated or truncated if np.isscalar(terminated) else terminated | truncated
-            if 'time_outs' not in info:
-                info['time_outs'] = truncated
-        else:
-            next_state, reward, is_done, info = result
+        next_state, reward, terminated, truncated, info = self.env.step(action)
+        is_done = terminated or truncated if np.isscalar(terminated) else terminated | truncated
+        if 'time_outs' not in info:
+            info['time_outs'] = truncated
 
         if np.isscalar(is_done):
             episode_done = is_done
@@ -77,12 +72,7 @@ class RayWorker:
         self.env.render()
 
     def reset(self):
-        result = self.env.reset()
-        # Handle both gymnasium (obs, info) and old gym (obs) returns
-        if isinstance(result, tuple) and len(result) == 2:
-            obs, info = result
-        else:
-            obs = result
+        obs, info = self.env.reset()
         obs = self._obs_to_fp32(obs)
         return obs
 
