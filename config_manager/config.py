@@ -83,22 +83,29 @@ class Config():
         # Should we merge in-place or return a new config?
         return Config(self._deep_merge(deepcopy(self._data), other._data))
 
-    def from_yaml_string(self, yaml_config: str):
-        self._data = yaml.safe_load(yaml_config)
+    @classmethod
+    def from_yaml_string(cls, yaml_config: str):
+        data = yaml.safe_load(yaml_config)
+        return cls(data)
 
     @classmethod
     def from_yaml_file(cls, path: str):
         with open(path, 'r') as f:
             data = yaml.safe_load(f)
         return cls(data)
-
-    def to_yaml_string(self):
+    
+    def to_yaml_string(self, sort_keys=False):
         yaml_str = yaml.dump(self._data)
         return yaml_str
+    
+    def to_yaml_file(self, path: str, sort_keys=False):
+        with open(path, 'w') as f:
+            f.write(self.to_yaml_string(sort_keys))
 
     def fingerprint(self):
-        # yaml_str = self.to_yaml()
+        # yaml_str = self.to_yaml(sort_keys=True)
         # yaml_enc = yaml_str.encode('utf-8')
+        # But can use yaml.dump() as well
         serialized = json.dumps(self._data, sort_keys=True)
         bytes_data = serialized.encode('utf-8')
         

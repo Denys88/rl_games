@@ -37,7 +37,7 @@ class SweepSpec:
         # Stores {dotted_key: [list of values]} for grid search
         self._grid_params = {}
         # TODO: Add storage for random/continuous params
-        # self._random_params = {}  # {dotted_key: distribution_spec}
+        self._random_params = {}  # {dotted_key: distribution_spec}
 
     def grid(self, key: str, values: list):
         """Add a parameter with explicit values for grid search.
@@ -136,23 +136,21 @@ class ExperimentRunner:
         Returns:
             dict with keys: name, status ("success"/"failed"), return_code, config_path
         """
-        # TODO: Implement
-        # exp_dir = os.path.join(self.output_dir, experiment_name)
-        # os.makedirs(exp_dir, exist_ok=True)
-        # config_path = os.path.join(exp_dir, "config.yaml")
-        # config.to_yaml_file(config_path)  # You'll need to add this to Config
-        #
-        # cmd = ["python", self.runner_script, "--file", config_path]
-        # result = subprocess.run(cmd, capture_output=True, text=True)
-        #
-        # return {
-        #     "name": experiment_name,
-        #     "status": "success" if result.returncode == 0 else "failed",
-        #     "return_code": result.returncode,
-        #     "config_path": config_path,
-        #     "exp_dir": exp_dir,
-        # }
-        pass
+        exp_dir = os.path.join(self.output_dir, experiment_name)
+        os.makedirs(exp_dir, exist_ok=True)
+        config_path = os.path.join(exp_dir, "config.yaml")
+        config.to_yaml_file(config_path)  # You'll need to add this to Config
+        
+        cmd = ["python", self.runner_script, "--file", config_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        return {
+            "name": experiment_name,
+            "status": "success" if result.returncode == 0 else "failed",
+            "return_code": result.returncode,
+            "config_path": config_path,
+            "exp_dir": exp_dir,
+        }
 
     def run_all(self, configs: list, max_parallel: int = 1):
         """Run a list of (config, name) pairs, optionally in parallel.
@@ -162,18 +160,19 @@ class ExperimentRunner:
             max_parallel: how many experiments to run concurrently.
                           1 = sequential (start here!).
 
-        TODO (sequential version first):
-            for config, name in configs:
-                result = self.run_single(config, name)
-                self.results.append(result)
+        Sequential version is working
 
-        TODO (parallel version later):
+        TODO (parallel version):
             Use subprocess.Popen instead of subprocess.run.
             Maintain a pool of max_parallel active processes.
             When one finishes, launch the next from the queue.
             Consider: what happens if a run hangs? Add a timeout.
         """
-        pass
+        results = []
+        for config, name in configs:
+            result = self.run_single(config, name)
+            results.append(result)
+        return results
 
 
 class ResultTracker:
@@ -207,6 +206,14 @@ class ResultTracker:
             result: dict with at minimum: name, variant_id, seed, metric_value
         """
         self.results.append(result)
+
+    def add_results(self, results: list):
+        """Record multiple experiment results.
+
+        Args:
+            results: list of dictinaries with at minimum: name, variant_id, seed, metric_value
+        """
+        self.results.extend(results)
 
     def leaderboard(self, metric: str = "reward", ascending: bool = False) -> list:
         """Produce a ranked list of sweep variants, aggregated across seeds.
@@ -301,9 +308,8 @@ class ExperimentManager:
             3. Collect results into ResultTracker
         """
         configs = self._expand_configs(seeds)
-        # TODO: Call self.runner.run_all(configs, max_parallel)
-        # TODO: Collect results into self.tracker
-        pass
+        results = self.runner.run_all(configs, max_parallel)
+        self.tracker.add_results(results)
 
     def leaderboard(self, metric: str = "reward"):
         """Shortcut to tracker.leaderboard()."""
