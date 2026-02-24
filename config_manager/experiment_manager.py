@@ -9,9 +9,12 @@ Components:
 """
 import subprocess
 import os
+import re
 import tempfile
 from itertools import product
 from copy import deepcopy
+from collections import defaultdict
+import numpy as np
 
 from config import Config
 
@@ -100,6 +103,21 @@ class SweepSpec:
     #     pass
 
 
+def parse_reward_from_stdout(stdout: str) -> float:
+    """Parse the best reward from rl_games training stdout.
+
+    Looks for the last 'saving next best rewards: <value>' line.
+    Handles both SAC output (scalar: 10234.5) and PPO output (array: [10234.5]).
+
+    Returns:
+        The best reward value, or float('nan') if not found.
+    """
+    matches = re.findall(r'saving next best rewards:\s*\[?([-\d.e+]+)', stdout)
+    if matches:
+        return float(matches[-1])
+    return float('nan')
+
+
 class ExperimentRunner:
     """Launches experiments as subprocesses.
 
@@ -120,7 +138,7 @@ class ExperimentRunner:
         self.runner_script = runner_script
         self.output_dir = output_dir
 
-    def run_single(self, config: Config, experiment_name: str) -> dict:
+    def run_single(self, config: Config, run_info: dict) -> dict:
         """Run a single experiment as a subprocess.
 
         Steps:
@@ -136,7 +154,7 @@ class ExperimentRunner:
         Returns:
             dict with keys: name, status ("success"/"failed"), return_code, config_path
         """
-        exp_dir = os.path.join(self.output_dir, experiment_name)
+        exp_dir = os.path.join(self.output_dir, run_info["name"])
         os.makedirs(exp_dir, exist_ok=True)
         config_path = os.path.join(exp_dir, "config.yaml")
         config.to_yaml_file(config_path)  # You'll need to add this to Config
@@ -145,9 +163,10 @@ class ExperimentRunner:
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         return {
-            "name": experiment_name,
+            **run_info,
             "status": "success" if result.returncode == 0 else "failed",
             "return_code": result.returncode,
+            "reward": parse_reward_from_stdout(result.stdout),
             "config_path": config_path,
             "exp_dir": exp_dir,
         }
@@ -169,9 +188,13 @@ class ExperimentRunner:
             Consider: what happens if a run hangs? Add a timeout.
         """
         results = []
-        for config, name in configs:
-            result = self.run_single(config, name)
+        for i, (config, run_info) in enumerate(configs):
+            print(f"\n{'='*60}")
+            print(f"Experiment {i+1}/{len(configs)}: {run_info['name']}")
+            print(f"{'='*60}")
+            result = self.run_single(config, run_info)
             results.append(result)
+
         return results
 
 
@@ -231,7 +254,11 @@ class ResultTracker:
             2. For each group, compute mean and std of the metric
             3. Sort by mean (descending for reward, ascending for loss)
         """
-        pass
+        groups = defaultdict(list)
+        for result in self.results:
+            groups[result["variant_id"]].append(result[metric])
+
+        
 
 
 class ExperimentManager:
@@ -290,12 +317,16 @@ class ExperimentManager:
                 # Inject seed
                 config.set("params.seed", seed)
                 # TODO: Also set params.config.env_config.seed if it exists
+                # TODO: Make name more descriptive — include swept param values
 
-                # Generate experiment name
-                # TODO: Make this more descriptive — include swept param values
-                name = f"variant_{i:03d}_seed_{seed}"
+                run_info_dict = {
+                    "name": f"variant_{i:03d}_seed_{seed}",
+                    "variant_id": i,
+                    "seed": seed,
+                    "overrides": overrides
+                }
 
-                configs.append((config, name))
+                configs.append((config, run_info_dict))
 
         return configs
 
