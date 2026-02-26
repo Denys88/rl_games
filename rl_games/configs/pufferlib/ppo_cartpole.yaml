@@ -1,7 +1,4 @@
-
-#Cartpole MLP
-
-params:  
+params:
   torch_threads: 4
   algo:
     name: a2c_discrete
@@ -12,39 +9,44 @@ params:
   network:
     name: actor_critic
     separate: True
-    space: 
+    space:
       discrete:
     mlp:
-      units: [64, 64]
+      units: [32, 32]
       activation: relu
       initializer:
         name: default
-      regularizer:
-        name: None
 
   config:
-    env_name: LunarLander-v3
+    env_name: pufferlib
+    name: cartpole_pufferlib
     reward_shaper:
-        scale_value: 0.1
+      scale_value: 0.1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.9
-    learning_rate: 8e-4
-    name: LunarLander-discrete
-    score_to_win: 500
+    learning_rate: 2e-4
+    score_to_win: 400
     grad_norm: 1.0
     entropy_coef: 0.01
     truncate_grads: True
     e_clip: 0.2
     clip_value: True
     num_actors: 16
-    horizon_length: 32
-    minibatch_size: 64
+    horizon_length: 128
+    minibatch_size: 256
     mini_epochs: 4
     critic_coef: 1
     lr_schedule: None
     kl_threshold: 0.008
     normalize_input: False
-    device: cuda
-    multi_gpu: False
-    use_diagnostics: True
+    save_best_after: 10
+
+    env_config:
+      env_name: CartPole-v1
+      backend: Multiprocessing 
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 20

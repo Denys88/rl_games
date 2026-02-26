@@ -45,7 +45,7 @@ class NetworkBuilder:
 
             self.init_factory = object_factory.ObjectFactory()
             #self.init_factory.register_builder('normc_initializer', lambda **kwargs : normc_initializer(**kwargs))
-            self.init_factory.register_builder('const_initializer', lambda **kwargs : _create_initializer(nn.init.constant_,**kwargs))
+            self.init_factory.register_builder('const_initializer', lambda **kwargs : _create_initializer(nn.init.constant_, val=kwargs.get('val', kwargs.get('value', 0))))
             self.init_factory.register_builder('orthogonal_initializer', lambda **kwargs : _create_initializer(nn.init.orthogonal_,**kwargs))
             self.init_factory.register_builder('glorot_normal_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_normal_,**kwargs))
             self.init_factory.register_builder('glorot_uniform_initializer', lambda **kwargs : _create_initializer(nn.init.xavier_uniform_,**kwargs))

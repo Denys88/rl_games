@@ -47,7 +47,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.0
       truncate_grads: True
-      env_name:  LunarLanderContinuous-v2
+      env_name:  LunarLanderContinuous-v3
       e_clip: 0.2
       clip_value: True
       num_actors: 16

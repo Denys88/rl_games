@@ -35,7 +35,7 @@ params:
   load_path: path
 
   config:
-    env_name:  LunarLanderContinuous-v2
+    env_name:  LunarLanderContinuous-v3
     reward_shaper:
       scale_value: 0.1
     normalize_advantage: True

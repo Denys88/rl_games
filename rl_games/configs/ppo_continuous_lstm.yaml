@@ -34,7 +34,7 @@ params:
       concated: False
 
   config:
-    env_name:  BipedalWalkerHardcore-v2
+    env_name:  BipedalWalkerHardcore-v3
     reward_shaper:
       scale_value: 0.1
 

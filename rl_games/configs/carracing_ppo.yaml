@@ -53,7 +53,7 @@ params:
         name: None
 
   config:
-    env_name:  CarRacing-v0
+    env_name:  CarRacing-v3
     reward_shaper:
         scale_value: 1
         

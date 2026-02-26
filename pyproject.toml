@@ -24,6 +24,9 @@ AutoROM = {version = "^0.4.2", optional = true, extras = ["accept-rom-license"]}
 brax = {version = "^0.0.13", optional = true}
 jax = {version = "^0.3.13", optional = true}
 mujoco = {version = ">=3.0.0", optional = true}
+# Note: pufferlib 3.x pins numpy<2.0 and gymnasium<=0.29.1.
+# To avoid downgrades, install with: pip install pufferlib --no-deps
+pufferlib = {version = ">=1.0.0", optional = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -33,3 +36,4 @@ build-backend = "poetry.core.masonry.api"
 atari = ["ale-py", "AutoROM"]
 brax = ["brax", "jax"]
 mujoco = ["mujoco"]
+pufferlib = ["pufferlib"]

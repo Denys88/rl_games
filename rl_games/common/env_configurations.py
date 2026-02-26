@@ -168,8 +168,12 @@ def create_test_env(name, **kwargs):
     return env
 
 def create_minigrid_env(name, **kwargs):
-    import gym_minigrid
-    import gym_minigrid.wrappers
+    import minigrid
+    from minigrid.wrappers import (
+        PositionBonus, ActionBonus,
+        RGBImgObsWrapper, RGBImgPartialObsWrapper,
+        ViewSizeWrapper, ImgObsWrapper,
+    )
 
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
@@ -179,18 +183,18 @@ def create_minigrid_env(name, **kwargs):
     env = gym.make(name, **kwargs)
 
     if state_bonus:
-        env = gym_minigrid.wrappers.StateBonus(env)
+        env = PositionBonus(env)
     if action_bonus:
-        env = gym_minigrid.wrappers.ActionBonus(env)
+        env = ActionBonus(env)
 
     if rgb_fully_obs:
-        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
+        env = RGBImgObsWrapper(env)
     elif rgb_partial_obs:
-        env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
-        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=84//view_size) # Get pixel observations
+        env = ViewSizeWrapper(env, view_size)
+        env = RGBImgPartialObsWrapper(env, tile_size=84//view_size)
 
-    env = gym_minigrid.wrappers.ImgObsWrapper(env)
-    print('minigird_env observation space shape:', env.observation_space)
+    env = ImgObsWrapper(env)
+    print('minigrid_env observation space shape:', env.observation_space)
     return env
 
 
@@ -315,7 +319,7 @@ configurations = {
     },
     'multiwalker_env' : {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM'
     },
     'brax' : {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
@@ -339,6 +343,9 @@ configurations = {
     'myo_gym' : {
         'env_creator' : lambda **kwargs : create_myo(**kwargs),
         'vecenv_type' : 'RAY'
+    },
+    'pufferlib' : {
+        'vecenv_type': 'PUFFERLIB'
     },
 }
 
