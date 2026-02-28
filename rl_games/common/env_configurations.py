@@ -151,6 +151,7 @@ def create_smac_cnn(name, **kwargs):
     has_cv = kwargs.get('central_value', False)
     frames = kwargs.pop('frames', 4)
     transpose = kwargs.pop('transpose', False)
+    as_single_agent = kwargs.pop('as_single_agent', False)
 
     env = SMACEnv(name, **kwargs)
     if has_cv:

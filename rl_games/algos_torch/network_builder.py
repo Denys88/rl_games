@@ -1,5 +1,5 @@
 from rl_games.common import object_factory
-from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch import layers, torch_ext
 
 import torch
 import torch.nn as nn
@@ -586,6 +586,35 @@ class ConvBlock(nn.Module):
         return x
 
 
+class ChannelAttention(nn.Module):
+    def __init__(self, channels, reduction=16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channels, channels // reduction, bias=False),
+            nn.ReLU(),
+            nn.Linear(channels // reduction, channels, bias=False),
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        avg_out = self.fc(self.avg_pool(x).view(b, c))
+        max_out = self.fc(self.max_pool(x).view(b, c))
+        return torch.sigmoid(avg_out + max_out).view(b, c, 1, 1)
+
+
+class SpatialAttention(nn.Module):
+    def __init__(self, kernel_size=7):
+        super().__init__()
+        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size // 2, bias=False)
+
+    def forward(self, x):
+        avg_out = x.mean(dim=1, keepdim=True)
+        max_out = x.amax(dim=1, keepdim=True)
+        return torch.sigmoid(self.conv(torch.cat([avg_out, max_out], dim=1)))
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, channels, activation='relu', use_bn=False, use_zero_init=False, use_attention=False):
         super().__init__()
@@ -962,6 +991,8 @@ class SACBuilder(NetworkBuilder):
                 self.critic_target.load_state_dict(self.critic.state_dict())
 
             mlp_init = self.init_factory.create(**self.initializer)
+            if self.has_cnn:
+                cnn_init = self.init_factory.create(**self.cnn['initializer'])
             for m in self.modules():
                 if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d):
                     cnn_init(m.weight)
