@@ -8,7 +8,7 @@ from rl_games.common.extensions.distributions import TwoHotDist
 class OneHotEncodedAction(nn.Module):
     def __init__(self, in_size, num_actions):
         nn.Module.__init__(self)
-        self.value_linear = nn.Linear(in_size, out_size)
+        self.value_linear = nn.Linear(in_size, num_actions)
         
     def loss(self, value_preds_batch, values, curr_e_clip, return_batch, clip_value):
         value_preds_batch = symlog(value_preds_batch)
@@ -25,7 +25,7 @@ class OneHotEncodedAction(nn.Module):
 class TwoHotEncodedAction(nn.Module):
     def __init__(self, in_size, num_actions, backets=32, min_space=-1.0, max_space=1.0):
         nn.Module.__init__(self)
-        assert(out_size==1)
+        assert(num_actions==1)
         self.value_linear = nn.Linear(in_size, backets * num_actions)
         torch.nn.init.xavier_uniform_(self.value_linear.weight, gain=0.05)
         

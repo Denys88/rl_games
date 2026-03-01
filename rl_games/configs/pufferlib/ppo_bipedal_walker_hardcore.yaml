@@ -1,5 +1,5 @@
 params:
-  seed: 5
+  torch_threads: 4
   algo:
     name: a2c_continuous
 
@@ -21,43 +21,48 @@ params:
         fixed_sigma: True
     mlp:
       units: [256, 128, 64]
+      d2rl: False
       activation: elu
       initializer:
         name: default
 
+  load_checkpoint: False
+  load_path: './nn/walker_hc_pufferlib.pth'
+
   config:
-    name: Walker2d-v4_envpool
-    env_name: envpool
-    normalize_input: True
-    normalize_value: True
-    value_bootstrap: True
+    env_name: pufferlib
+    name: walker_hc_pufferlib
     reward_shaper:
+      min_val: -1
       scale_value: 0.1
     normalize_advantage: True
     gamma: 0.99
     tau: 0.95
-
     learning_rate: 3e-4
     lr_schedule: adaptive
-    kl_threshold: 0.008 
-    grad_norm: 1.0
-    entropy_coef: 0.0
+    kl_threshold: 0.008
+    score_to_win: 300
+    grad_norm: 1.5
+    save_best_after: 10
+    entropy_coef: 0.000
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 64
-    horizon_length: 128
+    num_actors: 32
+    horizon_length: 256
     minibatch_size: 2048
-    mini_epochs: 5
-    critic_coef: 2
-    use_smooth_clamp: True
-    bound_loss_type: regularisation
+    mini_epochs: 4
+    critic_coef: 1
+    normalize_input: True
     bounds_loss_coef: 0.0
-    max_epochs: 1000
+    max_epochs: 20000
+    weight_decay: 0
+
     env_config:
-      env_name: Walker2d-v4
-      seed: 5
+      env_name: BipedalWalkerHardcore-v3
+      backend: Multiprocessing
 
     player:
-      render: True
-
+      render: False
+      games_num: 200
+      deterministic: True

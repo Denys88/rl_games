@@ -46,7 +46,10 @@ class RayWorker:
             action (type depends on env): Action to take.
 
         """
-        next_state, reward, is_done, info = self.env.step(action)
+        next_state, reward, terminated, truncated, info = self.env.step(action)
+        is_done = terminated or truncated if np.isscalar(terminated) else terminated | truncated
+        if 'time_outs' not in info:
+            info['time_outs'] = truncated
 
         if np.isscalar(is_done):
             episode_done = is_done
@@ -58,40 +61,46 @@ class RayWorker:
         return next_state, reward, is_done, info
 
     def seed(self, seed):
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         if hasattr(self.env, 'seed'):
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-            np.random.seed(seed)
-            random.seed(seed)
             self.env.seed(seed)
 
     def render(self):
         self.env.render()
 
     def reset(self):
-        obs = self.env.reset()
+        obs, info = self.env.reset()
         obs = self._obs_to_fp32(obs)
         return obs
 
+    def _unwrapped(self):
+        """Get the unwrapped env, bypassing gymnasium wrappers that don't forward custom attributes."""
+        return getattr(self.env, 'unwrapped', self.env)
+
     def get_action_mask(self):
-        return self.env.get_action_mask()
+        return self._unwrapped().get_action_mask()
 
     def get_number_of_agents(self):
-        if hasattr(self.env, 'get_number_of_agents'):
-            return self.env.get_number_of_agents()
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'get_number_of_agents'):
+            return unwrapped.get_number_of_agents()
         else:
             return 1
 
     def set_weights(self, weights):
-        self.env.update_weights(weights)
+        self._unwrapped().update_weights(weights)
 
     def close(self):
         if hasattr(self.env, 'close'):
             self.env.close()
 
     def can_concat_infos(self):
-        if hasattr(self.env, 'concat_infos'):
-            return self.env.concat_infos
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'concat_infos'):
+            return unwrapped.concat_infos
         else:
             return False
 
@@ -99,21 +108,20 @@ class RayWorker:
         info = {}
         observation_space = self.env.observation_space
 
-        #if isinstance(observation_space, gym.spaces.dict.Dict):
-        #    observation_space = observation_space['observations']
-
         info['action_space'] = self.env.action_space
         info['observation_space'] = observation_space
         info['state_space'] = None
         info['use_global_observations'] = False
         info['agents'] = self.get_number_of_agents()
         info['value_size'] = 1
-        if hasattr(self.env, 'use_central_value'):
-            info['use_global_observations'] = self.env.use_central_value
-        if hasattr(self.env, 'value_size'):
-            info['value_size'] = self.env.value_size
-        if hasattr(self.env, 'state_space'):
-            info['state_space'] = self.env.state_space
+        # Use unwrapped env to access custom attributes through gymnasium wrappers
+        unwrapped = self._unwrapped()
+        if hasattr(unwrapped, 'use_central_value'):
+            info['use_global_observations'] = unwrapped.use_central_value
+        if hasattr(unwrapped, 'value_size'):
+            info['value_size'] = unwrapped.value_size
+        if hasattr(unwrapped, 'state_space'):
+            info['state_space'] = unwrapped.state_space
         return info
 
 
@@ -312,19 +320,30 @@ def register(config_name, func):
     vecenv_config[config_name] = func
 
 def create_vec_env(config_name, num_actors, **kwargs):
-    vec_env_name = configurations[config_name]['vecenv_type']
-    return vecenv_config[vec_env_name](config_name, num_actors, **kwargs)
+    config = configurations[config_name]
+    vec_env_name = config['vecenv_type']
+    # Merge default_env_config from configuration with user kwargs
+    if 'default_env_config' in config:
+        merged_kwargs = {**config['default_env_config'], **kwargs}
+    else:
+        merged_kwargs = kwargs
+    # Pass env_creator through to GYMNASIUM vecenv for manual vectorization
+    if vec_env_name == 'GYMNASIUM' and 'env_creator' in config and 'env_creator' not in merged_kwargs:
+        merged_kwargs['env_creator'] = config['env_creator']
+    return vecenv_config[vec_env_name](config_name, num_actors, **merged_kwargs)
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 
 from rl_games.envs.brax import BraxEnv
 register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
 
-from rl_games.envs.envpool import Envpool
-register('ENVPOOL', lambda config_name, num_actors, **kwargs: Envpool(config_name, num_actors, **kwargs))
-
-from rl_games.envs.cule import CuleEnv
-register('CULE', lambda config_name, num_actors, **kwargs: CuleEnv(config_name, num_actors, **kwargs))
-
 from rl_games.envs.maniskill import ManiskillEnv
 register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(config_name, num_actors, **kwargs))
+
+from rl_games.common.gymnasium_vecenv import GymnasiumVecEnv
+register('GYMNASIUM', lambda config_name, num_actors, **kwargs: GymnasiumVecEnv(config_name, num_actors, **kwargs))
+
+def _create_pufferlib(config_name, num_actors, **kwargs):
+    from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv
+    return PufferLibVecEnv(config_name, num_actors, **kwargs)
+register('PUFFERLIB', _create_pufferlib)

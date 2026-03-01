@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from rl_games.common.gym_compat import gym
+import gymnasium as gym
 import torch
 from rl_games.common.segment_tree import SumSegmentTree, MinSegmentTree
 from rl_games.algos_torch.torch_ext import numpy_to_torch_dtype_dict

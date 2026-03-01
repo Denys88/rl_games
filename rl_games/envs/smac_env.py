@@ -1,10 +1,10 @@
-from rl_games.common.gym_compat import gym
+import gymnasium as gym
 import numpy as np
 from smac.env import StarCraft2Env
 from smac.env import MultiAgentEnv
 
 class SMACEnv(gym.Env):
-    def __init__(self, name="3m",  **kwargs):
+    def __init__(self, name="3m", **kwargs):
         gym.Env.__init__(self)
         self._seed = kwargs.pop('seed', None)
         self.reward_sparse = kwargs.get('reward_sparse', False)
@@ -48,15 +48,15 @@ class SMACEnv(gym.Env):
     def get_number_of_agents(self):
         return self.n_agents
 
-    def reset(self):
+    def reset(self, **kwargs):
         if self._game_num % self.replay_save_freq == 1:
             print('saving replay')
             self.env.save_replay()
         self._game_num += 1
-        obs, state = self.env.reset() # rename, to think remove
+        obs, state = self.env.reset()
         obs_dict = self._preproc_state_obs(state, obs)
 
-        return obs_dict
+        return obs_dict, {}
 
     def _preproc_actions(self, actions):
         actions = actions.copy()
@@ -87,13 +87,14 @@ class SMACEnv(gym.Env):
         obs = self.env.get_obs()
         state = self.env.get_state()
         obses = self._preproc_state_obs(state, obs)
-        rewards = np.repeat (reward, self.n_agents)
-        dones = np.repeat (done, self.n_agents)
+        rewards = np.repeat(reward, self.n_agents)
+        terminated = np.repeat(done and not time_out, self.n_agents)
+        truncated = np.repeat(time_out, self.n_agents)
 
         if fixed_rewards is not None:
             rewards += fixed_rewards
 
-        return obses, rewards, dones, info
+        return obses, rewards, terminated, truncated, info
 
     def get_action_mask(self):
         return np.array(self.env.get_avail_actions(), dtype=bool)
@@ -113,13 +114,12 @@ class MultiDiscreteSmacWrapper(gym.Env):
         self.action_space = gym.spaces.Tuple([self.env.action_space] * self.env.get_number_of_agents())
 
     def step(self, actions):
-        fixed_rewards = None
-        obses, reward, done, info = self.env.step(actions)
-        return obses['state'], reward[0], done[0], info
+        obses, reward, terminated, truncated, info = self.env.step(actions)
+        return obses['state'], reward[0], terminated[0], truncated[0], info
 
-    def reset(self):
-        obses = self.env.reset()
-        return obses['state']
+    def reset(self, **kwargs):
+        obses, info = self.env.reset(**kwargs)
+        return obses['state'], info
 
     def has_action_mask(self):
         return self.env.has_action_mask()

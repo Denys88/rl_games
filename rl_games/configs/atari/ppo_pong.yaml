@@ -75,7 +75,6 @@ params:
     use_diagnostics: False
 
     env_config:
-      env_name: PongNoFrameskip-v4
       has_lives: False
 
     player:

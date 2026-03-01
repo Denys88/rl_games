@@ -1,11 +1,11 @@
-from rl_games.common.gym_compat import gym
+import gymnasium as gym
 import numpy as np
 
 
 class TestRNNEnv(gym.Env):
-    def __init__(self,  **kwargs):
+    def __init__(self, **kwargs):
         gym.Env.__init__(self)
- 
+
         self.obs_dict = {}
         self.max_steps = kwargs.pop('max_steps', 21)
         self.show_time = kwargs.pop('show_time', 1)
@@ -24,7 +24,7 @@ class TestRNNEnv(gym.Env):
 
         self.multi_discrete_space = kwargs.pop('multi_discrete_space', False)
         if self.multi_discrete_space:
-            self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2),gym.spaces.Discrete(3)])
+            self.action_space = gym.spaces.Tuple([gym.spaces.Discrete(2), gym.spaces.Discrete(3)])
         else:
             self.action_space = gym.spaces.Discrete(4)
 
@@ -48,7 +48,7 @@ class TestRNNEnv(gym.Env):
     def get_number_of_agents(self):
         return 1
 
-    def reset(self):
+    def reset(self, **kwargs):
         self._curr_steps = 0
         self._current_pos = [0,0]
         bound = self.max_dist - self.min_dist
@@ -70,7 +70,7 @@ class TestRNNEnv(gym.Env):
             obses["state"] = obs
         else:
             obses = obs
-        return obses
+        return obses, {}
 
     def step_categorical(self, action):
         if self._curr_steps > 1:
@@ -97,7 +97,7 @@ class TestRNNEnv(gym.Env):
                 pass
 
     def step(self, action):
-        info = {}  
+        info = {}
         self._curr_steps += 1
         bound = self.max_dist - self.min_dist
         if self.multi_discrete_space:
@@ -105,15 +105,16 @@ class TestRNNEnv(gym.Env):
         else:
             self.step_categorical(action)
         reward = [0.0, 0.0]
-        done = False
+        terminated = False
+        truncated = False
         dist = self._current_pos - self._goal_pos
         if (dist**2).sum() < 0.0001:
             reward[0] = 1.0
-            info = {'scores' : 1} 
-            done = True
+            info = {'scores' : 1}
+            terminated = True
         elif self._curr_steps == self.max_steps:
-            info = {'scores' : 0} 
-            done = True
+            info = {'scores' : 0}
+            truncated = True
 
         dist_coef = -0.1
         if self.apply_dist_reward:
@@ -126,7 +127,6 @@ class TestRNNEnv(gym.Env):
             show_object = 1
             obs = np.concatenate([self._current_pos, self._goal_pos, [show_object, self._curr_steps]], axis=None)
         obs = obs.astype(np.float32)
-        #state = state.astype(np.float32)
         if self.multi_obs_space:
             obs = {
                 'pos': obs[:2],
@@ -152,8 +152,8 @@ class TestRNNEnv(gym.Env):
             pass
         else:
             reward = reward[0] + reward[1]
-        
-        return obses, np.array(reward).astype(np.float32), done, info
+
+        return obses, np.array(reward).astype(np.float32), terminated, truncated, info
     
     def has_action_mask(self):
         return False

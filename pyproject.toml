@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "rl_games"
-version = "1.6.5"
+version = "2.0.0"
 description = ""
 readme = "README.md"
 authors = [
@@ -9,20 +9,9 @@ authors = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.8.0"
-
-# ───── RL‑Games core deps ──────────────────────────────────────────────────────
-gym        = { version = ">=0.23,<0.24", markers = "python_version < '3.9'"}
-gymnasium  = [
-  { version = ">=0.29.1,<0.30", extras = ["classic_control"], markers = "python_version < '3.9'" },
-  { version = ">=0.29.1",       extras = ["classic_control"], markers = "python_version >= '3.9'" }
-]
-
-torch      = [
-  { version = ">=2.2.2,<2.5.0", markers = "python_version < '3.9'" },
-  { version = ">=2.2.2",        markers = "python_version >= '3.9'" }
-]
-
+python = ">=3.11"
+torch = ">=2.0.0"
+gymnasium = ">=0.29.0"
 tensorboard = "^2.8.0"
 tensorboardX = "^2.5"
 PyYAML = "^6.0"
@@ -31,12 +20,14 @@ setproctitle = "^1.2.2"
 opencv-python = "^4.5.5"
 wandb = ">=0.19.0"
 
-ale-py = {version = "^0.7", optional = true}
+ale-py = {version = "^0.8", optional = true}
 AutoROM = {version = "^0.4.2", optional = true, extras = ["accept-rom-license"]}
 brax = {version = "^0.0.13", optional = true}
 jax = {version = "^0.3.13", optional = true}
-mujoco-py = {version = "^2.1.2", optional = true}
-envpool = {version = "^0.6.1", optional = true}
+mujoco = {version = ">=3.0.0", optional = true}
+# Note: pufferlib 3.x pins numpy<2.0 and gymnasium<=0.29.1.
+# To avoid downgrades, install with: pip install pufferlib --no-deps
+pufferlib = {version = ">=1.0.0", optional = true}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -45,5 +36,5 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.extras]
 atari = ["ale-py", "AutoROM"]
 brax = ["brax", "jax"]
-mujoco = ["mujoco-py"]
-envpool = ["envpool"]
+mujoco = ["mujoco"]
+pufferlib = ["pufferlib"]

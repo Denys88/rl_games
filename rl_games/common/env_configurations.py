@@ -2,20 +2,17 @@ import rl_games.envs.test
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
-from rl_games.envs.envpool import create_envpool
 from rl_games.envs.maniskill import create_maniskill_env
-from rl_games.envs.cule import create_cule
-from rl_games.common.gym_compat import gym, make
+from rl_games.common.gymnasium_vecenv import create_gymnasium_env, wrap_atari
+import gymnasium as gym
+from gymnasium.wrappers import FlattenObservation, FilterObservation
 import numpy as np
+import math
 
 
 class HCRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
         gym.RewardWrapper.__init__(self, env)
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return obs, self.reward(reward), done, info
 
     def reward(self, reward):
         return np.max([-10, reward])
@@ -23,30 +20,30 @@ class HCRewardEnv(gym.RewardWrapper):
 
 class DMControlWrapper(gym.Wrapper):
     def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
+        gym.Wrapper.__init__(self, env)
         self.observation_space = self.env.observation_space['observations']
         self.observation_space.dtype = np.dtype('float32')
 
     def reset(self, **kwargs):
         self.num_stops = 0
-        return self.env.reset(**kwargs)
+        result = self.env.reset(**kwargs)
+        if isinstance(result, tuple):
+            return result[0]
+        return result
 
     def step(self, action):
-        observation, reward, done, info = self.env.step(action)
+        result = self.env.step(action)
+        if len(result) == 5:
+            observation, reward, terminated, truncated, info = result
+            done = terminated or truncated
+        else:
+            observation, reward, done, info = result
         return observation, reward, done, info
 
 
 class DMControlObsWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         gym.ObservationWrapper.__init__(self, env)
-
-    def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
-        return self.observation(obs)
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return self.observation(obs), reward, done, info
 
     def observation(self, obs):
         return obs['observations']
@@ -55,15 +52,11 @@ class DMControlObsWrapper(gym.ObservationWrapper):
 def create_default_gym_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    is_procgen = kwargs.pop('procgen', False)
     limit_steps = kwargs.pop('limit_steps', False)
-    env = make(name, **kwargs)
+    env = gym.make(name, **kwargs)
 
     if frames > 1:
-        if is_procgen:
-            env = wrappers.ProcgenStack(env, frames, True)
-        else:
-            env = wrappers.FrameStack(env, frames, False)
+        env = wrappers.FrameStack(env, frames, False)
     if limit_steps:
         env = wrappers.LimitStepsWrapper(env)
     return env
@@ -74,8 +67,8 @@ def create_goal_gym_env(**kwargs):
     name = kwargs.pop('name')
     limit_steps = kwargs.pop('limit_steps', False)
 
-    env = make(name, **kwargs)
-    env = gym.wrappers.FlattenObservation(gym.wrappers.FilterObservation(env, ['observation', 'desired_goal']))
+    env = gym.make(name, **kwargs)
+    env = FlattenObservation(FilterObservation(env, ['observation', 'desired_goal']))
 
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
@@ -83,18 +76,6 @@ def create_goal_gym_env(**kwargs):
         env = wrappers.LimitStepsWrapper(env)
     return env
 
-
-def create_slime_gym_env(**kwargs):
-    import slimevolleygym
-    from rl_games.envs.slimevolley_selfplay import SlimeVolleySelfplay
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-    self_play = kwargs.pop('self_play', False)
-    if self_play:
-        env = SlimeVolleySelfplay(name, **kwargs) 
-    else:
-        env = make(name, **kwargs)
-    return env
 
 
 def create_myo(**kwargs):
@@ -106,17 +87,10 @@ def create_myo(**kwargs):
 
 
 def create_atari_gym_env(**kwargs):
-    # Register ALE environments if available (for Ray workers)
-    try:
-        import ale_py
-        gym.register_envs(ale_py)
-    except:
-        pass  # ale_py not available or already registered
-
     #frames = kwargs.pop('frames', 1)
     name = kwargs.pop('name')
-    skip = kwargs.pop('skip', 4)
-    episode_life = kwargs.pop('episode_life', True)
+    skip = kwargs.pop('skip',4)
+    episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
     env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
     return env
@@ -125,7 +99,7 @@ def create_atari_gym_env(**kwargs):
 def create_dm_control_env(**kwargs):
     frames = kwargs.pop('frames', 1)
     name = 'dm2gym:'+ kwargs.pop('name')
-    env = make(name, environment_kwargs=kwargs)
+    env = gym.make(name, environment_kwargs=kwargs)
     env = DMControlWrapper(env)
     env = DMControlObsWrapper(env)
     env = wrappers.TimeLimit(env, 1000)
@@ -134,53 +108,6 @@ def create_dm_control_env(**kwargs):
     return env
 
 
-def create_super_mario_env(name='SuperMarioBros-v1'):
-    from rl_games.common.gym_compat import gym  # legacy env, needs old gym API
-    from nes_py.wrappers import JoypadSpace
-    from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-    import gym_super_mario_bros
-    env = gym_super_mario_bros.make(name)
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-
-    env = wrappers.MaxAndSkipEnv(env, skip=4)
-    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
-    return env
-
-
-def create_super_mario_env_stage1(name='SuperMarioBrosRandomStage1-v1'):
-    from rl_games.common.gym_compat import gym  # legacy env, needs old gym API
-    from nes_py.wrappers import JoypadSpace
-    from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
-
-    import gym_super_mario_bros
-    stage_names = [
-        'SuperMarioBros-1-1-v1',
-        'SuperMarioBros-1-2-v1',
-        'SuperMarioBros-1-3-v1',
-        'SuperMarioBros-1-4-v1',
-    ]
-
-    env = gym_super_mario_bros.make(stage_names[1])
-    env = JoypadSpace(env, SIMPLE_MOVEMENT)
-
-    env = wrappers.MaxAndSkipEnv(env, skip=4)
-    env = wrappers.wrap_deepmind(env, episode_life=False, clip_rewards=False, frame_stack=True, scale=True)
-    #env = wrappers.AllowBacktracking(env)
-
-    return env
-
-
-def create_quadrupped_env():
-    from rl_games.common.gym_compat import make  # legacy env
-    import roboschool
-    import quadruppedEnv
-    return wrappers.FrameStack(wrappers.MaxAndSkipEnv(make('QuadruppedWalk-v1'), 4, False), 2, True)
-
-
-def create_roboschool_env(name):
-    from rl_games.common.gym_compat import make  # legacy env
-    import roboschool
-    return make(name)
 
 
 def create_smac(name, **kwargs):
@@ -238,52 +165,49 @@ def create_smac_cnn(name, **kwargs):
 
 def create_test_env(name, **kwargs):
     import rl_games.envs.test
-    env = make(name, **kwargs)
+    env = gym.make(name, **kwargs)
     return env
 
 def create_minigrid_env(name, **kwargs):
-    import gym_minigrid
-    import gym_minigrid.wrappers
+    import minigrid
+    from minigrid.wrappers import (
+        PositionBonus, ActionBonus,
+        RGBImgObsWrapper, RGBImgPartialObsWrapper,
+        ViewSizeWrapper, ImgObsWrapper,
+    )
 
     state_bonus = kwargs.pop('state_bonus', False)
     action_bonus = kwargs.pop('action_bonus', False)
     rgb_fully_obs = kwargs.pop('rgb_fully_obs', False)
     rgb_partial_obs = kwargs.pop('rgb_partial_obs', True)
     view_size = kwargs.pop('view_size', 3)
-    env = make(name, **kwargs)
+    env = gym.make(name, **kwargs)
 
     if state_bonus:
-        env = gym_minigrid.wrappers.StateBonus(env)
+        env = PositionBonus(env)
     if action_bonus:
-        env = gym_minigrid.wrappers.ActionBonus(env)
+        env = ActionBonus(env)
 
     if rgb_fully_obs:
-        env = gym_minigrid.wrappers.RGBImgObsWrapper(env)
+        env = RGBImgObsWrapper(env)
     elif rgb_partial_obs:
-        env = gym_minigrid.wrappers.ViewSizeWrapper(env, view_size)
-        env = gym_minigrid.wrappers.RGBImgPartialObsWrapper(env, tile_size=84//view_size) # Get pixel observations
+        env = ViewSizeWrapper(env, view_size)
+        env = RGBImgPartialObsWrapper(env, tile_size=84//view_size)
 
-    env = gym_minigrid.wrappers.ImgObsWrapper(env)
-    print('minigird_env observation space shape:', env.observation_space)
+    env = ImgObsWrapper(env)
+    print('minigrid_env observation space shape:', env.observation_space)
     return env
 
 
 def create_multiwalker_env(**kwargs):
     from rl_games.envs.multiwalker import MultiWalker
     env = MultiWalker('', **kwargs)
-
-    return env
-
-
-def create_diambra_env(**kwargs):
-    from rl_games.envs.diambra.diambra import DiambraEnv
-    env = DiambraEnv(**kwargs)
     return env
 
 
 def create_env(name, **kwargs):
     steps_limit = kwargs.pop('steps_limit', None)
-    env = make(name, **kwargs)
+    env = gym.make(name, **kwargs)
     if steps_limit is not None:
         env = wrappers.TimeLimit(env, steps_limit)
     return env
@@ -292,129 +216,71 @@ def create_env(name, **kwargs):
 # Dictionary of env_name as key and a sub-dict containing env_type and a env-creator function
 configurations = {
     'CartPole-v1' : {
-        'vecenv_type' : 'RAY',
-        'env_creator' : lambda **kwargs : make('CartPole-v1'),
+        'vecenv_type' : 'GYMNASIUM',
     },
     'CartPoleMaskedVelocity-v1' : {
         'vecenv_type' : 'RAY',
-        'env_creator' : lambda **kwargs : wrappers.MaskVelocityWrapper(make('CartPole-v1'), 'CartPole-v1'),
+        'env_creator' : lambda **kwargs : wrappers.MaskVelocityWrapper(gym.make('CartPole-v1'), 'CartPole-v1'),
     },
     'MountainCarContinuous-v0' : {
-        'vecenv_type' : 'RAY',
-        'env_creator' : lambda **kwargs  : make('MountainCarContinuous-v0'),
+        'vecenv_type' : 'GYMNASIUM',
     },
     'MountainCar-v0' : {
-        'vecenv_type' : 'RAY',
-        'env_creator' : lambda : make('MountainCar-v0'),
+        'vecenv_type' : 'GYMNASIUM',
     },
     'Acrobot-v1' : {
-        'env_creator' : lambda **kwargs  : make('Acrobot-v1'),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM',
     },
-    'Pendulum-v0' : {
-        'env_creator' : lambda **kwargs  : make('Pendulum-v0'),
-        'vecenv_type' : 'RAY'
+    'Pendulum-v1' : {
+        'vecenv_type' : 'GYMNASIUM',
     },
-    'LunarLander-v2' : {
-        'env_creator' : lambda **kwargs  : make('LunarLander-v2'),
-        'vecenv_type' : 'RAY'
+    'LunarLander-v3' : {
+        'vecenv_type' : 'GYMNASIUM',
     },
     'PongNoFrameskip-v4' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('ALE/Pong-v5', skip=4, frameskip=1, repeat_action_probability=0.0),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM',
+        'default_env_config': {
+            'env_name': 'ALE/Pong-v5',
+            'frameskip': 1,  # Disable env's frameskip, let wrapper handle it
+            'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
+        },
     },
     'BreakoutNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/Breakout-v5', skip=4, sticky=False, frameskip=1, repeat_action_probability=0.0),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM',
+        'default_env_config': {
+            'env_name': 'ALE/Breakout-v5',
+            'frameskip': 1,
+            'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
+        },
     },
     'MsPacmanNoFrameskip-v4' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/MsPacman-v5', skip=4, frameskip=1, repeat_action_probability=0.0),
+        'vecenv_type' : 'GYMNASIUM',
+        'default_env_config': {
+            'env_name': 'ALE/MsPacman-v5',
+            'frameskip': 1,
+            'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
+        },
+    },
+    'CarRacing-v2' : {
+        'env_creator' : lambda **kwargs :  wrappers.make_car_racing('CarRacing-v2', skip=4),
         'vecenv_type' : 'RAY'
     },
-    # New Gymnasium v5 Atari environments
-    'Pong-v5' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_atari_deepmind('ALE/Pong-v5', skip=4),
-        'vecenv_type' : 'RAY'
-    },
-    'Breakout-v5' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/Breakout-v5', skip=4, sticky=False),
-        'vecenv_type' : 'RAY'
-    },
-    'MsPacman-v5' : {
-        'env_creator' : lambda  **kwargs :  wrappers.make_atari_deepmind('ALE/MsPacman-v5', skip=4),
-        'vecenv_type' : 'RAY'
-    },
-    'CarRacing-v0' : {
-        'env_creator' : lambda **kwargs  :  wrappers.make_car_racing('CarRacing-v0', skip=4),
-        'vecenv_type' : 'RAY'
-    },
-    'RoboschoolAnt-v1' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('RoboschoolAnt-v1'),
-        'vecenv_type' : 'RAY'
-    },
-    'SuperMarioBros-v1' : {
-        'env_creator' : lambda :  create_super_mario_env(),
-        'vecenv_type' : 'RAY'
-    },
-    'SuperMarioBrosRandomStages-v1' : {
-        'env_creator' : lambda :  create_super_mario_env('SuperMarioBrosRandomStages-v1'),
-        'vecenv_type' : 'RAY'
-    },
-    'SuperMarioBrosRandomStage1-v1' : {
-        'env_creator' : lambda **kwargs  :  create_super_mario_env_stage1('SuperMarioBrosRandomStage1-v1'),
-        'vecenv_type' : 'RAY'
-    },
-    'RoboschoolHalfCheetah-v1' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('RoboschoolHalfCheetah-v1'),
-        'vecenv_type' : 'RAY'
-    },
-    'RoboschoolHumanoid-v1' : {
-        'env_creator' : lambda : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoid-v1'), 1, True),
-        'vecenv_type' : 'RAY'
-    },
-    'LunarLanderContinuous-v2' : {
-        'env_creator' : lambda **kwargs  : make('LunarLanderContinuous-v2'),
-        'vecenv_type' : 'RAY'
-    },
-    'RoboschoolHumanoidFlagrun-v1' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(create_roboschool_env('RoboschoolHumanoidFlagrun-v1'), 1, True),
-        'vecenv_type' : 'RAY'
+    'LunarLanderContinuous-v3' : {
+        'vecenv_type' : 'GYMNASIUM',
     },
     'BipedalWalker-v3' : {
-        'env_creator' : lambda **kwargs  : create_env('BipedalWalker-v3', **kwargs),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM',
     },
     'BipedalWalkerCnn-v3' : {
-        'env_creator' : lambda **kwargs  : wrappers.FrameStack(HCRewardEnv(make('BipedalWalker-v3')), 4, False),
+        'env_creator' : lambda **kwargs : wrappers.FrameStack(HCRewardEnv(gym.make('BipedalWalker-v3')), 4, False),
         'vecenv_type' : 'RAY'
     },
     'BipedalWalkerHardcore-v3' : {
-        'env_creator' : lambda **kwargs  : make('BipedalWalkerHardcore-v3'),
-        'vecenv_type' : 'RAY'
-    },
-    'ReacherPyBulletEnv-v0' : {
-        'env_creator' : lambda **kwargs  : create_roboschool_env('ReacherPyBulletEnv-v0'),
-        'vecenv_type' : 'RAY'
+        'vecenv_type' : 'GYMNASIUM',
     },
     'BipedalWalkerHardcoreCnn-v3' : {
-        'env_creator' : lambda : wrappers.FrameStack(make('BipedalWalkerHardcore-v3'), 4, False),
+        'env_creator' : lambda **kwargs : wrappers.FrameStack(gym.make('BipedalWalkerHardcore-v3'), 4, False),
         'vecenv_type' : 'RAY'
-    },
-    'QuadruppedWalk-v1' : {
-        'env_creator' : lambda **kwargs  : create_quadrupped_env(),
-        'vecenv_type' : 'RAY'
-    },
-    'FlexAnt' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/ant.yaml'),
-        'vecenv_type' : 'ISAAC'
-    },
-    'FlexHumanoid' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid.yaml'),
-        'vecenv_type' : 'ISAAC'
-    },
-    'FlexHumanoidHard' : {
-        'env_creator' : lambda **kwargs  : create_flex(FLEX_PATH + '/demo/gym/cfg/humanoid_hard.yaml'),
-        'vecenv_type' : 'ISAAC'
     },
     'smac' : {
         'env_creator' : lambda **kwargs : create_smac(**kwargs),
@@ -444,10 +310,6 @@ configurations = {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
-    'slime_gym' : {
-        'env_creator' : lambda **kwargs : create_slime_gym_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
     'test_env' : {
         'env_creator' : lambda **kwargs : create_test_env(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'
@@ -458,31 +320,33 @@ configurations = {
     },
     'multiwalker_env' : {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
-    'diambra': {
-        'env_creator': lambda **kwargs: create_diambra_env(**kwargs),
-        'vecenv_type': 'RAY'
+        'vecenv_type' : 'GYMNASIUM'
     },
     'brax' : {
         'env_creator': lambda **kwargs: create_brax_env(**kwargs),
-        'vecenv_type': 'BRAX' 
+        'vecenv_type': 'BRAX'
     },
     'maniskill' : {
         'env_creator': lambda **kwargs: create_maniskill_env(**kwargs),
-        'vecenv_type': 'MANISKILL' 
+        'vecenv_type': 'MANISKILL'
     },
-    'envpool': {
-        'env_creator': lambda **kwargs: create_envpool(**kwargs),
-        'vecenv_type': 'ENVPOOL'
+    'gymnasium' : {
+        'env_creator': lambda **kwargs: create_gymnasium_env(**kwargs),
+        'vecenv_type': 'GYMNASIUM'
     },
-    'cule': {
-        'env_creator': lambda **kwargs: create_cule(**kwargs),
-        'vecenv_type': 'CULE'
+    'atari_gymnasium' : {
+        'vecenv_type': 'GYMNASIUM',
+        'default_env_config': {
+            'frameskip': 1,  # Disable env's frameskip, let wrapper handle it
+            'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
+        },
     },
     'myo_gym' : {
         'env_creator' : lambda **kwargs : create_myo(**kwargs),
         'vecenv_type' : 'RAY'
+    },
+    'pufferlib' : {
+        'vecenv_type': 'PUFFERLIB'
     },
 }
 

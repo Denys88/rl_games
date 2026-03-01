@@ -34,7 +34,7 @@ params:
   load_path: path
 
   config:
-    env_name: Pendulum-v0
+    env_name: Pendulum-v1
     reward_shaper:
       scale_value: 0.01
     normalize_advantage: True
