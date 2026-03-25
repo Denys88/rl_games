@@ -40,6 +40,7 @@ class SACAgent(BaseAlgorithm):
         self.init_alpha = config["init_alpha"]
         self.learnable_temperature = config["learnable_temperature"]
         self.replay_buffer_size = config["replay_buffer_size"]
+        self.save_replay_buffer = config.get("save_replay_buffer", False)
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
@@ -264,7 +265,10 @@ class SACAgent(BaseAlgorithm):
         state['frame'] = self.frame
         state['actor_optimizer'] = self.actor_optimizer.state_dict()
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
-        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()        
+        state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
+
+        if self.save_replay_buffer:
+            state['replay_buffer'] = self.replay_buffer.state_dict()
 
         return state
 
@@ -280,6 +284,9 @@ class SACAgent(BaseAlgorithm):
         self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+
+        if 'replay_buffer' in weights:
+            self.replay_buffer.load_state_dict(weights['replay_buffer'])
 
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)

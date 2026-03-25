@@ -301,6 +301,28 @@ class VectorizedReplayBuffer:
 
         return obses, actions, rewards, next_obses, dones
 
+    def state_dict(self):
+        """Return the replay buffer state for checkpointing."""
+        return {
+            'obses': self.obses.cpu(),
+            'next_obses': self.next_obses.cpu(),
+            'actions': self.actions.cpu(),
+            'rewards': self.rewards.cpu(),
+            'dones': self.dones.cpu(),
+            'idx': self.idx,
+            'full': self.full,
+        }
+
+    def load_state_dict(self, state):
+        """Restore the replay buffer state from a checkpoint."""
+        self.obses.copy_(state['obses'].to(self.device))
+        self.next_obses.copy_(state['next_obses'].to(self.device))
+        self.actions.copy_(state['actions'].to(self.device))
+        self.rewards.copy_(state['rewards'].to(self.device))
+        self.dones.copy_(state['dones'].to(self.device))
+        self.idx = state['idx']
+        self.full = state['full']
+
 
 class ExperienceBuffer:
     """
