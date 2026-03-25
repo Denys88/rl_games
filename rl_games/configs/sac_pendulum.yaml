@@ -1,0 +1,51 @@
+params:
+  seed: 42
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+        scale: 1.0
+    log_std_bounds: [-5, 2]
+    mlp:
+      units: [256, 256]
+      activation: relu
+      initializer:
+        name: default
+
+  config:
+    name: Pendulum_sac
+    env_name: openai_gym
+    normalize_input: False
+    reward_shaper:
+      scale_value: 1.0
+    gamma: 0.99
+    critic_tau: 0.005
+    init_alpha: 1.0
+    learnable_temperature: True
+    actor_lr: 3e-4
+    critic_lr: 3e-4
+    alpha_lr: 3e-4
+    batch_size: 256
+    replay_buffer_size: 100000
+    num_warmup_steps: 50
+    num_steps_per_episode: 1
+    max_epochs: 200
+    save_replay_buffer: True
+    device: cuda:0
+    env_config:
+      name: Pendulum-v1

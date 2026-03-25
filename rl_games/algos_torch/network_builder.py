@@ -1033,6 +1033,12 @@ class SACBuilder(NetworkBuilder):
             self.joint_obs_actions_config = params.get('joint_obs_actions', None)
             self.log_std_bounds = params.get('log_std_bounds', None)
 
+            if 'cnn' in params:
+                self.has_cnn = True
+                self.cnn = params['cnn']
+            else:
+                self.has_cnn = False
+
             if self.has_space:
                 self.is_discrete = 'discrete' in params['space']
                 self.is_continuous = 'continuous' in params['space']
