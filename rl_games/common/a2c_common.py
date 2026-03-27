@@ -319,7 +319,22 @@ class A2CBase(BaseAlgorithm):
         self.value_bootstrap = self.config.get('value_bootstrap', True)
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
-        if self.use_smooth_clamp:
+        self.delightful_pg = self.config.get('delightful_pg', None)
+
+        self.dpg_temperature = self.config.get('dpg_temperature', 1.0)
+
+        self.dpg_kl_coef = self.config.get('dpg_kl_coef', 0.0)
+
+        self.dpg_batch_whiten = self.config.get('dpg_batch_whiten', False)
+
+        if self.delightful_pg == 'vanilla':
+            self.actor_loss_func = common_losses.make_delightful_vanilla_loss(
+                self.dpg_temperature, self.dpg_kl_coef, self.dpg_batch_whiten)
+        elif self.delightful_pg == 'old':
+            self.actor_loss_func = common_losses.delightful_actor_loss_old
+        elif self.delightful_pg == 'curr':
+            self.actor_loss_func = common_losses.delightful_actor_loss_curr
+        elif self.use_smooth_clamp:
             self.actor_loss_func = common_losses.smoothed_actor_loss
         else:
             self.actor_loss_func = common_losses.actor_loss

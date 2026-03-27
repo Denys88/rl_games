@@ -245,14 +245,13 @@ class WarpCartPole(gym.Env):
     def step(self, actions):
         self.epoch += 1
 
+        import torch
         if self.continuous:
-            if not isinstance(actions, wp.array):
-                import torch
-                if isinstance(actions, torch.Tensor):
-                    actions = wp.from_torch(actions.float().contiguous())
-                else:
-                    actions = wp.array(np.asarray(actions, dtype=np.float32),
-                                      device=self.wp_device)
+            if isinstance(actions, torch.Tensor):
+                actions = wp.from_torch(actions.float().reshape(-1).contiguous())
+            elif not isinstance(actions, wp.array):
+                actions = wp.array(np.asarray(actions, dtype=np.float32),
+                                  device=self.wp_device)
 
             wp.launch(
                 cartpole_step_continuous,
@@ -262,13 +261,11 @@ class WarpCartPole(gym.Env):
                 device=self.wp_device,
             )
         else:
-            if not isinstance(actions, wp.array):
-                import torch
-                if isinstance(actions, torch.Tensor):
-                    actions = wp.from_torch(actions.int().contiguous())
-                else:
-                    actions = wp.array(np.asarray(actions, dtype=np.int32),
-                                      device=self.wp_device)
+            if isinstance(actions, torch.Tensor):
+                actions = wp.from_torch(actions.to(torch.int32).reshape(-1).contiguous())
+            elif not isinstance(actions, wp.array):
+                actions = wp.array(np.asarray(actions, dtype=np.int32),
+                                  device=self.wp_device)
 
             wp.launch(
                 cartpole_step_discrete,

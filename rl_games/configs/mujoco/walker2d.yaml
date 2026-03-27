@@ -53,6 +53,7 @@ params:
     use_smooth_clamp: True
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
+    device: cuda:0
     max_epochs: 1000
     env_config:
       name: Walker2d-v4

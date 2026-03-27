@@ -80,13 +80,9 @@ class WarpVecEnv(IVecEnv):
         return x.cpu().numpy()
 
     def step(self, actions):
-        # Convert actions from torch to whatever the env expects
-        if self._warp_available:
-            warp_actions = self._from_torch(actions.reshape(-1) if actions.dim() > 1 else actions)
-        else:
-            warp_actions = actions
-
-        result = self.env.step(warp_actions)
+        # Pass torch tensors directly — the env handles conversion
+        # This avoids dtype issues (e.g. int64 -> int32 for discrete actions)
+        result = self.env.step(actions)
 
         # Handle both 4-tuple and 5-tuple returns
         if len(result) == 5:

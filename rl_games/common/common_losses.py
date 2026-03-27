@@ -82,6 +82,102 @@ def actor_loss(
     return a_loss
 
 
+def make_delightful_vanilla_loss(temperature=1.0, kl_coef=0.0, batch_whiten=False):
+    """Factory for vanilla DG loss with configurable temperature, KL reg, and batch whitening."""
+    def delightful_actor_loss_vanilla(
+        old_action_neglog_probs_batch,
+        action_neglog_probs,
+        advantage,
+        is_ppo: bool,
+        curr_e_clip: float
+    ):
+        """
+        Vanilla Delightful Policy Gradient — no PPO clipping, no importance sampling.
+        loss = gate * neglog_prob * advantage + kl_coef * approx_kl
+        where gate = sigmoid(delight / temperature)
+
+        With batch_whiten=True, delight is normalized to zero mean and unit variance
+        across the batch before the sigmoid, as recommended for continuous actions
+        where raw surprisal scale varies widely.
+        """
+        surprisal = old_action_neglog_probs_batch.detach()
+        delight = advantage * surprisal
+
+        if batch_whiten:
+            # Normalize delight across the batch for stable gating
+            delight_mean = delight.mean()
+            delight_std = delight.std() + 1e-8
+            delight = (delight - delight_mean) / delight_std
+
+        gate = torch.sigmoid(delight / temperature)
+        a_loss = gate * action_neglog_probs * advantage
+
+        if kl_coef > 0.0:
+            log_ratio = old_action_neglog_probs_batch - action_neglog_probs
+            approx_kl = 0.5 * log_ratio ** 2
+            a_loss = a_loss + kl_coef * approx_kl
+
+        return a_loss
+    return delightful_actor_loss_vanilla
+
+
+def delightful_actor_loss_old(
+    old_action_neglog_probs_batch,
+    action_neglog_probs,
+    advantage,
+    is_ppo: bool,
+    curr_e_clip: float
+):
+    """
+    Delightful Policy Gradient loss using OLD model log probs for surprisal.
+    Surprisal gates the PPO surrogate: high-surprisal transitions with positive
+    advantage get upweighted, low-surprisal ones get downweighted.
+    """
+    if is_ppo:
+        # surprisal from old policy: -log_prob_old = neglog_prob_old
+        surprisal = old_action_neglog_probs_batch.detach()
+        delight = advantage * surprisal
+        gate = torch.sigmoid(delight)
+
+        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
+        surr1 = advantage * ratio
+        surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+        ppo_surrogate = torch.min(surr1, surr2)
+        a_loss = -(gate * ppo_surrogate)
+    else:
+        a_loss = action_neglog_probs * advantage
+
+    return a_loss
+
+
+def delightful_actor_loss_curr(
+    old_action_neglog_probs_batch,
+    action_neglog_probs,
+    advantage,
+    is_ppo: bool,
+    curr_e_clip: float
+):
+    """
+    Delightful Policy Gradient loss using CURRENT model log probs for surprisal.
+    Same gating idea but surprisal comes from the current policy.
+    """
+    if is_ppo:
+        # surprisal from current policy: -log_prob = neglog_prob
+        surprisal = action_neglog_probs.detach()
+        delight = advantage * surprisal
+        gate = torch.sigmoid(delight)
+
+        ratio = torch.exp(old_action_neglog_probs_batch - action_neglog_probs)
+        surr1 = advantage * ratio
+        surr2 = advantage * torch.clamp(ratio, 1.0 - curr_e_clip, 1.0 + curr_e_clip)
+        ppo_surrogate = torch.min(surr1, surr2)
+        a_loss = -(gate * ppo_surrogate)
+    else:
+        a_loss = action_neglog_probs * advantage
+
+    return a_loss
+
+
 def decoupled_actor_loss(
     behavior_action_neglog_probs,
     action_neglog_probs,
