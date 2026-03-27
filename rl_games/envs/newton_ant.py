@@ -234,7 +234,7 @@ class NewtonAnt(gym.Env):
             actions_torch = torch.tensor(actions, device=self.device, dtype=torch.float32)
 
         # Map 8 actions per env to joint dofs (skip free joint 6 dofs)
-        act_torch = actions_torch.reshape(self.count_env, 8) * 15.0  # gear=15 from nv_ant.xml
+        act_torch = actions_torch.reshape(self.count_env, 8) * 50.0
 
         # Set both joint_act AND joint_f for compatibility with different solvers
         act_flat = wp.to_torch(self.control.joint_act)
