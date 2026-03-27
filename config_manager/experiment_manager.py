@@ -129,14 +129,16 @@ class ExperimentRunner:
         runner.run_all(configs, max_parallel=2)
     """
 
-    def __init__(self, runner_script: str, output_dir: str):
+    def __init__(self, runner_script: str, output_dir: str, extra_args: list = None):
         """
         Args:
             runner_script: path to rl_games runner.py entry point
             output_dir: directory where experiment configs and results are saved
+            extra_args: additional CLI args passed to runner.py (e.g. ["--track", "--wandb-project-name", "my_sweep"])
         """
         self.runner_script = runner_script
         self.output_dir = output_dir
+        self.extra_args = extra_args or []
 
     def run_single(self, config: Config, run_info: dict) -> dict:
         """Run a single experiment as a subprocess.
@@ -159,14 +161,24 @@ class ExperimentRunner:
         config_path = os.path.join(exp_dir, "config.yaml")
         config.to_yaml_file(config_path)  # You'll need to add this to Config
         
-        cmd = ["python", self.runner_script, "--file", config_path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
+        cmd = ["python", self.runner_script, "--train", "--file", config_path] + self.extra_args
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        stdout_lines = []
+        prefix = f"[{run_info['name']}]"
+        for line in process.stdout:
+            line = line.rstrip()
+            stdout_lines.append(line)
+            print(f"{prefix} {line}")
+
+        process.wait()
+        full_stdout = "\n".join(stdout_lines)
+            
         return {
             **run_info,
-            "status": "success" if result.returncode == 0 else "failed",
-            "return_code": result.returncode,
-            "reward": parse_reward_from_stdout(result.stdout),
+            "status": "success" if process.returncode == 0 else "failed",
+            "return_code": process.returncode,
+            "reward": parse_reward_from_stdout(full_stdout),
             "config_path": config_path,
             "exp_dir": exp_dir,
         }
@@ -195,7 +207,29 @@ class ExperimentRunner:
             result = self.run_single(config, run_info)
             results.append(result)
 
+            # Save incremental results after each run (crash protection)
+            self._save_results(results)
+
         return results
+
+    def _save_results(self, results: list):
+        """Save results to JSON after each experiment for crash recovery."""
+        import json
+        results_path = os.path.join(self.output_dir, "results.json")
+        # Convert numpy types to Python types for JSON serialization
+        serializable = []
+        for r in results:
+            entry = {}
+            for k, v in r.items():
+                if isinstance(v, (np.floating, np.integer)):
+                    entry[k] = v.item()
+                elif isinstance(v, float) and np.isnan(v):
+                    entry[k] = None
+                else:
+                    entry[k] = v
+            serializable.append(entry)
+        with open(results_path, 'w') as f:
+            json.dump(serializable, f, indent=2)
 
 
 class ResultTracker:
@@ -214,7 +248,7 @@ class ResultTracker:
           (c) Parse tensorboard logs (most data, but complex)
           Start with (a) or (b), whichever is easier to hook into rl_games.
 
-        - What metric to track? For RL: typically final mean reward.
+        - What metric to track? For RL: typically final mean reward, but could be something different, for example a success rate.
           rl_games prints "reward: <value>" during training — could parse that.
     """
 
@@ -238,27 +272,49 @@ class ResultTracker:
         """
         self.results.extend(results)
 
-    def leaderboard(self, metric: str = "reward", ascending: bool = False) -> list:
+    def leaderboard(self, metric: str = "reward", topk: int = None, ascending: bool = False) -> list:
         """Produce a ranked list of sweep variants, aggregated across seeds.
 
-        Returns:
-            List of dicts sorted by mean metric, e.g.:
-            [
-                {"variant": "lr=3e-4_gamma=0.99", "mean": 10234, "std": 412, "n_seeds": 3},
-                {"variant": "lr=1e-4_gamma=0.99", "mean": 9876,  "std": 523, "n_seeds": 3},
-                ...
-            ]
+        Args:
+            metric: key in result dict to rank by (default "reward")
+            topk: if set, return only the top k variants
+            ascending: if True, sort ascending (for loss-like metrics)
 
-        TODO: Implement by:
-            1. Group self.results by variant_id
-            2. For each group, compute mean and std of the metric
-            3. Sort by mean (descending for reward, ascending for loss)
+        Returns:
+            List of dicts sorted by mean metric.
         """
+        # Group metric values by variant
         groups = defaultdict(list)
         for result in self.results:
             groups[result["variant_id"]].append(result[metric])
 
-        
+        # Find overrides for each variant (grab from first matching result)
+        variant_overrides = {}
+        for result in self.results:
+            vid = result["variant_id"]
+            if vid not in variant_overrides:
+                variant_overrides[vid] = result.get("overrides", {})
+
+        # Build summary per variant
+        board = []
+        for vid, values in groups.items():
+            desc = ", ".join(f"{k.split('.')[-1]}={v}" for k, v in variant_overrides.get(vid, {}).items())
+            board.append({
+                "variant_id": vid,
+                "variant": desc or f"variant_{vid}",
+                "overrides": variant_overrides.get(vid, {}),
+                "mean": np.mean(values),
+                "std": np.std(values),
+                "n_seeds": len(values),
+            })
+
+        board.sort(key=lambda x: x["mean"], reverse=not ascending)
+
+        if topk is not None:
+            board = board[:topk]
+
+        return board
+
 
 
 class ExperimentManager:
@@ -282,12 +338,21 @@ class ExperimentManager:
         print(em.leaderboard())
     """
 
-    def __init__(self, base_config_path: str, output_dir: str, runner_script: str):
+    # Keys that are training budget, not hyperparameters — excluded from experiment names
+    DEFAULT_SKIP_KEYS = {
+        "params.config.max_epochs",
+        "params.config.max_frames",
+        "params.config.max_steps",
+    }
+
+    def __init__(self, base_config_path: str, output_dir: str, runner_script: str,
+                 name_skip_keys: set = None, extra_args: list = None):
         self.base_config = Config.from_yaml_file(base_config_path)
         self.sweep = SweepSpec()
-        self.runner = ExperimentRunner(runner_script, output_dir)
+        self.runner = ExperimentRunner(runner_script, output_dir, extra_args)
         self.tracker = ResultTracker(output_dir)
         self.output_dir = output_dir
+        self.name_skip_keys = name_skip_keys if name_skip_keys is not None else self.DEFAULT_SKIP_KEYS
 
     def _expand_configs(self, seeds: list) -> list:
         """Generate all (config, experiment_name) pairs from sweep x seeds.
@@ -316,11 +381,20 @@ class ExperimentManager:
 
                 # Inject seed
                 config.set("params.seed", seed)
-                # TODO: Also set params.config.env_config.seed if it exists
-                # TODO: Make name more descriptive — include swept param values
+                if config.get("params.config.env_config.seed") is not None:
+                    config.set("params.config.env_config.seed", seed)
+
+                # Build descriptive name from swept params
+                env_name = config.get("params.config.env_config.env_name", "exp")
+                parts = [f"{k.split('.')[-1]}={v}" for k, v in overrides.items() if k not in self.name_skip_keys]
+                parts.append(f"seed={seed}")
+                name = env_name + "_" + "_".join(parts)
+
+                # Set rl_games experiment name so tensorboard runs are distinguishable
+                config.set("params.config.name", name)
 
                 run_info_dict = {
-                    "name": f"variant_{i:03d}_seed_{seed}",
+                    "name": name,
                     "variant_id": i,
                     "seed": seed,
                     "overrides": overrides
@@ -337,11 +411,67 @@ class ExperimentManager:
             1. Generate all configs via _expand_configs()
             2. Pass to ExperimentRunner.run_all()
             3. Collect results into ResultTracker
+            4. Save experiment summary for reproducibility
         """
+        self._seeds = seeds
         configs = self._expand_configs(seeds)
         results = self.runner.run_all(configs, max_parallel)
         self.tracker.add_results(results)
+        self._save_experiment_summary(seeds, results)
 
-    def leaderboard(self, metric: str = "reward"):
+    def _save_experiment_summary(self, seeds: list, results: list):
+        """Save everything needed to reproduce and understand this sweep."""
+        import json
+        from datetime import datetime
+
+        summary = {
+            "timestamp": datetime.now().isoformat(),
+            "base_config_path": os.path.abspath(self.runner.runner_script),
+            "base_config": self.base_config.to_dict(),
+            "sweep_params": self.sweep._grid_params,
+            "seeds": seeds,
+            "num_variants": len(self.sweep.generate_grid()),
+            "num_total_runs": len(results),
+            "results": [],
+            "leaderboard": [],
+        }
+
+        # Per-run results (convert numpy types for JSON)
+        for r in results:
+            entry = {}
+            for k, v in r.items():
+                if isinstance(v, (np.floating, np.integer)):
+                    entry[k] = v.item()
+                elif isinstance(v, float) and np.isnan(v):
+                    entry[k] = None
+                else:
+                    entry[k] = v
+            summary["results"].append(entry)
+
+        # Leaderboard
+        for entry in self.tracker.leaderboard():
+            summary["leaderboard"].append({
+                "variant": entry["variant"],
+                "overrides": entry["overrides"],
+                "mean": float(entry["mean"]),
+                "std": float(entry["std"]),
+                "n_seeds": entry["n_seeds"],
+            })
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        summary_path = os.path.join(self.output_dir, "experiment_summary.json")
+        with open(summary_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+        print(f"\nExperiment summary saved to: {summary_path}")
+
+    def leaderboard(self, metric: str = "reward", topk: int = None, ascending: bool = False):
         """Shortcut to tracker.leaderboard()."""
-        return self.tracker.leaderboard(metric)
+        return self.tracker.leaderboard(metric, topk=topk, ascending=ascending)
+
+    def print_leaderboard(self, metric: str = "reward", topk: int = None, ascending: bool = False):
+        """Print a formatted leaderboard table."""
+        board = self.leaderboard(metric, topk=topk, ascending=ascending)
+        print(f"\n{'Rank':<5} {'Variant':<50} {'Mean':>10} {'Std':>10} {'Seeds':>6}")
+        print("-" * 85)
+        for rank, entry in enumerate(board, 1):
+            print(f"{rank:<5} {entry['variant']:<50} {entry['mean']:>10.1f} {entry['std']:>10.1f} {entry['n_seeds']:>6}")
