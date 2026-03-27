@@ -56,8 +56,8 @@ class NewtonAnt(gym.Env):
 
         self._build_model()
 
-        # Observation: z(1) + local_vel(3) + local_angvel(3) + dof_pos(8) + dof_vel(8) + actions(8) = 31
-        self.obs_size = 31
+        # Observation: z(1) + local_vel(3) + local_angvel(3) + leg_pos(16) + leg_vel(16) + actions(8) = 47
+        self.obs_size = 47
         high = np.inf * np.ones(self.obs_size, dtype=np.float32)
         self.observation_space = spaces.Box(-high, high, dtype=np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, (8,), dtype=np.float32)
@@ -155,25 +155,29 @@ class NewtonAnt(gym.Env):
         vel_local = quat_rotate_inverse(torso_quat, torso_vel)
         angvel_local = quat_rotate_inverse(torso_quat, torso_angvel)
 
-        # Get joint DOF positions and velocities via eval_ik
-        newton.eval_ik(self.model, self.state_0, self.state_0.joint_q, self.state_0.joint_qd)
-        joint_q = wp.to_torch(self.state_0.joint_q)
-        joint_qd = wp.to_torch(self.state_0.joint_qd)
+        # Compute relative leg orientations as proxy for joint angles
+        # This avoids eval_ik which causes memory leaks
+        # Use relative body positions and velocities for leg state
+        leg_pos = body_q[:, 1:, :3]  # (N, 8, 3) all leg body positions
+        leg_vel = body_qd[:, 1:, :3]  # (N, 8, 3) all leg body velocities
 
-        # Reshape per env: joint_q = [x,y,z, qx,qy,qz,qw, j0..j7] = 15 per env
-        jq_per_env = joint_q.reshape(self.count_env, self.jcoord_per_world)
-        jqd_per_env = joint_qd.reshape(self.count_env, self.jdof_per_world)
+        # Relative positions in local torso frame
+        rel_pos = leg_pos - torso_pos.unsqueeze(1)
+        rel_pos_local = torch.stack([
+            quat_rotate_inverse(torso_quat, rel_pos[:, i]) for i in range(rel_pos.shape[1])
+        ], dim=1)  # (N, 8, 3)
 
-        # DOF positions (hinge joints only): indices 7-14 in joint_q
-        dof_pos = jq_per_env[:, 7:15]  # (N, 8)
-        # Normalize to [-1, 1]
-        dof_pos_scaled = 2.0 * (dof_pos - self.dof_limits_lower) / self.dof_range - 1.0
+        # Use x,y components of relative positions as joint angle proxy (8 legs * 2 = 16)
+        dof_pos_scaled = rel_pos_local[:, :, :2].reshape(self.count_env, -1)  # (N, 16)
 
-        # DOF velocities: indices 6-13 in joint_qd (skip free joint 6 dofs)
-        dof_vel = jqd_per_env[:, 6:14]  # (N, 8)
-        dof_vel_scaled = dof_vel * 0.2  # scale factor
+        # Relative velocities in local frame as joint velocity proxy
+        rel_vel = leg_vel - torso_vel.unsqueeze(1)
+        rel_vel_local = torch.stack([
+            quat_rotate_inverse(torso_quat, rel_vel[:, i]) for i in range(rel_vel.shape[1])
+        ], dim=1)
+        dof_vel_scaled = rel_vel_local[:, :, :2].reshape(self.count_env, -1) * 0.2  # (N, 16)
 
-        # Observation: z(1) + local_vel(3) + local_angvel(3) + dof_pos(8) + dof_vel(8) + prev_actions(8) = 31
+        # Observation: z(1) + local_vel(3) + local_angvel(3) + leg_pos(16) + leg_vel(16) + prev_actions(8) = 47
         self.obs_buf = torch.cat([
             torso_pos[:, 2:3],     # z height
             vel_local,              # local linear velocity
@@ -186,7 +190,6 @@ class NewtonAnt(gym.Env):
         # Store for reward
         self.torso_pos = torso_pos
         self.torso_vel = torso_vel
-        self.dof_pos = dof_pos
 
         return self.obs_buf
 
