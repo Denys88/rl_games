@@ -54,9 +54,14 @@ class NewtonAnt(gym.Env):
         self.step_count = torch.zeros(count_env, device=device, dtype=torch.int32)
         self.max_episode_steps = 1000
 
-        # Store initial joint state for resets
-        self.initial_joint_q = self.model.joint_q.numpy().copy()
-        self.initial_joint_qd = self.model.joint_qd.numpy().copy()
+        # Store initial body state for per-world resets
+        import torch
+        self.initial_body_q = wp.to_torch(self.state_0.body_q).clone()
+        self.initial_body_qd = wp.to_torch(self.state_0.body_qd).clone().zero_()
+        self.initial_joint_q = wp.to_torch(self.model.joint_q).clone()
+        self.initial_joint_qd = wp.to_torch(self.model.joint_qd).clone().zero_()
+        self.episode_rewards = torch.zeros(count_env, device=device, dtype=torch.float32)
+        self.episode_lengths = torch.zeros(count_env, device=device, dtype=torch.int32)
 
     def _build_model(self):
         """Build the Newton model with replicated Ant environments."""
@@ -161,37 +166,61 @@ class NewtonAnt(gym.Env):
         return self.obs_buf
 
     def _compute_reward(self, actions):
-        """Compute reward: forward velocity - control cost + alive bonus."""
+        """Compute reward matching MuJoCo Ant-v4:
+        reward = forward_vel + healthy_reward - ctrl_cost
+        """
         import torch
 
         forward_vel = self.velocities[:, 0]  # x velocity
         ctrl_cost = 0.5 * (actions ** 2).sum(dim=-1)
 
-        # Height-based alive check
+        # Healthy check
         height = self.positions[:, 2]
-        alive = (height > 0.2).float()
+        healthy = (height > 0.26) & (height < 3.0)
+        healthy_reward = healthy.float()  # +1 per step if healthy
 
-        self.reward_buf = forward_vel - 0.005 * ctrl_cost + alive * 0.05
+        self.reward_buf = forward_vel + healthy_reward - 0.5 * ctrl_cost
 
-        # Termination: ant fell over
-        self.done_buf = height < 0.2
+        # Termination
+        self.done_buf = ~healthy
         self.step_count += 1
-        self.truncated_buf = self.step_count >= self.max_episode_steps
+        self.truncated_buf = (self.step_count >= self.max_episode_steps) & healthy
 
         return self.reward_buf
+
+    def _auto_reset(self, env_ids):
+        """Reset specific environments by restoring initial body state."""
+        import torch
+
+        if len(env_ids) == 0:
+            return
+
+        body_q = wp.to_torch(self.state_0.body_q)
+        body_qd = wp.to_torch(self.state_0.body_qd)
+
+        for env_id in env_ids:
+            start = env_id * self.bodies_per_world
+            end = start + self.bodies_per_world
+            body_q[start:end] = self.initial_body_q[start:end]
+            body_qd[start:end] = 0.0
+
+        self.step_count[env_ids] = 0
+        self.episode_rewards[env_ids] = 0.0
+        self.episode_lengths[env_ids] = 0
 
     def reset(self, **kwargs):
         """Reset all environments."""
         import torch
 
-        # Reset joint state to initial
-        wp.copy(self.model.joint_q, wp.array(self.initial_joint_q, dtype=wp.float32, device=self.device))
-        wp.copy(self.model.joint_qd, wp.array(self.initial_joint_qd, dtype=wp.float32, device=self.device))
-
-        # Re-evaluate FK
-        newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.state_0)
+        # Restore initial body positions and zero velocities
+        body_q = wp.to_torch(self.state_0.body_q)
+        body_qd = wp.to_torch(self.state_0.body_qd)
+        body_q.copy_(self.initial_body_q)
+        body_qd.zero_()
 
         self.step_count.zero_()
+        self.episode_rewards.zero_()
+        self.episode_lengths.zero_()
 
         return self._get_obs()
 
@@ -205,7 +234,7 @@ class NewtonAnt(gym.Env):
             actions_torch = torch.tensor(actions, device=self.device, dtype=torch.float32)
 
         # Map 8 actions per env to joint dofs (skip free joint 6 dofs)
-        act_torch = actions_torch.reshape(self.count_env, 8) * 10.0
+        act_torch = actions_torch.reshape(self.count_env, 8) * 15.0  # gear=15 from nv_ant.xml
 
         # Set both joint_act AND joint_f for compatibility with different solvers
         act_flat = wp.to_torch(self.control.joint_act)
@@ -229,10 +258,20 @@ class NewtonAnt(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(actions_torch.reshape(self.count_env, 8))
 
-        # Auto-reset done environments (simplified — just mark done)
-        done = (self.done_buf | self.truncated_buf).float()
+        # Track episodes
+        self.episode_rewards += self.reward_buf
+        self.episode_lengths += 1
 
-        return obs, self.reward_buf, done, {'time_outs': self.truncated_buf}
+        # Determine done environments
+        done = (self.done_buf | self.truncated_buf)
+
+        # Auto-reset done environments AFTER computing obs/reward
+        # (rl_games expects the obs from the terminal state, not the reset state)
+        reset_ids = torch.where(done)[0]
+        if len(reset_ids) > 0:
+            self._auto_reset(reset_ids)
+
+        return obs, self.reward_buf, done.float(), {'time_outs': self.truncated_buf}
 
     def get_number_of_agents(self):
         return self.count_env
