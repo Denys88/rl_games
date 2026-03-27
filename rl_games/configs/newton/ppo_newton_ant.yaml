@@ -59,6 +59,7 @@ params:
 
     env_config:
       device: cuda:0
+      action_scale: 5.0
 
     player:
       render: False
