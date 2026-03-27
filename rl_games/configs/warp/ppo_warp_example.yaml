@@ -1,0 +1,77 @@
+# Example PPO config for a Warp GPU-accelerated environment.
+#
+# To use this config:
+# 1. Register your Warp env with rl_games:
+#
+#    from rl_games.common import env_configurations
+#    env_configurations.register('my_warp_env', {
+#        'env_creator': lambda **kwargs: MyWarpEnv(**kwargs),
+#        'vecenv_type': 'WARP'
+#    })
+#
+# 2. Update env_name and env_config below to match your env.
+# 3. Adjust observation/action dimensions in the network config.
+
+params:
+  seed: 42
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 256, 128]
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: warp_ppo_example
+    env_name: my_warp_env  # Replace with your registered env name
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 1024
+    horizon_length: 32
+    minibatch_size: 4096
+    mini_epochs: 5
+    critic_coef: 2
+    use_smooth_clamp: True
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
+    device: cuda:0
+    max_epochs: 5000
+
+    env_config:
+      env_name: my_warp_env
+      device: cuda:0
+
+    player:
+      render: False

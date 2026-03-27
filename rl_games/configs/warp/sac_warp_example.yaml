@@ -1,0 +1,68 @@
+# Example SAC config for a Warp GPU-accelerated environment.
+#
+# To use this config:
+# 1. Register your Warp env with rl_games:
+#
+#    from rl_games.common import env_configurations
+#    env_configurations.register('my_warp_env', {
+#        'env_creator': lambda **kwargs: MyWarpEnv(**kwargs),
+#        'vecenv_type': 'WARP'
+#    })
+#
+# 2. Update env_name and env_config below to match your env.
+# 3. Adjust observation/action dimensions in the network config.
+#
+# SAC tips for Warp envs:
+# - Use num_steps_per_episode >= 100 for enough data per epoch
+# - With many parallel envs (1024+), the replay buffer fills fast
+# - Set num_warmup_steps: 1-5 for GPU envs (fills buffer quickly)
+# - save_replay_buffer: True to resume training across sessions
+
+params:
+  seed: 42
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+    mlp:
+      units: [256, 256, 128]
+      activation: relu
+      initializer:
+        name: default
+    log_std_bounds: [-5, 2]
+
+  config:
+    name: warp_sac_example
+    env_name: my_warp_env  # Replace with your registered env name
+    normalize_input: True
+    reward_shaper:
+      scale_value: 1.0
+    gamma: 0.99
+    critic_tau: 0.005
+    init_alpha: 1.0
+    learnable_temperature: True
+    actor_lr: 3e-4
+    critic_lr: 3e-4
+    alpha_lr: 3e-4
+    batch_size: 4096
+    replay_buffer_size: 1000000
+    num_warmup_steps: 2
+    num_steps_per_episode: 100
+    max_epochs: 2000
+    save_replay_buffer: True
+    device: cuda:0
+    num_actors: 1024
+
+    env_config:
+      env_name: my_warp_env
+      device: cuda:0
+
+    player:
+      render: False
