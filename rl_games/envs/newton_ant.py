@@ -89,8 +89,9 @@ class NewtonAnt(gym.Env):
         self.initial_body_q = wp.to_torch(self.state_0.body_q).clone()
         self.initial_body_qd = wp.to_torch(self.state_0.body_qd).clone().zero_()
 
-        # Previous x position for velocity computation
+        # Previous positions for velocity computation
         self.prev_torso_x = torch.zeros(count_env, device=device, dtype=torch.float32)
+        self.prev_torso_y = torch.zeros(count_env, device=device, dtype=torch.float32)
 
     def _build_model(self):
         """Build the Newton model with replicated Ant environments."""
@@ -117,6 +118,7 @@ class NewtonAnt(gym.Env):
             ant.joint_target_mode[i] = int(newton.JointTargetMode.EFFORT)
 
         builder = newton.ModelBuilder()
+        newton.solvers.SolverMuJoCo.register_custom_attributes(builder)
         builder.replicate(ant, self.count_env)
         builder.add_ground_plane()
 
@@ -181,10 +183,13 @@ class NewtonAnt(gym.Env):
 
     def _compute_reward(self, actions):
         """Compute reward: forward_vel + healthy - ctrl_cost."""
-        # Forward velocity from position delta — body_qd is unreliable with MuJoCo solver
-        forward_vel = (self.torso_pos[:, 0] - self.prev_torso_x) / self.frame_dt
-        forward_vel = forward_vel.clamp(-10.0, 10.0)
+        # Use XY speed (magnitude) — the ant may move in any horizontal direction
+        dx = self.torso_pos[:, 0] - self.prev_torso_x
+        dy = self.torso_pos[:, 1] - self.prev_torso_y
+        forward_vel = torch.sqrt(dx**2 + dy**2) / self.frame_dt
+        forward_vel = forward_vel.clamp(0.0, 10.0)
         self.prev_torso_x = self.torso_pos[:, 0].clone()
+        self.prev_torso_y = self.torso_pos[:, 1].clone()
 
         ctrl_cost = (actions ** 2).sum(dim=-1)
 
@@ -192,7 +197,7 @@ class NewtonAnt(gym.Env):
         healthy = (height > self.termination_height) & (height < 3.0)
         healthy_reward = healthy.float() * 0.05
 
-        self.reward_buf = forward_vel - 0.005 * ctrl_cost + healthy_reward
+        self.reward_buf = 10.0 * forward_vel - 0.005 * ctrl_cost + healthy_reward
 
         self.done_buf = ~healthy
         self.step_count += 1
@@ -215,9 +220,10 @@ class NewtonAnt(gym.Env):
             body_qd[start:end] = 0.0
 
         self.step_count[env_ids] = 0
-        # Set prev_torso_x to reset position to avoid velocity spike
+        # Set prev positions to reset position to avoid velocity spike
         body_q = wp.to_torch(self.state_0.body_q).reshape(self.count_env, self.bodies_per_world, 7)
         self.prev_torso_x[env_ids] = body_q[env_ids, 0, 0]
+        self.prev_torso_y[env_ids] = body_q[env_ids, 0, 1]
         self.prev_actions[env_ids] = 0.0
 
     def reset(self, **kwargs):
@@ -230,9 +236,10 @@ class NewtonAnt(gym.Env):
         self.step_count.zero_()
         self.prev_actions.zero_()
 
-        # Set prev_torso_x to current position (avoid velocity spike on first step)
+        # Set prev positions to current (avoid velocity spike on first step)
         body_q_reshaped = body_q.reshape(self.count_env, self.bodies_per_world, 7)
         self.prev_torso_x = body_q_reshaped[:, 0, 0].clone()
+        self.prev_torso_y = body_q_reshaped[:, 0, 1].clone()
 
         return self._get_obs()
 
