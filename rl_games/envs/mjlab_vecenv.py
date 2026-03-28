@@ -48,7 +48,7 @@ class MjlabVecEnv(IVecEnv):
             shape=(self.obs_dim,), dtype=np.float32
         )
         self.action_space = spaces.Box(
-            low=-np.inf, high=np.inf,
+            low=-1.0, high=1.0,
             shape=(self.env.action_space.shape[-1],), dtype=np.float32
         )
 
@@ -65,18 +65,11 @@ class MjlabVecEnv(IVecEnv):
         done = terminated | truncated
         info['time_outs'] = truncated
 
-        if self.has_critic_obs:
-            obs = {'obs': obs_dict['actor'], 'states': obs_dict['critic']}
-        else:
-            obs = obs_dict['actor']
-
+        obs = obs_dict['actor']
         return obs, reward, done.float(), info
 
     def reset(self):
         obs_dict, _ = self.env.reset()
-
-        if self.has_critic_obs:
-            return {'obs': obs_dict['actor'], 'states': obs_dict['critic']}
         return obs_dict['actor']
 
     def get_number_of_agents(self):
