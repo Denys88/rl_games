@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 atari = ["ale-py>=0.8", "AutoROM[accept-rom-license]>=0.4.2"]
 brax = ["brax>=0.0.13", "jax>=0.3.13"]
-mujoco = ["mujoco>=3.0.0"]
+mujoco = ["mujoco>=3.0.0", "imageio"]
 # Note: pufferlib 3.x pins numpy<2.0 and gymnasium<=0.29.1.
 # To avoid downgrades, install with: pip install pufferlib --no-deps
 pufferlib = ["pufferlib>=1.0.0"]

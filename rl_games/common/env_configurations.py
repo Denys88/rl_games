@@ -268,6 +268,21 @@ configurations = {
     'LunarLanderContinuous-v3' : {
         'vecenv_type' : 'GYMNASIUM',
     },
+    'Ant-v4' : {
+        'vecenv_type' : 'GYMNASIUM',
+    },
+    'HalfCheetah-v4' : {
+        'vecenv_type' : 'GYMNASIUM',
+    },
+    'Hopper-v4' : {
+        'vecenv_type' : 'GYMNASIUM',
+    },
+    'Walker2d-v4' : {
+        'vecenv_type' : 'GYMNASIUM',
+    },
+    'Humanoid-v4' : {
+        'vecenv_type' : 'GYMNASIUM',
+    },
     'BipedalWalker-v3' : {
         'vecenv_type' : 'GYMNASIUM',
     },

@@ -37,9 +37,9 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
-* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) 
-* [Atari Envpool](docs/ATARI_ENVPOOL.md) 
+* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) (rl_games <= 1.6.5)
+* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) (rl_games <= 1.6.5)
+* [Atari Envpool](docs/ATARI_ENVPOOL.md) (rl_games <= 1.6.5)
 * [Random Envs](docs/OTHER.md)  
 
 
@@ -61,11 +61,11 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example (rl_games <= 1.6.5, TODO: update to gymnasium Mujoco).
 * [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
-* [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb) envpool training example.
-* [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb) envpool training example.
-* [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb) envpool training example.
+* [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
+* [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
+* [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
 
 ## Installation
 
@@ -156,8 +156,8 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 *Atari Pong*
 
 ```bash
-python runner.py --train --file rl_games/configs/atari/ppo_pong_envpool.yaml
-python runner.py --play --file rl_games/configs/atari/ppo_pong_envpool.yaml --checkpoint nn/Pong-v5_envpool.pth
+python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
 ```
 
 *Brax Ant*

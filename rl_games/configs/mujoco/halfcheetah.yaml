@@ -28,8 +28,8 @@ params:
         scale: 2.0
 
   config:
-    name: HalfCheetah-v4_ray
-    env_name: openai_gym
+    name: HalfCheetah-v4
+    env_name: HalfCheetah-v4
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -56,7 +56,6 @@ params:
     bounds_loss_coef: 0.0
     max_epochs: 1000
     env_config:
-      name: HalfCheetah-v4
       seed: 5
 
     player:

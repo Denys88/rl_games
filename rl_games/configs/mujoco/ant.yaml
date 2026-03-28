@@ -27,8 +27,8 @@ params:
         name: default
 
   config:
-    name: Ant-v4_ray
-    env_name: openai_gym
+    name: Ant-v4
+    env_name: Ant-v4
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -57,7 +57,6 @@ params:
     bounds_loss_coef: 0.0
 
     env_config:
-      name: Ant-v4
       seed: 5
 
     player:
