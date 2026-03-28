@@ -46,18 +46,19 @@ class NewtonAnt(gym.Env):
     """
 
     def __init__(self, count_env=1, device='cuda:0', sim_substeps=5,
-                 action_scale=0.5, **kwargs):
+                 action_scale=0.5, solver_type='mujoco', **kwargs):
         self.count_env = count_env
         self.device = device
         self.sim_substeps = sim_substeps
         self.sim_dt = 0.005
         self.frame_dt = self.sim_dt * self.sim_substeps
         self.action_scale = action_scale
+        self.solver_type = solver_type
 
         self._build_model()
 
-        # Observation: z(1) + local_vel(3) + local_angvel(3) + leg_pos(16) + leg_vel(16) + actions(8) = 47
-        self.obs_size = 47
+        # Observation: z(1) + quat(4) + vel(3) + angvel(3) + leg_rel_pos(16) = 27
+        self.obs_size = 27
         high = np.inf * np.ones(self.obs_size, dtype=np.float32)
         self.observation_space = spaces.Box(-high, high, dtype=np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, (8,), dtype=np.float32)
@@ -121,14 +122,22 @@ class NewtonAnt(gym.Env):
 
         self.model = builder.finalize(device=self.device)
 
-        self.solver = newton.solvers.SolverMuJoCo(
-            self.model, use_mujoco_contacts=True
-        )
-
-        self.state_0 = self.model.state()
-        self.state_1 = self.model.state()
-        self.control = self.model.control()
-        self.contacts = newton.Contacts(self.solver.get_max_contact_count(), 0)
+        if self.solver_type == 'xpbd':
+            self.solver = newton.solvers.SolverXPBD(self.model)
+            self.state_0 = self.model.state()
+            self.state_1 = self.model.state()
+            self.control = self.model.control()
+            self.contacts = self.model.contacts()
+            self._use_collide = True
+        else:
+            self.solver = newton.solvers.SolverMuJoCo(
+                self.model, use_mujoco_contacts=True
+            )
+            self.state_0 = self.model.state()
+            self.state_1 = self.model.state()
+            self.control = self.model.control()
+            self.contacts = newton.Contacts(self.solver.get_max_contact_count(), 0)
+            self._use_collide = False
 
         newton.eval_fk(self.model, self.model.joint_q, self.model.joint_qd, self.state_0)
 
@@ -138,7 +147,7 @@ class NewtonAnt(gym.Env):
         self.jdof_per_world = self.model.joint_dof_count // self.count_env
 
     def _get_obs(self):
-        """Extract observations following Isaac Lab pattern."""
+        """Simple observations: z + quat + vel + angvel + relative leg positions."""
         body_q = wp.to_torch(self.state_0.body_q)    # (N_bodies, 7)
         body_qd = wp.to_torch(self.state_0.body_qd)  # (N_bodies, 6)
 
@@ -147,47 +156,24 @@ class NewtonAnt(gym.Env):
 
         # Torso state
         torso_pos = body_q[:, 0, :3]       # (N, 3) xyz
-        torso_quat = body_q[:, 0, 3:]      # (N, 4) [qx, qy, qz, qw]
-        torso_vel = body_qd[:, 0, :3]      # (N, 3) linear velocity (world)
-        torso_angvel = body_qd[:, 0, 3:]   # (N, 3) angular velocity (world)
+        torso_quat = body_q[:, 0, 3:]      # (N, 4) quaternion
+        torso_vel = body_qd[:, 0, :3]      # (N, 3) linear velocity
+        torso_angvel = body_qd[:, 0, 3:]   # (N, 3) angular velocity
 
-        # Transform velocities to local frame
-        vel_local = quat_rotate_inverse(torso_quat, torso_vel)
-        angvel_local = quat_rotate_inverse(torso_quat, torso_angvel)
-
-        # Compute relative leg orientations as proxy for joint angles
-        # This avoids eval_ik which causes memory leaks
-        # Use relative body positions and velocities for leg state
-        leg_pos = body_q[:, 1:, :3]  # (N, 8, 3) all leg body positions
-        leg_vel = body_qd[:, 1:, :3]  # (N, 8, 3) all leg body velocities
-
-        # Relative positions in local torso frame
+        # Relative leg positions (x,y only for 8 legs = 16 values)
+        leg_pos = body_q[:, 1:, :3]
         rel_pos = leg_pos - torso_pos.unsqueeze(1)
-        rel_pos_local = torch.stack([
-            quat_rotate_inverse(torso_quat, rel_pos[:, i]) for i in range(rel_pos.shape[1])
-        ], dim=1)  # (N, 8, 3)
+        leg_rel = rel_pos[:, :, :2].reshape(self.count_env, -1)  # (N, 16)
 
-        # Use x,y components of relative positions as joint angle proxy (8 legs * 2 = 16)
-        dof_pos_scaled = rel_pos_local[:, :, :2].reshape(self.count_env, -1)  # (N, 16)
-
-        # Relative velocities in local frame as joint velocity proxy
-        rel_vel = leg_vel - torso_vel.unsqueeze(1)
-        rel_vel_local = torch.stack([
-            quat_rotate_inverse(torso_quat, rel_vel[:, i]) for i in range(rel_vel.shape[1])
-        ], dim=1)
-        dof_vel_scaled = rel_vel_local[:, :, :2].reshape(self.count_env, -1) * 0.2  # (N, 16)
-
-        # Observation: z(1) + local_vel(3) + local_angvel(3) + leg_pos(16) + leg_vel(16) + prev_actions(8) = 47
+        # Observation: z(1) + quat(4) + vel(3) + angvel(3) + leg_rel(16) = 27
         self.obs_buf = torch.cat([
-            torso_pos[:, 2:3],     # z height
-            vel_local,              # local linear velocity
-            angvel_local * 0.25,    # local angular velocity (scaled)
-            dof_pos_scaled,         # normalized joint positions
-            dof_vel_scaled,         # scaled joint velocities
-            self.prev_actions,      # previous actions
+            torso_pos[:, 2:3],
+            torso_quat,
+            torso_vel,
+            torso_angvel,
+            leg_rel,
         ], dim=-1)
 
-        # Store for reward
         self.torso_pos = torso_pos
         self.torso_vel = torso_vel
 
@@ -195,17 +181,18 @@ class NewtonAnt(gym.Env):
 
     def _compute_reward(self, actions):
         """Compute reward: forward_vel + healthy - ctrl_cost."""
-        # Forward velocity from position delta (more stable than instantaneous vel)
+        # Forward velocity from position delta — body_qd is unreliable with MuJoCo solver
         forward_vel = (self.torso_pos[:, 0] - self.prev_torso_x) / self.frame_dt
+        forward_vel = forward_vel.clamp(-10.0, 10.0)
         self.prev_torso_x = self.torso_pos[:, 0].clone()
 
         ctrl_cost = (actions ** 2).sum(dim=-1)
 
         height = self.torso_pos[:, 2]
         healthy = (height > self.termination_height) & (height < 3.0)
-        healthy_reward = healthy.float()
+        healthy_reward = healthy.float() * 0.05
 
-        self.reward_buf = forward_vel + healthy_reward - 0.5 * ctrl_cost
+        self.reward_buf = forward_vel - 0.005 * ctrl_cost + healthy_reward
 
         self.done_buf = ~healthy
         self.step_count += 1
@@ -228,7 +215,9 @@ class NewtonAnt(gym.Env):
             body_qd[start:end] = 0.0
 
         self.step_count[env_ids] = 0
-        self.prev_torso_x[env_ids] = 0.0
+        # Set prev_torso_x to reset position to avoid velocity spike
+        body_q = wp.to_torch(self.state_0.body_q).reshape(self.count_env, self.bodies_per_world, 7)
+        self.prev_torso_x[env_ids] = body_q[env_ids, 0, 0]
         self.prev_actions[env_ids] = 0.0
 
     def reset(self, **kwargs):
@@ -239,8 +228,11 @@ class NewtonAnt(gym.Env):
         body_qd.zero_()
 
         self.step_count.zero_()
-        self.prev_torso_x.zero_()
         self.prev_actions.zero_()
+
+        # Set prev_torso_x to current position (avoid velocity spike on first step)
+        body_q_reshaped = body_q.reshape(self.count_env, self.bodies_per_world, 7)
+        self.prev_torso_x = body_q_reshaped[:, 0, 0].clone()
 
         return self._get_obs()
 
@@ -270,11 +262,14 @@ class NewtonAnt(gym.Env):
         act_per_env[:, 6:14] = torques
 
         # Step physics
+        if self._use_collide:
+            self.model.collide(self.state_0, self.contacts)
         for _ in range(self.sim_substeps):
             self.state_0.clear_forces()
             self.solver.step(self.state_0, self.state_1, self.control, self.contacts, self.sim_dt)
             self.state_0, self.state_1 = self.state_1, self.state_0
-        self.solver.update_contacts(self.contacts, self.state_0)
+        if not self._use_collide:
+            self.solver.update_contacts(self.contacts, self.state_0)
 
         # Get observations and reward
         obs = self._get_obs()

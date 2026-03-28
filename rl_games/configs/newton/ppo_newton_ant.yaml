@@ -59,8 +59,9 @@ params:
 
     env_config:
       device: cuda:0
-      action_scale: 3.0
-      sim_substeps: 4
+      action_scale: 3.3
+      sim_substeps: 5
+      solver_type: mujoco
 
     player:
       render: False
