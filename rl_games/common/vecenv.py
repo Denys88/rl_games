@@ -4,7 +4,6 @@ from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
 import numpy as np
 import random
 from time import sleep
-import torch
 
 
 class RayWorker:
@@ -61,8 +60,6 @@ class RayWorker:
         return next_state, reward, is_done, info
 
     def seed(self, seed):
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
         np.random.seed(seed)
         random.seed(seed)
         if hasattr(self.env, 'seed'):
@@ -347,3 +344,8 @@ def _create_pufferlib(config_name, num_actors, **kwargs):
     from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv
     return PufferLibVecEnv(config_name, num_actors, **kwargs)
 register('PUFFERLIB', _create_pufferlib)
+
+def _create_warp(config_name, num_actors, **kwargs):
+    from rl_games.envs.warp_vecenv import WarpVecEnv
+    return WarpVecEnv(config_name, num_actors, **kwargs)
+register('WARP', _create_warp)

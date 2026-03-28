@@ -1,6 +1,7 @@
+# PPO with Warp GPU CartPole (continuous actions)
+
 params:
-  torch_threads: 4
-  seed: 5
+  seed: 42
   algo:
     name: a2c_continuous
 
@@ -21,22 +22,22 @@ params:
           val: 0
         fixed_sigma: True
     mlp:
-      units: [256, 128, 64]
-      activation: elu
+      units: [64, 64]
+      activation: relu
       initializer:
         name: default
 
   config:
-    name: Walker2d-v4_ray
-    env_name: openai_gym
-    normalize_input: True
+    name: warp_cartpole_continuous
+    env_name: warp_cartpole_continuous
+    normalize_input: False
     normalize_value: True
     value_bootstrap: True
     reward_shaper:
-      scale_value: 0.1
+      scale_value: 1.0
     normalize_advantage: True
     gamma: 0.99
-    tau: 0.95
+    tau: 0.9
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.008
@@ -45,19 +46,19 @@ params:
     truncate_grads: True
     e_clip: 0.2
     clip_value: False
-    num_actors: 64
-    horizon_length: 128
-    minibatch_size: 2048
-    mini_epochs: 5
+    num_actors: 1024
+    horizon_length: 32
+    minibatch_size: 4096
+    mini_epochs: 4
     critic_coef: 2
-    use_smooth_clamp: True
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     device: cuda:0
-    max_epochs: 1000
+    max_epochs: 500
+
     env_config:
-      name: Walker2d-v4
-      seed: 5
+      env_name: warp_cartpole_continuous
+      device: cuda:0
 
     player:
-      render: True
+      render: False

@@ -1,0 +1,54 @@
+# PPO with Warp GPU CartPole (discrete actions)
+
+params:
+  seed: 42
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      discrete:
+    mlp:
+      units: [64, 64]
+      activation: relu
+      initializer:
+        name: default
+
+  config:
+    name: warp_cartpole_discrete
+    env_name: warp_cartpole
+    normalize_input: False
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 8e-4
+    lr_schedule: None
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 1024
+    horizon_length: 32
+    minibatch_size: 4096
+    mini_epochs: 4
+    critic_coef: 1
+    device: cuda:0
+    max_epochs: 300
+    score_to_win: 500
+    value_bootstrap: True
+
+    env_config:
+      env_name: warp_cartpole
+      device: cuda:0
+
+    player:
+      render: False
