@@ -71,7 +71,8 @@ class NewtonAnt(gym.Env):
         self.step_count = torch.zeros(count_env, device=device, dtype=torch.int32)
         self.prev_actions = torch.zeros((count_env, 8), device=device, dtype=torch.float32)
         self.max_episode_steps = 1000
-        self.termination_height = 0.26
+        self.termination_height_min = 0.2
+        self.termination_height_max = 5.0
 
         # Joint gear ratios from nv_ant.xml (all 15)
         self.joint_gears = torch.tensor([15.0] * 8, device=device, dtype=torch.float32)
@@ -194,10 +195,11 @@ class NewtonAnt(gym.Env):
         ctrl_cost = (actions ** 2).sum(dim=-1)
 
         height = self.torso_pos[:, 2]
-        healthy = (height > self.termination_height) & (height < 3.0)
+        healthy = (height > self.termination_height_min) & (height < self.termination_height_max)
         healthy_reward = healthy.float() * 0.05
 
-        self.reward_buf = 10.0 * forward_vel - 0.005 * ctrl_cost + healthy_reward
+        # Match MuJoCo Ant-v4: forward_vel + healthy(1.0) - ctrl(0.5)
+        self.reward_buf = forward_vel + healthy.float() * 1.0 - 0.5 * ctrl_cost
 
         self.done_buf = ~healthy
         self.step_count += 1
