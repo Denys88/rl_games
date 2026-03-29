@@ -20,8 +20,8 @@ params:
     log_std_bounds: [-20, 2]
 
   config:
-    name: Humanoid-v4_SAC
-    env_name: Humanoid-v4
+    name: Humanoid-v5_SAC
+    env_name: gymnasium
     normalize_input: False  # High-dim obs (376) benefits from normalization
     mixed_precision: False
     reward_shaper:
@@ -45,7 +45,7 @@ params:
     num_actors: 32
 
     env_config:
-      env_name: Humanoid-v4
+      env_name: Humanoid-v5
       seed: 5
 
     player:

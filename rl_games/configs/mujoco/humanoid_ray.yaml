@@ -27,8 +27,8 @@ params:
         name: default
 
   config:
-      name: Humanoid-v4_ray
-      env_name: openai_gym
+      name: Humanoid-v5_ray
+      env_name: gymnasium
       score_to_win: 20000
       normalize_input: True
       normalize_value: True
@@ -58,7 +58,7 @@ params:
       critic_coef: 4
 
       env_config:
-        name: Humanoid-v4
+        name: Humanoid-v5
         seed: 5
 
       player:

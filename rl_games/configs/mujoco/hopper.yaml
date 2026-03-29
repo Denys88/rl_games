@@ -27,8 +27,8 @@ params:
         name: default
 
   config:
-    name: Hopper-v4
-    env_name: Hopper-v4
+    name: Hopper-v5
+    env_name: gymnasium
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -57,6 +57,7 @@ params:
     max_epochs: 1000
 
     env_config:
+      env_name: Hopper-v5
       seed: 5
 
     player:

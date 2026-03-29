@@ -27,8 +27,8 @@ params:
         name: default
 
   config:
-    name: Walker2d-v4
-    env_name: Walker2d-v4
+    name: Walker2d-v5
+    env_name: gymnasium
     normalize_input: True
     normalize_value: True
     value_bootstrap: True
@@ -55,6 +55,7 @@ params:
     bounds_loss_coef: 0.0
     max_epochs: 1000
     env_config:
+      env_name: Walker2d-v5
       seed: 5
 
     player:
