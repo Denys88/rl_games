@@ -37,9 +37,9 @@
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)  
 * [BRAX](docs/BRAX.md)  
-* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) 
-* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) 
-* [Atari Envpool](docs/ATARI_ENVPOOL.md) 
+* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) (rl_games <= 1.6.5)
+* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) (rl_games <= 1.6.5)
+* [Atari Envpool](docs/ATARI_ENVPOOL.md) (rl_games <= 1.6.5)
 * [Random Envs](docs/OTHER.md)  
 
 
@@ -61,45 +61,45 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example.
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example (rl_games <= 1.6.5, TODO: update to gymnasium Mujoco).
 * [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
-* [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb) envpool training example.
-* [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb) envpool training example.
-* [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb) envpool training example.
+* [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
+* [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
+* [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
 
 ## Installation
 
-For maximum training performance a preliminary installation of Pytorch 2.2 or newer with CUDA 12.1 or newer is highly recommended:
-
-```bash
-pip3 install torch torchvision
-```
-
-Then:
+For maximum training performance, PyTorch >= 2.2 with CUDA is recommended.
 
 ```bash
 pip install rl-games
-``` 
+```
 
-Or clone the repo and install the latest version from source :
+Or clone the repo and install the latest version from source:
 ```bash
 pip install -e .
 ```
 
-To run CPU-based environments either envpool if supported or Ray are required ```pip install envpool``` or ```pip install ray```
-To run Mujoco, Atari games or Box2d based environments training they need to be additionally installed with ```pip install gym[mujoco]```, ```pip install gym[atari]``` or ```pip install gym[box2d]``` respectively.
-
-To run Atari also ```pip install opencv-python``` is required. For modern Gymnasium/ALE Atari environments, install ```pip install ale-py```. In addition installation of envpool for maximum simulation and training performance of Mujoco and Atari environments is highly recommended: ```pip install envpool```
-
-### EnvPool + NumPy 2+ Incompatibility
-
-**IMPORTANT:** If using EnvPool, you **must** use NumPy 1.x. NumPy 2.0+ is **NOT compatible** with EnvPool and will cause training failures ([see issue](https://github.com/sail-sg/envpool/issues/312)).
-
-Downgrade to NumPy 1.26.4:
+With optional extras (e.g. Atari or Mujoco):
 ```bash
-pip uninstall numpy
-pip install numpy==1.26.4
+pip install -e ".[atari,mujoco]"
 ```
+
+Available extras: `atari`, `mujoco`, `brax`, `pufferlib`.
+
+### Using uv (recommended)
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager. To create a virtual environment and install rl_games:
+
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[mujoco]"
+```
+
+### Legacy note (rl_games 1.6.5 and older)
+
+Older versions used envpool for Atari/Mujoco acceleration. EnvPool requires NumPy 1.x — NumPy 2.0+ is **not compatible** ([see issue](https://github.com/sail-sg/envpool/issues/312)). If using envpool, downgrade with `pip install numpy==1.26.4`.
 
 ## Citing
 
@@ -121,9 +121,9 @@ howpublished = {\url{https://github.com/Denys88/rl_games}},
 ## Development setup
 
 ```bash
-poetry install
-# install cuda related dependencies
-poetry run pip install torch torchvision
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -e ".[atari,mujoco]"
 ```
 
 ## Training
@@ -156,16 +156,8 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 *Atari Pong*
 
 ```bash
-python runner.py --train --file rl_games/configs/atari/ppo_pong_envpool.yaml
-python runner.py --play --file rl_games/configs/atari/ppo_pong_envpool.yaml --checkpoint nn/Pong-v5_envpool.pth
-```
-
-Or with poetry:
-
-```bash
-poetry install -E atari
-poetry run python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
-poetry run python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
+python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
+python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
 ```
 
 *Brax Ant*

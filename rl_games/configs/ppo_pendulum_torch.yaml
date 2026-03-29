@@ -31,7 +31,7 @@ params:
         #scale: 0.001
 
   config:
-    env_name: openai_gym
+    env_name: gymnasium
     reward_shaper:
       scale_value: 0.01
     normalize_advantage: True
@@ -59,4 +59,4 @@ params:
     bounds_loss_coef: 0
 
     env_config:
-      name: Pendulum-v1
+      env_name: Pendulum-v1
