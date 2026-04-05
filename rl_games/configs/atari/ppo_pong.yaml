@@ -14,7 +14,7 @@ params:
       discrete:
 
     cnn:
-      #permute_input: False
+      permute_input: False
       type: conv2d
       activation: elu
       initializer:
@@ -74,8 +74,7 @@ params:
     max_epochs: 500
     use_diagnostics: False
 
-    env_config:
-      has_lives: False
+    env_config: {}
 
     player:
       render: True

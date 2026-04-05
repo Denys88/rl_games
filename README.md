@@ -35,12 +35,11 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
-* [Starcraft 2 Multi Agents](docs/SMAC.md)  
-* [BRAX](docs/BRAX.md)  
-* [Mujoco Envpool](docs/MUJOCO_ENVPOOL.md) (rl_games <= 1.6.5)
-* [DeepMind Envpool](docs/DEEPMIND_ENVPOOL.md) (rl_games <= 1.6.5)
-* [Atari Envpool](docs/ATARI_ENVPOOL.md) (rl_games <= 1.6.5)
-* [Random Envs](docs/OTHER.md)  
+* [Starcraft 2 Multi Agents](docs/SMAC.md)
+* [BRAX](docs/BRAX.md)
+* [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
+* [EnvPool Results](docs/ENVPOOL_LEGACY.md) (rl_games <= 1.6.5)
+* [Random Envs](docs/OTHER.md)
 
 
 Implemented in Pytorch:
@@ -61,7 +60,7 @@ Implemented in Pytorch:
 
 Explore RL Games quick and easily in colab notebooks:
 
-* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_envpool_training.ipynb) Mujoco envpool training example (rl_games <= 1.6.5, TODO: update to gymnasium Mujoco).
+* [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
 * [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)

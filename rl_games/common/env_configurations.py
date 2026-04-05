@@ -4,6 +4,7 @@ from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.common.gymnasium_vecenv import create_gymnasium_env, wrap_atari
+from gymnasium.wrappers import FlattenObservation
 import gymnasium as gym
 import numpy as np
 import math
@@ -49,6 +50,15 @@ class DMControlObsWrapper(gym.ObservationWrapper):
 
 
 
+
+
+def _create_gymnasium_single_env(**kwargs):
+    env_name = kwargs.pop('env_name')
+    flatten_obs = kwargs.pop('flatten_obs', False)
+    env = gym.make(env_name, **kwargs)
+    if flatten_obs:
+        env = FlattenObservation(env)
+    return env
 
 
 def create_myo(**kwargs):
@@ -294,8 +304,12 @@ configurations = {
         'vecenv_type': 'MANISKILL'
     },
     'gymnasium' : {
-        'env_creator': lambda **kwargs: create_gymnasium_env(**kwargs),
+        'env_creator': lambda **kwargs: _create_gymnasium_single_env(**kwargs),
         'vecenv_type': 'GYMNASIUM'
+    },
+    'ray' : {
+        'env_creator' : lambda **kwargs : gym.make(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
     },
     'atari_gymnasium' : {
         'vecenv_type': 'GYMNASIUM',

@@ -28,7 +28,7 @@ params:
 
   config:
       name: Humanoid-v5_ray
-      env_name: gymnasium
+      env_name: ray
       score_to_win: 20000
       normalize_input: True
       normalize_value: True
