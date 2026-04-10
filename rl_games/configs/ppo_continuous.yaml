@@ -46,7 +46,7 @@ params:
       grad_norm: 0.5
       entropy_coef: 0.0
       truncate_grads: True
-      env_name: openai_gym
+      env_name: gymnasium
       e_clip: 0.2
       clip_value: True
       num_actors: 16
@@ -61,5 +61,5 @@ params:
       seq_length: 8
       bounds_loss_coef: 0.001
       env_config:
-        name: BipedalWalkerHardcore-v3
+        env_name: BipedalWalkerHardcore-v3
 

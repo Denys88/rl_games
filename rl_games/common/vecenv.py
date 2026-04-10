@@ -328,7 +328,8 @@ def create_vec_env(config_name, num_actors, **kwargs):
     else:
         merged_kwargs = kwargs
     # Pass env_creator through to GYMNASIUM vecenv for manual vectorization
-    if vec_env_name == 'GYMNASIUM' and 'env_creator' in config and 'env_creator' not in merged_kwargs:
+    # Skip for 'gymnasium' config — GymnasiumVecEnv handles env_name from kwargs natively
+    if vec_env_name == 'GYMNASIUM' and 'env_creator' in config and 'env_creator' not in merged_kwargs and config_name != 'gymnasium':
         merged_kwargs['env_creator'] = config['env_creator']
     return vecenv_config[vec_env_name](config_name, num_actors, **merged_kwargs)
 
@@ -342,6 +343,11 @@ register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(con
 
 from rl_games.common.gymnasium_vecenv import GymnasiumVecEnv
 register('GYMNASIUM', lambda config_name, num_actors, **kwargs: GymnasiumVecEnv(config_name, num_actors, **kwargs))
+
+def _create_envpool(config_name, num_actors, **kwargs):
+    from rl_games.envs.envpool import Envpool
+    return Envpool(config_name, num_actors, **kwargs)
+register('ENVPOOL', _create_envpool)
 
 def _create_pufferlib(config_name, num_actors, **kwargs):
     from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv

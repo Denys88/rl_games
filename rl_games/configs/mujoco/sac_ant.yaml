@@ -1,0 +1,54 @@
+params:
+  seed: 42
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+    mlp:
+      units: [256, 256]
+      activation: relu
+
+      initializer:
+        name: default
+    log_std_bounds: [-20, 2]
+
+  config:
+    name: Ant-v5_SAC
+    env_name: gymnasium
+    normalize_input: False
+    mixed_precision: False
+    reward_shaper:
+      scale_value: 1.0
+    max_frames: 1000000
+    num_steps_per_episode: 1
+    save_best_after: 100
+    save_frequency: 100000
+    gamma: 0.99
+    init_alpha: 1.0
+    alpha_lr: 3e-4
+    actor_lr: 3e-4
+    critic_lr: 3e-4
+    critic_tau: 5e-3
+    batch_size: 256
+    learnable_temperature: True
+    num_updates_per_step: 32  # UTD = 32/32 = 1.0
+    policy_frequency: 2
+    num_warmup_frames: 10000
+    replay_buffer_size: 1000000
+    num_actors: 32
+
+    env_config:
+      env_name: Ant-v5
+      seed: 42
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 10

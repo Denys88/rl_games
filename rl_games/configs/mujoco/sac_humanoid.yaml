@@ -1,0 +1,54 @@
+params:
+  seed: 5
+  algo:
+    name: sac
+
+  model:
+    name: soft_actor_critic
+
+  network:
+    name: soft_actor_critic
+    separate: True
+    space:
+      continuous:
+    mlp:
+      units: [256, 256]
+      activation: relu
+
+      initializer:
+        name: default
+    log_std_bounds: [-20, 2]
+
+  config:
+    name: Humanoid-v5_SAC
+    env_name: gymnasium
+    normalize_input: False  # High-dim obs (376) benefits from normalization
+    mixed_precision: False
+    reward_shaper:
+      scale_value: 1.0
+    max_frames: 2000000  # 2M env steps - Humanoid needs longer training
+    num_steps_per_episode: 1
+    save_best_after: 1000
+    save_frequency: 5000
+    gamma: 0.99
+    init_alpha: 1.0
+    alpha_lr: 3e-4
+    actor_lr: 3e-4
+    critic_lr: 3e-4
+    critic_tau: 5e-3
+    batch_size: 256
+    learnable_temperature: True
+    num_updates_per_step: 32  # UTD = 32/32 = 1.0
+    policy_frequency: 1
+    num_warmup_frames: 25000
+    replay_buffer_size: 1000000
+    num_actors: 32
+
+    env_config:
+      env_name: Humanoid-v5
+      seed: 5
+
+    player:
+      render: True
+      deterministic: True
+      games_num: 100
