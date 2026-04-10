@@ -307,6 +307,9 @@ configurations = {
         'env_creator': lambda **kwargs: _create_gymnasium_single_env(**kwargs),
         'vecenv_type': 'GYMNASIUM'
     },
+    'envpool' : {
+        'vecenv_type': 'ENVPOOL'
+    },
     'ray' : {
         'env_creator' : lambda **kwargs : gym.make(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'

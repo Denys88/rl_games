@@ -344,6 +344,11 @@ register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(con
 from rl_games.common.gymnasium_vecenv import GymnasiumVecEnv
 register('GYMNASIUM', lambda config_name, num_actors, **kwargs: GymnasiumVecEnv(config_name, num_actors, **kwargs))
 
+def _create_envpool(config_name, num_actors, **kwargs):
+    from rl_games.envs.envpool import Envpool
+    return Envpool(config_name, num_actors, **kwargs)
+register('ENVPOOL', _create_envpool)
+
 def _create_pufferlib(config_name, num_actors, **kwargs):
     from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv
     return PufferLibVecEnv(config_name, num_actors, **kwargs)

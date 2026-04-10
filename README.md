@@ -1,6 +1,6 @@
 # RL Games: High performance RL library
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium` and removes legacy environment integrations (envpool, cule).
+**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored with the new envpool 1.1.1 (Python 3.11–3.14, NumPy 2.x, MuJoCo 3.x compatible).
 
 ## Discord Channel Link 
 * https://discord.gg/hnYRq7DsQh
@@ -38,7 +38,7 @@
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
-* [EnvPool Results](docs/ENVPOOL_LEGACY.md) (rl_games <= 1.6.5)
+* [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
 * [Random Envs](docs/OTHER.md)
 
 
@@ -79,12 +79,14 @@ Or clone the repo and install the latest version from source:
 pip install -e .
 ```
 
-With optional extras (e.g. Atari or Mujoco):
+With optional extras (e.g. Atari, Mujoco, EnvPool):
 ```bash
-pip install -e ".[atari,mujoco]"
+pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `brax`, `pufferlib`.
+Available extras: `atari`, `mujoco`, `envpool`, `brax`, `pufferlib`.
+
+For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
 ### Using uv (recommended)
 
@@ -93,12 +95,8 @@ Available extras: `atari`, `mujoco`, `brax`, `pufferlib`.
 ```bash
 uv venv --python 3.11
 source .venv/bin/activate
-uv pip install -e ".[mujoco]"
+uv pip install -e ".[mujoco,envpool]"
 ```
-
-### Legacy note (rl_games 1.6.5 and older)
-
-Older versions used envpool for Atari/Mujoco acceleration. EnvPool requires NumPy 1.x — NumPy 2.0+ is **not compatible** ([see issue](https://github.com/sail-sg/envpool/issues/312)). If using envpool, downgrade with `pip install numpy==1.26.4`.
 
 ## Citing
 
