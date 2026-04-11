@@ -27,6 +27,9 @@ import torch.distributed as dist
 from time import sleep
 
 from rl_games.common import common_losses
+from rl_games.triton_config import USE_TRITON
+if USE_TRITON:
+    from rl_games.algos_torch.triton_kernels import triton_gae
 
 
 def swap_and_flatten01(arr):
@@ -575,6 +578,13 @@ class A2CBase(BaseAlgorithm):
         return obs
 
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
+        if USE_TRITON and mb_rewards.is_cuda:
+            return triton_gae(
+                mb_rewards, mb_extrinsic_values, mb_fdones,
+                last_extrinsic_values, fdones,
+                self.gamma, self.tau,
+            )
+
         lastgaelam = 0
         mb_advs = torch.zeros_like(mb_rewards)
 
