@@ -4,8 +4,8 @@ from rl_games.common import tr_helpers
 from rl_games.envs.brax import create_brax_env
 from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.common.gymnasium_vecenv import create_gymnasium_env, wrap_atari
+from gymnasium.wrappers import FlattenObservation
 import gymnasium as gym
-from gymnasium.wrappers import FlattenObservation, FilterObservation
 import numpy as np
 import math
 
@@ -49,33 +49,16 @@ class DMControlObsWrapper(gym.ObservationWrapper):
         return obs['observations']
 
 
-def create_default_gym_env(**kwargs):
-    frames = kwargs.pop('frames', 1)
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-    env = gym.make(name, **kwargs)
 
-    if frames > 1:
-        env = wrappers.FrameStack(env, frames, False)
-    if limit_steps:
-        env = wrappers.LimitStepsWrapper(env)
+
+
+def _create_gymnasium_single_env(**kwargs):
+    env_name = kwargs.pop('env_name')
+    flatten_obs = kwargs.pop('flatten_obs', False)
+    env = gym.make(env_name, **kwargs)
+    if flatten_obs:
+        env = FlattenObservation(env)
     return env
-
-
-def create_goal_gym_env(**kwargs):
-    frames = kwargs.pop('frames', 1)
-    name = kwargs.pop('name')
-    limit_steps = kwargs.pop('limit_steps', False)
-
-    env = gym.make(name, **kwargs)
-    env = FlattenObservation(FilterObservation(env, ['observation', 'desired_goal']))
-
-    if frames > 1:
-        env = wrappers.FrameStack(env, frames, False)
-    if limit_steps:
-        env = wrappers.LimitStepsWrapper(env)
-    return env
-
 
 
 def create_myo(**kwargs):
@@ -92,7 +75,7 @@ def create_atari_gym_env(**kwargs):
     skip = kwargs.pop('skip',4)
     episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
-    env = wrappers.make_atari_deepmind(name, skip=skip,episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
+    env = wrappers.make_atari_deepmind(name, skip=skip, episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
     return env
 
 
@@ -106,8 +89,6 @@ def create_dm_control_env(**kwargs):
     if frames > 1:
         env = wrappers.FrameStack(env, frames, False)
     return env
-
-
 
 
 def create_smac(name, **kwargs):
@@ -298,14 +279,6 @@ configurations = {
         'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
-    'openai_gym' : {
-        'env_creator' : lambda **kwargs : create_default_gym_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
-    'openai_robot_gym' : {
-        'env_creator' : lambda **kwargs : create_goal_gym_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
     'atari_gym' : {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
@@ -331,8 +304,15 @@ configurations = {
         'vecenv_type': 'MANISKILL'
     },
     'gymnasium' : {
-        'env_creator': lambda **kwargs: create_gymnasium_env(**kwargs),
+        'env_creator': lambda **kwargs: _create_gymnasium_single_env(**kwargs),
         'vecenv_type': 'GYMNASIUM'
+    },
+    'envpool' : {
+        'vecenv_type': 'ENVPOOL'
+    },
+    'ray' : {
+        'env_creator' : lambda **kwargs : gym.make(kwargs.pop('name'), **kwargs),
+        'vecenv_type' : 'RAY'
     },
     'atari_gymnasium' : {
         'vecenv_type': 'GYMNASIUM',
