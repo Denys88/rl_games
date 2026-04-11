@@ -3,7 +3,7 @@
 Provides compute_gae() which automatically dispatches to a Triton kernel
 when available and enabled, otherwise falls back to the PyTorch loop.
 
-Enable Triton: export RL_GAMES_USE_TRITON=1
+Disable Triton: export RLG_NO_TRITON=1
 """
 
 import torch
