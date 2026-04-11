@@ -1,7 +1,7 @@
 from rl_games.common.ivecenv import IVecEnv
 import gymnasium
 from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
-from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
+from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
 import numpy as np
 
 # Register ALE (Atari) environments if available
@@ -10,6 +10,12 @@ try:
     gymnasium.register_envs(ale_py)
 except ImportError:
     pass  # ale_py not installed, Atari envs won't be available
+
+# Register DM Control environments if available
+try:
+    import shimmy
+except ImportError:
+    pass  # shimmy not installed, dm_control envs won't be available
 
 
 def wrap_atari(env, frame_stack=4, noop_max=30, frame_skip=4,
@@ -78,6 +84,7 @@ class GymnasiumVecEnv(IVecEnv):
         use_async = kwargs.pop('use_async', True)
         self.seed_value = kwargs.pop('seed', None)
         wrap_env = kwargs.pop('wrap_env', None)
+        flatten_obs = kwargs.pop('flatten_obs', False)
         env_creator = kwargs.pop('env_creator', None)
 
         # Store remaining kwargs for env creation
@@ -97,6 +104,8 @@ class GymnasiumVecEnv(IVecEnv):
             def make_env(idx):
                 def _init():
                     env = gymnasium.make(env_name, **self.env_kwargs)
+                    if flatten_obs:
+                        env = FlattenObservation(env)
                     if wrap_env is not None:
                         env = wrap_env(env)
                     if self.seed_value is not None:

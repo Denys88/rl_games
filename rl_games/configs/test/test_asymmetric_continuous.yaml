@@ -45,7 +45,7 @@ params:
     grad_norm: 0.5
     entropy_coef: 0.005
     truncate_grads: True
-    env_name: openai_gym
+    env_name: gymnasium
     e_clip: 0.2
     clip_value: False
     num_actors: 16
@@ -63,7 +63,7 @@ params:
     bounds_loss_coef: 0.0
     use_diagnostics: True
     env_config:
-      name: TestAsymmetricEnv-v0
+      env_name: TestAsymmetricEnv-v0
       wrapped_env_name: LunarLanderContinuous-v3
       apply_mask: False
       use_central_value: True

@@ -127,7 +127,9 @@ class NetworkBuilder:
                 act_layers = [self.activations_factory.create(activation) for i in range(len(units))]
                 return D2RLNet(input_size, units, act_layers, norm_func_name)
             else:
-                return self._build_sequential_mlp(input_size, units, activation, dense_func, norm_func_name = None,)
+                return self._build_sequential_mlp(input_size, units, activation, dense_func,
+                                                  norm_only_first_layer=norm_only_first_layer,
+                                                  norm_func_name=norm_func_name)
 
         def _build_conv(self, ctype, **kwargs):
             print('conv_name:', ctype)
@@ -899,7 +901,9 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         self.log_std_bounds = log_std_bounds
 
         self.trunk = self._build_mlp(**mlp_args)
-        last_layer = list(self.trunk.children())[-2].out_features
+        # Find last Linear layer's out_features (robust to normalization layers being appended)
+        last_linear = next(m for m in reversed(list(self.trunk.children())) if isinstance(m, nn.Linear))
+        last_layer = last_linear.out_features
         self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
 
     def forward(self, obs):
@@ -923,11 +927,13 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         super().__init__()
 
         self.Q1 = self._build_mlp(**mlp_args)
-        last_layer = list(self.Q1.children())[-2].out_features
+        last_linear = next(m for m in reversed(list(self.Q1.children())) if isinstance(m, nn.Linear))
+        last_layer = last_linear.out_features
         self.Q1 = nn.Sequential(*list(self.Q1.children()), nn.Linear(last_layer, output_dim))
 
         self.Q2 = self._build_mlp(**mlp_args)
-        last_layer = list(self.Q2.children())[-2].out_features
+        last_linear = next(m for m in reversed(list(self.Q2.children())) if isinstance(m, nn.Linear))
+        last_layer = last_linear.out_features
         self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
 
     def forward(self, obs, action):

@@ -27,6 +27,7 @@ import torch.distributed as dist
 from time import sleep
 
 from rl_games.common import common_losses
+from rl_games.triton_kernels import compute_gae
 
 
 def swap_and_flatten01(arr):
@@ -575,21 +576,11 @@ class A2CBase(BaseAlgorithm):
         return obs
 
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
-        lastgaelam = 0
-        mb_advs = torch.zeros_like(mb_rewards)
-
-        for t in reversed(range(self.horizon_length)):
-            if t == self.horizon_length - 1:
-                nextnonterminal = 1.0 - fdones
-                nextvalues = last_extrinsic_values
-            else:
-                nextnonterminal = 1.0 - mb_fdones[t+1]
-                nextvalues = mb_extrinsic_values[t+1]
-            nextnonterminal = nextnonterminal.unsqueeze(1)
-
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.tau * nextnonterminal * lastgaelam
-        return mb_advs
+        return compute_gae(
+            mb_rewards, mb_extrinsic_values, mb_fdones,
+            last_extrinsic_values, fdones,
+            self.gamma, self.tau,
+        )
 
     def discount_values_masks(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_masks):
         lastgaelam = 0

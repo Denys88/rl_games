@@ -266,6 +266,7 @@ class SACAgent(BaseAlgorithm):
         state['actor_optimizer'] = self.actor_optimizer.state_dict()
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
+        state['log_alpha'] = self.log_alpha.detach().cpu()
 
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
@@ -282,6 +283,9 @@ class SACAgent(BaseAlgorithm):
         self.actor_optimizer.load_state_dict(weights['actor_optimizer'])
         self.critic_optimizer.load_state_dict(weights['critic_optimizer'])
         self.log_alpha_optimizer.load_state_dict(weights['log_alpha_optimizer'])
+
+        if 'log_alpha' in weights:
+            self.log_alpha.data.copy_(weights['log_alpha'].to(self._device))
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
 
