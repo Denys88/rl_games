@@ -57,7 +57,7 @@ def main():
         print("CUDA not available, using CPU (Triton won't work)")
         device = 'cpu'
 
-    from rl_games.algos_torch.triton_kernels import triton_gae
+    from rl_games.triton_kernels.gae_kernel import _triton_gae as triton_gae
 
     configs = [
         # (num_envs, horizon_length, value_size, label)
