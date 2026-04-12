@@ -188,15 +188,38 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 
 ## Triton Kernels
 
-When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations like GAE (Generalized Advantage Estimation). This replaces the Python for-loop with a single fused GPU kernel.
+When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations. This is enabled by default and requires no configuration.
 
-Triton is enabled by default. To disable:
+Currently accelerated:
+* **GAE (Generalized Advantage Estimation)** — replaces the Python for-loop over horizon timesteps with a single fused GPU kernel. Each Triton program handles one environment, scanning backwards over the full horizon in-kernel.
+
+### GAE Kernel Benchmark (RTX 5090)
+
+| Config | PyTorch (loop) | Triton (kernel) | Speedup |
+|--------|---------------|-----------------|---------|
+| 64 envs, H=64 | 4.56 ms | 0.019 ms | **245x** |
+| 1024 envs, H=24 (MJLab) | 2.08 ms | 0.013 ms | **160x** |
+| 4096 envs, H=32 (Isaac) | 2.29 ms | 0.019 ms | **118x** |
+| 4096 envs, H=24 | 1.80 ms | 0.017 ms | **106x** |
+| 8192 envs, H=16 | 1.16 ms | 0.017 ms | **68x** |
+| 16384 envs, H=32 | 2.11 ms | 0.054 ms | **39x** |
+
+The speedup comes from eliminating per-timestep kernel launch overhead — the PyTorch loop launches 16-64 separate CUDA operations while Triton does it all in one shot. The impact on end-to-end training FPS depends on what fraction of epoch time GAE occupies:
+
+| Training setup | FPS (Triton) | FPS (PyTorch) | Note |
+|----------------|-------------|---------------|------|
+| MuJoCo Ant (64 CPU envs) | ~3,740 | ~3,665 | CPU env_step dominates |
+| MJLab Go1 (1024 GPU envs) | ~57,300 | ~58,700 | GPU physics dominates |
+
+For GPU-accelerated environments, GAE is a small fraction of total epoch time, so end-to-end FPS is similar. The kernel benefit grows as environments get faster or horizon length increases.
+
+To disable Triton kernels:
 
 ```bash
 RLG_NO_TRITON=1 python runner.py --train --file rl_games/configs/mujoco/ant.yaml
 ```
 
-Run the benchmark to see speedups on your hardware:
+Run the benchmark on your hardware:
 
 ```bash
 python benchmarks/bench_triton_gae.py
