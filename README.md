@@ -35,6 +35,12 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
+* MJLab (MuJoCo Lab) — quadruped and humanoid locomotion
+
+![Go1 Flat Velocity](go1_flat_training.png)
+![Go1 Rough Velocity](go1_rough_training.png)
+![G1 Humanoid Flat Velocity](g1_flat_comparison.png)
+
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
@@ -192,26 +198,6 @@ When [Triton](https://github.com/triton-lang/triton) is installed, rl_games auto
 
 Currently accelerated:
 * **GAE (Generalized Advantage Estimation)** — replaces the Python for-loop over horizon timesteps with a single fused GPU kernel. Each Triton program handles one environment, scanning backwards over the full horizon in-kernel.
-
-### GAE Kernel Benchmark (RTX 5090)
-
-| Config | PyTorch (loop) | Triton (kernel) | Speedup |
-|--------|---------------|-----------------|---------|
-| 64 envs, H=64 | 4.56 ms | 0.019 ms | **245x** |
-| 1024 envs, H=24 (MJLab) | 2.08 ms | 0.013 ms | **160x** |
-| 4096 envs, H=32 (Isaac) | 2.29 ms | 0.019 ms | **118x** |
-| 4096 envs, H=24 | 1.80 ms | 0.017 ms | **106x** |
-| 8192 envs, H=16 | 1.16 ms | 0.017 ms | **68x** |
-| 16384 envs, H=32 | 2.11 ms | 0.054 ms | **39x** |
-
-The speedup comes from eliminating per-timestep kernel launch overhead — the PyTorch loop launches 16-64 separate CUDA operations while Triton does it all in one shot. The impact on end-to-end training FPS depends on what fraction of epoch time GAE occupies:
-
-| Training setup | FPS (Triton) | FPS (PyTorch) | Note |
-|----------------|-------------|---------------|------|
-| MuJoCo Ant (64 CPU envs) | ~3,740 | ~3,665 | CPU env_step dominates |
-| MJLab Go1 (1024 GPU envs) | ~57,300 | ~58,700 | GPU physics dominates |
-
-For GPU-accelerated environments, GAE is a small fraction of total epoch time, so end-to-end FPS is similar. The kernel benefit grows as environments get faster or horizon length increases.
 
 To disable Triton kernels:
 
