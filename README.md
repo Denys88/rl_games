@@ -192,25 +192,6 @@ We use `torchrun` to orchestrate any multi-gpu runs.
 torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
 ```
 
-## Triton Kernels
-
-When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations. This is enabled by default and requires no configuration.
-
-Currently accelerated:
-* **GAE (Generalized Advantage Estimation)** — replaces the Python for-loop over horizon timesteps with a single fused GPU kernel. Each Triton program handles one environment, scanning backwards over the full horizon in-kernel.
-
-To disable Triton kernels:
-
-```bash
-RLG_NO_TRITON=1 python runner.py --train --file rl_games/configs/mujoco/ant.yaml
-```
-
-Run the benchmark on your hardware:
-
-```bash
-python benchmarks/bench_triton_gae.py
-```
-
 ## Config Parameters
 
 | Field                  | Example Value             | Default | Description                                                                                                                                                  |
