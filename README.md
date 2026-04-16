@@ -35,11 +35,11 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
-* MJLab (MuJoCo Lab) — quadruped and humanoid locomotion
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
 
-![Go1 Flat Velocity](go1_flat_training.png)
-![Go1 Rough Velocity](go1_rough_training.png)
-![G1 Humanoid Flat Velocity](g1_flat_comparison.png)
+![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
+![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
+![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)
