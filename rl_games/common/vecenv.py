@@ -353,3 +353,8 @@ def _create_pufferlib(config_name, num_actors, **kwargs):
     from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv
     return PufferLibVecEnv(config_name, num_actors, **kwargs)
 register('PUFFERLIB', _create_pufferlib)
+
+def _create_mjlab(config_name, num_actors, **kwargs):
+    from rl_games.envs.mjlab_vecenv import MjlabVecEnv
+    return MjlabVecEnv(config_name, num_actors, **kwargs)
+register('MJLAB', _create_mjlab)

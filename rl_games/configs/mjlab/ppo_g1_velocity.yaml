@@ -1,0 +1,65 @@
+# PPO with MJLab Unitree G1 Velocity Tracking
+
+params:
+  seed: 42
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 256, 128]
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: MJLab_G1_Velocity
+    env_name: mjlab_g1_velocity
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: False
+    num_actors: 1024
+    horizon_length: 32
+    minibatch_size: 4096
+    mini_epochs: 5
+    critic_coef: 2
+    use_smooth_clamp: True
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
+    device: cuda:0
+    max_epochs: 3000
+
+    env_config:
+      task_name: Mjlab-Velocity-Flat-Unitree-G1
+      device: cuda
+
+    player:
+      render: False

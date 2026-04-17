@@ -35,6 +35,12 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
+
+![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
+![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
+![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
+
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
@@ -184,22 +190,6 @@ We use `torchrun` to orchestrate any multi-gpu runs.
 
 ```bash
 torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
-```
-
-## Triton Kernels
-
-When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations like GAE (Generalized Advantage Estimation). This replaces the Python for-loop with a single fused GPU kernel.
-
-Triton is enabled by default. To disable:
-
-```bash
-RLG_NO_TRITON=1 python runner.py --train --file rl_games/configs/mujoco/ant.yaml
-```
-
-Run the benchmark to see speedups on your hardware:
-
-```bash
-python benchmarks/bench_triton_gae.py
 ```
 
 ## Config Parameters
