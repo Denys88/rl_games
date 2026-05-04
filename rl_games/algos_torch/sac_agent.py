@@ -168,6 +168,12 @@ class SACAgent(BaseAlgorithm):
         self.max_epochs = self.config.get('max_epochs', -1)
         self.max_frames = self.config.get('max_frames', -1)
 
+        # Optional user-supplied stop callback: callable(algo) -> bool.
+        # See README "Custom stop callback" section.
+        self.stop_fn = config.get('stop_fn', None)
+        if self.stop_fn is not None and not callable(self.stop_fn):
+            raise ValueError(f"'stop_fn' must be callable, got {type(self.stop_fn).__name__}")
+
         self.save_freq = config.get('save_frequency', 0)
 
         self.network = config['network']
@@ -725,6 +731,11 @@ class SACAgent(BaseAlgorithm):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX FRAMES NUM!')
+                    should_exit = True
+
+                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(self.epoch_num)))
+                    print('Custom stop callback returned True. Stopping training.')
                     should_exit = True
 
                 update_time = 0
