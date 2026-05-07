@@ -40,6 +40,41 @@ def _override_sigma(agent, args):
                 print('Cannot set new sigma because fixed_sigma is False')
 
 
+def _resolve_stop_fn(stop_fn):
+    """Accept either a callable or a 'pkg.mod:fn' / 'pkg.mod.fn' import path."""
+    if stop_fn is None or callable(stop_fn):
+        return stop_fn
+    if not isinstance(stop_fn, str):
+        raise ValueError(f"'stop_fn' must be callable or 'module:function' string, got {type(stop_fn).__name__}")
+    import importlib
+    if ':' in stop_fn:
+        module_path, attr = stop_fn.split(':', 1)
+    else:
+        module_path, _, attr = stop_fn.rpartition('.')
+        if not module_path:
+            raise ValueError(f"'stop_fn' string must reference a module attribute: {stop_fn!r}")
+    module = importlib.import_module(module_path)
+    fn = getattr(module, attr)
+    if not callable(fn):
+        raise ValueError(f"'stop_fn' resolved {stop_fn!r} is not callable")
+    return fn
+
+
+def _apply_stop_fn(params, args):
+    """Resolve stop_fn (callable or import-path string) and write it into params['config'].
+
+    Precedence: programmatic args['stop_fn'] > YAML config['stop_fn'].
+    Called before agent creation so the agent sees a callable, not a string.
+    """
+    stop_fn = args.get('stop_fn', None)
+    if stop_fn is None:
+        cfg = params.get('config', {}) or {}
+        stop_fn = cfg.get('stop_fn', None)
+    if stop_fn is None:
+        return
+    params.setdefault('config', {})['stop_fn'] = _resolve_stop_fn(stop_fn)
+
+
 class Runner:
     """Runs training/inference (playing) procedures as per a given configuration.
 
@@ -178,6 +213,8 @@ class Runner:
                 with_stack=True
             )
             profiler.__enter__()
+
+        _apply_stop_fn(self.params, args)
 
         agent = self.algo_factory.create(self.algo_name, base_name='run', params=self.params)
 
