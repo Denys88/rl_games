@@ -1,0 +1,122 @@
+# Phase B v2 — curriculum-bootstrapped self-play.
+#
+# Pipeline: cur1 (locomotion) → cur2 (chase) → cur3 (push) → [phaseB2 self-play].
+# Skips phaseA3 entirely — that detour didn't add anything, just drifted sigma.
+#
+# Bootstrap ckpt: /tmp/cur3_for_phaseB.pth
+#   - cur3_push ep_800 (rew 377, best curriculum chase+push)
+#   - sigma overridden 0.8 → -0.7 (std drops 2.2 → 0.5 — actions actually
+#     become executable instead of saturated noise)
+#   - optimizer state dropped (a2c_common.py was patched to tolerate this)
+#
+# Reward — simplified from cur3 but tuned stronger than phaseB v1:
+#   vel_to_ball: 0.3        (basic chase bias — preserved from cur3)
+#   vel_ball_to_goal: 2.0   (cur3 value — primary push signal)
+#   goal: 200               (4x cur3 — single goal ≈ 2 ep of best shaping)
+#   ball_near_goal_bonus: 1.0   (cur3 used 0.5; double to encourage shot setups)
+#   ball_near_goal_radius: 4.0  (cur3 used 3.0; +33% to widen funnel)
+# 5 terms vs cur3's 6 (dropped veloc_forward, behind_ball_bonus).
+#
+# Sigma: learnable_sigma=False — sigma is a non-trainable buffer at logstd=-0.7
+# forever. This is THE crucial fix vs phaseA3's drift to saturated noise.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: -0.7 }   # std ≈ 0.5
+        fixed_sigma: True
+        learnable_sigma: False    # non-trainable buffer — never drifts
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseB2
+    reward_shaper: { min_val: -10, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.5e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0          # fixed sigma → no entropy coefficient needed
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 3000
+    self_play_config:
+      update_score: 80.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False   # MULTI-TURN — never end on goal
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.3
+        vel_ball_to_goal: 2.0
+        goal: 200.0
+        ball_near_goal_bonus: 1.0
+        ball_near_goal_radius: 4.0
+        # explicitly zero
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        behind_ball_bonus: 0.0
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: -0.7 }
+              fixed_sigma: True
+              learnable_sigma: False
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

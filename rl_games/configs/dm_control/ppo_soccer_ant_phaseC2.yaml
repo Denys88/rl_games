@@ -1,0 +1,93 @@
+# Phase C v2 — strip distracting shaping, MAKE THE GOAL DOMINATE.
+#
+# Diagnosis from phaseC: behind_ball_bonus + ball_field_progress accumulated
+# ~500 reward/ep just for "stand behind ball / face goal" — the agent
+# maximized those without ever shooting. PhaseC's reward 367 with 0 goals
+# proved the policy was farming shaping, not learning to score.
+#
+# Strategy: chase reflex is already in the weights (cur3 → phaseB3). Provide
+# only a TINY chase signal to keep PPO from forgetting it. Make the goal
+# event SO dominant that the only way to grow the reward is to actually
+# score. Then PPO has to discover the shot.
+#
+# Bootstrap: phaseB3 best.
+#
+# Reward — only 2 dense terms, both small:
+#   vel_to_ball:        0.05    keeps chase reflex alive
+#   vel_ball_to_goal:   0.1     tiny "right direction" hint
+#   goal:               1000    a single goal ≈ 50 episodes of dense shaping
+#                                (per-ep dense cap ≈ 0.05*~10/s*25s + 0.1*~5*25s
+#                                 ≈ 12 + 12 = 24 max)
+# All other shaping zeroed.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: -0.7 }
+        fixed_sigma: True
+        learnable_sigma: False
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseC2
+    reward_shaper: { min_val: -50, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.5e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 5000   # phaseB3 ended at ~2500; train ~2500 more
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 0.1
+        goal: 1000.0
+        # everything else off
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

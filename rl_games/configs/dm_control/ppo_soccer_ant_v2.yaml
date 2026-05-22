@@ -1,0 +1,164 @@
+# dm_control 2v2 ANT soccer — v2: goal-dominated reward + self-play.
+#
+# Phase 1 (ppo_soccer_ant.yaml) trained the chase-the-ball reflex but never
+# scored a single goal in eval (10/10 draws). Diagnosis: shaping reward
+# (~210 per episode raw) dwarfed the goal reward (10 each), so PPO had no
+# gradient toward actually putting the ball in the net. Random opponents
+# also can't punish a "chase-but-never-shoot" policy.
+#
+# v2 fixes:
+#   * goal_w 10 -> 200 — one goal beats one full episode of perfect shaping.
+#   * shaping weights cut ~5x — still useful guide, no longer dominant.
+#   * Self-play from epoch 0 (frozen pool of learner snapshots) — opponents
+#     get smarter with us, so a "stuck mid-field" policy gets punished.
+#   * Resume from Phase 1 checkpoint via runner.py --checkpoint, so we keep
+#     the "can chase ball" skill instead of relearning locomotion.
+#
+# Launch:
+#   python -u runner.py --train \
+#       --file rl_games/configs/dm_control/ppo_soccer_ant_v2.yaml \
+#       --checkpoint runs/dm_soccer_ant_random_opp_14-20-18-12/nn/dm_soccer_ant_random_opp.pth
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_v2
+
+    reward_shaper:
+      # Goal reward is +200 per goal — must NOT be clipped from above.
+      # min_val=-50 lets the per-step shaping breathe (we conceded a goal
+      # spike of -200 needs room) while still capping pathological single-
+      # step negatives.
+      min_val: -50
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005    # bigger nudge so the chase-only policy actually explores shooting
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 1500     # 1 goal each side ~ 200; "really well" target is ~5+ net goals
+    max_epochs: 8000
+
+    # Self-play activation. Threshold 18 sits *just above* the chase-only
+    # baseline (~16.3 measured) so the first push fires almost immediately —
+    # this seeds the opponent pool with the chase-ball reflex. Once the
+    # opponent stops being a passive random target, dribbling without
+    # scoring stops being free reward, which forces the policy to escalate
+    # into actually putting the ball away.
+    self_play_config:
+      update_score: 18.0
+      games_to_check: 50
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      # Multi-turn: ball respawns after each goal so the episode keeps going.
+      # Lets a single 30s episode accumulate many +200 spikes — far more
+      # attractive than 30s of dribbling for shaping reward (~120 max).
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      shaping_weights:
+        # 5x lower than v1. Still positive — keeps the dense gradient that
+        # helped Phase 1 escape "lying still" — but no longer overwhelms goals.
+        vel_to_ball: 0.01
+        vel_ball_to_goal: 0.2
+        veloc_forward: 0.005
+        # +200 per goal × multi-turn episodes (terminate_on_goal=False) →
+        # an aggressive scorer earns 1000+ per episode, vs ≤120 for the
+        # "park ball in opp half" alternative. Scoring strictly dominant.
+        goal: 200.0
+        # Reduced from 0.5 to 0.1 — max episode = 120, ≤ a single goal.
+        # Still signals "push the ball forward" but won't create the
+        # "dribble forever, never shoot" optimum we hit at 0.5.
+        ball_field_progress: 0.1
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init:
+                name: default
+              sigma_init:
+                name: const_initializer
+                val: 0
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer:
+              name: default
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

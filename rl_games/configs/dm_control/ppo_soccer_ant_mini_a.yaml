@@ -1,0 +1,91 @@
+# dm_control ANT soccer — STEP-BACK curriculum, stage A: MOVE BALL INTO GOAL.
+#
+# Diagnosis from v2-v7: every prior config gave `vel_to_ball` enough weight to
+# create a chase-only local optimum. Agent learned "stand near ball" without
+# ever pushing it. This config makes scoring the *easiest* way to earn reward:
+#   - team_size=1 (no teammate coordination)
+#   - opponent_kind=noop (one stationary opp ant — barely matters)
+#   - tiny field 6x4 + huge goal 3.5m wide (>80% of field width)
+#   - terminate_on_goal=True (crisp credit assignment)
+#   - chase reward 100x weaker than ball-toward-goal reward
+#
+# Target: ant scores reliably within 1500 epochs (~1h on this box).
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_mini_a
+    reward_shaper: { min_val: -20, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    # 1 agent per env → 24 streams → smaller minibatch.
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 768
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 5000
+    max_epochs: 1500
+
+    player: { render: False, games_num: 20, deterministic: True }
+
+    env_config:
+      team_size: 1                 # one ant per side
+      time_limit: 20.0
+      enable_field_box: True
+      terminate_on_goal: True      # crisp credit on score
+      shaped_reward: True
+      opponent_kind: noop          # opp stays still — basically empty net
+      central_value: False
+      field_size: [6.0, 4.0]       # tiny
+      goal_size: [1.0, 3.5, 0.6]   # huge goal mouth (>80% of field width)
+      shaping_weights:
+        # Chase reward 100x weaker than ball-toward-goal reward.
+        # Ant cannot escape via standing-near-ball.
+        vel_to_ball: 0.02
+        vel_ball_to_goal: 2.0      # PRIMARY dense signal
+        veloc_forward: 0.005
+        ball_field_progress: 0.5   # positional: ball nearer opp goal = reward
+        ball_near_goal_bonus: 0.5
+        ball_near_goal_radius: 3.0
+        behind_ball_bonus: 0.3     # encourage being on right side of ball
+        goal: 200.0                # big goal bonus + episode terminates
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

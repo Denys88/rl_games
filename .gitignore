@@ -115,3 +115,7 @@ venv.bak/
 /.idea
 
 MUJOCO_LOG.TXT
+
+# Rendered videos / animations — large binaries, kept out of git
+*.mp4
+*.gif

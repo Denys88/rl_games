@@ -1,0 +1,104 @@
+# Curriculum stage 4: LEARN TO SCORE — final stage, self-play opponents.
+# Builds on cur3 (pushing toward goal). Goal becomes dominant signal,
+# shaping fades to a navigation aid. Self-play opponents force home team
+# to score MORE than the opponent.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_cur4_score
+    reward_shaper: { min_val: -50, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.5e-4         # halved — gentle transition to goal-dominant reward
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 5000
+    max_epochs: 2150   # absolute — cur3 ends at 1150, cur4 trains for 1000 more (main scoring stage)
+    self_play_config:
+      update_score: 200.0          # high — push only on real improvement
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy        # self-play opponents
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # All shaping reduced — navigation aid only.
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 0.2
+        veloc_forward: 0.005
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.1
+        ball_near_goal_radius: 3.0
+        behind_ball_bonus: 0.05
+        # Goal absolutely dominant.
+        goal: 200.0
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: 0 }
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

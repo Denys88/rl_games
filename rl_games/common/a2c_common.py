@@ -662,7 +662,15 @@ class A2CBase(BaseAlgorithm):
             if 'assymetric_vf_optimizer' in weights:
                 self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
 
-        self.optimizer.load_state_dict(weights['optimizer'])
+        # Conditional — a "weights-only" bootstrap checkpoint may not carry
+        # optimizer state (e.g. resuming actor weights into a model with a
+        # different parameter count, like learnable_sigma=False → sigma moves
+        # from Parameter to Buffer). Fresh optimizer state is fine in that case.
+        if 'optimizer' in weights and weights['optimizer'] is not None:
+            try:
+                self.optimizer.load_state_dict(weights['optimizer'])
+            except (ValueError, KeyError) as e:
+                print(f'[restore] skipping optimizer state ({e}); using fresh optimizer.')
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
 

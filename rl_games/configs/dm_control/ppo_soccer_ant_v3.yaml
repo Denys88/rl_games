@@ -1,0 +1,160 @@
+# dm_control 2v2 ANT soccer — v3: small field + fresh init.
+#
+# Phase 1 / v2(b/c/d) all hit the same wall: 0 goals. Root cause:
+# default ant pitch is 32-48m × 24-36m, ~70× the ant's body length, so
+# even a chase-policy that maximises shaping never randomly bumps the ball
+# all the way to the goal. PPO has no goal-event to learn from, threshold
+# never crosses, self-play pool stays empty.
+#
+# v3 changes:
+#   * field_size: (15, 10) → ~30× smaller area; ball-to-goal travel ≈ 8m
+#     instead of 30m. Random plays should produce occasional goals.
+#   * Fresh init (no --checkpoint) so PPO doesn't fight with a chase-policy
+#     value function calibrated for the wrong reward scale.
+#   * self_play_config.update_score=5 — push pool early on any improvement.
+#   * shaping_weights: drop ball_field_progress (the small field already
+#     gives stronger ball→goal vel signal). Keep other shaping low.
+#
+# Launch:
+#   python -u runner.py --train \
+#       --file rl_games/configs/dm_control/ppo_soccer_ant_v3.yaml
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_v3
+
+    reward_shaper:
+      min_val: -50
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01     # stronger exploration since we start fresh
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 1500
+    max_epochs: 8000
+
+    self_play_config:
+      # Push when policy genuinely outperforms the seed baseline. The chase-
+      # policy starting point already earns ~30-50 on this reward shape;
+      # firing at 5 caused a thrash loop (push → clear_stats → ramp →
+      # push again every ~10 epochs). 80 lets PPO accumulate ~30 epochs
+      # of stable training between pool updates and ensures each new pool
+      # member is meaningfully stronger than the last.
+      update_score: 80.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      # ← THE KEY KNOB. 15×10m field, ~30× smaller than the 24m×16m
+      # default. Goals are now ~8m away (≈16 ant body-lengths) instead
+      # of 30m+ — random ball bumps actually score occasionally, giving
+      # PPO a goal-event to learn from.
+      field_size: [15.0, 10.0]
+      shaping_weights:
+        # Lean shaping — the small field amplifies the natural goal signal
+        # (one goal = +200, episode time-budget shrinks ball→goal travel).
+        vel_to_ball: 0.02
+        vel_ball_to_goal: 0.3
+        veloc_forward: 0.005
+        goal: 200.0
+        # No ball_field_progress — small field already concentrates play
+        # near the goals.
+        ball_field_progress: 0.0
+        # The key v3 ingredient. Per-step linear bonus when ball is within
+        # ball_near_goal_radius metres of the opponent goal centre. With
+        # weight 1.0 and radius 3m, max per-step contribution is 3.0
+        # (ball at goal mid). Per-episode if ball stays at goal: 3 * 1200
+        # = 3600 — but the ball *can't* stay at the goal: it scores and
+        # respawns at midfield. Realistic per-episode: 50-200, on the
+        # order of 1 goal — so per-goal +200 is still the dominant signal,
+        # but PPO has a *monotone* gradient pulling ball toward goal, not
+        # just "ball in opp half".
+        ball_near_goal_bonus: 1.0
+        ball_near_goal_radius: 3.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: 0 }
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

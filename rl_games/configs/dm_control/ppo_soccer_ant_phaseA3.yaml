@@ -1,0 +1,87 @@
+# Phase A v3 — gentle fine-tune of cur3. Reward changes are 3x at most,
+# LR + entropy halved so PPO refines the chase policy rather than scrapping it.
+#
+# Diagnosis from phaseA1+v2: 6x reward changes destabilized the policy; reward
+# collapsed 377 → 200 with no scoring gain. cur3's true ceiling under that
+# weights set is ~0.10 g/ep vs random (noisy ±0.05). To beat 0.15 g/ep we
+# need a STRONGER goal signal but applied gently enough that PPO doesn't
+# unlearn pushing.
+#
+# Changes vs cur3:
+#   goal:                      50 → 150    (3x)
+#   ball_near_goal_bonus:     0.5 → 1.5    (3x)
+#   ball_near_goal_radius:    3.0 → 4.0    (+33%)
+#   learning_rate:           3e-4 → 1e-4   (gentle)
+#   entropy_coef:           0.01 → 0.005   (less explore, more exploit)
+#   all other weights KEPT from cur3 (vel_to_ball, vel_ball_to_goal, etc.)
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseA3
+    reward_shaper: { min_val: -5, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 2300
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: noop
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.5            # KEEP cur3
+        vel_ball_to_goal: 2.0       # KEEP cur3
+        veloc_forward: 0.05         # KEEP cur3
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 1.5   # 3x cur3
+        ball_near_goal_radius: 4.0  # +33% cur3
+        behind_ball_bonus: 0.5      # KEEP cur3
+        goal: 150.0                 # 3x cur3
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

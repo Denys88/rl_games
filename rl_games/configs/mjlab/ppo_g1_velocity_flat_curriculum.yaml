@@ -1,0 +1,77 @@
+params:
+  seed: 42
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      activation: elu
+      initializer:
+        name: default
+  config:
+    name: MJLab_G1_Velocity_Flat_Curriculum
+    env_name: mjlab_g1_velocity_flat
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 1e-3
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 1024
+    horizon_length: 24
+    minibatch_size: 6144
+    mini_epochs: 5
+    critic_coef: 2
+    use_smooth_clamp: True
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
+    device: cuda:0
+    max_epochs: 5000
+    env_config:
+      task_name: Mjlab-Velocity-Flat-Unitree-G1
+      device: cuda
+      use_curriculum: True
+      velocity_stages:
+        # common_step_counter increments once per env.step(), 24 steps/epoch
+        # 5000 epochs = 120k total steps
+        # Stage 1: slow forward only (learn to stand and walk)
+        - step: 0
+          lin_vel_x: [0.0, 0.3]
+          lin_vel_y: [-0.1, 0.1]
+          ang_vel_z: [-0.1, 0.1]
+        # Stage 2: moderate forward + lateral (~epoch 830)
+        - step: 20000
+          lin_vel_x: [-0.3, 0.6]
+          lin_vel_y: [-0.3, 0.3]
+          ang_vel_z: [-0.3, 0.3]
+        # Stage 3: full range (~epoch 2500)
+        - step: 60000
+          lin_vel_x: [-1.0, 1.0]
+          lin_vel_y: [-1.0, 1.0]
+          ang_vel_z: [-0.5, 0.5]
+    player:
+      render: False

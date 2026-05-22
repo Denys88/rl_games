@@ -1,0 +1,115 @@
+# Phase B v3 — curriculum bootstrap + MINIMAL reward + fixed sigma + self-play.
+#
+# phaseB2's 5-term reward over-incentivized "park near goal" via
+# ball_near_goal_bonus → policy lost cur3's chase reflex → stopped scoring
+# vs random by ep ~1800. phaseB3 reverts to phaseB v1's proven 3-term reward
+# (which kept the chase) but applies it on top of the CURRICULUM bootstrap
+# instead of the phaseA3 detour.
+#
+# Bootstrap: /tmp/cur3_for_phaseB.pth (cur3_push ep_800 + sigma=-0.7).
+#
+# Reward (only 3 terms — same as phaseB v1):
+#   vel_to_ball: 0.2           preserves chase reflex
+#   vel_ball_to_goal: 1.0      align ball with goal
+#   goal: 150                  +50% over phaseB v1; cur3 chase scores often
+#                              enough that we can reward terminal events more
+# All other shaping zeroed. entropy_coef=0 (sigma is the exploration source).
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: -0.7 }
+        fixed_sigma: True
+        learnable_sigma: False
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseB3
+    reward_shaper: { min_val: -10, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 2500
+    self_play_config:
+      update_score: 80.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        goal: 150.0
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: -0.7 }
+              fixed_sigma: True
+              learnable_sigma: False
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

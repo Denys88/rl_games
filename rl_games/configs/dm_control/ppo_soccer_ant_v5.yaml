@@ -1,0 +1,138 @@
+# dm_control 2v2 ANT soccer — v5: long, uninterrupted training.
+#
+# Lesson from v2/v3/v4: every iteration was ≤30 min and PPO never had
+# time to truly converge. v5 commits to one config and lets it cook.
+#
+# Setup:
+#   - Small 15×10 m pitch (so ball can reach goals)
+#   - Wider 6m goals (60% of field height — easier scoring once a policy
+#     learns to push ball forward)
+#   - Mid-strength shaping that leaves goals dominant (one goal beats one
+#     full episode of perfect shaping)
+#   - Self-play threshold at 60: a competent chase-policy on this env
+#     earns ~30, so the threshold sits just above where naïve play tops
+#     out — pushes only fire on genuine improvement
+#   - max_epochs 12000 (~10 h on a 5090)
+#
+# Resume from Phase-1 checkpoint to keep the chase reflex.
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_v5
+
+    reward_shaper:
+      min_val: -50
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.998        # long-horizon credit assignment for sparse goals
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 5000
+    max_epochs: 12000     # ~10h on a 5090 — let it cook
+
+    self_play_config:
+      update_score: 60.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]   # wider goals (60% of pitch height) — see env wrapper for dim semantics
+      shaping_weights:
+        # Mid-strength chase + ball-direction shaping; goal dominates.
+        vel_to_ball: 0.02
+        vel_ball_to_goal: 0.2
+        veloc_forward: 0.005
+        # Linear bonus inside 3m of opp goal — monotone gradient toward scoring.
+        ball_near_goal_bonus: 0.5
+        ball_near_goal_radius: 3.0
+        ball_field_progress: 0.0
+        # Goal absolutely dominant.
+        goal: 200.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: 0 }
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

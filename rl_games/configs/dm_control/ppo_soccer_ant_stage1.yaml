@@ -1,0 +1,115 @@
+# dm_control 2v2 ANT soccer — Stage 1, the boxhead recipe applied to the ant.
+#
+# Boxhead (the trivial wheeled walker) reached +1.83 goal diff vs random with
+# a dead-simple setup: lean 3-term reward, fresh init, trained vs a random
+# opponent, trainable sigma. Reward-annealing curricula and self-play polish
+# both FAILED to beat that baseline. So for the ant — the harder 8-actuator
+# creature that must also learn a gait — we apply the same proven recipe,
+# plus the one ant-specific necessity:
+#   - Lean reward: vel_to_ball (now the closest-teammate variant — see
+#     dm_soccer.py), vel_ball_to_goal, a large sparse goal terminal, AND
+#     veloc_forward 0.01 — a small forward-velocity bonus to break the ant
+#     out of the "lie still" local optimum. Boxhead didn't need this; the
+#     ant does (a zeroed-veloc_forward run plateaued at reward ~10).
+#   - Fresh init, opponent random.
+#   - learnable_sigma: True — the ant must explore to discover both locomotion
+#     and ball control; trainable sigma is the skill-acquisition setting.
+#   - 15x10 field + 6m goal — mandatory; the default ant pitch is ~70x body
+#     length and random play never scores.
+# max_epochs bumped to 4000 (vs boxhead's 3000) — the ant has to learn a gait
+# on top of ball play, so it needs more frames.
+#
+# Compute target: RTX 5090 + 32-core CPU host (~1600 fps for the ant).
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+        learnable_sigma: True   # trainable — skill-acquisition stage
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer
+    name: dm_soccer_ant_stage1
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 100000
+    max_epochs: 4000
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      walker_type: ant
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False   # multi-turn — ball respawns, play continues
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # Boxhead's lean reward PLUS veloc_forward — the one ant-specific
+        # necessity. veloc_forward (0.01) is a small forward-velocity bonus
+        # that breaks the ant out of the "lie still" local optimum so it can
+        # bootstrap a gait; boxhead (wheeled) didn't need it. A first attempt
+        # with veloc_forward zeroed plateaued at reward ~10 for 4000 epochs.
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.01
+        goal: 100.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

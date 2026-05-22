@@ -1,0 +1,92 @@
+# dm_control ANT soccer — pretraining run with the new "distance to goal"
+# penalty. Vs random opponent, full field. Dense gradient toward scoring.
+#
+# Reward design:
+#   r_step = -0.05 * d(ball, opp_goal)   # always-on, ~ -0.5 at centre, ~0 at goal
+#          +  +200 * goal_event           # huge spike on actual score
+#          +   0.3 * behind_ball_bonus    # tiny positional aid
+#          +   0.0 * vel_to_ball          # NO chase reward — closes the chase trap
+#
+# Versus random (not noop, not policy) — opponents flail, agent must still find
+# the goal. If this can't score reliably in 2000 epochs, the bug is structural,
+# not just shaping.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_distpen_pretrain
+    reward_shaper: { min_val: -50, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 100000
+    max_epochs: 2000
+
+    player: { render: False, games_num: 20, deterministic: True }
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: True       # crisp credit on score
+      shaped_reward: True
+      opponent_kind: random         # random opponent — must beat noisy adversary
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]    # wide goal to make scoring discoverable
+      shaping_weights:
+        # The new dense gradient — the whole point of this run.
+        ball_dist_to_goal_penalty: 0.05
+        # Tiny positional helper.
+        behind_ball_bonus: 0.3
+        # Big goal spike, plus terminate_on_goal so it's a clean event.
+        goal: 200.0
+        # Everything else explicitly zero — no chase trap.
+        vel_to_ball: 0.0
+        vel_ball_to_goal: 0.0
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

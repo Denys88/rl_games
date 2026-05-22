@@ -1,0 +1,101 @@
+# dm_control ANT soccer — pretraining v2.
+#
+# Diagnosis from v1: dense distance penalty alone wasn't enough. The agent
+# learned to slowly drift the ball goalward but never *touched* it hard
+# enough to score, because there was no reward for the act of pushing — only
+# for the resulting position, which decays over many steps.
+#
+# v2 adds `vel_ball_to_goal` (the velocity-of-ball-toward-opp-goal signal).
+# This *only* fires when the ball is actually moving — un-gameable by sitting
+# still. Combined with the dist penalty, the policy gets reward for both
+# (a) where the ball is and (b) where it's heading.
+#
+# Other changes vs v1:
+#   - dist penalty halved (0.05 → 0.02): less risk-aversion, agent can take
+#     risks that briefly reduce ball position
+#   - tiny vel_to_ball back in (0.02): basic approach signal, but 250x weaker
+#     than vel_ball_to_goal so the chase trap stays closed
+#   - goal: 200 → 500: bigger phase change on score, dwarfs any local optimum
+#   - goal_size: 6 → 8 m mouth: 80% of field width, scoring should be easy
+#   - lr 3e-4 → 5e-4: faster escape from initial plateau
+#   - entropy_coef 0.01 → 0.02: more exploration to find the goal manifold
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_distpen_v2
+    reward_shaper: { min_val: -50, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 5.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.012        # slightly looser — let it move
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.02
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 100000
+    max_epochs: 2000
+
+    player: { render: False, games_num: 20, deterministic: True }
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: True       # crisp credit, episode ends on score
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 7.0, 0.6]    # 7 m mouth on 10 m field — wide (8 m crashes MuJoCo, see field_box geom bug)
+      shaping_weights:
+        # The new ones doing the work.
+        ball_dist_to_goal_penalty: 0.02   # dense positional gradient (halved)
+        vel_ball_to_goal: 5.0             # the "you pushed the ball" signal
+        # Tiny basic-locomotion bias.
+        vel_to_ball: 0.02
+        behind_ball_bonus: 0.5
+        # Big spike on score.
+        goal: 500.0
+        # Off.
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

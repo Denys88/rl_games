@@ -1,0 +1,145 @@
+# dm_control 2v2 ANT soccer — v4: GOAL-ONLY reward, no shaping.
+#
+# v3* showed shaping rewards are a crutch — PPO over-optimises whatever
+# shape we give it (chase ball, dribble forever, hover near goal) instead
+# of *scoring*. Even the cleanest v3 reward (small field, ball_near_goal_
+# bonus) plateaued at ~30 reward and ~0.1 goals/ep.
+#
+# Per the user: "starting from some step reward is only diff in goals".
+# v4 strips all shaping and trains purely on the dm_soccer native reward
+# (±200 per goal). Resume from a v3 checkpoint that already knows how to
+# walk + chase + occasionally bump ball into goal — those reflexes are
+# preserved, but the PPO gradient now points 100% at scoring.
+#
+# Launch:
+#   python -u runner.py --train \
+#       --file rl_games/configs/dm_control/ppo_soccer_ant_v4.yaml \
+#       --checkpoint runs/dm_soccer_ant_v3_<ts>/nn/dm_soccer_ant_v3.pth
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_v4
+
+    reward_shaper:
+      # Goal reward is +200 per goal (-200 conceded). min_val -250 lets a
+      # conceded goal land at full magnitude.
+      min_val: -250
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.998     # higher gamma — sparse goal rewards need long-horizon credit
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 256       # longer rollouts — sparse reward needs more samples per update
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 5000        # 25 net goals/ep is "really well"
+    max_epochs: 8000
+
+    # With pure goal reward, baseline = 0.2 goals/ep × 200 = ~40 reward.
+    # Threshold 100 = 0.5 net goals/ep — push when policy clearly improves.
+    self_play_config:
+      update_score: 100.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False     # multi-turn — multiple goals/ep possible
+      shaped_reward: True           # but with all weights below at 0, only `goal` term lands
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]      # same small field as v3
+      shaping_weights:
+        # Pure goal reward turned out too sparse — value function lost
+        # calibration when loaded from a shaped-reward checkpoint and the
+        # policy regressed (8 → 2 reward in 30 epochs). Keep tiny shaping
+        # as a *gradient bridge*: chase + near-goal stays in the loss to
+        # prevent the chase reflex from being unlearned, but goal is 20-100×
+        # bigger so PPO still primarily optimises scoring.
+        vel_to_ball: 0.005
+        vel_ball_to_goal: 0.05
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.2
+        ball_near_goal_radius: 3.0
+        # Goal absolutely dominant — 200 per goal × multi-turn ≫ shaping integrals.
+        goal: 200.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: 0 }
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

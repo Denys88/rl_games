@@ -1,0 +1,147 @@
+# dm_control 2v2 BOXHEAD soccer — final stage: self-play polish from cur3.
+#
+# The reward-anneal curriculum showed pure-goal reward (cur4) erodes scoring;
+# cur3 (shaping x0.25, closest-teammate ball-chase reward) was its best output
+# (+1.17 goal diff vs random, 0 conceded). This stage polishes cur3 against a
+# frozen self-play pool.
+#
+#   - learnable_sigma: False -> sigma frozen as a non-trainable buffer at cur3's
+#     converged value (logstd ~[-1.43,-1.73,-1.19], std ~0.18-0.30 — already
+#     tight and healthy; boxhead tightens its own sigma, unlike the ant).
+#   - Reward stays at cur3's x0.25 shaping (vel_to_ball 0.05, vel_ball_to_goal
+#     0.25, goal 100) — NOT pure goal, which the curriculum proved corrosive.
+#   - opponent_kind: policy, FrozenA2COpponent pool of 8. Cold start (empty
+#     pool) falls back to random until the first push.
+#   - update_score: 100 — deliberately set BELOW the estimated self-play
+#     equilibrium reward (~110-150; vs an equal frozen copy goal terminals
+#     net ~0 so reward ~= shaping). The earlier boxhead self-play attempt
+#     stalled because update_score was set too high; err low so the treadmill
+#     keeps refreshing.
+#
+# Bootstrap: /tmp/boxhead_cur3_for_selfplay.pth — cur3 final ckpt, _orig_mod.
+# prefix stripped, optimizer + env_state dropped (sigma moves Parameter->Buffer
+# so old optimizer state is stale), epoch reset to 0.
+# Launch:
+#   python -u runner.py --train \
+#     --file rl_games/configs/dm_control/ppo_soccer_boxhead_cur3_selfplay.yaml \
+#     --checkpoint /tmp/boxhead_cur3_for_selfplay.pth
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        # Cosmetic — real per-actuator sigma is loaded from the bootstrap ckpt.
+        sigma_init: { name: const_initializer, val: -1.4 }
+        fixed_sigma: True
+        learnable_sigma: False   # non-trainable buffer — frozen exploration
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer
+    name: dm_soccer_boxhead_cur3_selfplay
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 1.0e-4   # lowered — polish, not skill acquisition
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0       # exploration is the frozen sigma
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 1500
+
+    self_play_config:
+      update_score: 100.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # cur3's x0.25 shaping — closest-teammate ball-chase reward.
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 0.25
+        goal: 100.0
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: -1.4 }
+              fixed_sigma: True
+              learnable_sigma: False
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

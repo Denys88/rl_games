@@ -296,7 +296,11 @@ class A2CBuilder(NetworkBuilder):
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
-                    self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+                    if self.learnable_sigma:
+                        self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+                    else:
+                        # Non-trainable buffer; sigma_init applied below.
+                        self.register_buffer('sigma', torch.zeros(actions_num, dtype=torch.float32))
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
@@ -537,6 +541,12 @@ class A2CBuilder(NetworkBuilder):
                 if self.is_continuous:
                     self.space_config = params['space']['continuous']
                     self.fixed_sigma = self.space_config['fixed_sigma']
+                    # When learnable_sigma=False AND fixed_sigma=True, sigma is a
+                    # non-trainable buffer (no gradient ever updates it). The
+                    # value comes from sigma_init (e.g. const_initializer val=0
+                    # → sigma_act(0); with exp activation that's 1.0). Useful for
+                    # self-play where you want a fixed exploration noise.
+                    self.learnable_sigma = self.space_config.get('learnable_sigma', True)
                 elif self.is_discrete:
                     self.space_config = params['space']['discrete']
                 elif self.is_multi_discrete:
@@ -735,7 +745,10 @@ class A2CResnetBuilder(NetworkBuilder):
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
 
                 if self.fixed_sigma:
-                    self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+                    if self.learnable_sigma:
+                        self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
+                    else:
+                        self.register_buffer('sigma', torch.zeros(actions_num, dtype=torch.float32))
                 else:
                     self.sigma = torch.nn.Linear(out_size, actions_num)
 
@@ -847,6 +860,8 @@ class A2CResnetBuilder(NetworkBuilder):
             if self.is_continuous:
                 self.space_config = params['space']['continuous']
                 self.fixed_sigma = self.space_config['fixed_sigma']
+                # See A2CBuilder.load — non-trainable sigma buffer when False.
+                self.learnable_sigma = self.space_config.get('learnable_sigma', True)
             elif self.is_discrete:
                 self.space_config = params['space']['discrete']
             elif self.is_multi_discrete:

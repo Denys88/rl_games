@@ -1,0 +1,106 @@
+# dm_control 2v2 ANT soccer — first training pass (random opponents).
+#
+# Goal: get ants moving toward the ball and scoring against random opponents
+# under a shaped reward. Once mean reward stabilizes well above zero, switch
+# the YAML below to ppo_soccer_ant_selfplay.yaml to train against an opponent
+# pool (frozen learner snapshots).
+#
+# Compute target: ~24 Ray workers × 2 learner agents = 48 parallel streams,
+# tuned for an RTX 5090 + 32-core CPU host (~90% utilization).
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      # Soccer is bigger than walker — 296-d obs, multi-agent credit
+      # assignment, shaped+sparse mix. Bigger trunk than multiwalker.
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_random_opp
+
+    reward_shaper:
+      # Shaped rewards already include a x10 goal bonus — keep raw scale,
+      # just clip pathological negatives so a single bad early step
+      # doesn't dominate the value target.
+      min_val: -5
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995          # long horizon — soccer credit assignment is slow
+    tau: 0.95             # GAE lambda
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 24 workers × 2 agents = 48 streams. With horizon 128 →
+    # 48 × 128 = 6144 transitions per rollout; 4 minibatches of 1536.
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 200      # generous; we'll watch the curve, not stop early
+    max_epochs: 5000
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0           # shorter than default 45s for faster turnover
+      enable_field_box: True
+      terminate_on_goal: True
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      shaping_weights:
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.01
+        goal: 10.0
+
+      # Ray init — leave a few cores for the trainer + system.
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

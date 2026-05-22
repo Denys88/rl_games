@@ -1,0 +1,86 @@
+# Phase A — consistent goal-scoring vs RANDOM opponent.
+#
+# Resume from cur3_push ep_800 (best chase+push, 0.10 g/ep vs random).
+# Bridge from "noop opponent + chase reflex" to "random opponent + scoring".
+#
+# Reward shifts vs cur3:
+#   ball_near_goal_bonus: 0.5 → 2.0      (4x — strongest pull toward goal area)
+#   ball_near_goal_radius: 3.0 → 4.0      (bigger funnel, easier to discover)
+#   goal: 50 → 250                        (single goal ≈ 1 ep of best shaping)
+#   vel_to_ball: 0.5 → 0.3                (slightly muted, chase still alive)
+#   reward_shaper min_val: -5 → -10       (don't truncate dense shaping spikes)
+#
+# Opponent: random (not noop, not policy). Random ants flail and disrupt;
+# the agent must still find and exploit goal scoring. If we can't beat random,
+# we can't beat anything.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseA
+    reward_shaper: { min_val: -10, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 2.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 2000
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.3            # chase reflex preserved
+        vel_ball_to_goal: 2.0       # push toward goal
+        veloc_forward: 0.05
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 2.0   # 4x cur3 — biggest pull into goal area
+        ball_near_goal_radius: 4.0  # bigger zone (was 3.0)
+        behind_ball_bonus: 0.5
+        goal: 250.0                 # ≈ 1 ep of best shaping
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

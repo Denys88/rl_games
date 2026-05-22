@@ -1,0 +1,94 @@
+# Phase C — teach the chase-reflex policy to actually SHOOT.
+#
+# Bootstrap: phaseB3 best (cur3 chase + 26 self-play refreshes, sigma=-0.7).
+# That policy moves toward the ball reliably but rarely sets up shots.
+#
+# Goal: ≥1 home goal/ep vs random in 30-ep eval (10x current 0.10).
+#
+# Reward redesign — heavy shooting incentives:
+#   vel_to_ball:           0.2     preserve chase
+#   vel_ball_to_goal:      3.0     ⬆ push HARD toward goal (was 1.0 in phaseB3)
+#   behind_ball_bonus:     1.0     ⬆ NEW — "approach from own-goal side so forward
+#                                   push aims at opp goal." The shooting setup
+#                                   the chase reflex doesn't teach.
+#   ball_field_progress:   0.3     NEW — bounded "ball forward" signal
+#   goal:                  500     ⬆ HUGE terminal — a goal beats ~3 ep of shaping
+#   ball_near_goal_bonus:  0.0     OFF — caused "park near goal" trap in phaseB2
+#
+# Opponent: random (NOT self-play). Self-play converges to chase-vs-chase
+# draws (proven in phaseB3 head-to-head). vs-random training preserves the
+# scoring signal because random opps don't defend.
+#
+# Sigma: fixed at -0.7 (std≈0.5) — non-trainable buffer, never drifts.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: -0.7 }
+        fixed_sigma: True
+        learnable_sigma: False
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_phaseC
+    reward_shaper: { min_val: -10, scale_value: 1.0 }
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 1.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 4500   # phaseB3 ended at ep 2500; ~2000 more epochs of training
+    player: { render: False, games_num: 20, deterministic: True }
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False   # multi-turn always
+      shaped_reward: True
+      opponent_kind: random      # focus scoring vs random; no self-play
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 3.0
+        behind_ball_bonus: 1.0
+        ball_field_progress: 0.3
+        goal: 500.0
+        # explicitly off
+        veloc_forward: 0.0
+        ball_near_goal_bonus: 0.0
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

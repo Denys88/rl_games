@@ -1,0 +1,46 @@
+params:
+  torch_threads: 4
+  seed: 42
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: True
+    space:
+      discrete:
+    mlp:
+      units: [64, 64]
+      activation: relu
+      initializer:
+        name: default
+
+  config:
+    name: Lunar_dpg_old
+    env_name: LunarLander-v3
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 8e-4
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 16
+    horizon_length: 128
+    minibatch_size: 512
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule: None
+    kl_threshold: 0.008
+    normalize_input: False
+    delightful_pg: old
+    device: cuda
+    max_epochs: 500
+    score_to_win: 500

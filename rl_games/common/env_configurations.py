@@ -325,6 +325,21 @@ configurations = {
         'env_creator' : lambda **kwargs : create_myo(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'dm_soccer' : {
+        # Lazy import — dm_control pulls in MuJoCo at module load.
+        # walker_type ('boxhead'/'ant'/'humanoid') is selected via env_config.
+        'env_creator' : lambda **kwargs : __import__(
+            'rl_games.envs.dm_soccer', fromlist=['create_dm_soccer']
+        ).create_dm_soccer(**kwargs),
+        'vecenv_type' : 'RAY',
+    },
+    'dm_soccer_ant' : {
+        # Legacy name kept for existing ppo_soccer_ant_*.yaml configs.
+        'env_creator' : lambda **kwargs : __import__(
+            'rl_games.envs.dm_soccer', fromlist=['create_dm_soccer']
+        ).create_dm_soccer(**kwargs),
+        'vecenv_type' : 'RAY',
+    },
     'pufferlib' : {
         'vecenv_type': 'PUFFERLIB'
     },

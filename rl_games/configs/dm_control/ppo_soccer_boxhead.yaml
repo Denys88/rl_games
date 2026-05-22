@@ -1,0 +1,119 @@
+# dm_control 2v2 BOXHEAD soccer — first training pass (random opponents).
+#
+# Boxhead is the simplest dm_soccer creature: a wheeled robot with just 3
+# continuous actuators (vs the ant's 8). Locomotion is near-trivial, so the
+# policy can spend its capacity on ball control / scoring instead of learning
+# a gait. This is the easiest of the three walker types to get scoring fast,
+# which is why we start here.
+#
+# Reward: LEAN 3-term — the ant's proven unlock (Phase B). Only chase-ball,
+# ball-to-goal, and a large sparse goal terminal. No farmable positional
+# bonuses: the only way to raise reward is to actually push the ball toward
+# the opponent goal and score. (A complex 6-term dense reward was tried first
+# in a 600-epoch probe — it scored, but only +0.04 goal diff and very slowly,
+# the reward dominated by an always-on distance-penalty offset.)
+#
+# Compute target: RTX 5090 + 32-core CPU host.
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+        # Trainable sigma for this exploration-stage run — PPO needs the
+        # noise to discover scoring. The fixed (non-learnable) sigma trick
+        # is reserved for a later self-play polish stage.
+        learnable_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    env_name: dm_soccer
+    name: dm_soccer_boxhead
+
+    reward_shaper:
+      # Dense shaping can go negative; clip pathological negatives so a
+      # single bad early step doesn't dominate the value target.
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995          # long horizon — soccer credit assignment is slow
+    tau: 0.95             # GAE lambda
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 24 workers x 2 agents = 48 streams. With horizon 128 ->
+    # 48 x 128 = 6144 transitions per rollout; 4 minibatches of 1536.
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 100000   # watch the curve, don't stop early
+    max_epochs: 3000
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False   # multi-turn — ball respawns, play continues
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # Lean 3-term reward — no farmable positional bonuses. All the
+        # ball_near_goal / behind_ball / dist_penalty / field_progress terms
+        # stay at their 0.0 defaults.
+        vel_to_ball: 0.2               # chase the ball
+        vel_ball_to_goal: 1.0          # push ball toward opp goal
+        veloc_forward: 0.0             # off (env default is 0.01 — zero it)
+        goal: 100.0                    # sparse terminal — scoring dominates
+
+      # Ray init — leave a few cores for the trainer + system.
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

@@ -1,0 +1,148 @@
+# dm_control 2v2 ANT soccer — self-play vs frozen opponent pool.
+#
+# Resume from the random-opponent checkpoint produced by ppo_soccer_ant.yaml.
+# SelfPlayManager pushes the learner's weights into the opponent of one env
+# worker per `iters_update_weigths`, building up an 8-snapshot pool over
+# time. Each match samples an opponent with linear recency weighting.
+#
+# To launch:
+#   python runner.py --train --file rl_games/configs/dm_control/ppo_soccer_ant_selfplay.yaml \
+#       --checkpoint runs/dm_soccer_ant_random_opp_<ts>/nn/dm_soccer_ant_random_opp.pth
+#
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_selfplay
+
+    reward_shaper:
+      min_val: -5
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 200
+    max_epochs: 10000
+
+    # rl_games activates the SelfPlayManager when this block is present.
+    # update_score: when mean reward exceeds this, push weights into one
+    # env worker and reset the cooldown (see SelfPlayManager.update).
+    # games_to_check: how many finished episodes to average over before
+    # the threshold check kicks in.
+    # env_update_num: stride — how many envs receive the new weights per
+    # push. With num_actors=24 and stride 1, the pool diversifies smoothly
+    # over many pushes; with stride=24, every env always plays the latest
+    # learner (closer to "naive self-play").
+    self_play_config:
+      update_score: 5.0          # well above the random-opp baseline shaping
+      games_to_check: 50
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: True
+      shaped_reward: True
+      opponent_kind: policy        # ← the self-play switch
+      central_value: False
+      shaping_weights:
+        # Same weights as Phase 1 — keeping the dense signal helps even when
+        # the opponent gets strong, since shaped rewards still encode "good"
+        # soccer behaviour.
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.01
+        goal: 10.0
+
+      # Mirrors the learner's network arch — required because the env's
+      # frozen-opponent module needs key-for-key matching state_dicts.
+      # Update this block whenever you change `params.model` or
+      # `params.network.mlp.units`.
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init:
+                name: default
+              sigma_init:
+                name: const_initializer
+                val: 0
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer:
+              name: default
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

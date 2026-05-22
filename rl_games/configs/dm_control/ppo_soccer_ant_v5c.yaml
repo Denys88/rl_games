@@ -1,0 +1,139 @@
+# dm_control 2v2 ANT soccer — v5c: behind_ball_bonus shaping.
+#
+# All previous iterations plateaued at ~15% goal rate because the chase
+# reflex (learned in Phase 1) doesn't teach *positional* play. Ants
+# converge on the ball from any direction, so when they push, the ball
+# goes whichever way they were facing — random scoring.
+#
+# v5c adds `behind_ball_bonus`: per-step reward proportional to
+#   max(0, cos(angle(ant→ball, ball→opp_goal)))
+# i.e. it's >0 when the ant is on the *own-goal side* of the ball — the
+# only position from which a forward push moves the ball toward the
+# opponent goal. Once that's learned, scoring becomes a natural extension
+# of "stay behind ball, push forward".
+#
+# Setup: small 15×10 pitch, wider 6m goals, multi-turn, mid shaping +
+# big behind_ball_bonus, dominant goal_w. Resume from Phase 1 chase.
+#
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer_ant
+    name: dm_soccer_ant_v5c
+
+    reward_shaper:
+      min_val: -50
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.005
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 5000
+    max_epochs: 12000
+
+    # Higher threshold (was 80 → too low for v5c's beefier shaping).
+    # behind_ball_bonus alone earns ~50/ep at perfect positioning, so a
+    # competent baseline will sit ~150 — push only on real outliers.
+    self_play_config:
+      update_score: 200.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        vel_to_ball: 0.02
+        vel_ball_to_goal: 0.2
+        veloc_forward: 0.005
+        ball_near_goal_bonus: 0.5
+        ball_near_goal_radius: 3.0
+        ball_field_progress: 0.0
+        # NEW: positional shaping. cos in [0, 1] per step × weight 0.5 →
+        # max ~0.5/step, ~600 per perfectly-positioned 30s episode. Large
+        # but still less than 3 goals (3 × 200 = 600). Scoring still wins.
+        behind_ball_bonus: 0.5
+        goal: 200.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: 0 }
+              fixed_sigma: True
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

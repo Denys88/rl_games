@@ -1,0 +1,99 @@
+# dm_control 2v2 BOXHEAD soccer — reward-anneal curriculum, Stage 3 of 4.
+#
+#   stage  vel_to_ball  vel_ball_to_goal  goal
+#     1       0.20          1.00          100   (Stage 1, done)
+#     2       0.10          0.50          100
+#  >> 3       0.05          0.25          100   <-- this file
+#     4       0.00          0.00          100   (pure goal)
+#
+# See ppo_soccer_boxhead_cur2.yaml for the full curriculum rationale.
+# Resumes from Stage 2 (cur2) last ckpt (epoch 3405); +1500 -> max_epochs 4905.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        sigma_init: { name: const_initializer, val: 0 }
+        fixed_sigma: True
+        learnable_sigma: True   # trainable — exploration through the curriculum
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer
+    name: dm_soccer_boxhead_cur3
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 100000
+    max_epochs: 4905      # cur2 ends at epoch 3405; +1500
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False
+      shaped_reward: True
+      opponent_kind: random
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # Curriculum Stage 3 — shaping quartered from Stage 1.
+        vel_to_ball: 0.05
+        vel_ball_to_goal: 0.25
+        goal: 100.0
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000

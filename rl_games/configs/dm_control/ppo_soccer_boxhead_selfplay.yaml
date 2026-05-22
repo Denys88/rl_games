@@ -1,0 +1,154 @@
+# dm_control 2v2 BOXHEAD soccer — Stage 2: self-play polish with frozen sigma.
+#
+# Stage 1 (ppo_soccer_boxhead.yaml) trained vs random opponents with a
+# trainable sigma; it converged cleanly on its own to logstd
+# ~[-0.94, -1.10, -0.79] (std ~0.33-0.45) and plateaued at goal diff ~1.4-1.9.
+#
+# Stage 2 freezes that healthy operating point and polishes vs a frozen
+# self-play pool:
+#   - learnable_sigma: False  -> sigma becomes a non-trainable buffer. The
+#     converged per-actuator value [-0.94,-1.10,-0.79] is carried in from the
+#     bootstrap checkpoint and never moves. PPO updates only mu. This is the
+#     canonical "fixed exploration" setup self-play stability relies on, and
+#     it stops the kind of sigma drift the ant suffered.
+#   - opponent_kind: policy with a FrozenA2COpponent pool of 8 snapshots.
+#     Cold start: empty pool -> env falls back to a uniform-random opponent,
+#     so the bootstrapped policy keeps improving until the first push.
+#   - update_score sits near the expected self-play equilibrium reward (vs an
+#     equal frozen copy the goal terminal nets ~0, so reward ~= dense shaping
+#     ~1100-1250) so pushes happen on real recovery, not pool-thrash.
+#
+# Bootstrap: /tmp/boxhead_for_selfplay.pth — Stage 1 best ckpt (epoch 1905,
+# rew 1546) with the _orig_mod. compile prefix stripped, optimizer + env_state
+# dropped (sigma moves Parameter->Buffer so old optimizer state is stale).
+# Launch:
+#   python -u runner.py --train \
+#     --file rl_games/configs/dm_control/ppo_soccer_boxhead_selfplay.yaml \
+#     --checkpoint /tmp/boxhead_for_selfplay.pth
+#
+# Compute target: RTX 5090 + 32-core CPU host.
+params:
+  torch_threads: 4
+  algo: { name: a2c_continuous }
+  model: { name: continuous_a2c_logstd }
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init: { name: default }
+        # Cosmetic only — the real per-actuator sigma is loaded from the
+        # bootstrap checkpoint. const_initializer just sets the buffer shape.
+        sigma_init: { name: const_initializer, val: -0.9 }
+        fixed_sigma: True
+        learnable_sigma: False   # non-trainable buffer — frozen exploration
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer: { name: default }
+
+  config:
+    env_name: dm_soccer
+    name: dm_soccer_boxhead_selfplay
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+
+    gamma: 0.995          # match Stage 1
+    tau: 0.95
+    learning_rate: 1.0e-4 # lowered — polish, not skill acquisition
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0     # exploration is the frozen sigma, not entropy
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    num_actors: 24
+    horizon_length: 128
+    minibatch_size: 1536
+    mini_epochs: 4
+
+    save_best_after: 50
+    save_frequency: 100
+    score_to_win: 100000
+    max_epochs: 3000
+
+    self_play_config:
+      # Reward vs an equal frozen copy ~= dense shaping (~1100-1250); push
+      # when the policy recovers above that so the pool refreshes on real
+      # improvement instead of thrashing every few epochs.
+      update_score: 1100.0
+      games_to_check: 100
+      check_scores: False
+      env_update_num: 1
+
+    player:
+      render: False
+      games_num: 20
+      deterministic: True
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False   # multi-turn — ball respawns, play continues
+      shaped_reward: True
+      opponent_kind: policy
+      central_value: False
+      field_size: [15.0, 10.0]
+      goal_size: [1.0, 6.0, 0.6]
+      shaping_weights:
+        # Lean 3-term reward — identical to Stage 1.
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        goal: 100.0
+        # all others explicitly zero
+        veloc_forward: 0.0
+        ball_field_progress: 0.0
+        ball_near_goal_bonus: 0.0
+        behind_ball_bonus: 0.0
+
+      opponent_factory_config:
+        model_name: continuous_a2c_logstd
+        normalize_input: True
+        normalize_value: True
+        pool_size: 8
+        deterministic: True
+        device: cpu
+        network_params:
+          name: actor_critic
+          separate: False
+          space:
+            continuous:
+              mu_activation: None
+              sigma_activation: None
+              mu_init: { name: default }
+              sigma_init: { name: const_initializer, val: -0.9 }
+              fixed_sigma: True
+              learnable_sigma: False
+          mlp:
+            units: [512, 256, 128]
+            d2rl: False
+            activation: elu
+            initializer: { name: default }
+
+      ray_config:
+        num_cpus: 28
+        include_dashboard: False
+        log_to_driver: False
+        object_store_memory: 2000000000
