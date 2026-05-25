@@ -45,18 +45,25 @@ class RunningMeanStd(nn.Module):
         dtype = _running_stats_dtype()
         self.register_buffer("running_mean", torch.zeros(in_size, dtype=dtype))
         self.register_buffer("running_var", torch.ones(in_size, dtype=dtype))
-        self.register_buffer("count", torch.ones((), dtype=dtype))
+        # int64 so the sample count never saturates regardless of the running
+        # mean/var dtype. float32 saturates at 2^24 (~16.7M samples), which a
+        # long training run can hit and silently freezes the running stats.
+        # Module._apply skips non-floating buffers, so .half()/.float() leave
+        # this one alone too.
+        self.register_buffer("count", torch.ones((), dtype=torch.int64))
 
     def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count:int):
-        delta = batch_mean - mean
-        tot_count = count + batch_count
+        # count is int64; cast to the float dtype for arithmetic only.
+        count_f = count.to(mean.dtype)
+        tot_count_f = count_f + batch_count
 
-        new_mean = mean + delta * batch_count / tot_count
-        m_a = var * count
+        delta = batch_mean - mean
+        new_mean = mean + delta * batch_count / tot_count_f
+        m_a = var * count_f
         m_b = batch_var * batch_count
-        M2 = m_a + m_b + delta**2 * count * batch_count / tot_count
-        new_var = M2 / tot_count
-        new_count = tot_count
+        M2 = m_a + m_b + delta**2 * count_f * batch_count / tot_count_f
+        new_var = M2 / tot_count_f
+        new_count = count + batch_count
         return new_mean, new_var, new_count
 
     def forward(self, input, denorm:bool=False, mask:Optional[torch.Tensor]=None):
