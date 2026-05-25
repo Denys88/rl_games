@@ -29,15 +29,15 @@ To target Apple Silicon, add `device: mps` and set `mixed_precision: False` in t
 
 ## Results — Apple Silicon (M5 Max, MPS)
 
-Single-seed PPO runs on a 16-core M5 Max MacBook (48 GB unified memory) with envpool 1.2.5, torch 2.12 + MPS, on the stock YAML configs from this repo. Each chart shows mean episode reward per epoch.
+Single-seed PPO runs on a 16-core M5 Max MacBook (48 GB unified memory) with envpool 1.2.5, torch 2.12 + MPS, on the stock YAML configs from this repo. Charts plot mean episode reward against wall-clock minutes.
 
 | Env | Epochs | Wall-clock | Total FPS | Best reward |
 |---|---|---|---|---|
-| Pong-v5 | 179 / 250 (stopped at `score_to_win: 20`) | 3.0 min | ~7.5k | 20.0 |
-| Hopper-v5 | 1000 / 1000 | 2.2 min | 32.5k | 3,485 |
-| Ant-v5 | 2000 / 2000 | 5.2 min | 27.5k | 4,429 |
-| Walker2d-v5 | 1000 / 1000 | 4.4 min | 31.8k | 5,186 |
-| HalfCheetah-v5 | 1000 / 1000 | 7.9 min | 36.4k | 1,688 |
+| Pong-v5 | 179 / 250 (stopped at `score_to_win: 20`) | 3.2 min | ~7.5k | 20.0 |
+| Hopper-v5 | 1000 / 1000 | 2.2 min | 32.3k | 3,485 |
+| Ant-v5 | 2000 / 2000 | 5.3 min | 27.0k | 4,429 |
+| Walker2d-v5 | 1000 / 1000 | 4.6 min | 31.4k | 5,186 |
+| HalfCheetah-v5 | 1000 / 1000 | 8.1 min | 34.0k | 1,688 |
 
 ### Pong-v5
 ![Pong MPS](pictures/envpool_mps/pong_envpool_mps.png)
