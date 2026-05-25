@@ -5,6 +5,17 @@ import numpy as np
 from typing import Optional, Tuple
 
 
+def _running_stats_dtype():
+    # MPS doesn't support float64. On a CUDA-less Mac the only accelerator
+    # is MPS, so default the running-stat buffers to float32 there. JIT
+    # scripting freezes buffer dtypes at script time, so this has to be
+    # decided in __init__ rather than inside _apply.
+    if not torch.cuda.is_available() and getattr(torch.backends, 'mps', None) is not None \
+            and torch.backends.mps.is_available():
+        return torch.float32
+    return torch.float64
+
+
 class RunningMeanStd(nn.Module):
     """Tracks the running mean and variance of input data."""
     def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
@@ -31,9 +42,10 @@ class RunningMeanStd(nn.Module):
             self.axis = [0]
             in_size = insize
 
-        self.register_buffer("running_mean", torch.zeros(in_size, dtype=torch.float64))
-        self.register_buffer("running_var", torch.ones(in_size, dtype=torch.float64))
-        self.register_buffer("count", torch.ones((), dtype=torch.float64))
+        dtype = _running_stats_dtype()
+        self.register_buffer("running_mean", torch.zeros(in_size, dtype=dtype))
+        self.register_buffer("running_var", torch.ones(in_size, dtype=dtype))
+        self.register_buffer("count", torch.ones((), dtype=dtype))
 
     def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count:int):
         delta = batch_mean - mean

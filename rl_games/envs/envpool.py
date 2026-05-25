@@ -62,8 +62,10 @@ class Envpool(IVecEnv):
 
         self.action_space = self.env.action_space
         self.ids = np.arange(0, num_actors)
-        self.scores = np.zeros(num_actors)
-        self.returned_scores = np.zeros(num_actors)
+        # float32 so downstream torch.from_numpy(...).to(device) works on MPS,
+        # which doesn't support float64.
+        self.scores = np.zeros(num_actors, dtype=np.float32)
+        self.returned_scores = np.zeros(num_actors, dtype=np.float32)
 
     def _set_scores(self, infos, dones):
         """Track raw (unclipped) episode rewards for Atari benchmarking.
