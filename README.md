@@ -1,6 +1,6 @@
 # RL Games: High performance RL library
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored with the new envpool 1.1.1 (Python 3.11–3.14, NumPy 2.x, MuJoCo 3.x compatible).
+**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored with envpool >= 1.2.5 (Python 3.11–3.14, NumPy 2.x, MuJoCo 3.x compatible).
 
 ## Discord Channel Link 
 * https://discord.gg/hnYRq7DsQh
