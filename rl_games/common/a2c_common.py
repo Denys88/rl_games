@@ -176,6 +176,13 @@ class A2CBase(BaseAlgorithm):
         self.max_epochs = self.config.get('max_epochs', -1)
         self.max_frames = np.max(self.config.get('max_frames', -1), self.config.get('max_steps', -1))
 
+        # Optional user-supplied stop callback: callable(algo) -> bool.
+        # Set programmatically (algo.stop_fn = ...) or via config['stop_fn'].
+        # See README "Custom stop callback" section.
+        self.stop_fn = config.get('stop_fn', None)
+        if self.stop_fn is not None and not callable(self.stop_fn):
+            raise ValueError(f"'stop_fn' must be callable, got {type(self.stop_fn).__name__}")
+
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
         self.schedule_type = config.get('schedule_type', 'legacy')
@@ -1173,6 +1180,11 @@ class DiscreteA2CBase(A2CBase):
                     print('MAX FRAMES NUM!')
                     should_exit = True
 
+                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(epoch_num)))
+                    print('Custom stop callback returned True. Stopping training.')
+                    should_exit = True
+
                 update_time = 0
 
             if self.multi_gpu:
@@ -1454,6 +1466,11 @@ class ContinuousA2CBase(A2CBase):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX FRAMES NUM!')
+                    should_exit = True
+
+                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(epoch_num)))
+                    print('Custom stop callback returned True. Stopping training.')
                     should_exit = True
 
                 update_time = 0

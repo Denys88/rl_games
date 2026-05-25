@@ -451,6 +451,71 @@ Additional environment supported properties and functions
 
 
 
+## Custom stop callback
+
+In addition to the built-in `score_to_win`, `max_epochs`, and `max_frames` stop conditions, training can be terminated by a user-defined callback. The callback receives the algorithm instance and returns `True` to stop. It is checked once per epoch on rank 0 and broadcast to other ranks under multi-GPU. Works with PPO (continuous and discrete) and SAC.
+
+The signature:
+
+```python
+def my_stop(algo) -> bool:
+    # algo exposes: epoch_num, frame, last_mean_rewards, mean_rewards,
+    # game_rewards, game_lengths, config, ...
+    return algo.last_mean_rewards > 18.0 and algo.epoch_num >= 100
+```
+
+There are two ways to wire it in.
+
+### A. Manual algo instantiation
+
+Build the agent yourself, set the callback, then call `train()`:
+
+```python
+import yaml
+from rl_games.torch_runner import Runner
+
+with open('rl_games/configs/atari/ppo_pong.yaml') as f:
+    cfg = yaml.safe_load(f)
+
+runner = Runner()
+runner.load(cfg)
+runner.load_config(runner.default_config)
+
+agent = runner.algo_factory.create(
+    runner.algo_name, base_name='run', params=runner.params
+)
+agent.stop_fn = lambda algo: algo.last_mean_rewards > 18.0 and algo.epoch_num >= 100
+agent.train()
+```
+
+### B. Through `Runner.run`
+
+Pass the callable in the runtime args dict (programmatic), or reference it from YAML by import path (string).
+
+Programmatic:
+
+```python
+def my_stop(algo):
+    return algo.last_mean_rewards > 18.0 and algo.epoch_num >= 100
+
+runner = Runner()
+runner.load(cfg)
+runner.run({'train': True, 'stop_fn': my_stop})
+```
+
+YAML — set `config.stop_fn` to either `pkg.mod:function` or `pkg.mod.function`:
+
+```yaml
+params:
+  config:
+    stop_fn: my_project.stops:reward_plateau
+```
+
+The string is resolved by `importlib` at training start. `args['stop_fn']` (programmatic) takes precedence over `config['stop_fn']` (YAML) if both are set.
+
+`stop_fn` must be a callable taking the algo and returning `bool`; an `ValueError` is raised at startup otherwise.
+
+
 ## Troubleshouting
 
 * Some of the supported envs are not installed with setup.py, you need to manually install them
