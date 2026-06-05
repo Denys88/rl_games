@@ -1,6 +1,8 @@
 """EnvPool vectorized environment wrapper for rl_games.
 
-Uses envpool's native gymnasium API (envpool >= 1.1.1).
+Uses envpool's native gymnasium API. Requires envpool >= 1.2.5 — the first
+release verified against numpy 2.x (CartPole, HalfCheetah and the rl_games
+MuJoCo training path all confirmed working on envpool 1.2.5 + numpy 2.4.4).
 
 Supported features that can be passed via env_config:
     env_name (str): Required. envpool task ID (e.g. "Ant-v4", "Pong-v5",
@@ -62,8 +64,10 @@ class Envpool(IVecEnv):
 
         self.action_space = self.env.action_space
         self.ids = np.arange(0, num_actors)
-        self.scores = np.zeros(num_actors)
-        self.returned_scores = np.zeros(num_actors)
+        # float32 so downstream torch.from_numpy(...).to(device) works on MPS,
+        # which doesn't support float64.
+        self.scores = np.zeros(num_actors, dtype=np.float32)
+        self.returned_scores = np.zeros(num_actors, dtype=np.float32)
 
     def _set_scores(self, infos, dones):
         """Track raw (unclipped) episode rewards for Atari benchmarking.

@@ -5,6 +5,17 @@ import numpy as np
 from typing import Optional, Tuple
 
 
+def _running_stats_dtype():
+    # MPS doesn't support float64. On a CUDA-less Mac the only accelerator
+    # is MPS, so default the running-stat buffers to float32 there. JIT
+    # scripting freezes buffer dtypes at script time, so this has to be
+    # decided in __init__ rather than inside _apply.
+    if not torch.cuda.is_available() and getattr(torch.backends, 'mps', None) is not None \
+            and torch.backends.mps.is_available():
+        return torch.float32
+    return torch.float64
+
+
 class RunningMeanStd(nn.Module):
     """Tracks the running mean and variance of input data."""
     def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
@@ -31,20 +42,28 @@ class RunningMeanStd(nn.Module):
             self.axis = [0]
             in_size = insize
 
-        self.register_buffer("running_mean", torch.zeros(in_size, dtype=torch.float64))
-        self.register_buffer("running_var", torch.ones(in_size, dtype=torch.float64))
-        self.register_buffer("count", torch.ones((), dtype=torch.float64))
+        dtype = _running_stats_dtype()
+        self.register_buffer("running_mean", torch.zeros(in_size, dtype=dtype))
+        self.register_buffer("running_var", torch.ones(in_size, dtype=dtype))
+        # int64 so the sample count never saturates regardless of the running
+        # mean/var dtype. float32 saturates at 2^24 (~16.7M samples), which a
+        # long training run can hit and silently freezes the running stats.
+        # Module._apply skips non-floating buffers, so .half()/.float() leave
+        # this one alone too.
+        self.register_buffer("count", torch.ones((), dtype=torch.int64))
 
     def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count:int):
-        delta = batch_mean - mean
-        tot_count = count + batch_count
+        # count is int64; cast to the float dtype for arithmetic only.
+        count_f = count.to(mean.dtype)
+        tot_count_f = count_f + batch_count
 
-        new_mean = mean + delta * batch_count / tot_count
-        m_a = var * count
+        delta = batch_mean - mean
+        new_mean = mean + delta * batch_count / tot_count_f
+        m_a = var * count_f
         m_b = batch_var * batch_count
-        M2 = m_a + m_b + delta**2 * count * batch_count / tot_count
-        new_var = M2 / tot_count
-        new_count = tot_count
+        M2 = m_a + m_b + delta**2 * count_f * batch_count / tot_count_f
+        new_var = M2 / tot_count_f
+        new_count = count + batch_count
         return new_mean, new_var, new_count
 
     def forward(self, input, denorm:bool=False, mask:Optional[torch.Tensor]=None):
