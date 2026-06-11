@@ -174,7 +174,7 @@ class A2CBase(BaseAlgorithm):
         # TODO: do we still need it?
         self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', -1)
-        self.max_frames = np.max(self.config.get('max_frames', -1), self.config.get('max_steps', -1))
+        self.max_frames = max(self.config.get('max_frames', -1), self.config.get('max_steps', -1))
 
         # Optional user-supplied stop callback: callable(algo) -> bool.
         # Set programmatically (algo.stop_fn = ...) or via config['stop_fn'].

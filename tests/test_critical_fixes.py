@@ -73,6 +73,18 @@ def make_cartpole_agent(**config_overrides):
     return runner.algo_factory.create(runner.algo_name, base_name='test_run', params=runner.params)
 
 
+def test_max_steps_config_usable():
+    # Finding 6 (high): np.max(a, b) passes b as the AXIS argument.
+    # Pre-fix: any positive max_steps raises AxisError during agent __init__.
+    agent = make_cartpole_agent(max_steps=500_000)
+    assert agent.max_frames == 500_000
+
+
+def test_max_frames_and_max_steps_take_elementwise_max():
+    agent = make_cartpole_agent(max_frames=100, max_steps=200)
+    assert agent.max_frames == 200
+
+
 def make_sac_pendulum_agent(**config_overrides):
     """Tiny CPU Pendulum SAC: halfcheetah config re-targeted at classic-control Pendulum (no mujoco dep)."""
     from rl_games.torch_runner import Runner
