@@ -186,3 +186,27 @@ def test_sac_checkpoint_contains_what_restore_reads():
     state = agent.get_full_state_weights()
     assert 'last_mean_rewards' in state and state['last_mean_rewards'] == pytest.approx(42.0)
     assert 'env_state' in state
+
+
+def test_load_checkpoint_strips_compile_prefix_everywhere(tmp_path):
+    # Finding 17 (high): load_checkpoint stripped '_orig_mod.' only from
+    # state['model']; compiled central-value nets save nested keys like
+    # 'model._orig_mod.layer' under 'assymetric_vf_nets' and resume fails.
+    from rl_games.algos_torch import torch_ext
+    state = {
+        'model': {'_orig_mod.actor.weight': torch.ones(2)},
+        'assymetric_vf_nets': {'model._orig_mod.critic.weight': torch.ones(2),
+                               'plain_key': torch.zeros(1)},
+        'optimizer': {'state': {0: {'step': torch.tensor(1)}},
+                      'param_groups': [{'lr': 1e-4, 'params': [0]}]},
+        'frame': 128,
+    }
+    fn = str(tmp_path / 'ckpt')
+    torch_ext.save_checkpoint(fn, state)
+    loaded = torch_ext.load_checkpoint(fn + '.pth')
+    assert 'actor.weight' in loaded['model']
+    assert '_orig_mod.actor.weight' not in loaded['model']
+    assert 'model.critic.weight' in loaded['assymetric_vf_nets']
+    assert 'plain_key' in loaded['assymetric_vf_nets']
+    assert loaded['optimizer']['state'][0]['step'] == torch.tensor(1)  # int keys survive
+    assert loaded['frame'] == 128
