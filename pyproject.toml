@@ -9,8 +9,8 @@ authors = [
     {name = "Viktor Makoviichuk", email = "victor.makoviychuk@gmail.com"},
 ]
 dependencies = [
-    "torch>=2.0.0",
-    "gymnasium>=0.29.0",
+    "torch>=2.11.0",
+    "gymnasium>=1.0.0",
     "tensorboard>=2.8.0",
     "tensorboardX>=2.5",
     "PyYAML>=6.0",
@@ -27,9 +27,9 @@ mujoco = ["mujoco>=3.0.0", "imageio"]
 # envpool 1.2.5 is the first release verified against numpy 2.x (declares
 # numpy>=1.19 with no upper pin); releases <=1.1.x predate numpy 2.0.
 envpool = ["envpool>=1.2.5"]
-# Note: pufferlib 3.x pins numpy<2.0 and gymnasium<=0.29.1.
-# To avoid downgrades, install with: pip install pufferlib --no-deps
-pufferlib = ["pufferlib>=1.0.0"]
+# pufferlib pins numpy<2.0 and gymnasium<=0.29.1, which conflicts with this
+# project's floors, so it cannot be a resolvable extra. To use the pufferlib
+# vecenv backend: pip install pufferlib --no-deps
 
 [build-system]
 requires = ["hatchling"]
