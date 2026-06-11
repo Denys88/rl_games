@@ -85,6 +85,35 @@ def test_max_frames_and_max_steps_take_elementwise_max():
     assert agent.max_frames == 200
 
 
+def test_linear_lr_schedule_anneals_with_max_frames():
+    # Finding 7 (high): all scheduler.update call sites hardcode frames=0, so
+    # lr_schedule: linear + max_frames never anneals (mul stays 1.0 forever).
+    #
+    # Setup notes:
+    # - max_epochs must be -1: the LinearScheduler is only frames-based
+    #   (use_epochs=False) when max_epochs == -1 (a2c_common.py scheduler setup).
+    #   The run then terminates via the max_frames check instead.
+    # - 2 actors * 8 horizon -> curr_frames=16 per epoch, so max_frames=2048
+    #   means 128 tiny CPU epochs (seconds).
+    #
+    # Call-order: in the discrete train loop, scheduler.update runs INSIDE
+    # train_epoch(), but self.frame += curr_frames happens in train() AFTER
+    # train_epoch() returns. So the last scheduler call saw the frame count
+    # from before the final epoch's increment: agent.frame - agent.curr_frames.
+    runner = make_cartpole_runner(lr_schedule='linear', max_frames=2048,
+                                  max_epochs=-1, learning_rate=3e-4)
+    agent = runner.algo_factory.create(runner.algo_name, base_name='test_anneal', params=runner.params)
+    agent.train()
+    assert agent.frame > 0
+    assert agent.last_lr < 3e-4, \
+        f"lr did not anneal at all: last_lr={agent.last_lr}, frame={agent.frame}"
+    frames_at_last_update = agent.frame - agent.curr_frames
+    expected_mul = max(0, 2048 - frames_at_last_update) / 2048
+    expected_lr = 1e-6 + (3e-4 - 1e-6) * expected_mul
+    assert agent.last_lr == pytest.approx(expected_lr, rel=1e-4), \
+        f"lr did not match linear formula: last_lr={agent.last_lr}, frame={agent.frame}"
+
+
 def make_sac_pendulum_agent(**config_overrides):
     """Tiny CPU Pendulum SAC: halfcheetah config re-targeted at classic-control Pendulum (no mujoco dep)."""
     from rl_games.torch_runner import Runner

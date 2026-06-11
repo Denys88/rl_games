@@ -1001,7 +1001,7 @@ class DiscreteA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
 
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
@@ -1274,7 +1274,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.world_size
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
@@ -1282,7 +1282,7 @@ class ContinuousA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
             if self.schedule_type == 'standard':
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                 self.update_lr(self.last_lr)
 
             kls.append(av_kls)
@@ -1385,6 +1385,8 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
+            curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
+            self.frame += curr_frames
             frame = self.frame // self.num_agents
 
             # cleaning memory to optimize space
@@ -1396,8 +1398,6 @@ class ContinuousA2CBase(A2CBase):
                 # do we need scaled_time?
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
-                curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
-                self.frame += curr_frames
 
                 print_statistics(self.print_stats, curr_frames, step_time, scaled_play_time, scaled_time, 
                                 epoch_num, self.max_epochs, frame, self.max_frames)
