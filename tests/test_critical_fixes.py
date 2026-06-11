@@ -135,6 +135,16 @@ def test_update_lr_sets_optimizer_and_last_lr_consistently():
             "train_actor_critic overwrote optimizer lr with rank-stale last_lr"
 
 
+def test_rms_advantage_checkpoint_roundtrip():
+    # Finding 9 (high): set_stats_weights loads weights['advantage_mean_std']
+    # unconditionally when normalize_rms_advantage is on, but get_stats_weights
+    # never saved it -> restore crashes with KeyError.
+    agent = make_cartpole_agent(normalize_advantage=True, normalize_rms_advantage=True)
+    state = agent.get_full_state_weights()
+    assert 'advantage_mean_std' in state
+    agent.set_full_state_weights(state)  # pre-fix: KeyError 'advantage_mean_std'
+
+
 def make_sac_pendulum_agent(**config_overrides):
     """Tiny CPU Pendulum SAC: halfcheetah config re-targeted at classic-control Pendulum (no mujoco dep)."""
     from rl_games.torch_runner import Runner

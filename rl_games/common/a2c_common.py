@@ -334,7 +334,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5)
-            self.advantage_mean_std = GeneralizedMovingStats((1,), momentum=momentum).to(self.ppo_device)
+            self.advantage_mean_std = GeneralizedMovingStats((1,), decay=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
@@ -692,6 +692,8 @@ class A2CBase(BaseAlgorithm):
 
     def get_stats_weights(self, model_stats=False):
         state = {}
+        if self.normalize_rms_advantage:
+            state['advantage_mean_std'] = self.advantage_mean_std.state_dict()
         if self.mixed_precision:
             state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
@@ -705,7 +707,8 @@ class A2CBase(BaseAlgorithm):
         return state
 
     def set_stats_weights(self, weights):
-        if self.normalize_rms_advantage:
+        if self.normalize_rms_advantage and 'advantage_mean_std' in weights:
+            # guard: checkpoints written before this fix don't contain the key
             self.advantage_mean_std.load_state_dict(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
