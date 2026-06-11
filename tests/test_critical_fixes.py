@@ -33,3 +33,52 @@ def test_strtobool_semantics():
         assert strtobool(token) == 0
     with pytest.raises(ValueError):
         strtobool('maybe')
+
+
+CARTPOLE_YAML = os.path.join(REPO, 'rl_games', 'configs', 'ppo_cartpole.yaml')
+SAC_YAML = os.path.join(REPO, 'rl_games', 'configs', 'mujoco', 'sac_halfcheetah.yaml')
+
+
+def _load_params(path):
+    with open(path) as f:
+        return yaml.safe_load(f)['params']
+
+
+def make_cartpole_runner(**config_overrides):
+    """Tiny CPU CartPole PPO (discrete A2C) through the real Runner."""
+    from rl_games.torch_runner import Runner
+    params = _load_params(CARTPOLE_YAML)
+    cfg = params['config']
+    cfg.update({
+        'device': 'cpu', 'device_name': 'cpu', 'multi_gpu': False,
+        'num_actors': 2, 'horizon_length': 8, 'minibatch_size': 16,
+        'mini_epochs': 1, 'max_epochs': 2, 'save_frequency': 0,
+        'save_best_after': 10_000, 'torch_compile': False, 'print_stats': False,
+    })
+    cfg.update(config_overrides)
+    runner = Runner()
+    runner.load({'params': params})
+    return runner
+
+
+def make_cartpole_agent(**config_overrides):
+    runner = make_cartpole_runner(**config_overrides)
+    return runner.algo_factory.create(runner.algo_name, base_name='test_run', params=runner.params)
+
+
+def make_sac_pendulum_agent(**config_overrides):
+    """Tiny CPU Pendulum SAC: halfcheetah config re-targeted at classic-control Pendulum (no mujoco dep)."""
+    from rl_games.torch_runner import Runner
+    params = _load_params(SAC_YAML)
+    cfg = params['config']
+    cfg.update({
+        'device': 'cpu', 'device_name': 'cpu', 'multi_gpu': False,
+        'env_name': 'Pendulum-v1', 'num_actors': 2, 'print_stats': False,
+        'max_epochs': 2, 'save_frequency': 0, 'save_best_after': 10_000,
+        'replay_buffer_size': 1000, 'batch_size': 32, 'num_warmup_frames': 1,
+    })
+    cfg.pop('env_config', None)
+    cfg.update(config_overrides)
+    runner = Runner()
+    runner.load({'params': params})
+    return runner.algo_factory.create(runner.algo_name, base_name='test_sac', params=runner.params)
