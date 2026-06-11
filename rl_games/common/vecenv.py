@@ -349,6 +349,11 @@ def _create_envpool(config_name, num_actors, **kwargs):
     return Envpool(config_name, num_actors, **kwargs)
 register('ENVPOOL', _create_envpool)
 
+def _create_dmc_soccer_selfplay(config_name, num_actors, **kwargs):
+    from rl_games.envs.dmc_soccer_selfplay import SoccerSelfPlay
+    return SoccerSelfPlay(config_name, num_actors, **kwargs)
+register('DMC_SOCCER_SELFPLAY', _create_dmc_soccer_selfplay)
+
 def _create_pufferlib(config_name, num_actors, **kwargs):
     from rl_games.envs.pufferlib_vecenv import PufferLibVecEnv
     return PufferLibVecEnv(config_name, num_actors, **kwargs)
