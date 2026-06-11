@@ -153,3 +153,26 @@ def make_sac_pendulum_agent(**config_overrides):
     runner = Runner()
     runner.load({'params': params})
     return runner.algo_factory.create(runner.algo_name, base_name='test_sac', params=runner.params)
+
+
+def test_resume_preserves_best_reward_watermark():
+    # Finding 18 (high): get_full_state_weights saves last_mean_rewards precisely
+    # "to prevent overriding the best ever checkpoint upon experiment restart",
+    # but train() reset it to -1e9 right after restore.
+    agent = make_cartpole_agent()
+    state = agent.get_full_state_weights()
+    state['last_mean_rewards'] = 1.0e6  # unbeatable by 2 epochs of cartpole
+    agent.set_full_state_weights(state)
+    agent.train()
+    assert agent.last_mean_rewards == pytest.approx(1.0e6), \
+        "train() reset the restored best-reward watermark"
+
+
+def test_sac_checkpoint_contains_what_restore_reads():
+    # Finding 23 (medium): SAC set_full_state_weights reads last_mean_rewards and
+    # env_state, but get_full_state_weights never saved either.
+    agent = make_sac_pendulum_agent()
+    agent.last_mean_rewards = 42.0
+    state = agent.get_full_state_weights()
+    assert 'last_mean_rewards' in state and state['last_mean_rewards'] == pytest.approx(42.0)
+    assert 'env_state' in state

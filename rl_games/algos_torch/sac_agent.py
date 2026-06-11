@@ -264,7 +264,6 @@ class SACAgent(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
 
     def get_full_state_weights(self):
-        print("Loading full weights")
         state = self.get_weights()
 
         state['epoch'] = self.epoch_num
@@ -273,6 +272,12 @@ class SACAgent(BaseAlgorithm):
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
+
+        # restore (set_full_state_weights) reads both of these — see finding 23
+        state['last_mean_rewards'] = self.last_mean_rewards
+
+        if self.vec_env is not None:
+            state['env_state'] = self.vec_env.get_env_state()
 
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
@@ -524,7 +529,7 @@ class SACAgent(BaseAlgorithm):
     def clear_stats(self):
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = self.last_mean_rewards = -1000000000
+        self.mean_rewards = -1000000000  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         self.algo_observer.after_clear_stats()
 
     def play_steps(self, random_exploration=False):

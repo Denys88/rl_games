@@ -1080,7 +1080,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.mean_rewards = self.last_mean_rewards = -1000000000
+        self.mean_rewards = -1000000000  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
@@ -1367,7 +1367,6 @@ class ContinuousA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.last_mean_rewards = -1000000000
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
