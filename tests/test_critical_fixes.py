@@ -124,12 +124,15 @@ def test_update_lr_sets_optimizer_and_last_lr_consistently():
     assert agent.last_lr == pytest.approx(1.23e-4)
     for group in agent.optimizer.param_groups:
         assert group['lr'] == pytest.approx(1.23e-4)
-    # and the per-minibatch overwrite is gone from both agents:
-    import inspect
-    from rl_games.algos_torch import a2c_continuous, a2c_discrete
-    for cls in (a2c_continuous.A2CAgent, a2c_discrete.DiscreteA2CAgent):
-        src = inspect.getsource(cls.train_actor_critic)
-        assert "param_group['lr']" not in src, f"{cls.__name__}.train_actor_critic still overwrites lr"
+    # behavioral guard: train_actor_critic must not re-apply rank-stale last_lr
+    # to the optimizer (the finding-5/8 bug, in any spelling or refactor)
+    agent.last_lr = 999.0                  # poison the rank-stale value
+    agent.calc_gradients = lambda d: None  # isolate the contract under test
+    agent.train_result = (0, 0, 0, 0, agent.last_lr, 1.0)
+    agent.train_actor_critic({})
+    for group in agent.optimizer.param_groups:
+        assert group['lr'] == pytest.approx(1.23e-4), \
+            "train_actor_critic overwrote optimizer lr with rank-stale last_lr"
 
 
 def make_sac_pendulum_agent(**config_overrides):
