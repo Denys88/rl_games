@@ -233,10 +233,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def train_actor_critic(self, input_dict):
         self.set_train()
         self.calc_gradients(input_dict)
-
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-
         return self.train_result
 
     def reg_loss(self, mu):

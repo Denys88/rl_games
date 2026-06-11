@@ -114,6 +114,24 @@ def test_linear_lr_schedule_anneals_with_max_frames():
         f"lr did not match linear formula: last_lr={agent.last_lr}, frame={agent.frame}"
 
 
+def test_update_lr_sets_optimizer_and_last_lr_consistently():
+    # Findings 5/8 (high): train_actor_critic used to overwrite param_group['lr']
+    # with rank-local stale self.last_lr after every minibatch; on non-zero ranks
+    # that value is permanently stale (their scheduler is forced to Identity).
+    # Contract now: update_lr is the single writer and keeps self.last_lr in sync.
+    agent = make_cartpole_agent()
+    agent.update_lr(1.23e-4)
+    assert agent.last_lr == pytest.approx(1.23e-4)
+    for group in agent.optimizer.param_groups:
+        assert group['lr'] == pytest.approx(1.23e-4)
+    # and the per-minibatch overwrite is gone from both agents:
+    import inspect
+    from rl_games.algos_torch import a2c_continuous, a2c_discrete
+    for cls in (a2c_continuous.A2CAgent, a2c_discrete.DiscreteA2CAgent):
+        src = inspect.getsource(cls.train_actor_critic)
+        assert "param_group['lr']" not in src, f"{cls.__name__}.train_actor_critic still overwrites lr"
+
+
 def make_sac_pendulum_agent(**config_overrides):
     """Tiny CPU Pendulum SAC: halfcheetah config re-targeted at classic-control Pendulum (no mujoco dep)."""
     from rl_games.torch_runner import Runner

@@ -427,10 +427,15 @@ class A2CBase(BaseAlgorithm):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device)
-            dist.broadcast(lr_tensor, 0)
-            lr = lr_tensor.item()
+            # broadcast both schedule outputs from rank 0: non-zero ranks run an
+            # Identity scheduler (lr_schedule is forced None there), so their
+            # local last_lr/entropy_coef are permanently stale
+            sync_tensor = torch.tensor([lr, self.entropy_coef], dtype=torch.float64, device=self.device)
+            dist.broadcast(sync_tensor, 0)
+            lr = sync_tensor[0].item()
+            self.entropy_coef = sync_tensor[1].item()
 
+        self.last_lr = lr
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
