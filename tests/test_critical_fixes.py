@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 
 import pytest
 import torch
@@ -38,6 +39,9 @@ def test_strtobool_semantics():
 CARTPOLE_YAML = os.path.join(REPO, 'rl_games', 'configs', 'ppo_cartpole.yaml')
 SAC_YAML = os.path.join(REPO, 'rl_games', 'configs', 'mujoco', 'sac_halfcheetah.yaml')
 
+# Agents create runs/<name>_<timestamp>/ at construction; keep test debris out of the real runs/.
+TEST_TRAIN_DIR = tempfile.mkdtemp(prefix='rl_games_test_runs_')
+
 
 def _load_params(path):
     with open(path) as f:
@@ -54,8 +58,11 @@ def make_cartpole_runner(**config_overrides):
         'num_actors': 2, 'horizon_length': 8, 'minibatch_size': 16,
         'mini_epochs': 1, 'max_epochs': 2, 'save_frequency': 0,
         'save_best_after': 10_000, 'torch_compile': False, 'print_stats': False,
+        'train_dir': TEST_TRAIN_DIR, 'name': 'pytest_cartpole',
+        'env_config': {'use_async': False},
     })
     cfg.update(config_overrides)
+    params.setdefault('seed', 7)
     runner = Runner()
     runner.load({'params': params})
     return runner
@@ -71,13 +78,15 @@ def make_sac_pendulum_agent(**config_overrides):
     from rl_games.torch_runner import Runner
     params = _load_params(SAC_YAML)
     cfg = params['config']
+    cfg.pop('env_config', None)  # drop HalfCheetah-specific env kwargs before re-targeting
     cfg.update({
         'device': 'cpu', 'device_name': 'cpu', 'multi_gpu': False,
         'env_name': 'Pendulum-v1', 'num_actors': 2, 'print_stats': False,
         'max_epochs': 2, 'save_frequency': 0, 'save_best_after': 10_000,
         'replay_buffer_size': 1000, 'batch_size': 32, 'num_warmup_frames': 1,
+        'train_dir': TEST_TRAIN_DIR, 'name': 'pytest_sac_pendulum',
+        'env_config': {'use_async': False},
     })
-    cfg.pop('env_config', None)
     cfg.update(config_overrides)
     runner = Runner()
     runner.load({'params': params})
