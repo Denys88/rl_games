@@ -159,3 +159,11 @@ def test_actor_stats_skip_non_update_steps():
     assert len(a_losses) == 1 and len(entropies) == 1 and len(alpha_losses) == 1
     # approx: fp32 tensor(0.1).item() == 0.10000000149011612, not the Python double 0.1
     assert a_losses[0].item() == 1.0 and alpha_losses[0].item() == pytest.approx(0.1)
+
+
+def test_max_epochs_exit_without_any_completed_episode():
+    # Finding 1.6: exits/saves were nested under game_rewards.current_size > 0 —
+    # training could not stop before the first episode ended (pre-fix: this HANGS).
+    agent, fake = make_fake_env_sac_agent(ep_len=10_000, max_epochs=3)
+    agent.train()
+    assert agent.epoch_num == 3, f"train() must exit at max_epochs=3, ran {agent.epoch_num}"
