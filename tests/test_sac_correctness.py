@@ -167,3 +167,44 @@ def test_max_epochs_exit_without_any_completed_episode():
     agent, fake = make_fake_env_sac_agent(ep_len=10_000, max_epochs=3)
     agent.train()
     assert agent.epoch_num == 3, f"train() must exit at max_epochs=3, ran {agent.epoch_num}"
+
+
+def test_replay_buffer_truncated_roundtrip():
+    from rl_games.common.experience import VectorizedReplayBuffer
+    buf = VectorizedReplayBuffer((OBS_DIM,), (ACT_DIM,), 8, 'cpu')
+    o = torch.randn(3, OBS_DIM); a = torch.randn(3, ACT_DIM)
+    r = torch.randn(3, 1); d = torch.tensor([[True], [False], [True]])
+    tr = torch.tensor([[False], [False], [True]])
+    buf.add(o, a, r, o, d, tr)
+    obs, act, rew, nobs, done, trunc = buf.sample(3)
+    assert trunc.shape == (3, 1) and trunc.dtype == torch.bool
+    sd = buf.state_dict()
+    assert 'truncated' in sd
+    # backward compat: pre-upgrade state dicts lack the key
+    sd.pop('truncated')
+    buf2 = VectorizedReplayBuffer((OBS_DIM,), (ACT_DIM,), 8, 'cpu')
+    buf2.load_state_dict(sd)
+    assert not buf2.truncated.any()
+
+
+def test_replay_buffer_add_defaults_truncated_false():
+    from rl_games.common.experience import VectorizedReplayBuffer
+    buf = VectorizedReplayBuffer((OBS_DIM,), (ACT_DIM,), 8, 'cpu')
+    o = torch.randn(2, OBS_DIM); a = torch.randn(2, ACT_DIM)
+    buf.add(o, a, torch.randn(2, 1), o, torch.zeros(2, 1, dtype=torch.bool))
+    *_, trunc = buf.sample(2)
+    assert not trunc.any()
+
+
+def test_replay_buffer_truncated_overflow_wrap():
+    from rl_games.common.experience import VectorizedReplayBuffer
+    buf = VectorizedReplayBuffer((OBS_DIM,), (ACT_DIM,), 4, 'cpu')
+    o = torch.randn(3, OBS_DIM); a = torch.randn(3, ACT_DIM)
+    r = torch.randn(3, 1); d = torch.zeros(3, 1, dtype=torch.bool)
+    tr1 = torch.tensor([[True], [False], [True]])
+    buf.add(o, a, r, o, d, tr1)
+    buf.add(o, a, r, o, d, tr1)  # wraps: capacity 4, 6 rows total
+    assert buf.full
+    # the wrap path (overflow copy block) must carry truncated too:
+    # rows now at [0,1] are the overflow of the second add (tr1[-2:] = [False, True])
+    assert buf.truncated[0].item() == False and buf.truncated[1].item() == True

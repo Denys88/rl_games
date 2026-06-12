@@ -421,7 +421,7 @@ class SACAgent(BaseAlgorithm):
         )
 
     def update(self, step):
-        obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
+        obs, action, reward, next_obs, done, _truncated = self.replay_buffer.sample(self.batch_size)
         not_done = ~done
 
         obs = self.preproc_obs(obs)

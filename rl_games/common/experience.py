@@ -233,6 +233,7 @@ class VectorizedReplayBuffer:
         self.actions = torch.zeros((capacity, *action_shape), dtype=dtype, device=self.device)
         self.rewards = torch.zeros((capacity, 1), dtype=dtype, device=self.device)
         self.dones = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
+        self.truncated = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
 
         self.capacity = capacity
         self.idx = 0
@@ -245,9 +246,12 @@ class VectorizedReplayBuffer:
             self.actions = self.actions.pin_memory()
             self.rewards = self.rewards.pin_memory()
             self.dones = self.dones.pin_memory()
+            self.truncated = self.truncated.pin_memory()
 
     @torch.no_grad()
-    def add(self, obs, action, reward, next_obs, done):
+    def add(self, obs, action, reward, next_obs, done, truncated=None):
+        if truncated is None:
+            truncated = torch.zeros_like(done)
         num_observations = obs.shape[0]
         remaining_capacity = min(self.capacity - self.idx, num_observations)
         overflow = num_observations - remaining_capacity
@@ -257,6 +261,7 @@ class VectorizedReplayBuffer:
             self.rewards[0:overflow].copy_(reward[-overflow:])
             self.next_obses[0:overflow].copy_(next_obs[-overflow:])
             self.dones[0:overflow].copy_(done[-overflow:])
+            self.truncated[0:overflow].copy_(truncated[-overflow:])
             self.full = True
 
         self.obses[self.idx:self.idx + remaining_capacity].copy_(obs[:remaining_capacity])
@@ -264,6 +269,7 @@ class VectorizedReplayBuffer:
         self.rewards[self.idx:self.idx + remaining_capacity].copy_(reward[:remaining_capacity])
         self.next_obses[self.idx:self.idx + remaining_capacity].copy_(next_obs[:remaining_capacity])
         self.dones[self.idx:self.idx + remaining_capacity].copy_(done[:remaining_capacity])
+        self.truncated[self.idx:self.idx + remaining_capacity].copy_(truncated[:remaining_capacity])
 
         self.idx = (self.idx + num_observations) % self.capacity
         self.full = self.full or self.idx == 0
@@ -284,10 +290,10 @@ class VectorizedReplayBuffer:
             rewards received as results of executing act_batch
         next_obses: torch tensor
             next set of observations seen after executing act_batch
-        not_dones: torch tensor
-            inverse of whether the episode ended at this tuple of (observation, action) or not
-        not_dones_no_max: torch tensor
-            inverse of whether the episode ended at this tuple of (observation, action) or not, specifically exlcuding maximum episode steps
+        dones: torch tensor
+            whether the episode terminated at this tuple of (observation, action) or not
+        truncated: torch tensor
+            whether the episode was truncated (e.g. time limit) at this tuple of (observation, action) or not
         """
 
         idxs = torch.randint(0,
@@ -298,8 +304,9 @@ class VectorizedReplayBuffer:
         rewards = self.rewards[idxs]
         next_obses = self.next_obses[idxs]
         dones = self.dones[idxs]
+        truncated = self.truncated[idxs]
 
-        return obses, actions, rewards, next_obses, dones
+        return obses, actions, rewards, next_obses, dones, truncated
 
     def state_dict(self):
         """Return the replay buffer state for checkpointing."""
@@ -309,6 +316,7 @@ class VectorizedReplayBuffer:
             'actions': self.actions.cpu(),
             'rewards': self.rewards.cpu(),
             'dones': self.dones.cpu(),
+            'truncated': self.truncated.cpu(),
             'idx': self.idx,
             'full': self.full,
         }
@@ -320,6 +328,10 @@ class VectorizedReplayBuffer:
         self.actions.copy_(state['actions'].to(self.device))
         self.rewards.copy_(state['rewards'].to(self.device))
         self.dones.copy_(state['dones'].to(self.device))
+        if 'truncated' in state:
+            self.truncated.copy_(state['truncated'].to(self.device))
+        else:
+            self.truncated.zero_()
         self.idx = state['idx']
         self.full = state['full']
 
