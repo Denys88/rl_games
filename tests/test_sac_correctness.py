@@ -509,3 +509,62 @@ def test_ray_merge_nan_filler_does_not_poison_observer():
     assert obs_dict.game_scores.current_size == 2
     assert np.isfinite(obs_dict.game_scores.get_mean())
     assert obs_dict.game_scores.get_mean() == pytest.approx(14.0)
+
+
+# RunningMeanStd.__init__ (running_mean_std.py) registers the count buffer as
+# torch.ones((), dtype=torch.int64) with running_mean=0 — i.e. one phantom
+# zero-valued sample baked in before any real data.
+RMS_COUNT_INIT = 1
+
+
+def test_normalizer_counts_each_frame_exactly_once():
+    # Finding 1.2: stats update once per env frame from rollout data,
+    # never from replayed minibatches.
+    agent, fake = make_fake_env_sac_agent(
+        normalize_input=True, max_epochs=2, num_steps_per_episode=4,
+        num_warmup_frames=None, num_warmup_steps=1)
+    agent.train()
+    rms = agent.model.running_mean_std
+    # frames: num_envs * (1 reset obs + max_epochs * steps_per_epoch)
+    frames_seen = 3 * (1 + 2 * 4)  # 27
+    # + RMS_COUNT_INIT: the count buffer starts at 1 (phantom sample), so after
+    # ingesting exactly the 27 streamed frames it must read 28. Pre-fix red
+    # evidence: rollout frames are never counted, while epoch 2's 4 updates
+    # each push obs+next_obs of a batch-16 minibatch -> 1 + 4 * 2 * 16 = 129.
+    assert int(rms.count.item()) == frames_seen + RMS_COUNT_INIT, \
+        f"normalizer count {int(rms.count.item())} != {frames_seen} + init {RMS_COUNT_INIT}"
+
+
+def test_normalizer_frozen_during_update():
+    agent, fake = make_fake_env_sac_agent(
+        normalize_input=True, max_epochs=1, num_steps_per_episode=4,
+        num_warmup_frames=None, num_warmup_steps=10_000)  # warmup fills buffer, no grad updates
+    agent.train()
+    count_before = int(agent.model.running_mean_std.count.item())
+    agent.set_train()
+    agent.update(agent.epoch_num)
+    assert int(agent.model.running_mean_std.count.item()) == count_before, \
+        "update() mutated normalizer statistics from replayed minibatches"
+
+
+def test_normalizer_stats_match_streamed_frames():
+    # the mean must reflect ALL streamed frames (incl. post-reset obs), not replay
+    agent, fake = make_fake_env_sac_agent(
+        normalize_input=True, max_epochs=2, num_steps_per_episode=4,
+        num_warmup_frames=None, num_warmup_steps=10_000)
+    agent.train()
+    rms = agent.model.running_mean_std
+    # Streamed-frame schedule (col 1 of the fake obs is step-in-episode t):
+    # 3 lock-stepped envs, ep_len=5, 8 env steps after the initial reset obs.
+    #   reset obs:        t=0
+    #   steps 1..5:       t=1,2,3,4,5   (done+truncated at t=5, pending_reset)
+    #   step 6:           t=0           (post-reset garbage-step obs — still streamed)
+    #   steps 7..8:       t=1,2
+    # Per-env sequence [0,1,2,3,4,5,0,1,2]: 9 frames, sum 18.
+    # All 3 envs identical -> 27 frames, total sum 54.
+    # RMS starts with a phantom zero sample (count=1, mean=0), so the merged
+    # mean is 54 / (27 + 1) = 27/14, not 54/27.
+    expected_mean_t = 54.0 / (27 + RMS_COUNT_INIT)  # = 27/14 ~= 1.9285714
+    # rel=1e-5: inputs are small exact integers; running buffers are float64
+    # (float32 on MPS-only machines), so only division round-off remains.
+    assert rms.running_mean[1].item() == pytest.approx(expected_mean_t, rel=1e-5)

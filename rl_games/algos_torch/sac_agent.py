@@ -335,6 +335,21 @@ class SACAgent(BaseAlgorithm):
 
     def set_train(self):
         self.model.train()
+        if self.normalize_input:
+            # B2: replayed minibatches in update() must never mutate normalizer
+            # stats — only fresh rollout frames do, via _update_obs_stats (finding 1.2).
+            self.model.running_mean_std.eval()
+
+    def _update_obs_stats(self, obs):
+        # B2: normalizer statistics ingest each fresh env frame exactly once;
+        # replayed minibatches must never mutate them (finding 1.2).
+        if not self.normalize_input:
+            return
+        with torch.no_grad():
+            rms = self.model.running_mean_std
+            rms.train()
+            rms(obs['obs'] if isinstance(obs, dict) else obs)
+            rms.eval()
 
     def rescale_actions(self, actions):
         """Rescale actions from [-1, 1] to actual action space bounds."""
@@ -510,6 +525,8 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        # B2: the initial reset obs is a streamed frame — count it once.
+        self._update_obs_stats(obs)
         # Full reset: no env is in the post-episode reset step anymore.
         # Sized num_agents * num_actors to match dones/current_rewards rows.
         self._prev_dones = torch.zeros(self.num_agents * self.num_actors,
@@ -664,6 +681,9 @@ class SACAgent(BaseAlgorithm):
                 next_obs_processed = next_obs['obs']
             else:
                 next_obs_processed = next_obs
+            # B2: normalizer stats ingest each fresh env frame exactly ONCE here
+            # (incl. warmup and post-reset frames); update() never touches them.
+            self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
 
             self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
