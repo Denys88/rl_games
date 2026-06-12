@@ -660,3 +660,56 @@ def test_normalizer_stats_match_streamed_frames():
     # rel=1e-5: inputs are small exact integers; running buffers are float64
     # (float32 on MPS-only machines), so only division round-off remains.
     assert rms.running_mean[1].item() == pytest.approx(expected_mean_t, rel=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Task 12: Phase B validation harness (benchmarks/phaseb_sac_validation.py)
+# ---------------------------------------------------------------------------
+
+PHASEB_HARNESS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'benchmarks', 'phaseb_sac_validation.py')
+
+
+def test_phaseb_report_handles_missing_out_dir(tmp_path):
+    import ast
+    import importlib.util
+    import subprocess
+
+    # no module-level envpool import (envpool is an optional extra)
+    tree = ast.parse(open(PHASEB_HARNESS).read())
+    top_imports = {alias.name.split('.')[0]
+                   for node in tree.body if isinstance(node, ast.Import)
+                   for alias in node.names}
+    top_imports |= {node.module.split('.')[0]
+                    for node in tree.body
+                    if isinstance(node, ast.ImportFrom) and node.module}
+    assert 'envpool' not in top_imports, 'harness must not import envpool at module level'
+
+    # module imports clean without envpool installed
+    spec = importlib.util.spec_from_file_location('phaseb_sac_validation', PHASEB_HARNESS)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # --report on a missing OUT dir: exit 0, one n/a row per battery entry
+    env = {**os.environ, 'PHASEB_OUT': str(tmp_path / 'does-not-exist')}
+    res = subprocess.run([sys.executable, PHASEB_HARNESS, '--report'],
+                         env=env, capture_output=True, text=True, timeout=120)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.count('n/a') >= len(mod.RUNS)
+    for tag, _cfg, _seed, _frames in mod.RUNS:
+        assert tag in res.stdout
+
+
+def test_phaseb_probe_exits_with_hint_when_envpool_missing():
+    import importlib.util
+    import subprocess
+
+    # only assert the failure branch when envpool is genuinely absent;
+    # with envpool installed --probe would launch a 600 s training run.
+    if importlib.util.find_spec('envpool') is not None:
+        pytest.skip('envpool installed; --probe would start the throughput probe')
+    res = subprocess.run([sys.executable, PHASEB_HARNESS, '--probe'],
+                         capture_output=True, text=True, timeout=120)
+    assert res.returncode == 1
+    assert 'uv sync --extra envpool --extra mujoco' in res.stderr
