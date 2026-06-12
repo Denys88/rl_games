@@ -9,7 +9,7 @@ authors = [
     {name = "Viktor Makoviichuk", email = "victor.makoviychuk@gmail.com"},
 ]
 dependencies = [
-    "torch>=2.11.0",
+    "torch>=2.7.0",  # floor matches Isaac Lab / Isaac Sim 5.1 (torch 2.7 pin); dev lock pins 2.12
     "gymnasium>=1.0.0",
     "tensorboard>=2.8.0",
     "tensorboardX>=2.5",
