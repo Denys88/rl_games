@@ -74,6 +74,9 @@ class SACAgent(BaseAlgorithm):
         # Autoreset semantics declared by the vec env (envpool/gymnasium = 'next_step',
         # everything else defaults to 'same_step'). Drives replay-write logic in play_steps.
         self.autoreset_mode = (self.env_info or {}).get('autoreset_mode', 'same_step')
+        if self.autoreset_mode == 'next_step' and self.num_agents > 1:
+            raise ValueError("SAC next_step autoreset handling does not support multi-agent envs "
+                             "(num_agents > 1): per-env done tracking and live-row striding would misalign.")
 
         print(self.batch_size, self.num_actors, self.num_agents)
 

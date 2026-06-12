@@ -41,6 +41,9 @@ def _merge_ray_infos(infos_list):
     done worker whose info lacked the key. Interior workers without the key get
     NaN fillers; these are never read because envs emit these keys only on done
     steps and the observer indexes only done workers.
+
+    The original per-worker list is preserved untouched under 'worker_infos'
+    so custom AlgoObservers can still read keys outside the merged set.
     """
     time_outs = []
     for info in infos_list:
@@ -62,6 +65,7 @@ def _merge_ray_infos(infos_list):
             info[key] if isinstance(info, dict) and key in info else np.nan
             for info in infos_list[:last + 1]
         ])
+    merged['worker_infos'] = infos_list
     return merged
 
 

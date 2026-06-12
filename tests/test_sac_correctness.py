@@ -99,6 +99,42 @@ class StaggeredFakeNextStepVecEnv(FakeNextStepVecEnv):
         self.ep_lens = ep_len + np.arange(num_envs, dtype=np.int64)
 
 
+class SameStepFakeVecEnv(FakeNextStepVecEnv):
+    """Deterministic SAME_STEP-autoreset vec env (classic gym semantics).
+
+    Same obs encoding as FakeNextStepVecEnv, but when an episode ends at
+    t == ep_len the env resets WITHIN the step: it returns the POST-RESET obs
+    (t=0, episode+1) with done=True (truncated unless terminate_instead) and a
+    reward that is valid for the final step. The TRUE final obs (t == ep_len)
+    is only exposed via info['final_observation'] (np array [num_envs, OBS_DIM])
+    when provide_final_obs=True; without it the agent must fall back to the
+    documented s_t proxy.
+    """
+
+    def __init__(self, num_envs, ep_len=EP_LEN, terminate_instead=False,
+                 provide_final_obs=False):
+        super().__init__(num_envs, ep_len, terminate_instead)
+        self.provide_final_obs = provide_final_obs
+
+    def step(self, actions):
+        rewards = np.ones(self.num_envs, dtype=np.float32)  # final-step reward is VALID
+        self.t += 1
+        done = self.t >= self.ep_lens
+        truncated = done if not self.terminate_instead else np.zeros_like(done)
+        final_obs = self._obs()  # TRUE final obs (t == ep_len on done envs), pre-reset
+        self.t[done] = 0
+        self.episode[done] += 1
+        infos = {'time_outs': truncated.copy()}
+        if self.provide_final_obs:
+            infos['final_observation'] = final_obs
+        return self._obs(), rewards, done.astype(np.float32), infos
+
+    def get_env_info(self):
+        info = super().get_env_info()
+        info['autoreset_mode'] = 'same_step'
+        return info
+
+
 def make_fake_env_sac_agent(num_envs=3, ep_len=EP_LEN, env_cls=FakeNextStepVecEnv, **config_overrides):
     from rl_games.torch_runner import Runner
     fake = env_cls(num_envs, ep_len)
@@ -335,6 +371,45 @@ def test_staggered_episodes_mixed_live_mask():
     assert agent.game_lengths.get_mean() == pytest.approx(6.0, rel=1e-3)
 
 
+def test_same_step_without_final_obs_stores_proxy():
+    # same_step runtime, no info['final_observation']: the documented fallback
+    # stores the s_t proxy as next_obs on truncation rows.
+    steps = EP_LEN + 3
+    agent, fake = make_fake_env_sac_agent(
+        env_cls=SameStepFakeVecEnv,
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=steps)
+    obses, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    # same_step: every row is live — nothing skipped
+    assert obses.shape[0] == steps * fake.num_envs
+    rows = trunc[:, 0].nonzero(as_tuple=True)[0]
+    assert len(rows) == fake.num_envs  # one truncation per env in 8 steps
+    # proxy fallback: next_obs == obs (s_t), NOT the post-reset obs the env returned
+    assert torch.equal(next_obses[rows], obses[rows])
+    assert not dones[rows].any().item(), "truncated rows must bootstrap (done=False)"
+    assert trunc[rows].all().item()
+
+
+def test_same_step_with_final_observation_stores_true_final_obs():
+    # same_step runtime WITH info['final_observation'] (np array
+    # [num_envs, OBS_DIM]): truncation rows must carry the TRUE final obs
+    # (t == ep_len, same env, same episode), not the proxy or post-reset obs.
+    steps = EP_LEN + 3
+    agent, fake = make_fake_env_sac_agent(
+        env_cls=functools.partial(SameStepFakeVecEnv, provide_final_obs=True),
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=steps)
+    obses, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    assert obses.shape[0] == steps * fake.num_envs
+    rows = trunc[:, 0].nonzero(as_tuple=True)[0]
+    assert len(rows) == fake.num_envs
+    assert torch.all(next_obses[rows][:, 1] == EP_LEN), "must store the TRUE final obs (t == ep_len)"
+    assert torch.all(next_obses[rows][:, 0] == obses[rows][:, 0])  # same env
+    assert torch.all(next_obses[rows][:, 2] == obses[rows][:, 2])  # same episode
+    assert not dones[rows].any().item()
+    assert trunc[rows].all().item()
+
+
 def test_gymnasium_manual_path_declares_same_step():
     # T8 review: _step_manual resets within the same step (same_step
     # semantics), but get_env_info unconditionally declared 'next_step'.
@@ -354,6 +429,21 @@ def test_gymnasium_manual_path_declares_same_step():
 def test_fake_env_declares_next_step_mode():
     agent, fake = make_fake_env_sac_agent()
     assert agent.env_info.get('autoreset_mode') == 'next_step'
+
+
+class MultiAgentFakeNextStepVecEnv(FakeNextStepVecEnv):
+    def get_env_info(self):
+        info = super().get_env_info()
+        info['agents'] = 2
+        return info
+
+
+def test_multi_agent_next_step_rejected():
+    # Final review: per-env done tracking (_prev_dones) and live-row striding
+    # in the next_step path assume one row per env — multi-agent rows would
+    # silently misalign. The agent must refuse loudly at construction.
+    with pytest.raises(ValueError, match="multi-agent"):
+        make_fake_env_sac_agent(env_cls=MultiAgentFakeNextStepVecEnv)
 
 
 def test_wrappers_declare_next_step_mode():
@@ -393,16 +483,20 @@ def test_ray_merge_infos_without_concat_infos():
     # into concat_infos; _merge_ray_infos is the extracted merge helper.
     from rl_games.common.vecenv import _merge_ray_infos
 
-    merged = _merge_ray_infos([
+    infos_list = [
         {'time_outs': True},                          # scalar (single-agent worker)
         {'time_outs': False},
         {'time_outs': np.array([True, False])},       # per-agent array
         {},                                           # worker without the key
-    ])
+    ]
+    merged = _merge_ray_infos(infos_list)
     # no scores/battle_won in any worker -> no spurious keys
-    assert set(merged) == {'time_outs'}
+    assert set(merged) == {'time_outs', 'worker_infos'}
     np.testing.assert_array_equal(merged['time_outs'],
                                   np.array([True, False, True, False, False]))
+    # escape hatch: custom observers reading keys outside the merged set get
+    # the ORIGINAL per-worker list (identity, not a copy)
+    assert merged['worker_infos'] is infos_list
 
     # battle_won merges per-worker, aligned with worker index
     merged = _merge_ray_infos([
@@ -410,7 +504,7 @@ def test_ray_merge_infos_without_concat_infos():
         {'time_outs': False},
         {'time_outs': True, 'battle_won': False},
     ])
-    assert set(merged) == {'time_outs', 'battle_won'}
+    assert set(merged) == {'time_outs', 'battle_won', 'worker_infos'}
     assert len(merged['battle_won']) == 3
     assert merged['battle_won'][0] == 1.0
     assert np.isnan(merged['battle_won'][1])  # interior gap: filler, never read
