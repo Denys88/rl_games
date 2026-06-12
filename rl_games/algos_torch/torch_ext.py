@@ -91,25 +91,25 @@ def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
     safe_save(state, filename + '.pth')
 
+def _strip_compile_prefix(obj):
+    """Remove torch.compile's '_orig_mod.' from state-dict keys at any nesting depth.
+
+    Compiled modules (OptimizedModule) save parameters under '_orig_mod.*';
+    nested holders (central value nets, self-play snapshots) embed it mid-key
+    as 'model._orig_mod.*'. Substring removal handles both; non-string keys
+    (optimizer state ints) and non-dict values pass through untouched.
+    """
+    if isinstance(obj, dict):
+        return {(k.replace('_orig_mod.', '') if isinstance(k, str) else k): _strip_compile_prefix(v)
+                for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_compile_prefix(v) for v in obj]
+    return obj
+
+
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
-    state = safe_load(filename)
-
-    # ----------------------------
-    # Fix for missing/unexpected keys:
-    # Remove the '_orig_mod.' prefix so model keys match your uncompiled model
-    if "model" in state:
-        new_model = {}
-        for k, v in state["model"].items():
-            if k.startswith("_orig_mod."):
-                new_key = k[len("_orig_mod."):]
-            else:
-                new_key = k
-            new_model[new_key] = v
-        state["model"] = new_model
-    # ----------------------------
-
-    return state
+    return _strip_compile_prefix(safe_load(filename))
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     normal = torch.distributions.normal.Normal(0, 1, validate_args=False)

@@ -266,7 +266,7 @@ class CentralValueTrain(nn.Module):
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
-        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
+        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, self.frame, 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
         if self.writter is not None:

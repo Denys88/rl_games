@@ -46,6 +46,10 @@ jobs:
         pip install torch --index-url https://download.pytorch.org/whl/cpu
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install -e .
+    - name: Import smoke test
+      run: |
+        python -c "import rl_games.torch_runner; print('torch_runner import ok')"
+        python runner.py --help
     - name: Test with pytest
       run: |
         pytest --cov=rl_games --cov-report=xml

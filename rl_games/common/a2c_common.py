@@ -174,7 +174,7 @@ class A2CBase(BaseAlgorithm):
         # TODO: do we still need it?
         self.ppo = config.get('ppo', True)
         self.max_epochs = self.config.get('max_epochs', -1)
-        self.max_frames = np.max(self.config.get('max_frames', -1), self.config.get('max_steps', -1))
+        self.max_frames = max(self.config.get('max_frames', -1), self.config.get('max_steps', -1))
 
         # Optional user-supplied stop callback: callable(algo) -> bool.
         # Set programmatically (algo.stop_fn = ...) or via config['stop_fn'].
@@ -293,7 +293,7 @@ class A2CBase(BaseAlgorithm):
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.mean_rewards = self.last_mean_rewards = -1000000000
+        self.mean_rewards = self.last_mean_rewards = -float('inf')
         self.play_time = 0
         self.epoch_num = 0
         self.curr_frames = 0
@@ -334,7 +334,7 @@ class A2CBase(BaseAlgorithm):
 
         if self.normalize_advantage and self.normalize_rms_advantage:
             momentum = self.config.get('adv_rms_momentum', 0.5)
-            self.advantage_mean_std = GeneralizedMovingStats((1,), momentum=momentum).to(self.ppo_device)
+            self.advantage_mean_std = GeneralizedMovingStats((1,), decay=momentum).to(self.ppo_device)
 
         self.is_tensor_obses = False
 
@@ -427,10 +427,15 @@ class A2CBase(BaseAlgorithm):
 
     def update_lr(self, lr):
         if self.multi_gpu:
-            lr_tensor = torch.tensor([lr], device=self.device)
-            dist.broadcast(lr_tensor, 0)
-            lr = lr_tensor.item()
+            # broadcast both schedule outputs from rank 0: non-zero ranks run an
+            # Identity scheduler (lr_schedule is forced None there), so their
+            # local last_lr/entropy_coef are permanently stale
+            sync_tensor = torch.tensor([lr, self.entropy_coef], dtype=torch.float64, device=self.device)
+            dist.broadcast(sync_tensor, 0)
+            lr = sync_tensor[0].item()
+            self.entropy_coef = sync_tensor[1].item()
 
+        self.last_lr = lr
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
@@ -610,7 +615,7 @@ class A2CBase(BaseAlgorithm):
         self.game_shaped_rewards.clear()
         self.game_lengths.clear()
         if clean_rewards:
-            self.mean_rewards = self.last_mean_rewards = -1000000000
+            self.mean_rewards = self.last_mean_rewards = -float('inf')
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -671,7 +676,7 @@ class A2CBase(BaseAlgorithm):
 
         self.optimizer.load_state_dict(weights['optimizer'])
 
-        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
@@ -687,6 +692,8 @@ class A2CBase(BaseAlgorithm):
 
     def get_stats_weights(self, model_stats=False):
         state = {}
+        if self.normalize_rms_advantage:
+            state['advantage_mean_std'] = self.advantage_mean_std.state_dict()
         if self.mixed_precision:
             state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
@@ -700,7 +707,8 @@ class A2CBase(BaseAlgorithm):
         return state
 
     def set_stats_weights(self, weights):
-        if self.normalize_rms_advantage:
+        if self.normalize_rms_advantage and 'advantage_mean_std' in weights:
+            # guard: checkpoints written before this fix don't contain the key
             self.advantage_mean_std.load_state_dict(weights['advantage_mean_std'])
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
@@ -1001,7 +1009,7 @@ class DiscreteA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
 
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
             self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
@@ -1075,7 +1083,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.mean_rewards = self.last_mean_rewards = -1000000000
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
@@ -1274,7 +1282,7 @@ class ContinuousA2CBase(A2CBase):
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.world_size
-                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                    self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
             av_kls = torch_ext.mean_list(ep_kls)
@@ -1282,7 +1290,7 @@ class ContinuousA2CBase(A2CBase):
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
             if self.schedule_type == 'standard':
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item())
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                 self.update_lr(self.last_lr)
 
             kls.append(av_kls)
@@ -1362,7 +1370,6 @@ class ContinuousA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.last_mean_rewards = -1000000000
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0
@@ -1385,6 +1392,8 @@ class ContinuousA2CBase(A2CBase):
             epoch_num = self.update_epoch()
             step_time, play_time, update_time, sum_time, a_losses, c_losses, b_losses, entropies, kls, last_lr, lr_mul = self.train_epoch()
             total_time += sum_time
+            curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
+            self.frame += curr_frames
             frame = self.frame // self.num_agents
 
             # cleaning memory to optimize space
@@ -1396,8 +1405,6 @@ class ContinuousA2CBase(A2CBase):
                 # do we need scaled_time?
                 scaled_time = self.num_agents * sum_time
                 scaled_play_time = self.num_agents * play_time
-                curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
-                self.frame += curr_frames
 
                 print_statistics(self.print_stats, curr_frames, step_time, scaled_play_time, scaled_time, 
                                 epoch_num, self.max_epochs, frame, self.max_frames)
