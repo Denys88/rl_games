@@ -247,17 +247,78 @@ def test_can_concat_infos_sees_wrapper_attr():
     assert vecenv_mod.can_concat_infos(Bare()) is False
 
 
-def test_ray_merge_time_outs_without_concat_infos():
+def test_ray_merge_infos_without_concat_infos():
     # Finding 49: RayVecEnv dropped per-worker time_outs unless the env opted
-    # into concat_infos; _merge_time_outs is the extracted merge helper.
-    from rl_games.common.vecenv import _merge_time_outs
+    # into concat_infos; _merge_ray_infos is the extracted merge helper.
+    from rl_games.common.vecenv import _merge_ray_infos
 
-    merged = _merge_time_outs([
+    merged = _merge_ray_infos([
         {'time_outs': True},                          # scalar (single-agent worker)
         {'time_outs': False},
         {'time_outs': np.array([True, False])},       # per-agent array
         {},                                           # worker without the key
     ])
+    # no scores/battle_won in any worker -> no spurious keys
     assert set(merged) == {'time_outs'}
     np.testing.assert_array_equal(merged['time_outs'],
                                   np.array([True, False, True, False, False]))
+
+    # battle_won merges per-worker, aligned with worker index
+    merged = _merge_ray_infos([
+        {'time_outs': False, 'battle_won': True},
+        {'time_outs': False},
+        {'time_outs': True, 'battle_won': False},
+    ])
+    assert set(merged) == {'time_outs', 'battle_won'}
+    assert len(merged['battle_won']) == 3
+    assert merged['battle_won'][0] == 1.0
+    assert np.isnan(merged['battle_won'][1])  # interior gap: filler, never read
+    assert merged['battle_won'][2] == 0.0
+
+
+class _FakeObserverAlgo:
+    """Minimal algo stub for DefaultAlgoObserver.after_init/process_infos."""
+    games_to_track = 100
+    ppo_device = 'cpu'
+    writer = None
+    num_agents = 1
+
+
+def test_ray_merge_preserves_scores_for_observer():
+    # Review fix for 18eb01b: the merged dict must keep carrying 'scores' so
+    # DefaultAlgoObserver's dict path tracks the same results the old
+    # per-worker-list path did (atari InfoWrapper, TestRNNEnv, CarRacing).
+    from rl_games.common.algo_observer import DefaultAlgoObserver
+    from rl_games.common.vecenv import _merge_ray_infos
+
+    # workers 0/1 finished an episode (scores set on done), worker 2 timed out
+    # without emitting scores
+    worker_infos = [
+        {'scores': 1.0, 'time_outs': False},
+        {'scores': 0.0, 'time_outs': False},
+        {'time_outs': True},
+    ]
+    merged = _merge_ray_infos(worker_infos)
+    np.testing.assert_array_equal(merged['time_outs'],
+                                  np.array([False, False, True]))
+    # dict-path-consumable form: per-worker array truncated at the trailing
+    # worker without the key, so the observer's length guard skips worker 2
+    np.testing.assert_array_equal(merged['scores'], np.array([1.0, 0.0]))
+
+    done_indices = torch.tensor([0, 1, 2])
+
+    # old list path (pre-18eb01b behavior) as reference
+    obs_list = DefaultAlgoObserver()
+    obs_list.after_init(_FakeObserverAlgo())
+    obs_list.process_infos(worker_infos, done_indices)
+
+    # new merged dict through the observer's dict path
+    obs_dict = DefaultAlgoObserver()
+    obs_dict.after_init(_FakeObserverAlgo())
+    obs_dict.process_infos(merged, done_indices)
+
+    # both paths tracked exactly workers 0 and 1, skipped scoreless worker 2
+    assert obs_list.game_scores.current_size == 2
+    assert obs_dict.game_scores.current_size == obs_list.game_scores.current_size
+    assert obs_dict.game_scores.get_mean() == pytest.approx(0.5)
+    assert obs_dict.game_scores.get_mean() == pytest.approx(obs_list.game_scores.get_mean())

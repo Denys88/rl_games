@@ -20,11 +20,27 @@ def can_concat_infos(env):
     return bool(getattr(unwrapped, 'concat_infos', False))
 
 
-def _merge_time_outs(infos_list):
-    """Merge per-worker 'time_outs' entries into {'time_outs': np.ndarray}.
+# Episode-result keys consumed by DefaultAlgoObserver.process_infos. Its dict
+# path reads infos[key][ind // num_agents] for each done index, guarded by
+# `len(game_res) > ind // num_agents`, so each key must merge to a per-worker,
+# index-aligned array.
+_OBSERVER_RESULT_KEYS = ('scores', 'battle_won')
 
-    Mirrors the merge pattern in gymnasium_vecenv: each worker info may carry
-    a scalar or per-agent array; missing entries default to False.
+
+def _merge_ray_infos(infos_list):
+    """Merge per-worker ray info dicts into a single dict.
+
+    'time_outs' mirrors the merge pattern in gymnasium_vecenv: each worker info
+    may carry a scalar or per-agent array; missing entries default to False.
+
+    'scores'/'battle_won' (emitted by envs on episode end, consumed by
+    DefaultAlgoObserver) merge to a per-worker array aligned with worker index,
+    truncated after the last worker that carries the key. The observer's
+    `len(game_res) > ind // num_agents` guard then skips trailing workers
+    without the key — matching the old per-worker-list path, which skipped any
+    done worker whose info lacked the key. Interior workers without the key get
+    NaN fillers; these are never read because envs emit these keys only on done
+    steps and the observer indexes only done workers.
     """
     time_outs = []
     for info in infos_list:
@@ -33,7 +49,20 @@ def _merge_time_outs(infos_list):
             time_outs.append(to)
         else:
             time_outs.extend(to)
-    return {'time_outs': np.array(time_outs)}
+    merged = {'time_outs': np.array(time_outs)}
+
+    for key in _OBSERVER_RESULT_KEYS:
+        last = -1
+        for i, info in enumerate(infos_list):
+            if isinstance(info, dict) and key in info:
+                last = i
+        if last < 0:
+            continue
+        merged[key] = np.asarray([
+            info[key] if isinstance(info, dict) and key in info else np.nan
+            for info in infos_list[:last + 1]
+        ])
+    return merged
 
 
 class RayWorker:
@@ -275,8 +304,9 @@ class RayVecEnv(IVecEnv):
         else:
             # Finding 49: without concat_infos a list of per-worker dicts was
             # returned, so consumers checking `'time_outs' in infos` never saw
-            # timeouts. Deliver the merged time_outs dict instead.
-            newinfos = _merge_time_outs(newinfos)
+            # timeouts. Deliver a merged dict instead (time_outs plus the
+            # scores/battle_won keys DefaultAlgoObserver tracks).
+            newinfos = _merge_ray_infos(newinfos)
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):
