@@ -62,10 +62,21 @@ RUNS = [
 PROBE_SPEC = ('probe_halfcheetah', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', 7, 1_000_000)
 PROBE_SECONDS = 600
 
+# Verification tier (run BEFORE the battery): one cheap env, one seed, A/B on
+# observation normalization — confirms the B2 fix behaves before GPU-hours are
+# committed to Humanoid. Specs may carry a 5th element: config overrides dict.
+VERIFY_RUNS = [
+    ('verify_hc_norm_on_s7', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', 7, 1_000_000,
+     {'normalize_input': True}),
+    ('verify_hc_norm_off_s7', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', 7, 1_000_000,
+     {'normalize_input': False}),
+]
+
 
 def run_one(spec, timeout=None, allow_timeout=False, gpu=None):
     """Launch one training run as a subprocess; returns (tag, returncode)."""
-    tag, cfg_rel, seed, max_frames = spec
+    tag, cfg_rel, seed, max_frames = spec[:4]
+    spec_overrides = spec[4] if len(spec) > 4 else {}
     run_dir = os.path.join(OUT, tag)
     os.makedirs(run_dir, exist_ok=True)
 
@@ -80,8 +91,10 @@ def run_one(spec, timeout=None, allow_timeout=False, gpu=None):
     c['full_experiment_name'] = tag
     # banded envpool runs use the version the bands were derived from (v4 default)
     env_cfg = c.get('env_config')
-    if 'envpool' in tag and isinstance(env_cfg, dict) and isinstance(env_cfg.get('env_name'), str):
+    if ('envpool' in cfg_rel or 'envpool' in tag) and isinstance(env_cfg, dict) \
+            and isinstance(env_cfg.get('env_name'), str):
         env_cfg['env_name'] = env_cfg['env_name'].rsplit('-v', 1)[0] + '-' + ENVPOOL_ENV_VERSION
+    c.update(spec_overrides)
 
     overlay = os.path.join(run_dir, f'{tag}.yaml')
     with open(overlay, 'w') as f:
@@ -132,11 +145,16 @@ def probe():
           'without starving individual runs (overnight budget: 11 runs total).')
 
 
-def run_all(parallel, num_gpus=2):
+def run_all(parallel, num_gpus=2, only=None, runs=None):
+    runs = runs if runs is not None else RUNS
+    if only:
+        prefixes = tuple(p.strip() for p in only.split(','))
+        runs = [r for r in runs if r[0].startswith(prefixes)]
+        print(f'--only {only}: {len(runs)} runs selected: {[r[0] for r in runs]}')
     os.makedirs(OUT, exist_ok=True)
     failures = []
     with cf.ThreadPoolExecutor(max_workers=parallel) as ex:
-        futures = [ex.submit(run_one, spec, gpu=i % num_gpus) for i, spec in enumerate(RUNS)]
+        futures = [ex.submit(run_one, spec, gpu=i % num_gpus) for i, spec in enumerate(runs)]
         for fut in cf.as_completed(futures):
             tag, rc = fut.result()
             if rc != 0:
@@ -144,7 +162,7 @@ def run_all(parallel, num_gpus=2):
     if failures:
         print('FAILED runs: ' + ', '.join(failures), file=sys.stderr)
         sys.exit(1)
-    print(f'All {len(RUNS)} runs finished. Use --report for the results table.')
+    print(f'All {len(runs)} runs finished. Use --report for the results table.')
 
 
 def _curve(run_dir):
@@ -266,12 +284,18 @@ def main():
     ap.add_argument('--plots', action='store_true',
                     help='write per-env reward-curve PNGs with acceptance bands')
     ap.add_argument('--gpus', type=int, default=2, help='GPUs to round-robin runs across')
+    ap.add_argument('--only', type=str, default=None,
+                    help='comma-separated tag prefixes to filter --run')
+    ap.add_argument('--verify', action='store_true',
+                    help='run the verification tier (HC 1-seed normalize on/off A/B) before any battery')
     args = ap.parse_args()
 
     if args.probe:
         probe()
+    elif args.verify:
+        run_all(args.parallel, num_gpus=args.gpus, runs=VERIFY_RUNS)
     elif args.run:
-        run_all(args.parallel, num_gpus=args.gpus)
+        run_all(args.parallel, num_gpus=args.gpus, only=args.only)
     elif args.report:
         report()
     elif args.plots:
