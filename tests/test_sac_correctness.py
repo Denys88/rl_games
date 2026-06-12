@@ -322,3 +322,49 @@ def test_ray_merge_preserves_scores_for_observer():
     assert obs_dict.game_scores.current_size == obs_list.game_scores.current_size
     assert obs_dict.game_scores.get_mean() == pytest.approx(0.5)
     assert obs_dict.game_scores.get_mean() == pytest.approx(obs_list.game_scores.get_mean())
+
+
+def test_ray_merge_nan_filler_does_not_poison_observer():
+    # Episodic-life atari on ray: EpisodicLifeEnv wraps OUTSIDE InfoWrapper
+    # (wrappers.py), so a worker can be done WITHOUT scores in the same step
+    # where a later worker carries scores. _merge_ray_infos pads that interior
+    # gap with NaN; the observer's dict path must skip the filler (old list
+    # path semantics: missing key = skip). Feeding the NaN into AverageMeter
+    # would poison its running mean permanently.
+    from rl_games.common.algo_observer import DefaultAlgoObserver
+    from rl_games.common.vecenv import _merge_ray_infos
+
+    # worker 0 done without scores (life lost), worker 1 done with scores
+    worker_infos = [
+        {'time_outs': False},
+        {'scores': 21.0, 'time_outs': False},
+    ]
+    merged = _merge_ray_infos(worker_infos)
+    assert len(merged['scores']) == 2
+    assert np.isnan(merged['scores'][0])  # interior gap filler
+    assert merged['scores'][1] == 21.0
+
+    done_indices = torch.tensor([0, 1])
+
+    # old list path (reference semantics): worker 0 has no key -> skipped
+    obs_list = DefaultAlgoObserver()
+    obs_list.after_init(_FakeObserverAlgo())
+    obs_list.process_infos(worker_infos, done_indices)
+
+    # new merged dict through the observer's dict path
+    obs_dict = DefaultAlgoObserver()
+    obs_dict.after_init(_FakeObserverAlgo())
+    obs_dict.process_infos(merged, done_indices)
+
+    # both paths track exactly one game: worker 1's score
+    assert obs_list.game_scores.current_size == 1
+    assert obs_dict.game_scores.current_size == 1
+    assert obs_list.game_scores.get_mean() == pytest.approx(21.0)
+    assert obs_dict.game_scores.get_mean() == pytest.approx(21.0)
+
+    # the meter must stay finite after a subsequent good update
+    later = _merge_ray_infos([{'scores': 7.0, 'time_outs': False}])
+    obs_dict.process_infos(later, torch.tensor([0]))
+    assert obs_dict.game_scores.current_size == 2
+    assert np.isfinite(obs_dict.game_scores.get_mean())
+    assert obs_dict.game_scores.get_mean() == pytest.approx(14.0)

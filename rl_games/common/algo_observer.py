@@ -66,7 +66,17 @@ class DefaultAlgoObserver(AlgoObserver):
                 if 'scores' in infos:
                     game_res = infos['scores']
                 if game_res is not None and len(game_res) > ind//self.algo.num_agents:
-                    self.game_scores.update(torch.from_numpy(np.asarray([game_res[ind//self.algo.num_agents]])).to(self.algo.ppo_device))
+                    entry = np.asarray(game_res[ind//self.algo.num_agents])
+                    # Skip non-finite fillers: _merge_ray_infos pads interior
+                    # workers that were done without scores (e.g. episodic-life
+                    # atari) with NaN. Matches the old list-path semantics
+                    # (missing key = skip) and keeps NaN out of AverageMeter,
+                    # which would otherwise poison its running mean forever.
+                    # Only float kinds can carry NaN; bool/int entries
+                    # (battle_won, integer scores) pass through untouched.
+                    if entry.dtype.kind == 'f' and not np.isfinite(entry).all():
+                        continue
+                    self.game_scores.update(torch.from_numpy(np.asarray([entry])).to(self.algo.ppo_device))
 
     def after_clear_stats(self):
         self.game_scores.clear()
