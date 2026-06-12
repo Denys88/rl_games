@@ -1,4 +1,5 @@
 """Phase B SAC correctness tests (spec: docs/superpowers/specs/2026-06-11-phase-b-sac-correctness-design.md)."""
+import functools
 import os
 import sys
 
@@ -116,6 +117,73 @@ def make_fake_env_sac_agent(num_envs=3, ep_len=EP_LEN, env_cls=FakeNextStepVecEn
     runner.params['config']['vec_env'] = fake
     agent = runner.algo_factory.create(runner.algo_name, base_name='test_fake_sac', params=runner.params)
     return agent, fake
+
+
+# reward_shaper.scale_value read straight from the helper's base yaml
+# (sac_halfcheetah.yaml: 1.0) so the accounting test tracks the config the
+# agent actually runs with rather than a hardcoded copy.
+SHAPER_SCALE = float(_load_params(SAC_YAML)['config']['reward_shaper'].get('scale_value', 1.0))
+
+
+def _completed_training_buffer(agent):
+    agent.train()
+    buf = agent.replay_buffer
+    n = buf.capacity if buf.full else buf.idx
+    return (buf.obses[:n], buf.actions[:n], buf.rewards[:n], buf.next_obses[:n],
+            buf.dones[:n], buf.truncated[:n])
+
+
+def test_no_cross_episode_rows_in_replay():
+    # Finding 1.1: reset-step garbage rows must never be stored.
+    agent, fake = make_fake_env_sac_agent(
+        num_warmup_frames=None, num_warmup_steps=10_000,  # exploration still stores rows
+        max_epochs=1, num_steps_per_episode=EP_LEN + 3)
+    obses, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    assert obses.shape[0] > 0
+    # a garbage row would be: obs at t==EP_LEN (terminal) -> next_obs at t==0
+    bad = (obses[:, 1] == EP_LEN).nonzero(as_tuple=True)[0]
+    assert len(bad) == 0, f"stored {len(bad)} transitions FROM the terminal obs (reset-step garbage)"
+    # within-episode continuity
+    assert torch.all(next_obses[:, 1] == obses[:, 1] + 1)
+    # and same-episode pairing (episode counter must match across the row)
+    assert torch.all(next_obses[:, 2] == obses[:, 2])
+
+
+def test_truncation_stores_true_final_obs_and_flags():
+    # Finding 1.4: at truncation, next_obs must be the TRUE final obs (t==EP_LEN),
+    # done=False (bootstrap), truncated=True.
+    agent, fake = make_fake_env_sac_agent(
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=EP_LEN + 3)
+    _, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    rows = (next_obses[:, 1] == EP_LEN).nonzero(as_tuple=True)[0]
+    assert len(rows) > 0, "no truncation-step rows captured"
+    assert not dones[rows].any().item(), "truncated rows must bootstrap (done=False)"
+    assert trunc[rows].all().item(), "truncated rows must carry truncated=True"
+
+
+def test_termination_rows_do_not_bootstrap():
+    agent, fake = make_fake_env_sac_agent(
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=EP_LEN + 3,
+        env_cls=functools.partial(FakeNextStepVecEnv, terminate_instead=True))
+    _, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    rows = (next_obses[:, 1] == EP_LEN).nonzero(as_tuple=True)[0]
+    assert len(rows) > 0
+    assert dones[rows].all().item(), "terminated rows must store done=True"
+    assert not trunc[rows].any().item()
+
+
+def test_reward_and_length_accounting_skips_reset_rows():
+    agent, fake = make_fake_env_sac_agent(
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=2 * EP_LEN + 2)
+    agent.train()
+    assert agent.game_rewards.current_size > 0
+    # per completed episode: EP_LEN steps of reward 1.0 (x shaper scale)
+    expected = EP_LEN * 1.0 * SHAPER_SCALE
+    assert agent.game_rewards.get_mean() == pytest.approx(expected, rel=1e-3)
+    assert agent.game_lengths.get_mean() == pytest.approx(EP_LEN, rel=1e-3)
 
 
 def test_vec_env_injection_via_env_info():

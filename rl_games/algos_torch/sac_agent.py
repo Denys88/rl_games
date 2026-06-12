@@ -54,6 +54,10 @@ class SACAgent(BaseAlgorithm):
         # Timeout handling - consistent with PPO
         self.value_bootstrap = config.get('value_bootstrap', True)
 
+        # Autoreset semantics declared by the vec env (envpool/gymnasium = 'next_step',
+        # everything else defaults to 'same_step'). Drives replay-write logic in play_steps.
+        self.autoreset_mode = (self.env_info or {}).get('autoreset_mode', 'same_step')
+
         print(self.batch_size, self.num_actors, self.num_agents)
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
@@ -234,6 +238,9 @@ class SACAgent(BaseAlgorithm):
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
 
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self._device)
+        # Tracks which envs ended an episode on the PREVIOUS step (next_step autoreset:
+        # their next row is the reset-step garbage row and must be skipped).
+        self._prev_dones = torch.zeros(self.num_actors, dtype=torch.bool, device=self._device)
 
     @property
     def alpha(self):
@@ -503,6 +510,8 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        # Full reset: no env is in the post-episode reset step anymore.
+        self._prev_dones = torch.zeros(self.num_actors, dtype=torch.bool, device=self._device)
 
         return obs
 
@@ -573,56 +582,64 @@ class SACAgent(BaseAlgorithm):
             # Shape rewards BEFORE tracking (so logged rewards match training rewards)
             shaped_rewards = self.rewards_shaper(rewards)
 
-            self.current_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
-
-            all_done_indices = dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-
-            not_dones = 1.0 - dones.float()
-
-            self.algo_observer.process_infos(infos, done_indices)
-
-            # Handle truncated episodes (timeouts) for auto-resetting envs.
-            # Auto-resetting envs (envpool, Isaac Gym) replace next_obs with the reset obs,
-            # so bootstrapping V(next_obs) would use the wrong state.
-            # Fix: for truncated envs, use obs (pre-reset) as next_obs and mark done=False.
-            # The critic will compute V(s_t) with fresh weights at training time.
-            terminated = dones.clone()
-            timeouts = None
+            # --- B1: autoreset-mode-aware replay write (findings 1.1/1.4) ------
+            truncated_mask = torch.zeros(dones.shape[0], dtype=torch.bool, device=self._device)
             if self.value_bootstrap and 'time_outs' in infos:
-                timeouts = self.cast_obs(infos['time_outs'])
-                if timeouts.dtype != torch.bool:
-                    timeouts = timeouts.bool()
-                if timeouts.any():
-                    terminated[timeouts] = 0.0
-                else:
-                    timeouts = None
-
-            self.current_rewards.mul_(not_dones)
-            self.current_lengths.mul_(not_dones)
+                truncated_mask = self.cast_obs(infos['time_outs'])
+                if truncated_mask.dtype != torch.bool:
+                    truncated_mask = truncated_mask.bool()
+            terminated = dones.bool() & ~truncated_mask
 
             if isinstance(next_obs, dict):
                 next_obs_processed = next_obs['obs']
-                self.obs = next_obs
             else:
                 next_obs_processed = next_obs
-                self.obs = next_obs
+            self.obs = next_obs
 
-            # For truncated envs, store pre-reset obs as next_obs in replay buffer
-            # so the critic bootstraps V(s_t) with fresh weights at training time.
-            # self.obs keeps the actual reset obs for the next step.
-            replay_next_obs = next_obs_processed
-            if timeouts is not None:
-                replay_next_obs = next_obs_processed.clone()
-                replay_next_obs[timeouts] = obs[timeouts]
+            if self.autoreset_mode == 'next_step':
+                # rows whose PREVIOUS step ended an episode are reset-step garbage
+                # (env ignored the action, reward is filler, next_obs is post-reset):
+                # exclude from replay AND from episode accounting. next_obs at the
+                # truncation step is already the TRUE final obs — no proxy needed.
+                live = ~self._prev_dones
+                replay_next_obs = next_obs_processed
+            else:
+                # same_step autoreset: every row live; true final obs unavailable in
+                # next_obs. Prefer info-provided final obs, else the s_t proxy.
+                live = torch.ones(dones.shape[0], dtype=torch.bool, device=self._device)
+                replay_next_obs = next_obs_processed
+                if truncated_mask.any():
+                    replay_next_obs = next_obs_processed.clone()
+                    final_obs = infos.get('final_observation') if isinstance(infos, dict) else None
+                    if final_obs is not None:
+                        final_obs = self.cast_obs(final_obs).to(replay_next_obs.dtype)
+                        replay_next_obs[truncated_mask] = final_obs[truncated_mask]
+                    else:
+                        replay_next_obs[truncated_mask] = obs[truncated_mask]
 
-            # Batch unsqueeze operations (rewards already shaped above)
-            rewards_unsqueezed = shaped_rewards.unsqueeze(1)
-            terminated_unsqueezed = terminated.unsqueeze(1)
-            self.replay_buffer.add(obs, action, rewards_unsqueezed, replay_next_obs, terminated_unsqueezed)
+            live_f = live.float()
+            self.current_rewards.add_(shaped_rewards * live_f)
+            self.current_lengths.add_(live_f)
+            done_live = dones.bool() & live
+            all_done_indices = done_live.nonzero(as_tuple=False)
+            done_indices = all_done_indices[::self.num_agents]
+            self.game_rewards.update(self.current_rewards[done_indices])
+            self.game_lengths.update(self.current_lengths[done_indices])
+            self.algo_observer.process_infos(infos, done_indices)
+            not_dones = 1.0 - dones.float()
+            self.current_rewards.mul_(not_dones)
+            self.current_lengths.mul_(not_dones)
+
+            if live.any():
+                self.replay_buffer.add(
+                    obs[live], action[live],
+                    shaped_rewards[live].unsqueeze(1),
+                    replay_next_obs[live],
+                    terminated[live].unsqueeze(1),
+                    truncated_mask[live].unsqueeze(1))
+
+            self._prev_dones = dones.bool().clone()
+            # -------------------------------------------------------------------
 
             obs = next_obs_processed  # Use the already processed observation
 
