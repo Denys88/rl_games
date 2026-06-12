@@ -96,6 +96,9 @@ def make_fake_env_sac_agent(num_envs=3, ep_len=EP_LEN, env_cls=FakeNextStepVecEn
         'device': 'cpu', 'multi_gpu': False, 'num_actors': num_envs,
         'print_stats': False, 'max_epochs': 2, 'save_frequency': 0,
         'save_best_after': 10_000, 'num_warmup_frames': 1,
+        # one full episode per epoch: until finding 1.6 lands, train() can only
+        # exit at max_epochs after at least one episode has completed
+        'num_steps_per_episode': EP_LEN,
         'replay_buffer_size': 512, 'batch_size': 16,
         'train_dir': TEST_TRAIN_DIR, 'name': 'pytest_sac_fake',
         'env_info': fake.get_env_info(),
@@ -123,3 +126,14 @@ def test_vec_env_injection_via_env_info():
     if isinstance(obs, dict):  # obs_to_tensors wraps plain obs into {'obs': ...}
         obs = obs['obs']
     assert obs.shape == (3, OBS_DIM)
+
+
+def test_warmup_epoch_count_exact():
+    # Finding 1.14: epoch_num increments BEFORE train_epoch, so `<` gives
+    # num_warmup_steps - 1 warmup epochs; num_warmup_steps=1 disables warmup.
+    agent, fake = make_fake_env_sac_agent(num_warmup_frames=None, num_warmup_steps=1, max_epochs=1)
+    seen = []
+    orig = agent.play_steps
+    agent.play_steps = lambda random_exploration=False: (seen.append(random_exploration), orig(random_exploration))[1]
+    agent.train()
+    assert seen == [True], f"num_warmup_steps=1 must give exactly one warmup epoch, got {seen}"

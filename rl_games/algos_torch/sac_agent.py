@@ -649,7 +649,9 @@ class SACAgent(BaseAlgorithm):
         return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train_epoch(self):
-        random_exploration = self.epoch_num < self.num_warmup_steps
+        # epoch_num is 1-based here (train() increments it before calling train_epoch),
+        # so `<=` gives exactly num_warmup_steps warmup epochs (finding 1.14).
+        random_exploration = self.epoch_num <= self.num_warmup_steps
         return self.play_steps(random_exploration)
 
     def train(self):
@@ -683,7 +685,8 @@ class SACAgent(BaseAlgorithm):
             self.writer.add_scalar('performance/step_inference_time', play_time, self.frame)
             self.writer.add_scalar('performance/step_time', step_time, self.frame)
 
-            if self.epoch_num >= self.num_warmup_steps:
+            # epochs <= num_warmup_steps are warmup (no updates -> empty loss lists)
+            if self.epoch_num > self.num_warmup_steps:
                 self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c1_loss', torch_ext.mean_list(critic1_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c2_loss', torch_ext.mean_list(critic2_losses).item(), self.frame)
