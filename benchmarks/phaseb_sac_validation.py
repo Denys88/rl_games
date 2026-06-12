@@ -44,11 +44,18 @@ BANDS = {'halfcheetah': (10469, 1123), 'ant': (4623, 984), 'humanoid': (5044, 39
 # episode_lengths/step and episode_lengths/time; PPO-only rewards/iter does not exist here).
 REWARD_TAG = 'rewards/step'
 
+# envpool ships v3/v4/v5 (verified 2026-06-12); the banded battery runs v4 so the
+# reference bands apply directly (maintainer decision). Override with
+# PHASEB_ENVPOOL_VERSION=v5 to benchmark v5 instead (bands then advisory).
+ENVPOOL_ENV_VERSION = os.environ.get('PHASEB_ENVPOOL_VERSION', 'v4')
+
+# Longest-first ordering packs the parallel schedule better (3M humanoid would
+# otherwise tail-block the night).
 RUNS = [
-    *[(f'halfcheetah_envpool_s{s}', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
-    *[(f'ant_envpool_s{s}', 'rl_games/configs/mujoco/sac_ant_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
-    *[(f'humanoid_envpool_s{s}', 'rl_games/configs/mujoco/sac_humanoid_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
     ('humanoid_envpool_s7_3M', 'rl_games/configs/mujoco/sac_humanoid_envpool.yaml', 7, 3_000_000),
+    *[(f'humanoid_envpool_s{s}', 'rl_games/configs/mujoco/sac_humanoid_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
+    *[(f'ant_envpool_s{s}', 'rl_games/configs/mujoco/sac_ant_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
+    *[(f'halfcheetah_envpool_s{s}', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', s, 1_000_000) for s in (7, 17, 27)],
     ('halfcheetah_gymnasium_s7', 'rl_games/configs/mujoco/sac_halfcheetah.yaml', 7, 1_000_000),
 ]
 
@@ -56,7 +63,7 @@ PROBE_SPEC = ('probe_halfcheetah', 'rl_games/configs/mujoco/sac_halfcheetah_envp
 PROBE_SECONDS = 600
 
 
-def run_one(spec, timeout=None, allow_timeout=False):
+def run_one(spec, timeout=None, allow_timeout=False, gpu=None):
     """Launch one training run as a subprocess; returns (tag, returncode)."""
     tag, cfg_rel, seed, max_frames = spec
     run_dir = os.path.join(OUT, tag)
@@ -71,24 +78,31 @@ def run_one(spec, timeout=None, allow_timeout=False):
     # rl_games appends a timestamp to `name` unless full_experiment_name is set
     # (sac_agent.py:230-235); pinning it makes the run dir deterministic: OUT/<tag>.
     c['full_experiment_name'] = tag
+    # banded envpool runs use the version the bands were derived from (v4 default)
+    env_cfg = c.get('env_config')
+    if 'envpool' in tag and isinstance(env_cfg, dict) and isinstance(env_cfg.get('env_name'), str):
+        env_cfg['env_name'] = env_cfg['env_name'].rsplit('-v', 1)[0] + '-' + ENVPOOL_ENV_VERSION
 
     overlay = os.path.join(run_dir, f'{tag}.yaml')
     with open(overlay, 'w') as f:
         yaml.safe_dump(cfg, f)
 
+    env = dict(os.environ)
+    if gpu is not None:
+        env['CUDA_VISIBLE_DEVICES'] = str(gpu)  # config's cuda:0 maps to this GPU
     cmd = [sys.executable, 'runner.py', '-t', '-f', overlay, '--seed', str(seed)]
     t0 = time.time()
-    print(f'[{tag}] starting: {" ".join(cmd)}')
+    print(f'[{tag}] starting (gpu={gpu}): {" ".join(cmd)}', flush=True)
     with open(os.path.join(run_dir, 'stdout.log'), 'wb') as log:
         try:
             proc = subprocess.run(cmd, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
-                                  timeout=timeout)
+                                  timeout=timeout, env=env)
             rc = proc.returncode
         except subprocess.TimeoutExpired:
             if not allow_timeout:
                 raise
             rc = 0  # expected exit path for the fixed-duration throughput probe
-    print(f'[{tag}] done rc={rc} elapsed={time.time() - t0:.0f}s')
+    print(f'[{tag}] done rc={rc} elapsed={time.time() - t0:.0f}s', flush=True)
     return tag, rc
 
 
@@ -118,17 +132,79 @@ def probe():
           'without starving individual runs (overnight budget: 11 runs total).')
 
 
-def run_all(parallel):
+def run_all(parallel, num_gpus=2):
     os.makedirs(OUT, exist_ok=True)
     failures = []
     with cf.ThreadPoolExecutor(max_workers=parallel) as ex:
-        for tag, rc in ex.map(run_one, RUNS):
+        futures = [ex.submit(run_one, spec, gpu=i % num_gpus) for i, spec in enumerate(RUNS)]
+        for fut in cf.as_completed(futures):
+            tag, rc = fut.result()
             if rc != 0:
                 failures.append(tag)
     if failures:
         print('FAILED runs: ' + ', '.join(failures), file=sys.stderr)
         sys.exit(1)
     print(f'All {len(RUNS)} runs finished. Use --report for the results table.')
+
+
+def _curve(run_dir):
+    """All (step, value) reward points for a run, sorted by step."""
+    event_files = []
+    for root, _dirs, files in os.walk(run_dir):
+        event_files += [os.path.join(root, f) for f in files
+                        if f.startswith('events.out.tfevents')]
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+    points = []
+    for ef in event_files:
+        acc = EventAccumulator(ef, size_guidance={'scalars': 0})
+        acc.Reload()
+        if REWARD_TAG in acc.Tags().get('scalars', []):
+            points += [(s.step, s.value) for s in acc.Scalars(REWARD_TAG)]
+    points.sort(key=lambda p: p[0])
+    return points
+
+
+def plots():
+    """Per-env reward curves (all seeds overlaid) with the acceptance band shaded."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    plot_dir = os.path.join(OUT, 'plots')
+    os.makedirs(plot_dir, exist_ok=True)
+    by_env = {}
+    for tag, _cfg, _seed, _frames in RUNS:
+        by_env.setdefault(tag.split('_')[0], []).append(tag)
+    written = []
+    for env, tags in by_env.items():
+        fig, ax = plt.subplots(figsize=(9, 5))
+        any_curve = False
+        for tag in tags:
+            pts = _curve(os.path.join(OUT, tag))
+            if not pts:
+                continue
+            any_curve = True
+            steps, vals = zip(*pts)
+            ax.plot(steps, vals, label=tag, linewidth=1.2)
+        if not any_curve:
+            plt.close(fig)
+            continue
+        band = BANDS.get(env)
+        if band:
+            ax.axhspan(band[0] - band[1], band[0] + band[1], alpha=0.15, color='green',
+                       label=f'reference band {band[0]}±{band[1]} (v4)')
+            ax.axhline(band[0] - band[1], color='green', linewidth=0.8, linestyle='--')
+        ax.set_xlabel('frames')
+        ax.set_ylabel(REWARD_TAG)
+        ax.set_title(f'Phase B validation — {env} (envpool {ENVPOOL_ENV_VERSION})')
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.3)
+        out_png = os.path.join(plot_dir, f'{env}.png')
+        fig.savefig(out_png, dpi=120, bbox_inches='tight')
+        plt.close(fig)
+        written.append(out_png)
+    print('plots written:' if written else 'no curves found yet')
+    for p in written:
+        print(f'  {p}')
 
 
 def _final_score(run_dir):
@@ -187,14 +263,19 @@ def main():
                     help='concurrent training runs for --run (pick via --probe fps)')
     ap.add_argument('--report', action='store_true',
                     help='print the results table from TB event files')
+    ap.add_argument('--plots', action='store_true',
+                    help='write per-env reward-curve PNGs with acceptance bands')
+    ap.add_argument('--gpus', type=int, default=2, help='GPUs to round-robin runs across')
     args = ap.parse_args()
 
     if args.probe:
         probe()
     elif args.run:
-        run_all(args.parallel)
+        run_all(args.parallel, num_gpus=args.gpus)
     elif args.report:
         report()
+    elif args.plots:
+        plots()
     else:
         ap.print_help()
         sys.exit(2)
