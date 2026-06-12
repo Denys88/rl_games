@@ -524,6 +524,85 @@ def test_legacy_num_updates_per_step_still_honored():
     assert agent.num_updates_per_step == 3
 
 
+class ScaledActionsFakeEnv(FakeNextStepVecEnv):
+    """Action space with non-unit bounds: scale = 0.4 per dim, bias = 0."""
+
+    def get_env_info(self):
+        info = super().get_env_info()
+        info['action_space'] = spaces.Box(-0.4, 0.4, (ACT_DIM,), dtype=np.float32)
+        return info
+
+
+def test_log_prob_includes_action_scale_jacobian():
+    # Finding 1.10: entropy must refer to the ENV action space.
+    agent, _ = make_fake_env_sac_agent()
+    assert agent.log_action_scale_sum.item() == pytest.approx(0.0, abs=1e-6)  # unit bounds
+
+    agent2, _ = make_fake_env_sac_agent(env_cls=ScaledActionsFakeEnv)
+    expected = ACT_DIM * float(np.log(0.4))
+    assert agent2.log_action_scale_sum.item() == pytest.approx(expected, rel=1e-5)
+
+
+def test_update_paths_use_env_space_log_prob():
+    import inspect
+    from rl_games.algos_torch import sac_agent
+    src = inspect.getsource(sac_agent.SACAgent.update_critic) + \
+          inspect.getsource(sac_agent.SACAgent.update_actor_and_alpha)
+    # both update sites must route log-probs through the env-space helper...
+    assert src.count('_env_log_prob') >= 2
+    # ...and the helper itself applies the action-scale Jacobian correction
+    helper = inspect.getsource(sac_agent.SACAgent._env_log_prob)
+    assert 'log_action_scale_sum' in helper
+
+
+def test_env_log_prob_matches_analytic_jacobian():
+    # Numeric end-to-end: the value both update sites consume must equal
+    # log pi_norm(a) - sum(log action_scale), with the analytic constant.
+    agent, _ = make_fake_env_sac_agent(env_cls=ScaledActionsFakeEnv)
+    torch.manual_seed(0)
+    obs = torch.randn(5, OBS_DIM)
+    with torch.no_grad():
+        dist = agent.model.actor(obs)
+        a = dist.sample()
+        lp_norm = dist.log_prob(a).sum(-1, keepdim=True)
+        got = agent._env_log_prob(dist, a)
+    expected = lp_norm - ACT_DIM * float(np.log(0.4))
+    assert got.shape == (5, 1)
+    assert torch.allclose(got, expected, rtol=1e-5, atol=1e-6)
+
+
+def test_sac_player_rescales_actions_per_dim():
+    # Finding 1.11: SACPlayer emitted raw [-1, 1] actions clamped to the GLOBAL
+    # env min/max — wrong for non-unit and per-dim-asymmetric action boxes.
+    # Constructible without an env: env_info in config skips env creation.
+    from rl_games.algos_torch.players import SACPlayer
+    params = _load_params(SAC_YAML)
+    cfg = params['config']
+    cfg.pop('env_config', None)
+    info = FakeNextStepVecEnv(2).get_env_info()
+    low = np.array([-0.4, 0.0], dtype=np.float32)   # per-dim scale [0.4, 1.0], bias [0, 1.0]
+    high = np.array([0.4, 2.0], dtype=np.float32)
+    info['action_space'] = spaces.Box(low, high, dtype=np.float32)
+    cfg.update({'env_info': info, 'device_name': 'cpu', 'normalize_input': False})
+    player = SACPlayer(params)
+    assert player.env is None  # constructed without an env
+
+    a = torch.tensor([[1.0, -1.0], [0.5, 0.25], [-2.0, 2.0]])  # last row: fp-error clamp
+    out = player.rescale_actions(a)
+    expected = torch.tensor([[0.4, 0.0], [0.2, 1.25], [-0.4, 2.0]])
+    assert torch.allclose(out, expected, atol=1e-6)
+
+    # end-to-end through get_action: deterministic action == rescale(dist.mean)
+    obs = torch.zeros(1, OBS_DIM)
+    player.has_batch_dimension = True
+    with torch.no_grad():
+        got = player.get_action(obs, is_deterministic=True)
+        dist = player.model.actor(player.model.norm_obs(obs))
+        expected = player.rescale_actions(dist.mean)
+    assert torch.allclose(got, expected)
+    assert torch.all(got >= torch.from_numpy(low)) and torch.all(got <= torch.from_numpy(high))
+
+
 # RunningMeanStd.__init__ (running_mean_std.py) registers the count buffer as
 # torch.ones((), dtype=torch.int64) with running_mean=0 — i.e. one phantom
 # zero-valued sample baked in before any real data.

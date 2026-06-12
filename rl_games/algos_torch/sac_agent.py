@@ -89,6 +89,10 @@ class SACAgent(BaseAlgorithm):
         self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
         self.action_scale = (self.action_high - self.action_low) / 2.0
         self.action_bias = (self.action_high + self.action_low) / 2.0
+        # B4: change-of-variables for the affine rescale [-1,1] -> env bounds.
+        # log pi_env(a_env) = log pi_norm(a_norm) - sum(log(action_scale)).
+        # Zero for unit bounds; matches reference SAC (CleanRL). Finding 1.10.
+        self.log_action_scale_sum = torch.log(self.action_scale.clamp_min(1e-8)).sum()
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
@@ -374,11 +378,21 @@ class SACAgent(BaseAlgorithm):
         # Clamp to handle floating point errors
         return rescaled.clamp(self.action_low, self.action_high)
 
+    def _env_log_prob(self, dist, action):
+        """Log-prob of the env-space action via change of variables (B4, finding 1.10).
+
+        `dist` is over normalized [-1, 1] actions and `action` is a normalized
+        sample; the env executes a_env = action_scale * action + action_bias, so
+        log pi_env(a_env) = log pi_norm(action) - sum(log(action_scale)).
+        Keeps entropy (and the alpha objective) in the ENV action space.
+        """
+        return dist.log_prob(action).sum(-1, keepdim=True) - self.log_action_scale_sum
+
     def update_critic(self, obs, action, reward, next_obs, not_done, step):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
-            log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+            log_prob = self._env_log_prob(dist, next_action)
             # Rescale next_action for critic (as it outputs [-1, 1])
             next_action_rescaled = self.rescale_actions(next_action)
 
@@ -417,7 +431,7 @@ class SACAgent(BaseAlgorithm):
             action = dist.rsample()
             # Rescale actions for critic evaluation
             action_rescaled = self.rescale_actions(action)
-            log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+            log_prob = self._env_log_prob(dist, action)
             entropy = -log_prob.mean()
             actor_Q1, actor_Q2 = self.model.critic(obs, action_rescaled)
             actor_Q = torch.min(actor_Q1, actor_Q2)
