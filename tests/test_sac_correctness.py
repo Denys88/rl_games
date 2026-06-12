@@ -137,3 +137,11 @@ def test_warmup_epoch_count_exact():
     agent.play_steps = lambda random_exploration=False: (seen.append(random_exploration), orig(random_exploration))[1]
     agent.train()
     assert seen == [True], f"num_warmup_steps=1 must give exactly one warmup epoch, got {seen}"
+
+
+def test_gamma_tensor_stays_fp32_under_mixed_precision():
+    # Finding 1.9: gamma_tensor recast to bf16 turns 0.99 into 0.98828125.
+    agent, _ = make_fake_env_sac_agent(mixed_precision=True)
+    assert agent.gamma_tensor.dtype == torch.float32
+    # abs=1e-7: fp32 representation of 0.99 is off by ~9.5e-9; the bf16 bug was off by 1.7e-3
+    assert agent.gamma_tensor.item() == pytest.approx(0.99, abs=1e-7)

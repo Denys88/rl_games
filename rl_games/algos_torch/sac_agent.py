@@ -127,8 +127,6 @@ class SACAgent(BaseAlgorithm):
                 def close(self): pass
             self.writer = _DummyWriter()
 
-        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=self.amp_dtype)
-
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
