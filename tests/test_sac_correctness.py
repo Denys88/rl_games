@@ -511,6 +511,19 @@ def test_ray_merge_nan_filler_does_not_poison_observer():
     assert obs_dict.game_scores.get_mean() == pytest.approx(14.0)
 
 
+def test_utd_ratio_sets_updates_per_step():
+    # Finding 1.3/1.5/2.2: utd_ratio = gradient updates per env FRAME, so the
+    # update count scales with num_actors instead of silently diluting.
+    # num_updates_per_step=None: independent of whatever key the yaml carries.
+    agent, _ = make_fake_env_sac_agent(num_envs=8, utd_ratio=0.5, num_updates_per_step=None)
+    assert agent.num_updates_per_step == 4  # round(0.5 * 8)
+
+
+def test_legacy_num_updates_per_step_still_honored():
+    agent, _ = make_fake_env_sac_agent(num_envs=8, num_updates_per_step=3, utd_ratio=None)
+    assert agent.num_updates_per_step == 3
+
+
 # RunningMeanStd.__init__ (running_mean_std.py) registers the count buffer as
 # torch.ones((), dtype=torch.int64) with running_mean=0 — i.e. one phantom
 # zero-valued sample baked in before any real data.

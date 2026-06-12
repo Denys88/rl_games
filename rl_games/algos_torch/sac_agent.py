@@ -28,7 +28,24 @@ class SACAgent(BaseAlgorithm):
         self.gamma = self.config.get("gamma", 0.99)
         self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
-        self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        # B3 (findings 1.3/1.5/2.2): utd_ratio = gradient updates per env FRAME.
+        # One env step collects num_actors frames, and the update loop in
+        # play_steps runs num_updates_per_step PER STEP (inside the step loop),
+        # so per-frame semantics hold for every step even when
+        # num_steps_per_episode > 1. Takes priority over the legacy absolute
+        # num_updates_per_step, which silently diluted UTD as num_actors grew.
+        utd_ratio = self.config.get("utd_ratio", None)
+        if utd_ratio is not None:
+            # gradient updates per env FRAME; one env step collects num_actors frames
+            self.num_updates_per_step = max(1, round(utd_ratio * self.num_actors))
+        else:
+            self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        effective_utd = self.num_updates_per_step / self.num_actors
+        print(f"SAC effective UTD ratio: {effective_utd:.3f} "
+              f"({self.num_updates_per_step} updates per step of {self.num_actors} frames)")
+        if effective_utd < 0.5:
+            print(f"WARNING: effective UTD {effective_utd:.3f} < 0.5 — the critic will be "
+                  f"data-starved; set utd_ratio: 1.0 unless this is intentional")
         # Warmup: num_warmup_frames (total env frames) takes priority over num_warmup_steps (epochs)
         num_warmup_frames = self.config.get("num_warmup_frames", None)
         if num_warmup_frames is not None:
