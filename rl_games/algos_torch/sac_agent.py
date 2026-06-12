@@ -240,7 +240,7 @@ class SACAgent(BaseAlgorithm):
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self._device)
         # Tracks which envs ended an episode on the PREVIOUS step (next_step autoreset:
         # their next row is the reset-step garbage row and must be skipped).
-        self._prev_dones = torch.zeros(self.num_actors, dtype=torch.bool, device=self._device)
+        self._prev_dones = torch.zeros(batch_size, dtype=torch.bool, device=self._device)
 
     @property
     def alpha(self):
@@ -511,7 +511,9 @@ class SACAgent(BaseAlgorithm):
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
         # Full reset: no env is in the post-episode reset step anymore.
-        self._prev_dones = torch.zeros(self.num_actors, dtype=torch.bool, device=self._device)
+        # Sized num_agents * num_actors to match dones/current_rewards rows.
+        self._prev_dones = torch.zeros(self.num_agents * self.num_actors,
+                                       dtype=torch.bool, device=self._device)
 
         return obs
 
@@ -544,6 +546,71 @@ class SACAgent(BaseAlgorithm):
         self.game_lengths.clear()
         self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         self.algo_observer.after_clear_stats()
+
+    def _store_transitions(self, obs, action, shaped_rewards, next_obs,
+                           dones, terminated, truncated_mask, infos):
+        """Write one vec-step of transitions to replay and update episode accounting.
+
+        next_step autoreset: rows whose PREVIOUS step ended an episode are
+        reset-step garbage (env ignored the action, reward is filler, next_obs
+        is post-reset) — excluded from replay AND from episode accounting.
+        next_obs at the truncation step is already the TRUE final obs, no proxy
+        needed. Live rows are gathered with ONE nonzero + index_select per
+        tensor instead of boolean masking, which re-runs nonzero (a host sync)
+        for every masked tensor.
+
+        same_step autoreset: every row is live — the full batch is written
+        directly with no masking and no live-mask host syncs. The true final
+        obs is not in next_obs: prefer the info-provided final obs, else the
+        s_t proxy.
+        """
+        if self.autoreset_mode == 'next_step':
+            live = ~self._prev_dones
+            live_f = live.float()
+            self.current_rewards.add_(shaped_rewards * live_f)
+            self.current_lengths.add_(live_f)
+            all_done_indices = (dones.bool() & live).nonzero(as_tuple=False)
+
+            live_idx = live.nonzero(as_tuple=True)[0]
+            if live_idx.numel() > 0:  # host-side metadata check, no extra sync
+                self.replay_buffer.add(
+                    obs.index_select(0, live_idx),
+                    action.index_select(0, live_idx),
+                    shaped_rewards.index_select(0, live_idx).unsqueeze(1),
+                    next_obs.index_select(0, live_idx),
+                    terminated.index_select(0, live_idx).unsqueeze(1),
+                    truncated_mask.index_select(0, live_idx).unsqueeze(1))
+        else:
+            replay_next_obs = next_obs
+            if truncated_mask.any():
+                replay_next_obs = next_obs.clone()
+                final_obs = infos.get('final_observation') if isinstance(infos, dict) else None
+                if final_obs is not None:
+                    final_obs = self.cast_obs(final_obs).to(replay_next_obs.dtype)
+                    replay_next_obs[truncated_mask] = final_obs[truncated_mask]
+                else:
+                    replay_next_obs[truncated_mask] = obs[truncated_mask]
+
+            self.current_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1.0)
+            all_done_indices = dones.nonzero(as_tuple=False)
+
+            self.replay_buffer.add(
+                obs, action, shaped_rewards.unsqueeze(1), replay_next_obs,
+                terminated.unsqueeze(1), truncated_mask.unsqueeze(1))
+
+        done_indices = all_done_indices[::self.num_agents]
+        self.game_rewards.update(self.current_rewards[done_indices])
+        self.game_lengths.update(self.current_lengths[done_indices])
+        self.algo_observer.process_infos(infos, done_indices)
+        not_dones = 1.0 - dones.float()
+        self.current_rewards.mul_(not_dones)
+        self.current_lengths.mul_(not_dones)
+
+        # clone is NOT redundant: when dones already arrives as torch.bool,
+        # .bool() is a no-op returning an alias, and that tensor can share
+        # memory with an env-owned / numpy buffer (torch.from_numpy).
+        self._prev_dones = dones.bool().clone()
 
     def play_steps(self, random_exploration=False):
         total_time_start = time.perf_counter()
@@ -583,6 +650,9 @@ class SACAgent(BaseAlgorithm):
             shaped_rewards = self.rewards_shaper(rewards)
 
             # --- B1: autoreset-mode-aware replay write (findings 1.1/1.4) ------
+            # Gated on value_bootstrap for config compatibility: with
+            # value_bootstrap=False the stored truncated column is all-False by
+            # design (truncations train as hard terminations, old behavior).
             truncated_mask = torch.zeros(dones.shape[0], dtype=torch.bool, device=self._device)
             if self.value_bootstrap and 'time_outs' in infos:
                 truncated_mask = self.cast_obs(infos['time_outs'])
@@ -596,49 +666,8 @@ class SACAgent(BaseAlgorithm):
                 next_obs_processed = next_obs
             self.obs = next_obs
 
-            if self.autoreset_mode == 'next_step':
-                # rows whose PREVIOUS step ended an episode are reset-step garbage
-                # (env ignored the action, reward is filler, next_obs is post-reset):
-                # exclude from replay AND from episode accounting. next_obs at the
-                # truncation step is already the TRUE final obs — no proxy needed.
-                live = ~self._prev_dones
-                replay_next_obs = next_obs_processed
-            else:
-                # same_step autoreset: every row live; true final obs unavailable in
-                # next_obs. Prefer info-provided final obs, else the s_t proxy.
-                live = torch.ones(dones.shape[0], dtype=torch.bool, device=self._device)
-                replay_next_obs = next_obs_processed
-                if truncated_mask.any():
-                    replay_next_obs = next_obs_processed.clone()
-                    final_obs = infos.get('final_observation') if isinstance(infos, dict) else None
-                    if final_obs is not None:
-                        final_obs = self.cast_obs(final_obs).to(replay_next_obs.dtype)
-                        replay_next_obs[truncated_mask] = final_obs[truncated_mask]
-                    else:
-                        replay_next_obs[truncated_mask] = obs[truncated_mask]
-
-            live_f = live.float()
-            self.current_rewards.add_(shaped_rewards * live_f)
-            self.current_lengths.add_(live_f)
-            done_live = dones.bool() & live
-            all_done_indices = done_live.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-            self.algo_observer.process_infos(infos, done_indices)
-            not_dones = 1.0 - dones.float()
-            self.current_rewards.mul_(not_dones)
-            self.current_lengths.mul_(not_dones)
-
-            if live.any():
-                self.replay_buffer.add(
-                    obs[live], action[live],
-                    shaped_rewards[live].unsqueeze(1),
-                    replay_next_obs[live],
-                    terminated[live].unsqueeze(1),
-                    truncated_mask[live].unsqueeze(1))
-
-            self._prev_dones = dones.bool().clone()
+            self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
+                                    dones, terminated, truncated_mask, infos)
             # -------------------------------------------------------------------
 
             obs = next_obs_processed  # Use the already processed observation

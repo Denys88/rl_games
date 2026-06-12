@@ -238,9 +238,11 @@ class GymnasiumVecEnv(IVecEnv):
         info['use_global_observations'] = False
         info['agents'] = self.get_number_of_agents()
         info['value_size'] = 1
-        # gymnasium 1.x vector envs default to NEXT_STEP autoreset: the done
-        # step returns the true final obs; the reset obs arrives next step.
-        info['autoreset_mode'] = 'next_step'
+        # gymnasium 1.x NATIVE vector envs default to NEXT_STEP autoreset: the
+        # done step returns the true final obs; the reset obs arrives next
+        # step. The manual path (_step_manual, env_creator envs) resets within
+        # the same step — the done row already carries the post-reset obs.
+        info['autoreset_mode'] = 'next_step' if self._use_native_vec else 'same_step'
         if not self._use_native_vec and self.envs:
             sample_env = self.envs[0]
             if hasattr(sample_env, 'use_central_value'):

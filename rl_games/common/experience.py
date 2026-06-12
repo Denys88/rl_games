@@ -272,7 +272,9 @@ class VectorizedReplayBuffer:
         self.truncated[self.idx:self.idx + remaining_capacity].copy_(truncated[:remaining_capacity])
 
         self.idx = (self.idx + num_observations) % self.capacity
-        self.full = self.full or self.idx == 0
+        # num_observations > 0 guard: a zero-row add on a fresh buffer leaves
+        # idx == 0 and must NOT mark the (empty) buffer as full.
+        self.full = self.full or (num_observations > 0 and self.idx == 0)
 
     def sample(self, batch_size):
         """Sample a batch of experiences.

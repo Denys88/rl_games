@@ -35,6 +35,8 @@ class FakeNextStepVecEnv:
     def __init__(self, num_envs, ep_len=EP_LEN, terminate_instead=False):
         self.num_envs = num_envs
         self.ep_len = ep_len
+        # per-env episode lengths (uniform here; staggered in subclass)
+        self.ep_lens = np.full(num_envs, ep_len, dtype=np.int64)
         self.terminate_instead = terminate_instead
         self.t = np.zeros(num_envs, dtype=np.int64)
         self.episode = np.zeros(num_envs, dtype=np.int64)
@@ -65,7 +67,7 @@ class FakeNextStepVecEnv:
                 rewards[e] = 0.0
             else:
                 self.t[e] += 1
-                if self.t[e] >= self.ep_len:
+                if self.t[e] >= self.ep_lens[e]:
                     dones[e] = True
                     truncated[e] = not self.terminate_instead
                     self.pending_reset[e] = True
@@ -85,6 +87,16 @@ class FakeNextStepVecEnv:
 
     def set_env_state(self, state):
         pass
+
+
+class StaggeredFakeNextStepVecEnv(FakeNextStepVecEnv):
+    """Per-env episode length = ep_len + env_id: envs hit their reset-step
+    garbage rows on DIFFERENT steps, so play_steps sees mixed live masks
+    (some rows garbage while others live within the same vec step)."""
+
+    def __init__(self, num_envs, ep_len=EP_LEN, terminate_instead=False):
+        super().__init__(num_envs, ep_len, terminate_instead)
+        self.ep_lens = ep_len + np.arange(num_envs, dtype=np.int64)
 
 
 def make_fake_env_sac_agent(num_envs=3, ep_len=EP_LEN, env_cls=FakeNextStepVecEnv, **config_overrides):
@@ -276,6 +288,67 @@ def test_replay_buffer_truncated_overflow_wrap():
     # the wrap path (overflow copy block) must carry truncated too:
     # rows now at [0,1] are the overflow of the second add (tr1[-2:] = [False, True])
     assert buf.truncated[0].item() == False and buf.truncated[1].item() == True
+
+
+def test_replay_buffer_zero_row_add_does_not_set_full():
+    # T8 review: `full = full or idx == 0` marked a FRESH buffer full on a
+    # zero-row add (idx stays 0). The old `if live.any()` guard in play_steps
+    # masked this; the guard is gone, the buffer must be correct on its own.
+    from rl_games.common.experience import VectorizedReplayBuffer
+    buf = VectorizedReplayBuffer((OBS_DIM,), (ACT_DIM,), 8, 'cpu')
+    z_o = torch.empty(0, OBS_DIM); z_a = torch.empty(0, ACT_DIM)
+    z_r = torch.empty(0, 1); z_d = torch.empty(0, 1, dtype=torch.bool)
+    buf.add(z_o, z_a, z_r, z_o, z_d, z_d)
+    assert buf.full is False and buf.idx == 0
+    # still empty -> sampling must fail loudly, not return garbage rows
+    with pytest.raises(RuntimeError):
+        buf.sample(2)
+    # subsequent real adds behave normally and sample only from idx valid rows
+    buf.add(torch.randn(2, OBS_DIM), torch.randn(2, ACT_DIM), torch.randn(2, 1),
+            torch.randn(2, OBS_DIM), torch.zeros(2, 1, dtype=torch.bool))
+    assert buf.full is False and buf.idx == 2
+    obs, *_ = buf.sample(4)
+    assert obs.shape == (4, OBS_DIM)
+
+
+def test_staggered_episodes_mixed_live_mask():
+    # T8 review: exercise a MIXED live mask — ep_lens [5, 6, 7] put each env's
+    # reset-step garbage row on a different step (6/12, 7/14, 8/16), so some
+    # envs are on garbage rows while others are live in the same vec step.
+    N = 16  # steps; garbage rows per env e: N // (ep_lens[e] + 1) == 2 each
+    agent, fake = make_fake_env_sac_agent(
+        env_cls=StaggeredFakeNextStepVecEnv,
+        num_warmup_frames=None, num_warmup_steps=10_000,
+        max_epochs=1, num_steps_per_episode=N)
+    obses, _, _, next_obses, dones, trunc = _completed_training_buffer(agent)
+    # buffer row count == total live steps from the staggered schedule
+    expected_rows = sum(N - N // (l + 1) for l in fake.ep_lens)
+    assert obses.shape[0] == expected_rows  # 42
+    for e in range(fake.num_envs):
+        rows_e = int((obses[:, 0] == e).sum())
+        assert rows_e == N - N // (int(fake.ep_lens[e]) + 1)
+    # no cross-episode rows: stored transitions are contiguous within episodes
+    assert torch.all(next_obses[:, 1] == obses[:, 1] + 1)
+    assert torch.all(next_obses[:, 2] == obses[:, 2])
+    # accounting under mixed masks: two completed episodes per env -> mean of
+    # (5, 5, 6, 6, 7, 7) == 6.0
+    assert agent.game_lengths.get_mean() == pytest.approx(6.0, rel=1e-3)
+
+
+def test_gymnasium_manual_path_declares_same_step():
+    # T8 review: _step_manual resets within the same step (same_step
+    # semantics), but get_env_info unconditionally declared 'next_step'.
+    # env_creator bypasses gymnasium.make, so the manual path is constructible
+    # with a stub env — no env registration needed.
+    from rl_games.common.gymnasium_vecenv import GymnasiumVecEnv
+
+    class _StubEnv:
+        observation_space = spaces.Box(-1.0, 1.0, (3,), dtype=np.float32)
+        action_space = spaces.Box(-1.0, 1.0, (1,), dtype=np.float32)
+
+    venv = GymnasiumVecEnv('stub', 2, env_creator=lambda: _StubEnv())
+    assert venv._use_native_vec is False
+    assert venv.get_env_info()['autoreset_mode'] == 'same_step'
 
 
 def test_fake_env_declares_next_step_mode():
