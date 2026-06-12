@@ -435,8 +435,8 @@ class SACAgent(BaseAlgorithm):
             actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
             actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         else:
-            # Return previous values (or zeros) when not updating actor
-            actor_loss_info = torch.tensor(0.0, device=self._device), torch.tensor(0.0, device=self._device), self.alpha, None
+            # No actor update this step: no stats (zero placeholders diluted the logged means)
+            actor_loss_info = None
 
         self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
@@ -519,11 +519,14 @@ class SACAgent(BaseAlgorithm):
         return actions
 
     def extract_actor_stats(self, actor_losses, entropies, alphas, alpha_losses, actor_loss_info):
+        if actor_loss_info is None:
+            # No actor update happened on this critic step (policy_frequency skip)
+            return
         actor_loss, entropy, alpha, alpha_loss = actor_loss_info
 
         actor_losses.append(actor_loss)
         entropies.append(entropy)
-        if alpha_losses is not None:
+        if alpha_loss is not None:
             alphas.append(alpha)
             alpha_losses.append(alpha_loss)
 
@@ -683,16 +686,21 @@ class SACAgent(BaseAlgorithm):
             self.writer.add_scalar('performance/step_inference_time', play_time, self.frame)
             self.writer.add_scalar('performance/step_time', step_time, self.frame)
 
-            # epochs <= num_warmup_steps are warmup (no updates -> empty loss lists)
+            # epochs <= num_warmup_steps are warmup (no updates -> empty loss lists).
+            # Actor/alpha lists are also empty when policy_frequency skipped every
+            # actor update this epoch — only log stats that were actually computed.
             if self.epoch_num > self.num_warmup_steps:
-                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
+                if len(actor_losses) > 0:
+                    self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c1_loss', torch_ext.mean_list(critic1_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c2_loss', torch_ext.mean_list(critic2_losses).item(), self.frame)
-                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), self.frame)
+                if len(entropies) > 0:
+                    self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), self.frame)
 
-                if alpha_losses[0] is not None:
+                if len(alpha_losses) > 0:
                     self.writer.add_scalar('losses/alpha_loss', torch_ext.mean_list(alpha_losses).item(), self.frame)
-                self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), self.frame)
+                if len(alphas) > 0:
+                    self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), self.frame)
 
             self.writer.add_scalar('info/epochs', self.epoch_num, self.frame)
             self.algo_observer.after_print_stats(self.frame, self.epoch_num, total_time)
