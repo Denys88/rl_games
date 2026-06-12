@@ -7,6 +7,35 @@ from time import sleep
 import torch
 
 
+def can_concat_infos(env):
+    """Return the env's concat_infos declaration.
+
+    Checks the env itself first (so wrapper-level declarations like
+    wrappers.TimeLimit.concat_infos are visible), then falls back to the
+    unwrapped env (finding 55).
+    """
+    if getattr(env, 'concat_infos', False):
+        return True
+    unwrapped = getattr(env, 'unwrapped', env)
+    return bool(getattr(unwrapped, 'concat_infos', False))
+
+
+def _merge_time_outs(infos_list):
+    """Merge per-worker 'time_outs' entries into {'time_outs': np.ndarray}.
+
+    Mirrors the merge pattern in gymnasium_vecenv: each worker info may carry
+    a scalar or per-agent array; missing entries default to False.
+    """
+    time_outs = []
+    for info in infos_list:
+        to = info.get('time_outs', False) if isinstance(info, dict) else False
+        if np.isscalar(to):
+            time_outs.append(to)
+        else:
+            time_outs.extend(to)
+    return {'time_outs': np.array(time_outs)}
+
+
 class RayWorker:
     """Wrapper around a third-party (gym for example) environment class that enables parallel training.
 
@@ -98,11 +127,7 @@ class RayWorker:
             self.env.close()
 
     def can_concat_infos(self):
-        unwrapped = self._unwrapped()
-        if hasattr(unwrapped, 'concat_infos'):
-            return unwrapped.concat_infos
-        else:
-            return False
+        return can_concat_infos(self.env)
 
     def get_env_info(self):
         info = {}
@@ -247,6 +272,11 @@ class RayVecEnv(IVecEnv):
             ret_obs = newobsdict
         if self.concat_infos:
             newinfos = dicts_to_dict_with_arrays(newinfos, False)
+        else:
+            # Finding 49: without concat_infos a list of per-worker dicts was
+            # returned, so consumers checking `'time_outs' in infos` never saw
+            # timeouts. Deliver the merged time_outs dict instead.
+            newinfos = _merge_time_outs(newinfos)
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):

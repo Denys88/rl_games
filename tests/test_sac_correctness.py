@@ -208,3 +208,56 @@ def test_replay_buffer_truncated_overflow_wrap():
     # the wrap path (overflow copy block) must carry truncated too:
     # rows now at [0,1] are the overflow of the second add (tr1[-2:] = [False, True])
     assert buf.truncated[0].item() == False and buf.truncated[1].item() == True
+
+
+def test_fake_env_declares_next_step_mode():
+    agent, fake = make_fake_env_sac_agent()
+    assert agent.env_info.get('autoreset_mode') == 'next_step'
+
+
+def test_wrappers_declare_next_step_mode():
+    import pathlib
+    for f in ['rl_games/envs/envpool.py', 'rl_games/common/gymnasium_vecenv.py']:
+        src = pathlib.Path(os.path.join(REPO, f)).read_text()
+        assert 'autoreset_mode' in src and 'next_step' in src, f"{f} must declare autoreset_mode"
+
+
+def test_can_concat_infos_sees_wrapper_attr():
+    # Finding 55: only env.unwrapped was checked, so wrapper-level
+    # concat_infos declarations (e.g. wrappers.TimeLimit) were invisible.
+    from rl_games.common import vecenv as vecenv_mod
+
+    class Inner:
+        pass
+
+    class Wrapper:
+        concat_infos = True
+        def __init__(self):
+            self.unwrapped = Inner()
+
+    class Bare:  # no concat_infos, no .unwrapped
+        pass
+
+    class UnwrappedOnly:
+        def __init__(self):
+            self.unwrapped = type('U', (), {'concat_infos': True})()
+
+    assert vecenv_mod.can_concat_infos(Wrapper()) is True
+    assert vecenv_mod.can_concat_infos(UnwrappedOnly()) is True
+    assert vecenv_mod.can_concat_infos(Bare()) is False
+
+
+def test_ray_merge_time_outs_without_concat_infos():
+    # Finding 49: RayVecEnv dropped per-worker time_outs unless the env opted
+    # into concat_infos; _merge_time_outs is the extracted merge helper.
+    from rl_games.common.vecenv import _merge_time_outs
+
+    merged = _merge_time_outs([
+        {'time_outs': True},                          # scalar (single-agent worker)
+        {'time_outs': False},
+        {'time_outs': np.array([True, False])},       # per-agent array
+        {},                                           # worker without the key
+    ])
+    assert set(merged) == {'time_outs'}
+    np.testing.assert_array_equal(merged['time_outs'],
+                                  np.array([True, False, True, False, False]))

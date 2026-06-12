@@ -130,6 +130,9 @@ class Envpool(IVecEnv):
         return {
             'action_space': self.action_space,
             'observation_space': self.observation_space,
+            # envpool auto-resets on the step AFTER done: the done step returns
+            # the true final obs; the reset obs arrives with the next step.
+            'autoreset_mode': 'next_step',
         }
 
 
