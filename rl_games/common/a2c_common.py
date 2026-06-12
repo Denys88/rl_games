@@ -293,7 +293,7 @@ class A2CBase(BaseAlgorithm):
         self.last_lr = self.config['learning_rate']
         self.frame = 0
         self.update_time = 0
-        self.mean_rewards = self.last_mean_rewards = -1000000000
+        self.mean_rewards = self.last_mean_rewards = -float('inf')
         self.play_time = 0
         self.epoch_num = 0
         self.curr_frames = 0
@@ -615,7 +615,7 @@ class A2CBase(BaseAlgorithm):
         self.game_shaped_rewards.clear()
         self.game_lengths.clear()
         if clean_rewards:
-            self.mean_rewards = self.last_mean_rewards = -1000000000
+            self.mean_rewards = self.last_mean_rewards = -float('inf')
         self.algo_observer.after_clear_stats()
 
     def update_epoch(self):
@@ -676,7 +676,7 @@ class A2CBase(BaseAlgorithm):
 
         self.optimizer.load_state_dict(weights['optimizer'])
 
-        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
@@ -1083,7 +1083,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.mean_rewards = -1000000000  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0

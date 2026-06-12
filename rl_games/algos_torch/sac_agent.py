@@ -192,7 +192,7 @@ class SACAgent(BaseAlgorithm):
         self.frame = 0
         self.epoch_num = 0
         self.update_time = 0
-        self.last_mean_rewards = -1000000000
+        self.last_mean_rewards = -float('inf')
         self.play_time = 0
 
         # TODO: put it into the separate class
@@ -298,7 +298,7 @@ class SACAgent(BaseAlgorithm):
         if 'log_alpha' in weights:
             self.log_alpha.data.copy_(weights['log_alpha'].to(self._device))
 
-        self.last_mean_rewards = weights.get('last_mean_rewards', -1000000000)
+        self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
         if 'replay_buffer' in weights:
             self.replay_buffer.load_state_dict(weights['replay_buffer'])
@@ -529,7 +529,7 @@ class SACAgent(BaseAlgorithm):
     def clear_stats(self):
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = -1000000000  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
         self.algo_observer.after_clear_stats()
 
     def play_steps(self, random_exploration=False):
