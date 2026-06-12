@@ -139,10 +139,13 @@ class SACAgent(BaseAlgorithm):
         self.env_name = config['env_name']
         print("Env name:", self.env_name)
 
+        self.vec_env = None
         self.env_info = config.get('env_info')
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
             self.env_info = self.vec_env.get_env_info()
+        else:
+            self.vec_env = config.get('vec_env', None)
 
         self._device = config.get('device', 'cuda:0')
 
