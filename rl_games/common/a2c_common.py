@@ -660,6 +660,14 @@ class A2CBase(BaseAlgorithm):
             env_state = self.vec_env.get_env_state()
             state['env_state'] = env_state
 
+        # Optional capability_manifest passthrough. If the training config
+        # declares a `capability_manifest`, carry it verbatim with the
+        # checkpoint so it travels with the policy. rl_games takes no position
+        # on its schema; it is stored and restored opaquely.
+        capability_manifest = self.config.get('capability_manifest')
+        if capability_manifest is not None:
+            state['capability_manifest'] = capability_manifest
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -681,6 +689,10 @@ class A2CBase(BaseAlgorithm):
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
+
+        # Restore the optional capability_manifest passthrough (see get_full_state_weights).
+        if 'capability_manifest' in weights:
+            self.config['capability_manifest'] = weights['capability_manifest']
 
     def set_central_value_function_weights(self, weights):
         self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])

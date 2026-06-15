@@ -282,6 +282,14 @@ class SACAgent(BaseAlgorithm):
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
 
+        # Optional capability_manifest passthrough. If the training config
+        # declares a `capability_manifest`, carry it verbatim with the
+        # checkpoint so it travels with the policy. rl_games takes no position
+        # on its schema; it is stored and restored opaquely.
+        capability_manifest = self.config.get('capability_manifest')
+        if capability_manifest is not None:
+            state['capability_manifest'] = capability_manifest
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -306,6 +314,10 @@ class SACAgent(BaseAlgorithm):
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
+
+        # Restore the optional capability_manifest passthrough (see get_full_state_weights).
+        if 'capability_manifest' in weights:
+            self.config['capability_manifest'] = weights['capability_manifest']
 
     def restore(self, fn, set_epoch=True):
         if not os.path.exists(fn):
