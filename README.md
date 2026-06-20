@@ -47,6 +47,16 @@
 * [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
 * [Random Envs](docs/OTHER.md)
 
+### SAC
+
+SAC matches or exceeds published reference scores on MuJoCo continuous control (envpool, 1M frames, 3 seeds). Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
+
+| Task | rl_games SAC | Reference SAC (1M) |
+|------|--------------|--------------------|
+| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
+| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
+| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
+
 
 Implemented in Pytorch:
 

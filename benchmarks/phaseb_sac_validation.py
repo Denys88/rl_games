@@ -63,7 +63,7 @@ PROBE_SPEC = ('probe_halfcheetah', 'rl_games/configs/mujoco/sac_halfcheetah_envp
 PROBE_SECONDS = 600
 
 # Verification tier (run BEFORE the battery): one cheap env, one seed, A/B on
-# observation normalization — confirms the B2 fix behaves before GPU-hours are
+# observation normalization — confirms observation normalization behaves before GPU-hours are
 # committed to Humanoid. Specs may carry a 5th element: config overrides dict.
 VERIFY_RUNS = [
     ('verify_hc_norm_on_s7', 'rl_games/configs/mujoco/sac_halfcheetah_envpool.yaml', 7, 1_000_000,

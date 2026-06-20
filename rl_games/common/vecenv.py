@@ -12,7 +12,7 @@ def can_concat_infos(env):
 
     Checks the env itself first (so wrapper-level declarations like
     wrappers.TimeLimit.concat_infos are visible), then falls back to the
-    unwrapped env (finding 55).
+    unwrapped env.
     """
     if getattr(env, 'concat_infos', False):
         return True
@@ -306,10 +306,10 @@ class RayVecEnv(IVecEnv):
         if self.concat_infos:
             newinfos = dicts_to_dict_with_arrays(newinfos, False)
         else:
-            # Finding 49: without concat_infos a list of per-worker dicts was
-            # returned, so consumers checking `'time_outs' in infos` never saw
-            # timeouts. Deliver a merged dict instead (time_outs plus the
-            # scores/battle_won keys DefaultAlgoObserver tracks).
+            # Without concat_infos a list of per-worker dicts was returned, so
+            # consumers checking `'time_outs' in infos` never saw timeouts.
+            # Deliver a merged dict instead (time_outs plus the scores/battle_won
+            # keys DefaultAlgoObserver tracks).
             newinfos = _merge_ray_infos(newinfos)
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 

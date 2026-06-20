@@ -203,9 +203,7 @@ class SACPlayer(BasePlayer):
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
         ]
-        # Finding 1.11: per-dim affine rescale [-1, 1] -> env bounds, mirroring
-        # SACAgent.rescale_actions (the old path emitted raw normalized actions
-        # clamped to the GLOBAL env min/max — wrong for non-unit/asymmetric boxes).
+        # Per-dim affine rescale [-1, 1] -> env bounds (matches the trained policy).
         self.action_low = torch.tensor(self.action_space.low, device=self.device, dtype=torch.float32)
         self.action_high = torch.tensor(self.action_space.high, device=self.device, dtype=torch.float32)
         self.action_scale = (self.action_high - self.action_low) / 2.0

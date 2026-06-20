@@ -38,7 +38,7 @@ params:
     critic_tau: 5e-3
     batch_size: 256
     learnable_temperature: True
-    utd_ratio: 1.0  # gradient updates per env frame (B3)
+    utd_ratio: 1.0  # gradient updates per env frame
     policy_frequency: 2
     num_warmup_frames: 5000
     replay_buffer_size: 1000000

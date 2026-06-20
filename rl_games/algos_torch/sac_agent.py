@@ -28,12 +28,10 @@ class SACAgent(BaseAlgorithm):
         self.gamma = self.config.get("gamma", 0.99)
         self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
-        # B3 (findings 1.3/1.5/2.2): utd_ratio = gradient updates per env FRAME.
-        # One env step collects num_actors frames, and the update loop in
-        # play_steps runs num_updates_per_step PER STEP (inside the step loop),
-        # so per-frame semantics hold for every step even when
-        # num_steps_per_episode > 1. Takes priority over the legacy absolute
-        # num_updates_per_step, which silently diluted UTD as num_actors grew.
+        # utd_ratio: gradient updates per env frame (overrides num_updates_per_step).
+        # One env step collects num_actors frames; per-frame semantics hold even
+        # when num_steps_per_episode > 1. The legacy absolute num_updates_per_step
+        # silently diluted UTD as num_actors grew.
         utd_ratio = self.config.get("utd_ratio", None)
         if utd_ratio is not None:
             # gradient updates per env FRAME; one env step collects num_actors frames
@@ -92,9 +90,9 @@ class SACAgent(BaseAlgorithm):
         self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
         self.action_scale = (self.action_high - self.action_low) / 2.0
         self.action_bias = (self.action_high + self.action_low) / 2.0
-        # B4: change-of-variables for the affine rescale [-1,1] -> env bounds.
+        # Change-of-variables for the affine rescale [-1,1] -> env bounds.
         # log pi_env(a_env) = log pi_norm(a_norm) - sum(log(action_scale)).
-        # Zero for unit bounds; matches reference SAC (CleanRL). Finding 1.10.
+        # Zero for unit action bounds; matches reference SAC (CleanRL).
         self.log_action_scale_sum = torch.log(self.action_scale.clamp_min(1e-8)).sum()
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
@@ -305,7 +303,7 @@ class SACAgent(BaseAlgorithm):
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
 
-        # restore (set_full_state_weights) reads both of these — see finding 23
+        # restore reads both of these, so save them
         state['last_mean_rewards'] = self.last_mean_rewards
 
         if self.vec_env is not None:
@@ -360,13 +358,13 @@ class SACAgent(BaseAlgorithm):
     def set_train(self):
         self.model.train()
         if self.normalize_input:
-            # B2: replayed minibatches in update() must never mutate normalizer
-            # stats — only fresh rollout frames do, via _update_obs_stats (finding 1.2).
+            # Replayed minibatches in update() must never mutate normalizer
+            # stats — only fresh rollout frames do, via _update_obs_stats.
             self.model.running_mean_std.eval()
 
     def _update_obs_stats(self, obs):
-        # B2: normalizer statistics ingest each fresh env frame exactly once;
-        # replayed minibatches must never mutate them (finding 1.2).
+        # Normalizer stats update once per fresh rollout frame; replayed
+        # minibatches must not mutate them.
         if not self.normalize_input:
             return
         with torch.no_grad():
@@ -382,7 +380,7 @@ class SACAgent(BaseAlgorithm):
         return rescaled.clamp(self.action_low, self.action_high)
 
     def _env_log_prob(self, dist, action):
-        """Log-prob of the env-space action via change of variables (B4, finding 1.10).
+        """Log-prob of the env-space action via change of variables.
 
         `dist` is over normalized [-1, 1] actions and `action` is a normalized
         sample; the env executes a_env = action_scale * action + action_bias, so
@@ -559,7 +557,7 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
-        # B2: the initial reset obs is a streamed frame — count it once.
+        # The initial reset obs is a streamed frame — count it once.
         self._update_obs_stats(obs)
         # Full reset: no env is in the post-episode reset step anymore.
         # Sized num_agents * num_actors to match dones/current_rewards rows.
@@ -700,7 +698,7 @@ class SACAgent(BaseAlgorithm):
             # Shape rewards BEFORE tracking (so logged rewards match training rewards)
             shaped_rewards = self.rewards_shaper(rewards)
 
-            # --- B1: autoreset-mode-aware replay write (findings 1.1/1.4) ------
+            # --- autoreset-mode-aware replay write ------
             # Gated on value_bootstrap for config compatibility: with
             # value_bootstrap=False the stored truncated column is all-False by
             # design (truncations train as hard terminations, old behavior).
@@ -715,7 +713,7 @@ class SACAgent(BaseAlgorithm):
                 next_obs_processed = next_obs['obs']
             else:
                 next_obs_processed = next_obs
-            # B2: normalizer stats ingest each fresh env frame exactly ONCE here
+            # Normalizer stats ingest each fresh env frame exactly ONCE here
             # (incl. warmup and post-reset frames); update() never touches them.
             self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
@@ -751,7 +749,7 @@ class SACAgent(BaseAlgorithm):
 
     def train_epoch(self):
         # epoch_num is 1-based here (train() increments it before calling train_epoch),
-        # so `<=` gives exactly num_warmup_steps warmup epochs (finding 1.14).
+        # so `<=` gives exactly num_warmup_steps warmup epochs.
         random_exploration = self.epoch_num <= self.num_warmup_steps
         return self.play_steps(random_exploration)
 
@@ -806,7 +804,7 @@ class SACAgent(BaseAlgorithm):
             self.algo_observer.after_print_stats(self.frame, self.epoch_num, total_time)
 
             # Exits and periodic saves must run EVERY epoch, not only after the first
-            # episode completes (finding 1.6) — only reward/length stats and the
+            # episode completes — only reward/length stats and the
             # best-checkpoint comparison are gated on completed episodes.
             should_exit = False
             # -inf watermark until the first episode completes (str() -> '-inf' in checkpoint names)
