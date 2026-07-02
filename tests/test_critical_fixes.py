@@ -1,4 +1,5 @@
-"""Regression tests for the 2026-06-10 review critical-bug batch (docs/reviews/2026-06-10/02-bugs.md)."""
+"""Regression tests for a batch of critical fixes: runner CLI on py3.12+,
+max_frames/max_steps handling, LR scheduling, and checkpoint save/restore round-trips."""
 import os
 import subprocess
 import sys
@@ -12,7 +13,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def test_runner_help_works_without_distutils():
-    # Finding P5: `from distutils.util import strtobool` crashes on py3.12+ (distutils removed).
+    # Regression: `from distutils.util import strtobool` crashes on py3.12+ (distutils removed).
     # '--help' exercises the import-time crash point (the old line-1 distutils import).
     res = subprocess.run([sys.executable, os.path.join(REPO, 'runner.py'), '--help'],
                          capture_output=True, text=True, timeout=120, cwd=REPO)
@@ -74,7 +75,7 @@ def make_cartpole_agent(**config_overrides):
 
 
 def test_max_steps_config_usable():
-    # Finding 6 (high): np.max(a, b) passes b as the AXIS argument.
+    # Regression: np.max(a, b) passes b as the AXIS argument.
     # Pre-fix: any positive max_steps raises AxisError during agent __init__.
     agent = make_cartpole_agent(max_steps=500_000)
     assert agent.max_frames == 500_000
@@ -86,7 +87,7 @@ def test_max_frames_and_max_steps_take_elementwise_max():
 
 
 def test_linear_lr_schedule_anneals_with_max_frames():
-    # Finding 7 (high): all scheduler.update call sites hardcode frames=0, so
+    # Regression: all scheduler.update call sites hardcoded frames=0, so
     # lr_schedule: linear + max_frames never anneals (mul stays 1.0 forever).
     #
     # Setup notes:
@@ -115,7 +116,7 @@ def test_linear_lr_schedule_anneals_with_max_frames():
 
 
 def test_update_lr_sets_optimizer_and_last_lr_consistently():
-    # Findings 5/8 (high): train_actor_critic used to overwrite param_group['lr']
+    # Regression: train_actor_critic used to overwrite param_group['lr']
     # with rank-local stale self.last_lr after every minibatch; on non-zero ranks
     # that value is permanently stale (their scheduler is forced to Identity).
     # Contract now: update_lr is the single writer and keeps self.last_lr in sync.
@@ -125,7 +126,7 @@ def test_update_lr_sets_optimizer_and_last_lr_consistently():
     for group in agent.optimizer.param_groups:
         assert group['lr'] == pytest.approx(1.23e-4)
     # behavioral guard: train_actor_critic must not re-apply rank-stale last_lr
-    # to the optimizer (the finding-5/8 bug, in any spelling or refactor)
+    # to the optimizer (the same bug, in any spelling or refactor)
     agent.last_lr = 999.0                  # poison the rank-stale value
     agent.calc_gradients = lambda d: None  # isolate the contract under test
     agent.train_result = (0, 0, 0, 0, agent.last_lr, 1.0)
@@ -136,7 +137,7 @@ def test_update_lr_sets_optimizer_and_last_lr_consistently():
 
 
 def test_rms_advantage_checkpoint_roundtrip():
-    # Finding 9 (high): set_stats_weights loads weights['advantage_mean_std']
+    # Regression: set_stats_weights loads weights['advantage_mean_std']
     # unconditionally when normalize_rms_advantage is on, but get_stats_weights
     # never saved it -> restore crashes with KeyError.
     agent = make_cartpole_agent(normalize_advantage=True, normalize_rms_advantage=True)
@@ -166,7 +167,7 @@ def make_sac_pendulum_agent(**config_overrides):
 
 
 def test_resume_preserves_best_reward_watermark():
-    # Finding 18 (high): get_full_state_weights saves last_mean_rewards precisely
+    # get_full_state_weights saves last_mean_rewards precisely
     # "to prevent overriding the best ever checkpoint upon experiment restart",
     # but train() reset it to -1e9 right after restore.
     agent = make_cartpole_agent()
@@ -179,7 +180,7 @@ def test_resume_preserves_best_reward_watermark():
 
 
 def test_sac_checkpoint_contains_what_restore_reads():
-    # Finding 23 (medium): SAC set_full_state_weights reads last_mean_rewards and
+    # SAC set_full_state_weights reads last_mean_rewards and
     # env_state, but get_full_state_weights never saved either.
     agent = make_sac_pendulum_agent()
     agent.last_mean_rewards = 42.0
@@ -189,7 +190,7 @@ def test_sac_checkpoint_contains_what_restore_reads():
 
 
 def test_load_checkpoint_strips_compile_prefix_everywhere(tmp_path):
-    # Finding 17 (high): load_checkpoint stripped '_orig_mod.' only from
+    # Regression: load_checkpoint stripped '_orig_mod.' only from
     # state['model']; compiled central-value nets save nested keys like
     # 'model._orig_mod.layer' under 'assymetric_vf_nets' and resume fails.
     from rl_games.algos_torch import torch_ext

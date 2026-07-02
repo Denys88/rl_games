@@ -24,17 +24,15 @@ class SACAgent(BaseAlgorithm):
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
-        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # Small tau for stable smoothing
+        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # target-net Polyak rate
         self.gamma = self.config.get("gamma", 0.99)
         self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
-        # utd_ratio: gradient updates per env frame (overrides num_updates_per_step).
-        # One env step collects num_actors frames; per-frame semantics hold even
-        # when num_steps_per_episode > 1. The legacy absolute num_updates_per_step
+        # utd_ratio: gradient updates per env FRAME (one env step = num_actors
+        # frames). Overrides the legacy absolute num_updates_per_step, which
         # silently diluted UTD as num_actors grew.
         utd_ratio = self.config.get("utd_ratio", None)
         if utd_ratio is not None:
-            # gradient updates per env FRAME; one env step collects num_actors frames
             self.num_updates_per_step = max(1, round(utd_ratio * self.num_actors))
         else:
             self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
@@ -59,14 +57,15 @@ class SACAgent(BaseAlgorithm):
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
-        # Policy frequency: update actor every N critic updates (CleanRL uses 2)
+        # Update the actor once every policy_frequency critic updates
         self.policy_frequency = config.get("policy_frequency", 2)
-        self.update_counter = 0  # Track number of critic updates
+        self.update_counter = 0
 
         # Gradient clipping for stability (0 = disabled)
         self.critic_grad_clip = config.get("critic_grad_clip", 5.0)
 
-        # Timeout handling - consistent with PPO
+        # When True, timeouts are stored as truncations (bootstrap V at next_obs)
+        # rather than hard terminations. Default matches PPO.
         self.value_bootstrap = config.get('value_bootstrap', True)
 
         # Autoreset semantics declared by the vec env (envpool/gymnasium = 'next_step',
@@ -76,7 +75,6 @@ class SACAgent(BaseAlgorithm):
             raise ValueError("SAC next_step autoreset handling does not support multi-agent envs "
                              "(num_agents > 1): per-env done tracking and live-row striding would misalign.")
 
-        print(self.batch_size, self.num_actors, self.num_agents)
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
@@ -90,10 +88,11 @@ class SACAgent(BaseAlgorithm):
         self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
         self.action_scale = (self.action_high - self.action_low) / 2.0
         self.action_bias = (self.action_high + self.action_low) / 2.0
-        # Change-of-variables for the affine rescale [-1,1] -> env bounds.
-        # log pi_env(a_env) = log pi_norm(a_norm) - sum(log(action_scale)).
-        # Zero for unit action bounds; matches reference SAC (CleanRL).
+        # Change-of-variables constant for the affine rescale [-1,1] -> env bounds
+        # (see _env_log_prob). Zero for unit bounds; matches reference SAC implementations.
         self.log_action_scale_sum = torch.log(self.action_scale.clamp_min(1e-8)).sum()
+        # Not read anywhere in the package (players use the per-dim rescale above);
+        # kept for backward compatibility with external code.
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
@@ -184,7 +183,7 @@ class SACAgent(BaseAlgorithm):
         # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        # MSELoss is standard for SAC - matches CleanRL and original paper
+        # MSELoss for the critic TD error - standard for SAC
         self.c_loss = nn.MSELoss()
 
         self.save_best_after = config.get('save_best_after', 500)
@@ -303,7 +302,8 @@ class SACAgent(BaseAlgorithm):
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
 
-        # restore reads both of these, so save them
+        # set_full_state_weights restores last_mean_rewards (and frame/epoch above);
+        # saving it keeps the best-ever checkpoint watermark across restarts.
         state['last_mean_rewards'] = self.last_mean_rewards
 
         if self.vec_env is not None:
@@ -358,13 +358,12 @@ class SACAgent(BaseAlgorithm):
     def set_train(self):
         self.model.train()
         if self.normalize_input:
-            # Replayed minibatches in update() must never mutate normalizer
-            # stats — only fresh rollout frames do, via _update_obs_stats.
+            # Keep the normalizer in eval mode during updates: only fresh rollout
+            # frames (via _update_obs_stats) may mutate its stats, never replays.
             self.model.running_mean_std.eval()
 
     def _update_obs_stats(self, obs):
-        # Normalizer stats update once per fresh rollout frame; replayed
-        # minibatches must not mutate them.
+        # Ingest one fresh rollout frame into the normalizer's running stats.
         if not self.normalize_input:
             return
         with torch.no_grad():
@@ -475,6 +474,9 @@ class SACAgent(BaseAlgorithm):
         )
 
     def update(self, step):
+        # The truncated column is not needed for the 1-step TD target: truncated rows
+        # store done=False with next_obs = the true final obs, so the bootstrap is
+        # already correct. It is kept for future n-step returns / diagnostics.
         obs, action, reward, next_obs, done, _truncated = self.replay_buffer.sample(self.batch_size)
         not_done = ~done
 
@@ -484,12 +486,12 @@ class SACAgent(BaseAlgorithm):
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
         self.update_counter += 1
 
-        # Update actor and alpha only every policy_frequency critic updates (CleanRL uses 2)
+        # Delayed actor/alpha update (every policy_frequency critic updates).
         if self.update_counter % self.policy_frequency == 0:
             actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
             actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         else:
-            # No actor update this step: no stats (zero placeholders diluted the logged means)
+            # No actor update: return None so skipped steps don't dilute logged means.
             actor_loss_info = None
 
         self.update_target_weights()
@@ -557,10 +559,10 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
-        # The initial reset obs is a streamed frame — count it once.
+        # Count the initial reset obs as a fresh frame.
         self._update_obs_stats(obs)
-        # Full reset: no env is in the post-episode reset step anymore.
-        # Sized num_agents * num_actors to match dones/current_rewards rows.
+        # Full reset: no env is in a post-episode reset step. Sized
+        # num_agents * num_actors to match the dones/current_rewards rows.
         self._prev_dones = torch.zeros(self.num_agents * self.num_actors,
                                        dtype=torch.bool, device=self._device)
 
@@ -593,7 +595,7 @@ class SACAgent(BaseAlgorithm):
     def clear_stats(self):
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is deliberately NOT reset here
         self.algo_observer.after_clear_stats()
 
     def _store_transitions(self, obs, action, shaped_rewards, next_obs,
@@ -601,17 +603,16 @@ class SACAgent(BaseAlgorithm):
         """Write one vec-step of transitions to replay and update episode accounting.
 
         next_step autoreset: rows whose PREVIOUS step ended an episode are
-        reset-step garbage (env ignored the action, reward is filler, next_obs
-        is post-reset) — excluded from replay AND from episode accounting.
-        next_obs at the truncation step is already the TRUE final obs, no proxy
-        needed. Live rows are gathered with ONE nonzero + index_select per
-        tensor instead of boolean masking, which re-runs nonzero (a host sync)
-        for every masked tensor.
+        reset-step garbage (action ignored, filler reward, post-reset next_obs)
+        and are excluded from both replay and accounting. next_obs at a
+        truncation is already the TRUE final obs, so no proxy is needed. Live
+        rows are gathered with a single nonzero + index_select per tensor
+        (boolean masking would re-run nonzero — a host sync — per tensor).
 
-        same_step autoreset: every row is live — the full batch is written
-        directly with no masking and no live-mask host syncs. The true final
-        obs is not in next_obs: prefer the info-provided final obs, else the
-        s_t proxy.
+        same_step autoreset: every row is live, so the full batch is written
+        directly with no masking. next_obs holds the post-reset obs at a
+        truncation, so substitute the true final obs (from info, else the
+        s_t proxy).
         """
         if self.autoreset_mode == 'next_step':
             live = ~self._prev_dones
@@ -621,7 +622,7 @@ class SACAgent(BaseAlgorithm):
             all_done_indices = (dones.bool() & live).nonzero(as_tuple=False)
 
             live_idx = live.nonzero(as_tuple=True)[0]
-            if live_idx.numel() > 0:  # host-side metadata check, no extra sync
+            if live_idx.numel() > 0:  # numel reads shape on host, no device sync
                 self.replay_buffer.add(
                     obs.index_select(0, live_idx),
                     action.index_select(0, live_idx),
@@ -656,9 +657,8 @@ class SACAgent(BaseAlgorithm):
         self.current_rewards.mul_(not_dones)
         self.current_lengths.mul_(not_dones)
 
-        # clone is NOT redundant: when dones already arrives as torch.bool,
-        # .bool() is a no-op returning an alias, and that tensor can share
-        # memory with an env-owned / numpy buffer (torch.from_numpy).
+        # clone is required: when dones is already torch.bool, .bool() returns an
+        # alias that may share memory with an env-owned / numpy buffer.
         self._prev_dones = dones.bool().clone()
 
     def play_steps(self, random_exploration=False):
@@ -698,10 +698,8 @@ class SACAgent(BaseAlgorithm):
             # Shape rewards BEFORE tracking (so logged rewards match training rewards)
             shaped_rewards = self.rewards_shaper(rewards)
 
-            # --- autoreset-mode-aware replay write ------
-            # Gated on value_bootstrap for config compatibility: with
-            # value_bootstrap=False the stored truncated column is all-False by
-            # design (truncations train as hard terminations, old behavior).
+            # With value_bootstrap=False the truncated column stays all-False, so
+            # truncations train as hard terminations (legacy behavior).
             truncated_mask = torch.zeros(dones.shape[0], dtype=torch.bool, device=self._device)
             if self.value_bootstrap and 'time_outs' in infos:
                 truncated_mask = self.cast_obs(infos['time_outs'])
@@ -713,22 +711,21 @@ class SACAgent(BaseAlgorithm):
                 next_obs_processed = next_obs['obs']
             else:
                 next_obs_processed = next_obs
-            # Normalizer stats ingest each fresh env frame exactly ONCE here
-            # (incl. warmup and post-reset frames); update() never touches them.
+            # Ingest each fresh env frame into the normalizer exactly once here
+            # (incl. warmup and post-reset frames); update() never touches it.
             self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
 
             self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
                                     dones, terminated, truncated_mask, infos)
-            # -------------------------------------------------------------------
 
-            obs = next_obs_processed  # Use the already processed observation
+            obs = next_obs_processed
 
             if not random_exploration:
                 self.set_train()
 
                 update_time_start = time.perf_counter()
-                # Perform multiple gradient updates per environment step
+                # num_updates_per_step gradient updates per env step (UTD ratio)
                 for _ in range(self.num_updates_per_step):
                     actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
                     self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
@@ -757,7 +754,6 @@ class SACAgent(BaseAlgorithm):
         self.init_tensors()
         self.algo_observer.after_init(self)
         total_time = 0
-        # rep_count = 0
 
         self.obs = self.env_reset()
 
@@ -784,9 +780,9 @@ class SACAgent(BaseAlgorithm):
             self.writer.add_scalar('performance/step_inference_time', play_time, self.frame)
             self.writer.add_scalar('performance/step_time', step_time, self.frame)
 
-            # epochs <= num_warmup_steps are warmup (no updates -> empty loss lists).
-            # Actor/alpha lists are also empty when policy_frequency skipped every
-            # actor update this epoch — only log stats that were actually computed.
+            # Skip warmup epochs (no updates -> empty loss lists). The per-list
+            # length guards below also cover epochs where policy_frequency skipped
+            # every actor update, so only computed stats are logged.
             if self.epoch_num > self.num_warmup_steps:
                 if len(actor_losses) > 0:
                     self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
@@ -803,9 +799,8 @@ class SACAgent(BaseAlgorithm):
             self.writer.add_scalar('info/epochs', self.epoch_num, self.frame)
             self.algo_observer.after_print_stats(self.frame, self.epoch_num, total_time)
 
-            # Exits and periodic saves must run EVERY epoch, not only after the first
-            # episode completes — only reward/length stats and the
-            # best-checkpoint comparison are gated on completed episodes.
+            # Exits and periodic saves run EVERY epoch; only reward/length stats
+            # and the best-checkpoint comparison are gated on completed episodes.
             should_exit = False
             # -inf watermark until the first episode completes (str() -> '-inf' in checkpoint names)
             mean_rewards = -np.inf

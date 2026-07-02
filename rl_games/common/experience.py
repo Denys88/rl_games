@@ -117,7 +117,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._max_priority = 1.0
 
     def add(self, *args, **kwargs):
-        """See ReplayBuffer.store_effect"""
+        """See ReplayBuffer.add"""
         idx = self._next_idx
         super().add(*args, **kwargs)
         self._it_sum[idx] = self._max_priority ** self._alpha
@@ -212,12 +212,9 @@ class VectorizedReplayBuffer:
         """Create Vectorized Replay buffer.
         Parameters
         ----------
-        size: int
-            Max number of transitions to store in the buffer. When the buffer
-            overflows the old memories are dropped.
-        See Also
-        --------
-        ReplayBuffer.__init__
+        capacity: int
+            Max number of transitions to store. Oldest entries are overwritten
+            once the buffer is full.
         """
 
         self.device = device

@@ -57,10 +57,15 @@ SAC matches or exceeds published reference scores on MuJoCo continuous control (
 | Ant | 4,706 ± 1,379 | 4,623 ± 984 |
 | Humanoid | 5,195 ± 198 | 5,044 ± 390 |
 
+Humanoid keeps improving well past the standard 1M-frame budget — a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean.
 
-Implemented in Pytorch:
+![Humanoid SAC extended training](docs/pictures/sac/humanoid_v5_5M.png)
+![Humanoid-v5 policy trained with SAC](docs/pictures/sac/humanoid_v5_5M.gif)
+
+## Implemented in PyTorch
 
 * PPO with the support of asymmetric actor-critic variant
+* SAC
 * Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants

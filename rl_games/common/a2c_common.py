@@ -226,7 +226,7 @@ class A2CBase(BaseAlgorithm):
 
         self.seq_length = self.config.get('seq_length', 4)
         print('seq_length:', self.seq_length)
-        self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now. Didn't show that it is usefull
+        self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now; never showed a benefit
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
 
         self.normalize_advantage = config['normalize_advantage']
@@ -323,7 +323,7 @@ class A2CBase(BaseAlgorithm):
         else:
             self.writer = None
 
-        # Now the default is is True
+        # Defaults to True (bootstrap value at timeouts).
         self.value_bootstrap = self.config.get('value_bootstrap', True)
         self.use_smooth_clamp = self.config.get('use_smooth_clamp', False)
 
@@ -652,8 +652,8 @@ class A2CBase(BaseAlgorithm):
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
             state['assymetric_vf_optimizer'] = self.central_value_net.optimizer.state_dict()
 
-        # This is actually the best reward ever achieved. last_mean_rewards is perhaps not the best variable name
-        # We save it to the checkpoint to prevent overriding the "best ever" checkpoint upon experiment restart
+        # last_mean_rewards is the best reward ever achieved (misleading name).
+        # Saved so a restart doesn't overwrite the "best ever" checkpoint.
         state['last_mean_rewards'] = self.last_mean_rewards
 
         if self.vec_env is not None:
@@ -1083,7 +1083,7 @@ class DiscreteA2CBase(A2CBase):
 
     def train(self):
         self.init_tensors()
-        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is deliberately NOT reset here
         start_time = time.perf_counter()
         total_time = 0
         rep_count = 0

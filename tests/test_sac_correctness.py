@@ -1,4 +1,5 @@
-"""Phase B SAC correctness tests (spec: docs/superpowers/specs/2026-06-11-phase-b-sac-correctness-design.md)."""
+"""Correctness tests for SAC: autoreset/truncation handling, replay-buffer writes,
+normalizer statistics, warmup accounting, exit paths, and the benchmark harness."""
 import functools
 import os
 import sys
@@ -145,8 +146,8 @@ def make_fake_env_sac_agent(num_envs=3, ep_len=EP_LEN, env_cls=FakeNextStepVecEn
         'device': 'cpu', 'multi_gpu': False, 'num_actors': num_envs,
         'print_stats': False, 'max_epochs': 2, 'save_frequency': 0,
         'save_best_after': 10_000, 'num_warmup_frames': 1,
-        # one full episode per epoch: until finding 1.6 lands, train() can only
-        # exit at max_epochs after at least one episode has completed
+        # one full episode per epoch keeps the reward/length accounting
+        # assertions deterministic
         'num_steps_per_episode': EP_LEN,
         'replay_buffer_size': 512, 'batch_size': 16,
         'train_dir': TEST_TRAIN_DIR, 'name': 'pytest_sac_fake',
@@ -182,7 +183,7 @@ def _completed_training_buffer(agent):
 
 
 def test_no_cross_episode_rows_in_replay():
-    # Finding 1.1: reset-step garbage rows must never be stored.
+    # Regression: next_step autoreset reset-step garbage rows must never be stored.
     agent, fake = make_fake_env_sac_agent(
         num_warmup_frames=None, num_warmup_steps=10_000,  # exploration still stores rows
         max_epochs=1, num_steps_per_episode=EP_LEN + 3)
@@ -198,7 +199,7 @@ def test_no_cross_episode_rows_in_replay():
 
 
 def test_truncation_stores_true_final_obs_and_flags():
-    # Finding 1.4: at truncation, next_obs must be the TRUE final obs (t==EP_LEN),
+    # At truncation, next_obs must be the TRUE final obs (t==EP_LEN),
     # done=False (bootstrap), truncated=True.
     agent, fake = make_fake_env_sac_agent(
         num_warmup_frames=None, num_warmup_steps=10_000,
@@ -235,7 +236,7 @@ def test_reward_and_length_accounting_skips_reset_rows():
 
 
 def test_vec_env_injection_via_env_info():
-    # Finding 1.13: env_info-supplied path left self.vec_env unset.
+    # Regression: the env_info-supplied construction path left self.vec_env unset.
     agent, fake = make_fake_env_sac_agent()
     assert agent.vec_env is fake
     obs = agent.env_reset()
@@ -245,7 +246,7 @@ def test_vec_env_injection_via_env_info():
 
 
 def test_warmup_epoch_count_exact():
-    # Finding 1.14: epoch_num increments BEFORE train_epoch, so `<` gives
+    # epoch_num increments BEFORE train_epoch, so `<` gives
     # num_warmup_steps - 1 warmup epochs; num_warmup_steps=1 disables warmup.
     agent, fake = make_fake_env_sac_agent(num_warmup_frames=None, num_warmup_steps=1, max_epochs=1)
     seen = []
@@ -256,7 +257,7 @@ def test_warmup_epoch_count_exact():
 
 
 def test_gamma_tensor_stays_fp32_under_mixed_precision():
-    # Finding 1.9: gamma_tensor recast to bf16 turns 0.99 into 0.98828125.
+    # Regression: gamma_tensor recast to bf16 turns 0.99 into 0.98828125.
     agent, _ = make_fake_env_sac_agent(mixed_precision=True)
     assert agent.gamma_tensor.dtype == torch.float32
     # abs=1e-7: fp32 representation of 0.99 is off by ~9.5e-9; the bf16 bug was off by 1.7e-3
@@ -264,7 +265,7 @@ def test_gamma_tensor_stays_fp32_under_mixed_precision():
 
 
 def test_actor_stats_skip_non_update_steps():
-    # Finding 1.8: zero placeholders diluted a_loss/entropy means; alpha_losses
+    # Regression: zero placeholders diluted a_loss/entropy means; alpha_losses
     # got None placeholders (alpha_loss never logged for even num_updates_per_step,
     # mean_list crash for odd > 1).
     agent, _ = make_fake_env_sac_agent()
@@ -278,7 +279,7 @@ def test_actor_stats_skip_non_update_steps():
 
 
 def test_max_epochs_exit_without_any_completed_episode():
-    # Finding 1.6: exits/saves were nested under game_rewards.current_size > 0 —
+    # Regression: exits/saves were nested under game_rewards.current_size > 0 —
     # training could not stop before the first episode ended (pre-fix: this HANGS).
     agent, fake = make_fake_env_sac_agent(ep_len=10_000, max_epochs=3)
     agent.train()
@@ -327,7 +328,7 @@ def test_replay_buffer_truncated_overflow_wrap():
 
 
 def test_replay_buffer_zero_row_add_does_not_set_full():
-    # T8 review: `full = full or idx == 0` marked a FRESH buffer full on a
+    # Regression: `full = full or idx == 0` marked a FRESH buffer full on a
     # zero-row add (idx stays 0). The old `if live.any()` guard in play_steps
     # masked this; the guard is gone, the buffer must be correct on its own.
     from rl_games.common.experience import VectorizedReplayBuffer
@@ -348,7 +349,7 @@ def test_replay_buffer_zero_row_add_does_not_set_full():
 
 
 def test_staggered_episodes_mixed_live_mask():
-    # T8 review: exercise a MIXED live mask — ep_lens [5, 6, 7] put each env's
+    # Exercise a MIXED live mask — ep_lens [5, 6, 7] put each env's
     # reset-step garbage row on a different step (6/12, 7/14, 8/16), so some
     # envs are on garbage rows while others are live in the same vec step.
     N = 16  # steps; garbage rows per env e: N // (ep_lens[e] + 1) == 2 each
@@ -411,7 +412,7 @@ def test_same_step_with_final_observation_stores_true_final_obs():
 
 
 def test_gymnasium_manual_path_declares_same_step():
-    # T8 review: _step_manual resets within the same step (same_step
+    # Regression: _step_manual resets within the same step (same_step
     # semantics), but get_env_info unconditionally declared 'next_step'.
     # env_creator bypasses gymnasium.make, so the manual path is constructible
     # with a stub env — no env registration needed.
@@ -439,7 +440,7 @@ class MultiAgentFakeNextStepVecEnv(FakeNextStepVecEnv):
 
 
 def test_multi_agent_next_step_rejected():
-    # Final review: per-env done tracking (_prev_dones) and live-row striding
+    # Per-env done tracking (_prev_dones) and live-row striding
     # in the next_step path assume one row per env — multi-agent rows would
     # silently misalign. The agent must refuse loudly at construction.
     with pytest.raises(ValueError, match="multi-agent"):
@@ -454,7 +455,7 @@ def test_wrappers_declare_next_step_mode():
 
 
 def test_can_concat_infos_sees_wrapper_attr():
-    # Finding 55: only env.unwrapped was checked, so wrapper-level
+    # Regression: only env.unwrapped was checked, so wrapper-level
     # concat_infos declarations (e.g. wrappers.TimeLimit) were invisible.
     from rl_games.common import vecenv as vecenv_mod
 
@@ -479,7 +480,7 @@ def test_can_concat_infos_sees_wrapper_attr():
 
 
 def test_ray_merge_infos_without_concat_infos():
-    # Finding 49: RayVecEnv dropped per-worker time_outs unless the env opted
+    # Regression: RayVecEnv dropped per-worker time_outs unless the env opted
     # into concat_infos; _merge_ray_infos is the extracted merge helper.
     from rl_games.common.vecenv import _merge_ray_infos
 
@@ -606,7 +607,7 @@ def test_ray_merge_nan_filler_does_not_poison_observer():
 
 
 def test_utd_ratio_sets_updates_per_step():
-    # Finding 1.3/1.5/2.2: utd_ratio = gradient updates per env FRAME, so the
+    # utd_ratio = gradient updates per env FRAME, so the
     # update count scales with num_actors instead of silently diluting.
     # num_updates_per_step=None: independent of whatever key the yaml carries.
     agent, _ = make_fake_env_sac_agent(num_envs=8, utd_ratio=0.5, num_updates_per_step=None)
@@ -628,7 +629,7 @@ class ScaledActionsFakeEnv(FakeNextStepVecEnv):
 
 
 def test_log_prob_includes_action_scale_jacobian():
-    # Finding 1.10: entropy must refer to the ENV action space.
+    # The entropy term must refer to the ENV action space.
     agent, _ = make_fake_env_sac_agent()
     assert agent.log_action_scale_sum.item() == pytest.approx(0.0, abs=1e-6)  # unit bounds
 
@@ -666,7 +667,7 @@ def test_env_log_prob_matches_analytic_jacobian():
 
 
 def test_sac_player_rescales_actions_per_dim():
-    # Finding 1.11: SACPlayer emitted raw [-1, 1] actions clamped to the GLOBAL
+    # Regression: SACPlayer emitted raw [-1, 1] actions clamped to the GLOBAL
     # env min/max — wrong for non-unit and per-dim-asymmetric action boxes.
     # Constructible without an env: env_info in config skips env creation.
     from rl_games.algos_torch.players import SACPlayer
@@ -704,7 +705,7 @@ RMS_COUNT_INIT = 1
 
 
 def test_normalizer_counts_each_frame_exactly_once():
-    # Finding 1.2: stats update once per env frame from rollout data,
+    # Normalizer stats must update once per env frame from rollout data,
     # never from replayed minibatches.
     agent, fake = make_fake_env_sac_agent(
         normalize_input=True, max_epochs=2, num_steps_per_episode=4,
@@ -757,21 +758,21 @@ def test_normalizer_stats_match_streamed_frames():
 
 
 # ---------------------------------------------------------------------------
-# Task 12: Phase B validation harness (benchmarks/phaseb_sac_validation.py)
+# Benchmark harness smoke tests (benchmarks/sac_benchmark.py)
 # ---------------------------------------------------------------------------
 
-PHASEB_HARNESS = os.path.join(
+BENCHMARK_HARNESS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'benchmarks', 'phaseb_sac_validation.py')
+    'benchmarks', 'sac_benchmark.py')
 
 
-def test_phaseb_report_handles_missing_out_dir(tmp_path):
+def test_benchmark_report_handles_missing_out_dir(tmp_path):
     import ast
     import importlib.util
     import subprocess
 
     # no module-level envpool import (envpool is an optional extra)
-    tree = ast.parse(open(PHASEB_HARNESS).read())
+    tree = ast.parse(open(BENCHMARK_HARNESS).read())
     top_imports = {alias.name.split('.')[0]
                    for node in tree.body if isinstance(node, ast.Import)
                    for alias in node.names}
@@ -781,13 +782,13 @@ def test_phaseb_report_handles_missing_out_dir(tmp_path):
     assert 'envpool' not in top_imports, 'harness must not import envpool at module level'
 
     # module imports clean without envpool installed
-    spec = importlib.util.spec_from_file_location('phaseb_sac_validation', PHASEB_HARNESS)
+    spec = importlib.util.spec_from_file_location('sac_benchmark', BENCHMARK_HARNESS)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
     # --report on a missing OUT dir: exit 0, one n/a row per battery entry
-    env = {**os.environ, 'PHASEB_OUT': str(tmp_path / 'does-not-exist')}
-    res = subprocess.run([sys.executable, PHASEB_HARNESS, '--report'],
+    env = {**os.environ, 'SAC_BENCH_OUT': str(tmp_path / 'does-not-exist')}
+    res = subprocess.run([sys.executable, BENCHMARK_HARNESS, '--report'],
                          env=env, capture_output=True, text=True, timeout=120)
     assert res.returncode == 0, res.stderr
     assert res.stdout.count('n/a') >= len(mod.RUNS)
@@ -795,7 +796,7 @@ def test_phaseb_report_handles_missing_out_dir(tmp_path):
         assert tag in res.stdout
 
 
-def test_phaseb_probe_exits_with_hint_when_envpool_missing():
+def test_benchmark_probe_exits_with_hint_when_envpool_missing():
     import importlib.util
     import subprocess
 
@@ -803,7 +804,7 @@ def test_phaseb_probe_exits_with_hint_when_envpool_missing():
     # with envpool installed --probe would launch a 600 s training run.
     if importlib.util.find_spec('envpool') is not None:
         pytest.skip('envpool installed; --probe would start the throughput probe')
-    res = subprocess.run([sys.executable, PHASEB_HARNESS, '--probe'],
+    res = subprocess.run([sys.executable, BENCHMARK_HARNESS, '--probe'],
                          capture_output=True, text=True, timeout=120)
     assert res.returncode == 1
     assert 'uv sync --extra envpool --extra mujoco' in res.stderr

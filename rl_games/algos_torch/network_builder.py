@@ -894,7 +894,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
 
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
-    """torch.distributions implementation of an diagonal Gaussian policy."""
+    """torch.distributions implementation of a diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
         super().__init__()
 
@@ -909,7 +909,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     def forward(self, obs):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
-        # Constrain log_std using tanh + linear scaling (CleanRL approach)
+        # Constrain log_std using tanh + linear scaling
         # This provides smooth gradients at boundaries unlike hard clamp
         log_std_min, log_std_max = self.log_std_bounds
         log_std = torch.tanh(log_std)
@@ -922,7 +922,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
 
 
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
-    """Critic network, employes double Q-learning."""
+    """Critic network, employs double Q-learning."""
     def __init__(self, output_dim, **mlp_args):
         super().__init__()
 

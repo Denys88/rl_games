@@ -1,31 +1,31 @@
-"""Phase B SAC validation harness.
+"""SAC MuJoCo validation harness (envpool).
 
-Usage:
-  uv sync --extra envpool --extra mujoco          # one-time
-  uv run python benchmarks/phaseb_sac_validation.py --probe     # step 0: catalog + 10-min throughput probe
-  uv run python benchmarks/phaseb_sac_validation.py --run --parallel N   # full battery (overnight)
-  uv run python benchmarks/phaseb_sac_validation.py --report    # results table from event files
-
-Battery (Phase B spec): HalfCheetah/Ant 3 seeds x 1M frames (banded);
+Batch-runs the SAC MuJoCo configs and reports each run's final score (mean of
+the last 10 logged `rewards/step` points) against published single-environment
+SAC reference bands. Battery: HalfCheetah/Ant 3 seeds x 1M frames (banded);
 Humanoid 3 seeds x 1M + seed 7 extended to 3M; gymnasium HC spot check.
 Bands (v4-derived reference): HC 10469+-1123, Ant 4623+-984, Humanoid 5044+-390.
 
-Verified against this repo (2026-06-12):
-- Configs (all present in rl_games/configs/mujoco/): sac_halfcheetah_envpool.yaml,
-  sac_ant_envpool.yaml, sac_humanoid_envpool.yaml request envpool HalfCheetah-v5 /
-  Ant-v5 / Humanoid-v5; sac_halfcheetah.yaml requests gymnasium HalfCheetah-v5.
-  The bands above are v4-derived references, so marginal results on v5 need
-  judgment; --probe prints the actual envpool catalog to settle which v4/v5
-  task ids this envpool build actually ships.
-- SAC writes the scalars rewards/step, rewards/time, episode_lengths/step,
-  episode_lengths/time (sac_agent.py; there is no rewards/iter). --report
-  reads rewards/step.
+Usage:
+  uv sync --extra envpool --extra mujoco          # one-time
+  uv run python benchmarks/sac_benchmark.py --probe     # envpool catalog + 10-min throughput probe
+  uv run python benchmarks/sac_benchmark.py --verify    # HC 1-seed normalize_input on/off A/B
+  uv run python benchmarks/sac_benchmark.py --run --parallel N [--only TAG_PREFIXES] [--gpus N]
+  uv run python benchmarks/sac_benchmark.py --report    # results table from event files
+  uv run python benchmarks/sac_benchmark.py --plots     # per-env reward-curve PNGs
+
+Environment variables:
+- SAC_BENCH_ENVPOOL_VERSION: envpool task version the battery runs (default 'v4',
+  the version the reference bands were derived from, so the bands apply
+  directly; set 'v5' to benchmark v5 instead -- the bands are then advisory).
+- SAC_BENCH_OUT: output directory (default <repo>/runs/phaseB-validation).
+
+Notes:
+- SAC writes the scalars rewards/step, rewards/time, episode_lengths/step and
+  episode_lengths/time; --report reads rewards/step.
 - Run dirs are pinned via params.config.full_experiment_name: rl_games appends
-  a timestamp to config name only when full_experiment_name is unset
-  (sac_agent.py:230, a2c_common.py:80), so each run lands exactly in OUT/<tag>
-  with event files under OUT/<tag>/summaries.
-- OUT defaults to <repo>/runs/phaseB-validation; override with the PHASEB_OUT
-  environment variable (used by the test suite).
+  a timestamp to the config name only when full_experiment_name is unset, so
+  each run lands exactly in OUT/<tag> with event files under OUT/<tag>/summaries.
 """
 import argparse
 import concurrent.futures as cf
@@ -37,7 +37,7 @@ import time
 import yaml
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.environ.get('PHASEB_OUT') or os.path.join(REPO, 'runs', 'phaseB-validation')
+OUT = os.environ.get('SAC_BENCH_OUT') or os.path.join(REPO, 'runs', 'sac-benchmarks')
 BANDS = {'halfcheetah': (10469, 1123), 'ant': (4623, 984), 'humanoid': (5044, 390)}
 
 # The reward scalar SAC writes per frame (sac_agent.py also writes rewards/time,
@@ -46,8 +46,8 @@ REWARD_TAG = 'rewards/step'
 
 # envpool ships v3/v4/v5 (verified 2026-06-12); the banded battery runs v4 so the
 # reference bands apply directly (maintainer decision). Override with
-# PHASEB_ENVPOOL_VERSION=v5 to benchmark v5 instead (bands then advisory).
-ENVPOOL_ENV_VERSION = os.environ.get('PHASEB_ENVPOOL_VERSION', 'v4')
+# SAC_BENCH_ENVPOOL_VERSION=v5 to benchmark v5 instead (bands then advisory).
+ENVPOOL_ENV_VERSION = os.environ.get('SAC_BENCH_ENVPOOL_VERSION', 'v4')
 
 # Longest-first ordering packs the parallel schedule better (3M humanoid would
 # otherwise tail-block the night).
@@ -131,7 +131,7 @@ def probe():
     names = sorted(envpool.list_all_envs())
     hits = [n for n in names if any(k in n for k in ('Cheetah', 'Ant', 'Humanoid'))]
     print('envpool catalog entries for Cheetah/Ant/Humanoid '
-          '(answers the v4-vs-v5 spec question; configs request v5):')
+          '(the reference bands are v4-derived):')
     for n in hits:
         print(f'  {n}')
     if not hits:
@@ -213,7 +213,7 @@ def plots():
             ax.axhline(band[0] - band[1], color='green', linewidth=0.8, linestyle='--')
         ax.set_xlabel('frames')
         ax.set_ylabel(REWARD_TAG)
-        ax.set_title(f'Phase B validation — {env} (envpool {ENVPOOL_ENV_VERSION})')
+        ax.set_title(f'SAC benchmark — {env} (envpool {ENVPOOL_ENV_VERSION})')
         ax.legend(fontsize=8)
         ax.grid(alpha=0.3)
         out_png = os.path.join(plot_dir, f'{env}.png')
@@ -265,10 +265,8 @@ def report():
         print(f'{tag:<28} {env:<12} {max_frames:>10,} {score_s:>10} {thr_s:>10} {verdict:>8}')
     print()
     print(f'Acceptance: PASS = mean of last 10 {REWARD_TAG} points >= band_mean - band_std.')
-    print('Bands are v4-derived references; configs run v5 envs -- judge marginal FAILs accordingly.')
-    print('On FAIL: each Phase B fix on this branch is an isolated commit -- bisect them')
-    print('(git bisect / checkout per-fix commits) and rerun only the failing tag, e.g.')
-    print('by trimming RUNS or rerunning run_one() for that spec, then --report again.')
+    print('Bands are v4-derived references; when running v5 tasks treat them as advisory.')
+    print('On FAIL: rerun only the failing tag (run_one) and compare curves before judging.')
 
 
 def main():
