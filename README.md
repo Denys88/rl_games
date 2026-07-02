@@ -47,10 +47,25 @@
 * [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
 * [Random Envs](docs/OTHER.md)
 
+### SAC
 
-Implemented in Pytorch:
+SAC matches or exceeds published reference scores on MuJoCo continuous control (envpool, 1M frames, 3 seeds). Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
+
+| Task | rl_games SAC | Reference SAC (1M) |
+|------|--------------|--------------------|
+| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
+| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
+| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
+
+Humanoid keeps improving well past the standard 1M-frame budget — a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean.
+
+![Humanoid SAC extended training](docs/pictures/sac/humanoid_v5_5M.png)
+![Humanoid-v5 policy trained with SAC](docs/pictures/sac/humanoid_v5_5M.gif)
+
+## Implemented in PyTorch
 
 * PPO with the support of asymmetric actor-critic variant
+* SAC
 * Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants

@@ -77,7 +77,6 @@ class Envpool(IVecEnv):
         self.scores and expose the totals as info['scores'] for tensorboard
         reporting. With episodic_life=True we only reset the score on real
         game-over (lives == 0) instead of per-life.
-        Adapted from CleanRL's ppo_atari_envpool.
         """
         if 'reward' not in infos:
             return
@@ -130,6 +129,9 @@ class Envpool(IVecEnv):
         return {
             'action_space': self.action_space,
             'observation_space': self.observation_space,
+            # envpool auto-resets on the step AFTER done: the done step returns
+            # the true final obs; the reset obs arrives with the next step.
+            'autoreset_mode': 'next_step',
         }
 
 

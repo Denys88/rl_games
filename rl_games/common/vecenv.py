@@ -7,15 +7,72 @@ from time import sleep
 import torch
 
 
+def can_concat_infos(env):
+    """Return the env's concat_infos declaration.
+
+    Checks the env itself first (so wrapper-level declarations like
+    wrappers.TimeLimit.concat_infos are visible), then falls back to the
+    unwrapped env.
+    """
+    if getattr(env, 'concat_infos', False):
+        return True
+    unwrapped = getattr(env, 'unwrapped', env)
+    return bool(getattr(unwrapped, 'concat_infos', False))
+
+
+# Episode-result keys consumed by DefaultAlgoObserver.process_infos. Its dict
+# path reads infos[key][ind // num_agents] for each done index, guarded by
+# `len(game_res) > ind // num_agents`, so each key must merge to a per-worker,
+# index-aligned array.
+_OBSERVER_RESULT_KEYS = ('scores', 'battle_won')
+
+
+def _merge_ray_infos(infos_list):
+    """Merge per-worker ray info dicts into a single dict.
+
+    'time_outs': each worker carries a scalar or per-agent array; missing
+    entries default to False (mirrors gymnasium_vecenv).
+
+    'scores'/'battle_won' (emitted on episode end, consumed by
+    DefaultAlgoObserver): merged to a per-worker array aligned with worker
+    index, truncated after the last worker that carries the key. The observer's
+    `len(game_res) > ind // num_agents` guard skips trailing workers without it.
+    Interior gaps are NaN-filled but never read, since envs emit these keys only
+    on done steps and the observer indexes only done workers.
+
+    The original per-worker list is preserved under 'worker_infos' so custom
+    AlgoObservers can still read keys outside the merged set.
+    """
+    time_outs = []
+    for info in infos_list:
+        to = info.get('time_outs', False) if isinstance(info, dict) else False
+        if np.isscalar(to):
+            time_outs.append(to)
+        else:
+            time_outs.extend(to)
+    merged = {'time_outs': np.array(time_outs)}
+
+    for key in _OBSERVER_RESULT_KEYS:
+        last = -1
+        for i, info in enumerate(infos_list):
+            if isinstance(info, dict) and key in info:
+                last = i
+        if last < 0:
+            continue
+        merged[key] = np.asarray([
+            info[key] if isinstance(info, dict) and key in info else np.nan
+            for info in infos_list[:last + 1]
+        ])
+    merged['worker_infos'] = infos_list
+    return merged
+
+
 class RayWorker:
-    """Wrapper around a third-party (gym for example) environment class that enables parallel training.
-
-    The RayWorker class wraps around another environment class to enable the use of this 
-    environment within an asynchronous parallel training setup
-
+    """Wraps a third-party (e.g. gym) environment so it can run as a Ray actor
+    for asynchronous parallel training.
     """
     def __init__(self, config_name, config):
-        """Initialise the class. Sets up the environment creator using the `rl_games.common.env_configurations.configuraitons` dict
+        """Create the wrapped env via the `rl_games.common.env_configurations.configurations` dict.
 
         Args:
             config_name (:obj:`str`): Key of the environment to create.
@@ -98,11 +155,7 @@ class RayWorker:
             self.env.close()
 
     def can_concat_infos(self):
-        unwrapped = self._unwrapped()
-        if hasattr(unwrapped, 'concat_infos'):
-            return unwrapped.concat_infos
-        else:
-            return False
+        return can_concat_infos(self.env)
 
     def get_env_info(self):
         info = {}
@@ -126,11 +179,8 @@ class RayWorker:
 
 
 class RayVecEnv(IVecEnv):
-    """Main env class that manages several `rl_games.common.vecenv.Rayworker` objects for parallel training
-
-    The RayVecEnv class manages a set of individual environments and wraps around the methods from RayWorker.
-    Each worker is executed asynchronously.
-
+    """Manages several RayWorker actors, each running one environment
+    asynchronously, and aggregates their results for parallel training.
     """
     def __init__(self, config_name, num_actors, **kwargs):
         """Initialise the class. Sets up the config for the environment and creates individual workers to manage.
@@ -202,12 +252,13 @@ class RayVecEnv(IVecEnv):
             self.concat_func = np.concatenate
 
     def step(self, actions):
-        """Step all individual environments (using the created workers). 
-        Returns a concatenated array of observations, rewards, done states, and infos if the env allows concatenation.
-        Else returns a nested dict.
+        """Step all worker environments in parallel.
+
+        Returns concatenated observations, rewards, dones, and infos when the env
+        supports concatenation; otherwise observations come back as a nested dict.
 
         Args:
-            action (type depends on env): Action to take.
+            actions: Actions for all workers (type depends on env).
 
         """
         newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
@@ -247,6 +298,12 @@ class RayVecEnv(IVecEnv):
             ret_obs = newobsdict
         if self.concat_infos:
             newinfos = dicts_to_dict_with_arrays(newinfos, False)
+        else:
+            # Without concat_infos a list of per-worker dicts was returned, so
+            # consumers checking `'time_outs' in infos` never saw timeouts.
+            # Deliver a merged dict instead (time_outs plus the scores/battle_won
+            # keys DefaultAlgoObserver tracks).
+            newinfos = _merge_ray_infos(newinfos)
         return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
 
     def get_env_info(self):

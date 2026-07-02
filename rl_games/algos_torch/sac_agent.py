@@ -24,11 +24,24 @@ class SACAgent(BaseAlgorithm):
         # TODO: Get obs shape and self.network
         self.load_networks(params)
         self.base_init(base_name, config)
-        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # Small tau for stable smoothing
+        self.critic_tau = float(self.config.get("critic_tau", 0.005))  # target-net Polyak rate
         self.gamma = self.config.get("gamma", 0.99)
         self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=torch.float32)
         self.num_steps_per_episode = self.config.get("num_steps_per_episode", 1)
-        self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        # utd_ratio: gradient updates per env FRAME (one env step = num_actors
+        # frames). Overrides the legacy absolute num_updates_per_step, which
+        # silently diluted UTD as num_actors grew.
+        utd_ratio = self.config.get("utd_ratio", None)
+        if utd_ratio is not None:
+            self.num_updates_per_step = max(1, round(utd_ratio * self.num_actors))
+        else:
+            self.num_updates_per_step = self.config.get("num_updates_per_step", 1)
+        effective_utd = self.num_updates_per_step / self.num_actors
+        print(f"SAC effective UTD ratio: {effective_utd:.3f} "
+              f"({self.num_updates_per_step} updates per step of {self.num_actors} frames)")
+        if effective_utd < 0.5:
+            print(f"WARNING: effective UTD {effective_utd:.3f} < 0.5 — the critic will be "
+                  f"data-starved; set utd_ratio: 1.0 unless this is intentional")
         # Warmup: num_warmup_frames (total env frames) takes priority over num_warmup_steps (epochs)
         num_warmup_frames = self.config.get("num_warmup_frames", None)
         if num_warmup_frames is not None:
@@ -44,17 +57,24 @@ class SACAgent(BaseAlgorithm):
         self.normalize_input = config.get("normalize_input", False)
         self.enable_mixed_precision = config.get("mixed_precision", False)
 
-        # Policy frequency: update actor every N critic updates (CleanRL uses 2)
+        # Update the actor once every policy_frequency critic updates
         self.policy_frequency = config.get("policy_frequency", 2)
-        self.update_counter = 0  # Track number of critic updates
+        self.update_counter = 0
 
         # Gradient clipping for stability (0 = disabled)
         self.critic_grad_clip = config.get("critic_grad_clip", 5.0)
 
-        # Timeout handling - consistent with PPO
+        # When True, timeouts are stored as truncations (bootstrap V at next_obs)
+        # rather than hard terminations. Default matches PPO.
         self.value_bootstrap = config.get('value_bootstrap', True)
 
-        print(self.batch_size, self.num_actors, self.num_agents)
+        # Autoreset semantics declared by the vec env (envpool/gymnasium = 'next_step',
+        # everything else defaults to 'same_step'). Drives replay-write logic in play_steps.
+        self.autoreset_mode = (self.env_info or {}).get('autoreset_mode', 'same_step')
+        if self.autoreset_mode == 'next_step' and self.num_agents > 1:
+            raise ValueError("SAC next_step autoreset handling does not support multi-agent envs "
+                             "(num_agents > 1): per-env done tracking and live-row striding would misalign.")
+
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
@@ -68,6 +88,11 @@ class SACAgent(BaseAlgorithm):
         self.action_high = torch.tensor(action_space.high, device=self._device, dtype=torch.float32)
         self.action_scale = (self.action_high - self.action_low) / 2.0
         self.action_bias = (self.action_high + self.action_low) / 2.0
+        # Change-of-variables constant for the affine rescale [-1,1] -> env bounds
+        # (see _env_log_prob). Zero for unit bounds; matches reference SAC implementations.
+        self.log_action_scale_sum = torch.log(self.action_scale.clamp_min(1e-8)).sum()
+        # Not read anywhere in the package (players use the per-dim rescale above);
+        # kept for backward compatibility with external code.
         self.action_range = [
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
@@ -127,8 +152,6 @@ class SACAgent(BaseAlgorithm):
                 def close(self): pass
             self.writer = _DummyWriter()
 
-        self.gamma_tensor = torch.tensor(self.gamma, device=self._device, dtype=self.amp_dtype)
-
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
         self.config['network'] = builder.load(params)
@@ -139,10 +162,13 @@ class SACAgent(BaseAlgorithm):
         self.env_name = config['env_name']
         print("Env name:", self.env_name)
 
+        self.vec_env = None
         self.env_info = config.get('env_info')
         if self.env_info is None:
             self.vec_env = vecenv.create_vec_env(self.env_name, self.num_actors, **self.env_config)
             self.env_info = self.vec_env.get_env_info()
+        else:
+            self.vec_env = config.get('vec_env', None)
 
         self._device = config.get('device', 'cuda:0')
 
@@ -157,7 +183,7 @@ class SACAgent(BaseAlgorithm):
         # self.use_action_masks = config.get('use_action_masks', False)
         self.is_train = config.get('is_train', True)
 
-        # MSELoss is standard for SAC - matches CleanRL and original paper
+        # MSELoss for the critic TD error - standard for SAC
         self.c_loss = nn.MSELoss()
 
         self.save_best_after = config.get('save_best_after', 500)
@@ -233,6 +259,9 @@ class SACAgent(BaseAlgorithm):
         self.current_lengths = torch.zeros(batch_size, dtype=torch.float32, device=self._device)
 
         self.dones = torch.zeros((batch_size,), dtype=torch.uint8, device=self._device)
+        # Tracks which envs ended an episode on the PREVIOUS step (next_step autoreset:
+        # their next row is the reset-step garbage row and must be skipped).
+        self._prev_dones = torch.zeros(batch_size, dtype=torch.bool, device=self._device)
 
     @property
     def alpha(self):
@@ -273,7 +302,8 @@ class SACAgent(BaseAlgorithm):
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
 
-        # restore (set_full_state_weights) reads both of these — see finding 23
+        # set_full_state_weights restores last_mean_rewards (and frame/epoch above);
+        # saving it keeps the best-ever checkpoint watermark across restarts.
         state['last_mean_rewards'] = self.last_mean_rewards
 
         if self.vec_env is not None:
@@ -327,6 +357,20 @@ class SACAgent(BaseAlgorithm):
 
     def set_train(self):
         self.model.train()
+        if self.normalize_input:
+            # Keep the normalizer in eval mode during updates: only fresh rollout
+            # frames (via _update_obs_stats) may mutate its stats, never replays.
+            self.model.running_mean_std.eval()
+
+    def _update_obs_stats(self, obs):
+        # Ingest one fresh rollout frame into the normalizer's running stats.
+        if not self.normalize_input:
+            return
+        with torch.no_grad():
+            rms = self.model.running_mean_std
+            rms.train()
+            rms(obs['obs'] if isinstance(obs, dict) else obs)
+            rms.eval()
 
     def rescale_actions(self, actions):
         """Rescale actions from [-1, 1] to actual action space bounds."""
@@ -334,11 +378,21 @@ class SACAgent(BaseAlgorithm):
         # Clamp to handle floating point errors
         return rescaled.clamp(self.action_low, self.action_high)
 
+    def _env_log_prob(self, dist, action):
+        """Log-prob of the env-space action via change of variables.
+
+        `dist` is over normalized [-1, 1] actions and `action` is a normalized
+        sample; the env executes a_env = action_scale * action + action_bias, so
+        log pi_env(a_env) = log pi_norm(action) - sum(log(action_scale)).
+        Keeps entropy (and the alpha objective) in the ENV action space.
+        """
+        return dist.log_prob(action).sum(-1, keepdim=True) - self.log_action_scale_sum
+
     def update_critic(self, obs, action, reward, next_obs, not_done, step):
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
-            log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
+            log_prob = self._env_log_prob(dist, next_action)
             # Rescale next_action for critic (as it outputs [-1, 1])
             next_action_rescaled = self.rescale_actions(next_action)
 
@@ -377,7 +431,7 @@ class SACAgent(BaseAlgorithm):
             action = dist.rsample()
             # Rescale actions for critic evaluation
             action_rescaled = self.rescale_actions(action)
-            log_prob = dist.log_prob(action).sum(-1, keepdim=True)
+            log_prob = self._env_log_prob(dist, action)
             entropy = -log_prob.mean()
             actor_Q1, actor_Q2 = self.model.critic(obs, action_rescaled)
             actor_Q = torch.min(actor_Q1, actor_Q2)
@@ -420,7 +474,10 @@ class SACAgent(BaseAlgorithm):
         )
 
     def update(self, step):
-        obs, action, reward, next_obs, done = self.replay_buffer.sample(self.batch_size)
+        # The truncated column is not needed for the 1-step TD target: truncated rows
+        # store done=False with next_obs = the true final obs, so the bootstrap is
+        # already correct. It is kept for future n-step returns / diagnostics.
+        obs, action, reward, next_obs, done, _truncated = self.replay_buffer.sample(self.batch_size)
         not_done = ~done
 
         obs = self.preproc_obs(obs)
@@ -429,13 +486,13 @@ class SACAgent(BaseAlgorithm):
         critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
         self.update_counter += 1
 
-        # Update actor and alpha only every policy_frequency critic updates (CleanRL uses 2)
+        # Delayed actor/alpha update (every policy_frequency critic updates).
         if self.update_counter % self.policy_frequency == 0:
             actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
             actor_loss_info = actor_loss, entropy, alpha, alpha_loss
         else:
-            # Return previous values (or zeros) when not updating actor
-            actor_loss_info = torch.tensor(0.0, device=self._device), torch.tensor(0.0, device=self._device), self.alpha, None
+            # No actor update: return None so skipped steps don't dilute logged means.
+            actor_loss_info = None
 
         self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
@@ -502,6 +559,12 @@ class SACAgent(BaseAlgorithm):
         with torch.no_grad():
             obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        # Count the initial reset obs as a fresh frame.
+        self._update_obs_stats(obs)
+        # Full reset: no env is in a post-episode reset step. Sized
+        # num_agents * num_actors to match the dones/current_rewards rows.
+        self._prev_dones = torch.zeros(self.num_agents * self.num_actors,
+                                       dtype=torch.bool, device=self._device)
 
         return obs
 
@@ -518,19 +581,85 @@ class SACAgent(BaseAlgorithm):
         return actions
 
     def extract_actor_stats(self, actor_losses, entropies, alphas, alpha_losses, actor_loss_info):
+        if actor_loss_info is None:
+            # No actor update happened on this critic step (policy_frequency skip)
+            return
         actor_loss, entropy, alpha, alpha_loss = actor_loss_info
 
         actor_losses.append(actor_loss)
         entropies.append(entropy)
-        if alpha_losses is not None:
+        if alpha_loss is not None:
             alphas.append(alpha)
             alpha_losses.append(alpha_loss)
 
     def clear_stats(self):
         self.game_rewards.clear()
         self.game_lengths.clear()
-        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is set in __init__ and preserved across restore
+        self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is deliberately NOT reset here
         self.algo_observer.after_clear_stats()
+
+    def _store_transitions(self, obs, action, shaped_rewards, next_obs,
+                           dones, terminated, truncated_mask, infos):
+        """Write one vec-step of transitions to replay and update episode accounting.
+
+        next_step autoreset: rows whose PREVIOUS step ended an episode are
+        reset-step garbage (action ignored, filler reward, post-reset next_obs)
+        and are excluded from both replay and accounting. next_obs at a
+        truncation is already the TRUE final obs, so no proxy is needed. Live
+        rows are gathered with a single nonzero + index_select per tensor
+        (boolean masking would re-run nonzero — a host sync — per tensor).
+
+        same_step autoreset: every row is live, so the full batch is written
+        directly with no masking. next_obs holds the post-reset obs at a
+        truncation, so substitute the true final obs (from info, else the
+        s_t proxy).
+        """
+        if self.autoreset_mode == 'next_step':
+            live = ~self._prev_dones
+            live_f = live.float()
+            self.current_rewards.add_(shaped_rewards * live_f)
+            self.current_lengths.add_(live_f)
+            all_done_indices = (dones.bool() & live).nonzero(as_tuple=False)
+
+            live_idx = live.nonzero(as_tuple=True)[0]
+            if live_idx.numel() > 0:  # numel reads shape on host, no device sync
+                self.replay_buffer.add(
+                    obs.index_select(0, live_idx),
+                    action.index_select(0, live_idx),
+                    shaped_rewards.index_select(0, live_idx).unsqueeze(1),
+                    next_obs.index_select(0, live_idx),
+                    terminated.index_select(0, live_idx).unsqueeze(1),
+                    truncated_mask.index_select(0, live_idx).unsqueeze(1))
+        else:
+            replay_next_obs = next_obs
+            if truncated_mask.any():
+                replay_next_obs = next_obs.clone()
+                final_obs = infos.get('final_observation') if isinstance(infos, dict) else None
+                if final_obs is not None:
+                    final_obs = self.cast_obs(final_obs).to(replay_next_obs.dtype)
+                    replay_next_obs[truncated_mask] = final_obs[truncated_mask]
+                else:
+                    replay_next_obs[truncated_mask] = obs[truncated_mask]
+
+            self.current_rewards.add_(shaped_rewards)
+            self.current_lengths.add_(1.0)
+            all_done_indices = dones.nonzero(as_tuple=False)
+
+            self.replay_buffer.add(
+                obs, action, shaped_rewards.unsqueeze(1), replay_next_obs,
+                terminated.unsqueeze(1), truncated_mask.unsqueeze(1))
+
+        done_indices = all_done_indices[::self.num_agents]
+        self.game_rewards.update(self.current_rewards[done_indices])
+        self.game_lengths.update(self.current_lengths[done_indices])
+        self.algo_observer.process_infos(infos, done_indices)
+        not_dones = 1.0 - dones.float()
+        self.current_rewards.mul_(not_dones)
+        self.current_lengths.mul_(not_dones)
+
+        # clone is required: when dones is already torch.bool, .bool() returns an
+        # alias that may share memory with an env-owned / numpy buffer.
+        self._prev_dones = dones.bool().clone()
 
     def play_steps(self, random_exploration=False):
         total_time_start = time.perf_counter()
@@ -569,64 +698,34 @@ class SACAgent(BaseAlgorithm):
             # Shape rewards BEFORE tracking (so logged rewards match training rewards)
             shaped_rewards = self.rewards_shaper(rewards)
 
-            self.current_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
-
-            all_done_indices = dones.nonzero(as_tuple=False)
-            done_indices = all_done_indices[::self.num_agents]
-            self.game_rewards.update(self.current_rewards[done_indices])
-            self.game_lengths.update(self.current_lengths[done_indices])
-
-            not_dones = 1.0 - dones.float()
-
-            self.algo_observer.process_infos(infos, done_indices)
-
-            # Handle truncated episodes (timeouts) for auto-resetting envs.
-            # Auto-resetting envs (envpool, Isaac Gym) replace next_obs with the reset obs,
-            # so bootstrapping V(next_obs) would use the wrong state.
-            # Fix: for truncated envs, use obs (pre-reset) as next_obs and mark done=False.
-            # The critic will compute V(s_t) with fresh weights at training time.
-            terminated = dones.clone()
-            timeouts = None
+            # With value_bootstrap=False the truncated column stays all-False, so
+            # truncations train as hard terminations (legacy behavior).
+            truncated_mask = torch.zeros(dones.shape[0], dtype=torch.bool, device=self._device)
             if self.value_bootstrap and 'time_outs' in infos:
-                timeouts = self.cast_obs(infos['time_outs'])
-                if timeouts.dtype != torch.bool:
-                    timeouts = timeouts.bool()
-                if timeouts.any():
-                    terminated[timeouts] = 0.0
-                else:
-                    timeouts = None
-
-            self.current_rewards.mul_(not_dones)
-            self.current_lengths.mul_(not_dones)
+                truncated_mask = self.cast_obs(infos['time_outs'])
+                if truncated_mask.dtype != torch.bool:
+                    truncated_mask = truncated_mask.bool()
+            terminated = dones.bool() & ~truncated_mask
 
             if isinstance(next_obs, dict):
                 next_obs_processed = next_obs['obs']
-                self.obs = next_obs
             else:
                 next_obs_processed = next_obs
-                self.obs = next_obs
+            # Ingest each fresh env frame into the normalizer exactly once here
+            # (incl. warmup and post-reset frames); update() never touches it.
+            self._update_obs_stats(next_obs_processed)
+            self.obs = next_obs
 
-            # For truncated envs, store pre-reset obs as next_obs in replay buffer
-            # so the critic bootstraps V(s_t) with fresh weights at training time.
-            # self.obs keeps the actual reset obs for the next step.
-            replay_next_obs = next_obs_processed
-            if timeouts is not None:
-                replay_next_obs = next_obs_processed.clone()
-                replay_next_obs[timeouts] = obs[timeouts]
+            self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
+                                    dones, terminated, truncated_mask, infos)
 
-            # Batch unsqueeze operations (rewards already shaped above)
-            rewards_unsqueezed = shaped_rewards.unsqueeze(1)
-            terminated_unsqueezed = terminated.unsqueeze(1)
-            self.replay_buffer.add(obs, action, rewards_unsqueezed, replay_next_obs, terminated_unsqueezed)
-
-            obs = next_obs_processed  # Use the already processed observation
+            obs = next_obs_processed
 
             if not random_exploration:
                 self.set_train()
 
                 update_time_start = time.perf_counter()
-                # Perform multiple gradient updates per environment step
+                # num_updates_per_step gradient updates per env step (UTD ratio)
                 for _ in range(self.num_updates_per_step):
                     actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
                     self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
@@ -646,14 +745,15 @@ class SACAgent(BaseAlgorithm):
         return step_time, play_time, total_update_time, total_time, actor_losses, entropies, alphas, alpha_losses, critic1_losses, critic2_losses
 
     def train_epoch(self):
-        random_exploration = self.epoch_num < self.num_warmup_steps
+        # epoch_num is 1-based here (train() increments it before calling train_epoch),
+        # so `<=` gives exactly num_warmup_steps warmup epochs.
+        random_exploration = self.epoch_num <= self.num_warmup_steps
         return self.play_steps(random_exploration)
 
     def train(self):
         self.init_tensors()
         self.algo_observer.after_init(self)
         total_time = 0
-        # rep_count = 0
 
         self.obs = self.env_reset()
 
@@ -680,18 +780,30 @@ class SACAgent(BaseAlgorithm):
             self.writer.add_scalar('performance/step_inference_time', play_time, self.frame)
             self.writer.add_scalar('performance/step_time', step_time, self.frame)
 
-            if self.epoch_num >= self.num_warmup_steps:
-                self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
+            # Skip warmup epochs (no updates -> empty loss lists). The per-list
+            # length guards below also cover epochs where policy_frequency skipped
+            # every actor update, so only computed stats are logged.
+            if self.epoch_num > self.num_warmup_steps:
+                if len(actor_losses) > 0:
+                    self.writer.add_scalar('losses/a_loss', torch_ext.mean_list(actor_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c1_loss', torch_ext.mean_list(critic1_losses).item(), self.frame)
                 self.writer.add_scalar('losses/c2_loss', torch_ext.mean_list(critic2_losses).item(), self.frame)
-                self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), self.frame)
+                if len(entropies) > 0:
+                    self.writer.add_scalar('losses/entropy', torch_ext.mean_list(entropies).item(), self.frame)
 
-                if alpha_losses[0] is not None:
+                if len(alpha_losses) > 0:
                     self.writer.add_scalar('losses/alpha_loss', torch_ext.mean_list(alpha_losses).item(), self.frame)
-                self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), self.frame)
+                if len(alphas) > 0:
+                    self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), self.frame)
 
             self.writer.add_scalar('info/epochs', self.epoch_num, self.frame)
             self.algo_observer.after_print_stats(self.frame, self.epoch_num, total_time)
+
+            # Exits and periodic saves run EVERY epoch; only reward/length stats
+            # and the best-checkpoint comparison are gated on completed episodes.
+            should_exit = False
+            # -inf watermark until the first episode completes (str() -> '-inf' in checkpoint names)
+            mean_rewards = -np.inf
 
             if self.game_rewards.current_size > 0:
                 mean_rewards = self.game_rewards.get_mean()
@@ -701,13 +813,6 @@ class SACAgent(BaseAlgorithm):
                 self.writer.add_scalar('rewards/time', mean_rewards, total_time)
                 self.writer.add_scalar('episode_lengths/step', mean_lengths, self.frame)
                 self.writer.add_scalar('episode_lengths/time', mean_lengths, total_time)
-                checkpoint_name = self.config['name'] + '_ep_' + str(self.epoch_num) + '_rew_' + str(mean_rewards)
-
-                should_exit = False
-
-                if self.save_freq > 0:
-                    if self.epoch_num % self.save_freq == 0:
-                        self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
                 if mean_rewards > self.last_mean_rewards and self.epoch_num >= self.save_best_after:
                     print('saving next best rewards: ', mean_rewards)
@@ -715,35 +820,33 @@ class SACAgent(BaseAlgorithm):
                     self.save(os.path.join(self.nn_dir, self.config['name']))
                     if self.last_mean_rewards > self.config.get('score_to_win', float('inf')):
                         print('Maximum reward achieved. Network won!')
-                        self.save(os.path.join(self.nn_dir, checkpoint_name))
+                        self.save(os.path.join(self.nn_dir, self.config['name'] + '_ep_' + str(self.epoch_num) + '_rew_' + str(mean_rewards)))
                         should_exit = True
 
-                if self.epoch_num >= self.max_epochs and self.max_epochs != -1:
-                    if self.game_rewards.current_size == 0:
-                        print('WARNING: Max epochs reached before any env terminated at least once')
-                        mean_rewards = -np.inf
+            checkpoint_name = self.config['name'] + '_ep_' + str(self.epoch_num) + '_rew_' + str(mean_rewards)
 
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(self.epoch_num) \
-                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
-                    print('MAX EPOCHS NUM!')
-                    should_exit = True
+            if self.save_freq > 0:
+                if self.epoch_num % self.save_freq == 0:
+                    self.save(os.path.join(self.nn_dir, 'last_' + checkpoint_name))
 
-                if self.frame >= self.max_frames and self.max_frames != -1:
-                    if self.game_rewards.current_size == 0:
-                        print('WARNING: Max frames reached before any env terminated at least once')
-                        mean_rewards = -np.inf
+            if self.epoch_num >= self.max_epochs and self.max_epochs != -1:
+                self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(self.epoch_num) \
+                    + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
+                print('MAX EPOCHS NUM!')
+                should_exit = True
 
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
-                        + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
-                    print('MAX FRAMES NUM!')
-                    should_exit = True
+            if self.frame >= self.max_frames and self.max_frames != -1:
+                self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
+                    + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
+                print('MAX FRAMES NUM!')
+                should_exit = True
 
-                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
-                    self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(self.epoch_num)))
-                    print('Custom stop callback returned True. Stopping training.')
-                    should_exit = True
+            if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(self.epoch_num)))
+                print('Custom stop callback returned True. Stopping training.')
+                should_exit = True
 
-                update_time = 0
+            update_time = 0
 
-                if should_exit:
-                    return self.last_mean_rewards, self.epoch_num
+            if should_exit:
+                return self.last_mean_rewards, self.epoch_num
