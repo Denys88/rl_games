@@ -22,7 +22,7 @@ class CentralValueTrain(nn.Module):
         nn.Module.__init__(self)
 
         self.ppo_device = ppo_device
-        self.mixed_precision = config.get('mixed_precision', False)
+        self.mixed_precision = config.get('mixed_precision', torch_ext.default_mixed_precision())
 
         # bf16 autocast (below) needs no loss scaling; see a2c_common
         self.scaler = GradScaler(enabled=False)

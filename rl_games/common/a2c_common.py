@@ -287,7 +287,9 @@ class A2CBase(BaseAlgorithm):
 
         self.mini_epochs_num = self.config['mini_epochs']
 
-        self.mixed_precision = self.config.get('mixed_precision', False)
+        # bf16 autocast is enabled by default on capable GPUs; set
+        # mixed_precision: False in the config to opt out.
+        self.mixed_precision = self.config.get('mixed_precision', torch_ext.default_mixed_precision())
         # bf16 autocast has fp32's exponent range and needs no loss scaling; a
         # disabled scaler keeps the scale/step API as no-ops and avoids the
         # per-optimizer-step found_inf .item() sync of an enabled GradScaler.

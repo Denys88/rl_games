@@ -15,13 +15,13 @@ def main():
                        default='rl_games/configs/mjlab/ppo_g1_velocity.yaml')
     args = parser.parse_args()
 
-    # Register mjlab env
-    env_configurations.register('mjlab_g1_velocity', {
-        'vecenv_type': 'MJLAB',
-    })
-
     with open(args.config) as f:
         config = yaml.safe_load(f)
+
+    # Register the env name the config asks for
+    env_configurations.register(config['params']['config']['env_name'], {
+        'vecenv_type': 'MJLAB',
+    })
 
     runner = Runner()
     runner.load(config)
