@@ -1,0 +1,63 @@
+params:
+  seed: 42
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: true
+    mlp:
+      units:
+      - 512
+      - 256
+      - 128
+      activation: elu
+      initializer:
+        name: default
+  config:
+    name: MJLab_WujiHand_Reorient
+    env_name: mjlab_wujihand
+    normalize_input: true
+    normalize_value: true
+    value_bootstrap: true
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: true
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 0.0001
+    lr_schedule: adaptive
+    kl_threshold: 0.01
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: false
+    num_actors: 4096
+    horizon_length: 40
+    minibatch_size: 5120
+    mini_epochs: 4
+    critic_coef: 2
+    use_smooth_clamp: true
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.005
+    device: cuda:0
+    max_epochs: 7500
+    env_config:
+      task_name: WujiHand_Reorient_Light
+      device: cuda
+    player:
+      render: false
+    save_frequency: 500
+    save_best_after: 100
