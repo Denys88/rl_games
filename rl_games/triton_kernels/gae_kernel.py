@@ -7,7 +7,56 @@ Disable Triton: export RLG_NO_TRITON=1
 """
 
 import torch
-from rl_games.triton_config import USE_TRITON
+from rl_games.triton_config import USE_TRITON, TRITON_AVAILABLE
+
+if TRITON_AVAILABLE:
+    import triton
+    import triton.language as tl
+
+    @triton.jit
+    def _gae_kernel(
+        rewards_ptr, values_ptr, dones_ptr,
+        last_values_ptr, last_dones_ptr, advs_ptr,
+        gamma, lam,
+        horizon: tl.constexpr,
+        value_size: tl.constexpr,
+        rewards_stride_t, rewards_stride_env,
+        values_stride_t, values_stride_env,
+        dones_stride_t, dones_stride_env,
+        advs_stride_t, advs_stride_env,
+    ):
+        pid = tl.program_id(0)
+        env_idx = pid // value_size
+        val_idx = pid % value_size
+
+        last_val = tl.load(last_values_ptr + env_idx * value_size + val_idx)
+        last_done = tl.load(last_dones_ptr + env_idx)
+        lastgaelam = 0.0
+
+        for t_fwd in range(horizon):
+            t = horizon - 1 - t_fwd
+
+            r_offset = t * rewards_stride_t + env_idx * rewards_stride_env + val_idx
+            v_offset = t * values_stride_t + env_idx * values_stride_env + val_idx
+            d_offset = t * dones_stride_t + env_idx * dones_stride_env
+
+            reward_t = tl.load(rewards_ptr + r_offset)
+            value_t = tl.load(values_ptr + v_offset)
+
+            if t == horizon - 1:
+                nextvalue = last_val
+                nextnonterminal = 1.0 - last_done
+            else:
+                next_v_offset = (t + 1) * values_stride_t + env_idx * values_stride_env + val_idx
+                next_d_offset = (t + 1) * dones_stride_t + env_idx * dones_stride_env
+                nextvalue = tl.load(values_ptr + next_v_offset)
+                nextnonterminal = 1.0 - tl.load(dones_ptr + next_d_offset)
+
+            delta = reward_t + gamma * nextvalue * nextnonterminal - value_t
+            lastgaelam = delta + gamma * lam * nextnonterminal * lastgaelam
+
+            adv_offset = t * advs_stride_t + env_idx * advs_stride_env + val_idx
+            tl.store(advs_ptr + adv_offset, lastgaelam)
 
 
 def _pytorch_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma, tau):
@@ -31,7 +80,7 @@ def _pytorch_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma
 
 
 def _triton_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma, tau):
-    """GAE via Triton — single kernel launch, one program per env.
+    """GAE via Triton — single kernel launch, one program per (env, value) pair.
 
     Each Triton program scans backwards over the full horizon in-kernel,
     eliminating the per-timestep kernel launch overhead of the PyTorch loop.
@@ -43,66 +92,23 @@ def _triton_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma,
         last_values: [num_envs, value_size]
         last_dones:  [num_envs]
     """
-    import triton
-    import triton.language as tl
-
-    @triton.jit
-    def _gae_kernel(
-        rewards_ptr, values_ptr, dones_ptr,
-        last_values_ptr, last_dones_ptr, advs_ptr,
-        gamma: tl.constexpr, lam: tl.constexpr,
-        horizon: tl.constexpr, num_envs: tl.constexpr,
-        value_size: tl.constexpr,
-        rewards_stride_t, rewards_stride_env,
-        values_stride_t, values_stride_env,
-        dones_stride_t, dones_stride_env,
-        advs_stride_t, advs_stride_env,
-    ):
-        pid = tl.program_id(0)
-        env_idx = pid // value_size
-        val_idx = pid % value_size
-
-        last_val = tl.load(last_values_ptr + env_idx * value_size + val_idx)
-        last_done = tl.load(last_dones_ptr + env_idx)
-        lastgaelam = 0.0
-
-        for t_fwd in range(horizon):
-            t = horizon - 1 - t_fwd
-
-            rv_offset = t * rewards_stride_t + env_idx * rewards_stride_env + val_idx
-            d_offset = t * dones_stride_t + env_idx * dones_stride_env
-
-            reward_t = tl.load(rewards_ptr + rv_offset)
-            value_t = tl.load(values_ptr + rv_offset)
-
-            if t == horizon - 1:
-                nextvalue = last_val
-                nextnonterminal = 1.0 - last_done
-            else:
-                next_rv_offset = (t + 1) * values_stride_t + env_idx * values_stride_env + val_idx
-                next_d_offset = (t + 1) * dones_stride_t + env_idx * dones_stride_env
-                nextvalue = tl.load(values_ptr + next_rv_offset)
-                nextnonterminal = 1.0 - tl.load(dones_ptr + next_d_offset)
-
-            delta = reward_t + gamma * nextvalue * nextnonterminal - value_t
-            lastgaelam = delta + gamma * lam * nextnonterminal * lastgaelam
-
-            adv_offset = t * advs_stride_t + env_idx * advs_stride_env + val_idx
-            tl.store(advs_ptr + adv_offset, lastgaelam)
-
     horizon_length, num_envs, value_size = mb_rewards.shape
-    mb_advs = torch.empty_like(mb_rewards)
 
-    if mb_dones.dtype != torch.float32:
-        mb_dones = mb_dones.float()
-    if last_dones.dtype != torch.float32:
-        last_dones = last_dones.float()
+    # The kernel assumes densely packed inputs (unit last-dim stride,
+    # flat last_values/last_dones indexing) — enforce it for view inputs.
+    mb_rewards = mb_rewards.contiguous()
+    mb_values = mb_values.contiguous()
+    mb_dones = mb_dones.float().contiguous()
+    last_values = last_values.contiguous()
+    last_dones = last_dones.float().contiguous()
+
+    mb_advs = torch.empty_like(mb_rewards)
 
     grid = (num_envs * value_size,)
 
     _gae_kernel[grid](
         mb_rewards, mb_values, mb_dones, last_values, last_dones, mb_advs,
-        gamma, tau, horizon_length, num_envs, value_size,
+        gamma, tau, horizon_length, value_size,
         mb_rewards.stride(0), mb_rewards.stride(1),
         mb_values.stride(0), mb_values.stride(1),
         mb_dones.stride(0), mb_dones.stride(1),
@@ -110,6 +116,9 @@ def _triton_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma,
     )
 
     return mb_advs
+
+
+_backend_logged = False
 
 
 def compute_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma, tau):
@@ -127,6 +136,11 @@ def compute_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma,
     Returns:
         mb_advs: [horizon_length, num_envs, value_size]
     """
-    if USE_TRITON and mb_rewards.is_cuda:
+    use_triton = USE_TRITON and mb_rewards.is_cuda
+    global _backend_logged
+    if not _backend_logged:
+        print(f'compute_gae: using {"Triton" if use_triton else "PyTorch"} backend')
+        _backend_logged = True
+    if use_triton:
         return _triton_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma, tau)
     return _pytorch_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma, tau)
