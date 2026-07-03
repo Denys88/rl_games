@@ -35,9 +35,11 @@ class MjlabVecEnv(IVecEnv):
 
         obs, _ = self.env.reset()
 
-        # Extract spaces from first obs
-        self.num_envs = obs['actor'].shape[0]
-        self.obs_dim = obs['actor'].shape[-1]
+        # mjlab's own tasks name the policy obs group 'actor'; Isaac Lab-style
+        # task plugins (e.g. wuji-mjlab) use 'policy' — accept both
+        self.actor_key = 'actor' if 'actor' in obs else 'policy'
+        self.num_envs = obs[self.actor_key].shape[0]
+        self.obs_dim = obs[self.actor_key].shape[-1]
         self.has_critic_obs = 'critic' in obs
 
         from gymnasium import spaces
@@ -65,12 +67,12 @@ class MjlabVecEnv(IVecEnv):
         done = terminated | truncated
         info['time_outs'] = truncated
 
-        obs = obs_dict['actor']
+        obs = obs_dict[self.actor_key]
         return obs, reward, done.float(), info
 
     def reset(self):
         obs_dict, _ = self.env.reset()
-        return obs_dict['actor']
+        return obs_dict[self.actor_key]
 
     def get_number_of_agents(self):
         return 1
