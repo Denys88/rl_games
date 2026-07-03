@@ -1,0 +1,144 @@
+"""Tests for the hot-loop performance batch: replay/experience buffer pinning
+removal, disabled GradScaler under bf16 autocast, SAC submodule compilation,
+and batched score-observer updates."""
+
+import numpy as np
+import pytest
+import torch
+from types import SimpleNamespace
+
+from rl_games.algos_torch import torch_ext
+from rl_games.common.algo_observer import DefaultAlgoObserver
+from rl_games.common.experience import VectorizedReplayBuffer
+
+
+class TestReplayBufferNoPinning:
+
+    def test_cpu_buffer_not_pinned_and_roundtrips(self):
+        buf = VectorizedReplayBuffer((4,), (2,), capacity=16, device='cpu')
+        assert not buf.obses.is_pinned()
+        assert not buf.next_obses.is_pinned()
+        obs = torch.randn(3, 4)
+        act = torch.randn(3, 2)
+        rew = torch.randn(3, 1)
+        done = torch.zeros(3, 1, dtype=torch.bool)
+        buf.add(obs, act, rew, obs + 1, done)
+        s_obs, s_act, s_rew, s_next, s_done, s_trunc = buf.sample(2)
+        assert s_obs.shape == (2, 4) and s_trunc.shape == (2, 1)
+
+
+class TestScalerDisabledForBf16:
+
+    def test_disabled_scaler_full_step_chain(self):
+        scaler = torch.amp.GradScaler('cuda', enabled=False)
+        model = torch.nn.Linear(4, 2)
+        opt = torch.optim.Adam(model.parameters())
+        loss = model(torch.randn(8, 4)).sum()
+        scaler.scale(loss).backward()
+        scaler.unscale_(opt)
+        scaler.step(opt)
+        scaler.update()
+        assert scaler.state_dict() == {}
+
+    def test_a2c_scaler_construction_disabled(self):
+        # the constructor arg is what a2c_common now uses regardless of mixed_precision
+        import inspect
+        from rl_games.common import a2c_common
+        src = inspect.getsource(a2c_common.A2CBase.__init__)
+        assert "GradScaler('cuda', enabled=False)" in src
+
+    def test_central_value_autocast_is_bf16(self):
+        import inspect
+        from rl_games.algos_torch import central_value
+        src = inspect.getsource(central_value)
+        assert src.count('dtype=torch.bfloat16') == 2
+        assert 'GradScaler(enabled=False)' in src
+
+
+class TestSacCompileInPlace:
+
+    def test_module_compile_keeps_state_dict_keys_and_params(self):
+        # in-place nn.Module.compile must not introduce _orig_mod prefixes or
+        # replace parameter objects (optimizers hold references to them)
+        actor = torch.nn.Sequential(torch.nn.Linear(4, 8), torch.nn.Linear(8, 2))
+        params_before = [id(p) for p in actor.parameters()]
+        keys_before = list(actor.state_dict().keys())
+        actor.compile(mode='default')
+        assert list(actor.state_dict().keys()) == keys_before
+        assert [id(p) for p in actor.parameters()] == params_before
+
+
+class FakeMeterAlgo:
+    def __init__(self, num_agents=1):
+        self.num_agents = num_agents
+        self.games_to_track = 100
+        self.ppo_device = 'cpu'
+        self.writer = None
+
+
+def make_observer(num_agents=1):
+    obs = DefaultAlgoObserver()
+    obs.after_init(FakeMeterAlgo(num_agents))
+    return obs
+
+
+class TestBatchedScoreObserver:
+
+    def test_dict_infos_batched_mean_matches(self):
+        obs = make_observer()
+        infos = {'scores': np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)}
+        obs.process_infos(infos, torch.tensor([0, 2, 3]))
+        assert obs.game_scores.current_size == 3
+        assert obs.game_scores.get_mean() == pytest.approx((1.0 + 3.0 + 4.0) / 3)
+
+    def test_nan_fillers_skipped(self):
+        obs = make_observer()
+        infos = {'scores': np.array([1.0, np.nan, 5.0], dtype=np.float32)}
+        obs.process_infos(infos, torch.tensor([0, 1, 2]))
+        assert obs.game_scores.current_size == 2
+        assert obs.game_scores.get_mean() == pytest.approx(3.0)
+
+    def test_all_nan_no_update(self):
+        obs = make_observer()
+        infos = {'scores': np.array([np.nan, np.nan], dtype=np.float32)}
+        obs.process_infos(infos, torch.tensor([0, 1]))
+        assert obs.game_scores.current_size == 0
+
+    def test_battle_won_bool_entries(self):
+        obs = make_observer()
+        infos = {'battle_won': np.array([True, False, True])}
+        obs.process_infos(infos, torch.tensor([0, 1, 2]))
+        assert obs.game_scores.get_mean() == pytest.approx(2.0 / 3.0)
+
+    def test_lives_filter_envpool_path(self):
+        obs = make_observer()
+        infos = {'scores': np.array([10.0, 20.0, 30.0], dtype=np.float32),
+                 'lives': np.array([0, 1, 0])}
+        obs.process_infos(infos, torch.tensor([1]))  # overridden by lives==0 -> envs 0,2
+        assert obs.game_scores.current_size == 2
+        assert obs.game_scores.get_mean() == pytest.approx(20.0)
+
+    def test_num_agents_division(self):
+        obs = make_observer(num_agents=2)
+        infos = {'scores': np.array([7.0], dtype=np.float32)}
+        obs.process_infos(infos, torch.tensor([0, 1]))  # both agents of env 0
+        assert obs.game_scores.current_size == 2
+        assert obs.game_scores.get_mean() == pytest.approx(7.0)
+
+    def test_out_of_range_indices_dropped(self):
+        obs = make_observer()
+        infos = {'scores': np.array([1.0], dtype=np.float32)}
+        obs.process_infos(infos, torch.tensor([0, 5]))
+        assert obs.game_scores.current_size == 1
+
+    def test_no_scores_key_no_crash(self):
+        obs = make_observer()
+        obs.process_infos({'lives': np.array([0, 0])}, torch.tensor([0, 1]))
+        assert obs.game_scores.current_size == 0
+
+    def test_list_of_dicts_path_unchanged(self):
+        obs = make_observer()
+        infos = [{'scores': 3.0}, {'scores': 5.0}]
+        obs.process_infos(infos, torch.tensor([0, 1]))
+        assert obs.game_scores.current_size == 2
+        assert obs.game_scores.get_mean() == pytest.approx(4.0)

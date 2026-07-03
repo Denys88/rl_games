@@ -288,7 +288,10 @@ class A2CBase(BaseAlgorithm):
         self.mini_epochs_num = self.config['mini_epochs']
 
         self.mixed_precision = self.config.get('mixed_precision', False)
-        self.scaler = torch.amp.GradScaler('cuda', enabled=self.mixed_precision)
+        # bf16 autocast has fp32's exponent range and needs no loss scaling; a
+        # disabled scaler keeps the scale/step API as no-ops and avoids the
+        # per-optimizer-step found_inf .item() sync of an enabled GradScaler.
+        self.scaler = torch.amp.GradScaler('cuda', enabled=False)
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -694,7 +697,7 @@ class A2CBase(BaseAlgorithm):
         state = {}
         if self.normalize_rms_advantage:
             state['advantage_mean_std'] = self.advantage_mean_std.state_dict()
-        if self.mixed_precision:
+        if self.mixed_precision and self.scaler.is_enabled():
             state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
             state['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
@@ -714,7 +717,7 @@ class A2CBase(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value and 'reward_mean_std' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
-        if self.mixed_precision and 'scaler' in weights:
+        if self.mixed_precision and self.scaler.is_enabled() and weights.get('scaler'):
             self.scaler.load_state_dict(weights['scaler'])
 
     def set_weights(self, weights):

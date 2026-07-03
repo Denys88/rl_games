@@ -58,23 +58,25 @@ class DefaultAlgoObserver(AlgoObserver):
                 # envpool
                 done_indices = np.argwhere(infos['lives'] == 0).squeeze(1)
 
-            for ind in done_indices:
-                ind = ind.item()
-                game_res = None
-                if 'battle_won' in infos:
-                    game_res = infos['battle_won']
-                if 'scores' in infos:
-                    game_res = infos['scores']
-                if game_res is not None and len(game_res) > ind//self.algo.num_agents:
-                    entry = np.asarray(game_res[ind//self.algo.num_agents])
-                    # Skip NaN fillers that _merge_ray_infos inserts for done
-                    # workers lacking a score (e.g. episodic-life atari): matches
-                    # the old "missing key = skip" path and keeps NaN out of
-                    # AverageMeter's running mean. Only float entries can be NaN;
-                    # bool/int (battle_won, integer scores) pass through.
-                    if entry.dtype.kind == 'f' and not np.isfinite(entry).all():
-                        continue
-                    self.game_scores.update(torch.from_numpy(np.asarray([entry])).to(self.algo.ppo_device))
+            game_res = None
+            if 'battle_won' in infos:
+                game_res = infos['battle_won']
+            if 'scores' in infos:
+                game_res = infos['scores']
+            if game_res is None or len(done_indices) == 0:
+                return
+
+            game_res = np.asarray(game_res)
+            res_indices = np.asarray(done_indices, dtype=np.int64) // self.algo.num_agents
+            res_indices = res_indices[res_indices < len(game_res)]
+            entries = np.asarray(game_res[res_indices], dtype=np.float32)
+            # Drop NaN fillers that _merge_ray_infos inserts for done workers
+            # lacking a score (e.g. episodic-life atari) to keep NaN out of
+            # AverageMeter's running mean.
+            entries = entries[np.isfinite(entries)]
+            if entries.size > 0:
+                # one batched H2D copy + meter update instead of one per done env
+                self.game_scores.update(torch.from_numpy(entries).to(self.algo.ppo_device))
 
     def after_clear_stats(self):
         self.game_scores.clear()

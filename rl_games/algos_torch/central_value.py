@@ -24,7 +24,8 @@ class CentralValueTrain(nn.Module):
         self.ppo_device = ppo_device
         self.mixed_precision = config.get('mixed_precision', False)
 
-        self.scaler = GradScaler(enabled=self.mixed_precision)
+        # bf16 autocast (below) needs no loss scaling; see a2c_common
+        self.scaler = GradScaler(enabled=False)
 
         self.num_agents = num_agents
         self.horizon_length = horizon_length
@@ -256,7 +257,7 @@ class CentralValueTrain(nn.Module):
                 break
             for i in range(len(self.dataset)):
                 # Use mixed precision for training
-                with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+                with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
                     loss += self.train_critic(self.dataset[i])
 
             if self.normalize_input:
@@ -356,7 +357,7 @@ class CentralValueTrain(nn.Module):
         """
         self.optimizer.zero_grad(set_to_none=True)
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision):
+        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
             values = self.model(input_dict)['values']
             loss = (values - input_dict['returns']).pow(2).mean()
 

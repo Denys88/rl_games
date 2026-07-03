@@ -260,8 +260,18 @@ class Runner:
                 actor_mode = "default"
                 critic_mode = "default"
 
-            print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")
-            agent.model = torch.compile(agent.model, mode=actor_mode)
+            sac_network = getattr(agent.model, 'sac_network', None)
+            if sac_network is not None:
+                # SAC never calls model.forward — compile the submodules it
+                # actually invokes. In place, so optimizer param refs and
+                # state_dict keys are unchanged.
+                sac_network.actor.compile(mode=actor_mode)
+                sac_network.critic.compile(mode=critic_mode)
+                sac_network.critic_target.compile(mode=critic_mode)
+                print(f"torch.compile: Enabled for SAC actor (mode='{actor_mode}') and critics (mode='{critic_mode}')")
+            else:
+                print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")
+                agent.model = torch.compile(agent.model, mode=actor_mode)
 
             if hasattr(agent, 'central_value_net') and agent.central_value_net is not None:
                 print(f"torch.compile: Enabled for central value critic with mode='{critic_mode}'")

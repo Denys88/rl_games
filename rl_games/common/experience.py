@@ -218,9 +218,6 @@ class VectorizedReplayBuffer:
         """
 
         self.device = device
-        self._on_cpu = torch.device(self.device).type == 'cpu'
-
-        self.use_pinned_memory = self._on_cpu and torch.cuda.is_available()
 
         # Always use float32 for storage - autocast will handle precision during training
         dtype = torch.float32
@@ -235,15 +232,6 @@ class VectorizedReplayBuffer:
         self.capacity = capacity
         self.idx = 0
         self.full = False
-
-        # Pin memory after creation for faster CPU->GPU transfers
-        if self._on_cpu and self.use_pinned_memory:
-            self.obses = self.obses.pin_memory()
-            self.next_obses = self.next_obses.pin_memory()
-            self.actions = self.actions.pin_memory()
-            self.rewards = self.rewards.pin_memory()
-            self.dones = self.dones.pin_memory()
-            self.truncated = self.truncated.pin_memory()
 
     @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done, truncated=None):
@@ -343,7 +331,6 @@ class ExperienceBuffer:
         self.env_info = env_info
         self.algo_info = algo_info
         self.device = device
-        self._on_cpu = torch.device(self.device).type == 'cpu'
 
         self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
@@ -375,9 +362,6 @@ class ExperienceBuffer:
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
         self.tensor_dict = {}
-
-        # Add pinned-memory support for faster CPU→GPU copies
-        self.use_pinned_memory = torch.cuda.is_available() and algo_info.get('use_pinned_memory', True)
 
         self._init_from_env_info(self.env_info)
 
@@ -428,24 +412,15 @@ class ExperienceBuffer:
 
         if space_type == 'Box':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
         elif space_type == 'Discrete':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape, dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape, dtype=dtype, device=self.device)
         elif space_type == 'Tuple':
             # Assuming that tuple is only Discrete tuple
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            tensor = torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
         elif space_type == 'Dict':
             t_dict = {}
             for k, v in space.spaces.items():
