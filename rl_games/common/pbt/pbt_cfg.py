@@ -3,7 +3,7 @@
 # Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 
 @dataclass
@@ -31,8 +31,10 @@ class PbtCfg:
     workspace: str = "pbt_workspace"
     """Subfolder under the training dir to isolate this PBT run."""
 
-    objective: str = "Episode_Reward/success"
-    """Dotted address of the scalar objective inside env infos (e.g. 'Episode_Reward/success').
+    objective: str = ""
+    """Dotted address of the scalar objective inside env infos — required when PBT is
+    enabled; there is no portable default (info layouts differ per backend). Examples:
+    'episode.Episode_Reward/success' (Isaac Lab-style nested infos), 'scores' (flat dicts).
     If reward is stationary, a term that corresponds to task success is usually enough; with
     non-stationary rewards, prefer a true task objective."""
 
@@ -63,3 +65,15 @@ class PbtCfg:
     launcher: str = ""
     """Executable used to re-exec the training process on restart. Empty = sys.executable.
     Isaac Lab / Isaac Sim workflows should point this at their python.sh wrapper."""
+
+    def __post_init__(self):
+        self.change_range = tuple(self.change_range)
+
+    @classmethod
+    def from_dict(cls, d):
+        """Build from a config dict, ignoring (and reporting) unknown keys."""
+        known = {f.name for f in fields(cls)}
+        unknown = sorted(set(d) - known)
+        if unknown:
+            print(f"PbtCfg: ignoring unknown config keys {unknown}")
+        return cls(**{k: v for k, v in d.items() if k in known})

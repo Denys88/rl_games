@@ -158,7 +158,7 @@ class TestObserver:
 
     def test_args_cli_none_is_tolerated(self, tmp_path):
         pbt_section = {"enabled": True, "policy_idx": 0, "num_policies": 2,
-                       "directory": str(tmp_path),
+                       "directory": str(tmp_path), "objective": "episode.success",
                        "mutation": {"agent.params.config.learning_rate": "mutate_float"}}
         params = {"pbt": pbt_section, "params": {"config": {"device": "cpu", "learning_rate": 3e-4}}}
         obs = PbtAlgoObserver(params, args_cli=None)
@@ -196,3 +196,110 @@ class TestMultiObserver:
         from rl_games.common.algo_observer import AlgoObserver
         multi = MultiObserver([AlgoObserver()])
         multi.after_clear_stats()  # must not raise: base class defines the full contract
+
+
+class TestReviewFixes:
+
+    def test_objective_required(self, tmp_path):
+        pbt_section = {"enabled": True, "policy_idx": 0, "num_policies": 2,
+                       "directory": str(tmp_path),
+                       "mutation": {"agent.params.config.learning_rate": "mutate_float"}}
+        params = {"pbt": pbt_section, "params": {"config": {"device": "cpu", "learning_rate": 3e-4}}}
+        with pytest.raises(ValueError, match="objective"):
+            PbtAlgoObserver(params, args_cli=None)
+
+    def test_process_infos_missing_key_keeps_previous_score(self, tmp_path):
+        obs = make_observer(tmp_path)
+        obs.process_infos({"episode": {"success": 0.5}}, None)
+        obs.process_infos({"other": 1.0}, None)          # address absent
+        obs.process_infos([1, 2, 3], None)               # wrong container type
+        assert obs.score == 0.5
+
+    def test_unknown_cfg_keys_ignored(self, tmp_path, capsys):
+        obs = make_observer(tmp_path, extra_pbt={"bogus_key": 1, "another": "x"})
+        assert obs.cfg.num_policies == 2
+        assert "bogus_key" in capsys.readouterr().out
+
+    def test_change_range_yaml_list_normalized_to_tuple(self):
+        cfg = PbtCfg(change_range=[1.2, 1.8])
+        assert cfg.change_range == (1.2, 1.8)
+
+    def test_wandb_entity_validated_at_init(self, tmp_path):
+        args = types.SimpleNamespace(track=True, wandb_entity=None)
+        with pytest.raises(ValueError, match="entity"):
+            make_observer(tmp_path.__class__(tmp_path)) if False else pbt_utils.WandbArgs(args)
+
+
+class TestBuildRestartArgs:
+
+    def test_hydra_override_replacement_and_checkpoint_dedup(self):
+        from rl_games.common.pbt.pbt import build_restart_args
+        cli = ["train.py", "task=Lift", "agent.params.config.learning_rate=0.001",
+               "--headless", "--checkpoint=/old/ckpt.pth", "--num_envs", "4096"]
+        new_params = {"agent.params.config.learning_rate": 0.0005}
+        out = build_restart_args(cli, new_params, "/new/ckpt.pth")
+        assert out[0] == "train.py"
+        assert "task=Lift" in out                                  # untouched override kept
+        assert "agent.params.config.learning_rate=0.001" not in out  # replaced override dropped
+        assert "--checkpoint=/old/ckpt.pth" not in out             # old checkpoint dropped
+        assert "--checkpoint=/new/ckpt.pth" in out
+        assert out.count("--num_envs") == 1 and "4096" in out      # two-token args pass through
+        assert out[-1] == "agent.params.config.learning_rate=0.0005"
+
+    def test_wandb_and_rendering_args_appended(self):
+        from rl_games.common.pbt.pbt import build_restart_args
+        wa = pbt_utils.WandbArgs(types.SimpleNamespace(track=True, wandb_entity="me",
+                                                       wandb_project_name="p", wandb_name=None))
+        ra = pbt_utils.RenderingArgs(types.SimpleNamespace(enable_cameras=True, video=False,
+                                                           video_length=None, video_interval=None))
+        out = build_restart_args(["t.py"], {}, "/c.pth", wa, ra)
+        assert "--track" in out and "--wandb-entity=me" in out and "--enable_cameras" in out
+
+
+class BandWriter:
+    def __init__(self):
+        self.scalars = []
+    def add_scalar(self, *a):
+        self.scalars.append(a)
+    def flush(self):
+        pass
+
+
+def synthetic_ckpt(obj, idx):
+    return {"true_objective": obj, "iteration": 1, "frame": 1000,
+            "params": {"agent.params.config.learning_rate": 3e-4},
+            "checkpoint": f"/tmp/pbt_test/{idx}.pth",
+            "pbt_checkpoint": f"/tmp/pbt_test/{idx}.yaml", "experiment_name": "e"}
+
+
+class TestBandLogic:
+
+    def _run_tick(self, tmp_path, monkeypatch, objectives, my_idx=0, seed=3):
+        obs = make_observer(tmp_path, extra_pbt={"policy_idx": my_idx, "num_policies": len(objectives)})
+        algo = FakeAlgo(frame=obs.cfg.interval_steps + 5)
+        algo.writer = BandWriter()
+        algo.train_dir = str(tmp_path)
+        obs.after_init(algo)
+        obs.pbt_it = 0  # cadence: frame//interval == 1 > 0 triggers the tick
+        ckpts = {i: synthetic_ckpt(o, i) for i, o in enumerate(objectives)}
+        monkeypatch.setattr(pbt_utils, "save_pbt_checkpoint", lambda *a, **k: None)
+        monkeypatch.setattr(pbt_utils, "load_pbt_ckpts", lambda *a, **k: ckpts)
+        monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
+        random.seed(seed)
+        obs.after_steps()
+        return obs
+
+    def test_underperformer_gets_replacement_and_restart_flag(self, tmp_path, monkeypatch):
+        obs = self._run_tick(tmp_path, monkeypatch, [1.0, 10.0, 10.5], my_idx=0)
+        assert obs.restart_flag.item() == 1
+        assert obs.restart_from_checkpoint in ("/tmp/pbt_test/1.pth", "/tmp/pbt_test/2.pth")
+        assert set(obs.new_params) == {"agent.params.config.learning_rate"}
+
+    def test_leader_keeps_training(self, tmp_path, monkeypatch):
+        obs = self._run_tick(tmp_path, monkeypatch, [10.5, 10.0, 1.0], my_idx=0)
+        assert obs.restart_flag.item() == 0
+        assert not hasattr(obs, "new_params")
+
+    def test_mid_population_untouched(self, tmp_path, monkeypatch):
+        obs = self._run_tick(tmp_path, monkeypatch, [10.0, 10.1, 9.9], my_idx=0)
+        assert obs.restart_flag.item() == 0

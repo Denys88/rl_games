@@ -17,9 +17,11 @@ Each member of the population is an independent training process with a unique
 3. if it is an underperformer, re-execs itself from a random leader's checkpoint
    with the whitelisted hyperparameters mutated multiplicatively.
 
-The objective is read from env infos at a dotted address (`objective`), e.g. a task
-success rate — prefer a true task metric over raw reward when reward shaping is
-non-stationary.
+The objective is read from env infos at a dotted address (`objective`) — **required
+when PBT is enabled**, since info layouts differ per backend: e.g.
+`episode.Episode_Reward/success` for Isaac Lab-style nested infos, or `scores` for
+flat info dicts. Steps where the address does not resolve keep the previous score.
+Prefer a true task metric over raw reward when reward shaping is non-stationary.
 
 ## Usage
 

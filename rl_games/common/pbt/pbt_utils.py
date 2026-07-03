@@ -83,6 +83,10 @@ class WandbArgs:
         self.project_name = getattr(args_cli, "wandb_project_name", None)
         self.name = getattr(args_cli, "wandb_name", None)
         self.entity = getattr(args_cli, "wandb_entity", None)
+        # fail fast: a missing entity would otherwise only surface at restart
+        # time, killing the process mid-training and shrinking the population
+        if self.enabled and not self.entity:
+            raise ValueError("wandb entity must be specified when tracking is enabled")
 
     def get_args_list(self) -> list[str]:
         args = []

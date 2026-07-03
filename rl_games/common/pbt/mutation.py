@@ -15,7 +15,11 @@ def mutate_float(x: float, change_min: float = 1.1, change_max: float = 1.5) -> 
 
 
 def mutate_discount(x: float, **kwargs) -> float:
-    """Conservative change near 1.0 by mutating (1 - x) in [1.1, 1.2]."""
+    """Conservative change near 1.0 by mutating (1 - x) in [1.1, 1.2].
+
+    The configured change_range is intentionally ignored: gamma-like params
+    need much smaller steps than regular floats (DexPBT behavior).
+    """
     inv = 1.0 - x
     new_inv = mutate_float(inv, change_min=1.1, change_max=1.2)
     return 1.0 - new_inv

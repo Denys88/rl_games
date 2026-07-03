@@ -20,6 +20,33 @@ from rl_games.common.pbt.pbt_cfg import PbtCfg
 _UNINITIALIZED_VALUE = float(-1e9)
 
 
+def build_restart_args(cli_args, new_params, restart_from_checkpoint,
+                       wandb_args=None, rendering_args=None):
+    """Rebuild the training command line for a PBT restart.
+
+    Drops hydra-style ``key=value`` overrides that are being replaced by
+    ``new_params`` (and any existing checkpoint argument), keeps everything
+    else verbatim, then appends the new checkpoint and the mutated params.
+    """
+    SKIP = ["checkpoint"]
+
+    def keep(arg):
+        if "=" not in arg:
+            return True
+        name = arg.split("=", 1)[0]
+        return name not in new_params and not any(k in name for k in SKIP)
+
+    out = [cli_args[0]] + [arg for arg in cli_args[1:] if keep(arg)]
+    out.append(f"--checkpoint={restart_from_checkpoint}")
+    if wandb_args is not None:
+        out.extend(wandb_args.get_args_list())
+    if rendering_args is not None:
+        out.extend(rendering_args.get_args_list())
+    for param, value in new_params.items():
+        out.append(f"{param}={value}")
+    return out
+
+
 class PbtAlgoObserver(AlgoObserver):
     """rl_games observer that implements Population-Based Training for a single policy process.
 
@@ -49,7 +76,11 @@ class PbtAlgoObserver(AlgoObserver):
         self.wandb_args = pbt_utils.WandbArgs(args_cli)
         self.env_args = pbt_utils.EnvArgs(args_cli)
         self.distributed_args = pbt_utils.DistributedArgs(args_cli)
-        self.cfg = PbtCfg(**params["pbt"])
+        self.cfg = PbtCfg.from_dict(params["pbt"])
+        if not self.cfg.objective:
+            raise ValueError(
+                "pbt.objective is required: a dotted address into env infos, "
+                "e.g. 'episode.Episode_Reward/success' (Isaac Lab) or 'scores' (flat infos)")
         self.pbt_it = -1  # dummy value, stands for "not initialized"
         self.score = _UNINITIALIZED_VALUE
         self.pbt_params = pbt_utils.filter_params(pbt_utils.flatten_dict({"agent": params}), self.cfg.mutation)
@@ -57,7 +88,11 @@ class PbtAlgoObserver(AlgoObserver):
         assert len(self.pbt_params) > 0, "[DANGER]: Dictionary that contains params to mutate is empty"
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
 
-        self.device = params.get("params", {}).get("config", {}).get("device", "cpu")
+        if self.distributed_args.distributed and torch.cuda.is_available():
+            # NCCL broadcast requires a CUDA tensor
+            self.device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}'
+        else:
+            self.device = params.get("params", {}).get("config", {}).get("device", "cpu")
         self.restart_flag = torch.tensor([0], device=self.device)
 
     def after_init(self, algo):
@@ -82,8 +117,13 @@ class PbtAlgoObserver(AlgoObserver):
             Expects the objective at `infos[self.cfg.objective]` where objective is a dotted address.
         """
         score = infos
-        for part in self.cfg.objective.split("."):
-            score = score[part]
+        try:
+            for part in self.cfg.objective.split("."):
+                score = score[part]
+        except (KeyError, TypeError, IndexError):
+            # the address may not resolve on every step (or every backend);
+            # keep the previous score instead of killing training
+            return
         self.score = score
 
     def after_steps(self):
@@ -184,19 +224,8 @@ class PbtAlgoObserver(AlgoObserver):
         cli_args = sys.argv
         print(f"previous command line args: {cli_args}")
 
-        SKIP = ["checkpoint"]
-        is_hydra = lambda arg: (  # noqa: E731
-            (name := arg.split("=", 1)[0]) not in new_params and not any(k in name for k in SKIP)
-        )
-        modified_args = [cli_args[0]] + [arg for arg in cli_args[1:] if "=" not in arg or is_hydra(arg)]
-
-        modified_args.append(f"--checkpoint={restart_from_checkpoint}")
-        modified_args.extend(self.wandb_args.get_args_list())
-        modified_args.extend(self.rendering_args.get_args_list())
-
-        # add all of the new (possibly mutated) parameters
-        for param, value in new_params.items():
-            modified_args.append(f"{param}={value}")
+        modified_args = build_restart_args(cli_args, new_params, restart_from_checkpoint,
+                                           self.wandb_args, self.rendering_args)
 
         self.algo.writer.flush()
         self.algo.writer.close()
