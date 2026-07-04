@@ -7,6 +7,7 @@ wp.init()
 
 from rl_games.torch_runner import Runner
 from rl_games.common import env_configurations, vecenv
+from rl_games.common.algo_observer import IsaacAlgoObserver
 
 
 def main():
@@ -23,7 +24,7 @@ def main():
         'vecenv_type': 'MJLAB',
     })
 
-    runner = Runner()
+    runner = Runner(algo_observer=IsaacAlgoObserver())
     runner.load(config)
     runner.reset()
     runner.run({'train': True})

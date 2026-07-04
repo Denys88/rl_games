@@ -66,6 +66,10 @@ class MjlabVecEnv(IVecEnv):
 
         done = terminated | truncated
         info['time_outs'] = truncated
+        # surface the env's episode metrics (success rates, per-term rewards)
+        # so the observer logs them — reward totals alone hide task failure
+        if 'log' in info and 'episode' not in info:
+            info['episode'] = info['log']
 
         obs = obs_dict[self.actor_key]
         return obs, reward, done.float(), info
