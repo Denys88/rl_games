@@ -106,8 +106,9 @@ class IsaacAlgoObserver(AlgoObserver):
         if not isinstance(infos, dict):
             classname = self.__class__.__name__
             raise ValueError(f"{classname} expected 'infos' as dict. Received: {type(infos)}")
-        # store episode information
-        if "episode" in infos:
+        # store episode information (skip empty dicts: they would pin the
+        # key set used by after_print_stats to nothing)
+        if infos.get("episode"):
             self.ep_infos.append(infos["episode"])
         # log other variables directly
         if len(infos) > 0 and isinstance(infos, dict):  # allow direct logging from env
@@ -124,15 +125,16 @@ class IsaacAlgoObserver(AlgoObserver):
     def after_print_stats(self, frame, epoch_num, total_time):
         # log scalars from the episode
         if self.ep_infos:
+            device = getattr(self.algo, 'device', getattr(self.algo, 'ppo_device', 'cpu'))
             for key in self.ep_infos[0]:
-                info_tensor = torch.tensor([], device=self.algo.device)
+                info_tensor = torch.tensor([], device=device)
                 for ep_info in self.ep_infos:
                     # handle scalar and zero dimensional tensor infos
                     if not isinstance(ep_info[key], torch.Tensor):
                         ep_info[key] = torch.Tensor([ep_info[key]])
                     if len(ep_info[key].shape) == 0:
                         ep_info[key] = ep_info[key].unsqueeze(0)
-                    info_tensor = torch.cat((info_tensor, ep_info[key].to(self.algo.device)))
+                    info_tensor = torch.cat((info_tensor, ep_info[key].to(device)))
                 value = torch.mean(info_tensor)
                 self.writer.add_scalar("Episode/" + key, value, epoch_num)
             self.ep_infos.clear()
