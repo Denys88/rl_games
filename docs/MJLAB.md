@@ -39,9 +39,11 @@ python run_mjlab.py --config rl_games/configs/mjlab/ppo_lift_cube_yam.yaml
 ```bash
 python run_mjlab.py --config rl_games/configs/mjlab/ppo_wujihand_reorient.yaml
 ```
-Note for long-horizon manipulation configs: keep `entropy_coef` at 0 (or enable
-`bounds_loss_coef`) — a positive entropy bonus on a global `fixed_sigma` can drive
-a sigma runaway over 1B+ frame runs.
+Note for long-horizon manipulation configs: a positive entropy bonus on a global
+`fixed_sigma` can drive a sigma runaway over 1B+ frame runs (reproduced in both
+fp32 and bf16). The shipped manipulation configs are training-stable but **not yet
+validated to task success** (success-rate metrics, not reward totals) — treat them
+as starting points, not solved recipes.
 
 ## Results
 
