@@ -296,6 +296,10 @@ class A2CBuilder(NetworkBuilder):
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
                 # optional hard floor on the action std (see ModelA2CContinuousLogStd)
                 self.min_sigma = float(self.space_config.get('min_sigma', 0.0))
+                # optional clamp on the raw logstd head: with fixed_sigma False the
+                # exp parametrization is unbounded above and can explode; [-5, 2]
+                # mirrors the SAC convention
+                self.logstd_bounds = self.space_config.get('logstd_bounds', None)
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)

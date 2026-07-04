@@ -126,9 +126,11 @@ class IsaacAlgoObserver(AlgoObserver):
         # log scalars from the episode
         if self.ep_infos:
             device = getattr(self.algo, 'device', getattr(self.algo, 'ppo_device', 'cpu'))
-            for key in self.ep_infos[0]:
+            # union of keys: different reset bursts can carry different subsets
+            all_keys = set().union(*self.ep_infos)
+            for key in sorted(all_keys):
                 info_tensor = torch.tensor([], device=device)
-                for ep_info in self.ep_infos:
+                for ep_info in (e for e in self.ep_infos if key in e):
                     # handle scalar and zero dimensional tensor infos
                     if not isinstance(ep_info[key], torch.Tensor):
                         ep_info[key] = torch.Tensor([ep_info[key]])

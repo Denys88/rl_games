@@ -292,6 +292,9 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
+            logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)
+            if logstd_bounds is not None:
+                logstd = torch.clamp(logstd, logstd_bounds[0], logstd_bounds[1])
             sigma = torch.exp(logstd)
             # optional exploration floor: sigma can never collapse below
             # min_sigma (prevents policy freeze on hard-exploration tasks);
