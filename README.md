@@ -35,15 +35,11 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
-* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion, arm and in-hand manipulation
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
 
 ![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
 ![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
 ![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
-
-In-hand cube reorientation on the 20-DoF [Wuji Hand](https://github.com/wuji-technology/wuji-mjlab) (mjlab task plugin), trained with rl_games PPO — 4096 envs, 1.2B frames, ~80k FPS on a single RTX 4090 (see [docs/MJLAB.md](docs/MJLAB.md)):
-
-![WujiHand in-hand reorientation](docs/pictures/mjlab/wujihand_reorient.gif)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)
