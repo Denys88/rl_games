@@ -293,6 +293,13 @@ class ModelA2CContinuousLogStd(BaseModel):
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
             sigma = torch.exp(logstd)
+            # optional exploration floor: sigma can never collapse below
+            # min_sigma (prevents policy freeze on hard-exploration tasks);
+            # logstd is recomputed so log-probs stay consistent
+            min_sigma = getattr(self.a2c_network, 'min_sigma', 0.0)
+            if min_sigma > 0:
+                sigma = sigma + min_sigma
+                logstd = torch.log(sigma)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)

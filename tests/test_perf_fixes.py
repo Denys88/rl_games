@@ -142,3 +142,44 @@ class TestBatchedScoreObserver:
         obs.process_infos(infos, torch.tensor([0, 1]))
         assert obs.game_scores.current_size == 2
         assert obs.game_scores.get_mean() == pytest.approx(4.0)
+
+
+class TestMinSigmaFloor:
+
+    def _build_model(self, min_sigma):
+        from rl_games.algos_torch.model_builder import ModelBuilder
+        params = {
+            'algo': {'name': 'a2c_continuous'},
+            'model': {'name': 'continuous_a2c_logstd'},
+            'network': {
+                'name': 'actor_critic', 'separate': False,
+                'space': {'continuous': {
+                    'mu_activation': 'None', 'sigma_activation': 'None',
+                    'mu_init': {'name': 'default'},
+                    'sigma_init': {'name': 'const_initializer', 'val': -3.0},
+                    'fixed_sigma': False, 'min_sigma': min_sigma}},
+                'mlp': {'units': [16], 'activation': 'elu',
+                        'initializer': {'name': 'default'}}},
+        }
+        builder = ModelBuilder()
+        network = builder.load(params)
+        return network.build({'actions_num': 2, 'input_shape': (4,),
+                              'num_seqs': 1, 'value_size': 1,
+                              'normalize_value': False, 'normalize_input': False})
+
+    def test_sigma_floored_and_logprob_consistent(self):
+        model = self._build_model(min_sigma=0.2)
+        obs = torch.randn(8, 4)
+        out = model({'is_train': False, 'obs': obs})
+        assert (out['sigmas'] >= 0.2).all()
+        # log-prob consistency: neglogp computed from floored sigma matches Normal
+        d = torch.distributions.Normal(out['mus'], out['sigmas'])
+        expected = -d.log_prob(out['actions']).sum(dim=-1)
+        assert torch.allclose(out['neglogpacs'], expected, atol=1e-5)
+
+    def test_no_floor_by_default(self):
+        model = self._build_model(min_sigma=0.0)
+        obs = torch.randn(8, 4)
+        out = model({'is_train': False, 'obs': obs})
+        # sigma_init -3 => exp(-3) ~ 0.0498 < 0.2: without floor small sigmas survive
+        assert (out['sigmas'] < 0.2).any()
