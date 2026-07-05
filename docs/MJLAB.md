@@ -41,9 +41,11 @@ python run_mjlab.py --config rl_games/configs/mjlab/ppo_wujihand_reorient.yaml
 ```
 Note for long-horizon manipulation configs: a positive entropy bonus on a global
 `fixed_sigma` can drive a sigma runaway over 1B+ frame runs (reproduced in both
-fp32 and bf16). The shipped manipulation configs are training-stable but **not yet
-validated to task success** (success-rate metrics, not reward totals) — treat them
-as starting points, not solved recipes.
+fp32 and bf16). The Lift-Cube-Yam config is **validated to task success**: episode success
+0.85 over held-out evaluation episodes vs 0.72 for the reference rsl-rl recipe at the
+same 491M-frame budget (asymmetric central-value critic on the env's privileged obs
+group + value normalization + adaptive LR; see the config for the full recipe). The
+WujiHand config is training-stable but not yet solved — treat it as a starting point.
 
 ## Results
 
