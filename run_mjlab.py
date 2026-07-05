@@ -14,6 +14,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
                        default='rl_games/configs/mjlab/ppo_g1_velocity.yaml')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                       help='resume training from a saved checkpoint')
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -27,7 +29,10 @@ def main():
     runner = Runner(algo_observer=IsaacAlgoObserver())
     runner.load(config)
     runner.reset()
-    runner.run({'train': True})
+    run_args = {'train': True}
+    if args.checkpoint:
+        run_args['checkpoint'] = args.checkpoint
+    runner.run(run_args)
 
 
 if __name__ == '__main__':
