@@ -214,13 +214,12 @@ class TestSchedulerTunables:
 
     def test_adaptive_custom_params(self):
         from rl_games.common.schedulers import AdaptiveScheduler
-        s = AdaptiveScheduler(kl_threshold=0.01, min_lr=5e-4, max_lr=5e-3,
-                              lr_multiplier=2.0, kl_high_factor=1.5, kl_low_factor=0.75)
-        lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.02)   # kl > 1.5*0.01 -> /2
+        s = AdaptiveScheduler(kl_threshold=0.01, min_lr=5e-4, max_lr=5e-3, lr_multiplier=2.0)
+        lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.021)  # kl > 2*0.01 -> /2
         assert lr == pytest.approx(5e-4)
-        lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.005)  # kl < 0.75*0.01 -> *2
+        lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.004)  # kl < 0.5*0.01 -> *2
         assert lr == pytest.approx(2e-3)
-        lr, _ = s.update(6e-4, 0.0, 0, 0, kl_dist=0.02)   # floor respected
+        lr, _ = s.update(6e-4, 0.0, 0, 0, kl_dist=0.03)   # floor respected
         assert lr == pytest.approx(5e-4)
 
     def test_adaptive_defaults_unchanged(self):
