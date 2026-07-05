@@ -183,3 +183,28 @@ class TestMinSigmaFloor:
         out = model({'is_train': False, 'obs': obs})
         # sigma_init -3 => exp(-3) ~ 0.0498 < 0.2: without floor small sigmas survive
         assert (out['sigmas'] < 0.2).any()
+
+    def test_softplus_parametrization(self):
+        from rl_games.algos_torch.model_builder import ModelBuilder
+        params = {
+            'algo': {'name': 'a2c_continuous'},
+            'model': {'name': 'continuous_a2c_logstd'},
+            'network': {
+                'name': 'actor_critic', 'separate': False,
+                'space': {'continuous': {
+                    'mu_activation': 'None', 'sigma_activation': 'None',
+                    'mu_init': {'name': 'default'},
+                    'sigma_init': {'name': 'const_initializer', 'val': -1.05},
+                    'fixed_sigma': False, 'min_sigma': 0.2,
+                    'sigma_parametrization': 'softplus'}},
+                'mlp': {'units': [16], 'activation': 'elu',
+                        'initializer': {'name': 'default'}}},
+        }
+        network = ModelBuilder().load(params)
+        model = network.build({'actions_num': 2, 'input_shape': (4,), 'num_seqs': 1,
+                               'value_size': 1, 'normalize_value': False, 'normalize_input': False})
+        out = model({'is_train': False, 'obs': torch.randn(8, 4)})
+        assert (out['sigmas'] >= 0.2).all()
+        d = torch.distributions.Normal(out['mus'], out['sigmas'])
+        expected = -d.log_prob(out['actions']).sum(dim=-1)
+        assert torch.allclose(out['neglogpacs'], expected, atol=1e-5)

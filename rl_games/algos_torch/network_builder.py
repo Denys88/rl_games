@@ -300,6 +300,9 @@ class A2CBuilder(NetworkBuilder):
                 # exp parametrization is unbounded above and can explode; [-5, 2]
                 # mirrors the SAC convention
                 self.logstd_bounds = self.space_config.get('logstd_bounds', None)
+                # 'exp' (default) or 'softplus' (Brax/rsl-rl style: raw head grows
+                # the std linearly, not exponentially — robust when fixed_sigma False)
+                self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)

@@ -292,17 +292,21 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
-            logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)
-            if logstd_bounds is not None:
-                logstd = torch.clamp(logstd, logstd_bounds[0], logstd_bounds[1])
-            sigma = torch.exp(logstd)
-            # optional exploration floor: sigma can never collapse below
-            # min_sigma (prevents policy freeze on hard-exploration tasks);
-            # logstd is recomputed so log-probs stay consistent
             min_sigma = getattr(self.a2c_network, 'min_sigma', 0.0)
-            if min_sigma > 0:
-                sigma = sigma + min_sigma
+            if getattr(self.a2c_network, 'sigma_parametrization', 'exp') == 'softplus':
+                sigma = torch.nn.functional.softplus(logstd) + min_sigma
                 logstd = torch.log(sigma)
+            else:
+                logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)
+                if logstd_bounds is not None:
+                    logstd = torch.clamp(logstd, logstd_bounds[0], logstd_bounds[1])
+                sigma = torch.exp(logstd)
+                # optional exploration floor: sigma can never collapse below
+                # min_sigma (prevents policy freeze on hard-exploration tasks);
+                # logstd is recomputed so log-probs stay consistent
+                if min_sigma > 0:
+                    sigma = sigma + min_sigma
+                    logstd = torch.log(sigma)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
