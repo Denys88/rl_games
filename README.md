@@ -198,6 +198,11 @@ python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml -
 python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
 ```
 
+## Population Based Training
+
+rl_games includes the [DexPBT](https://arxiv.org/abs/2305.12127)-lineage PBT observers
+(previously maintained downstream in IsaacGymEnvs and Isaac Lab), usable with any backend
+via `rl_games.common.pbt` — see [docs/PBT.md](docs/PBT.md).
 
 ## Multi GPU
 

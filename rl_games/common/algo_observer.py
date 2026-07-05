@@ -19,6 +19,9 @@ class AlgoObserver:
     def after_steps(self):
         pass
 
+    def after_clear_stats(self):
+        pass
+
     def after_print_stats(self, frame, epoch_num, total_time):
         pass
 
