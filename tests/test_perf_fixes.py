@@ -229,3 +229,28 @@ class TestSchedulerTunables:
         assert lr == pytest.approx(1e-3 / 1.5)
         lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.003)
         assert lr == pytest.approx(1.5e-3)
+
+
+class TestConfigDrivenEnvRegistration:
+
+    def test_vecenv_type_and_observer_from_config(self):
+        from rl_games.torch_runner import Runner
+        from rl_games.common import env_configurations
+        from rl_games.common.algo_observer import IsaacAlgoObserver
+        r = Runner()
+        r.load_config({'params': {}} and {
+            'algo': {'name': 'a2c_continuous'},
+            'config': {'env_name': 'pytest_fake_backend', 'vecenv_type': 'RAY',
+                       'algo_observer': 'isaac', 'reward_shaper': {}}})
+        assert 'pytest_fake_backend' in env_configurations.configurations
+        assert env_configurations.configurations['pytest_fake_backend']['vecenv_type'] == 'RAY'
+        assert isinstance(r.algo_observer, IsaacAlgoObserver)
+
+    def test_injected_observer_wins(self):
+        from rl_games.torch_runner import Runner
+        from rl_games.common.algo_observer import DefaultAlgoObserver
+        obs = DefaultAlgoObserver()
+        r = Runner(algo_observer=obs)
+        r.load_config({'algo': {'name': 'a2c_continuous'},
+                       'config': {'algo_observer': 'isaac', 'reward_shaper': {}}})
+        assert r.algo_observer is obs

@@ -13,12 +13,12 @@ pip install mjlab
 
 **Go1 Velocity (flat terrain)**
 ```bash
-python run_mjlab.py --config rl_games/configs/mjlab/ppo_go1_velocity.yaml
+python runner.py --train --file rl_games/configs/mjlab/ppo_go1_velocity.yaml
 ```
 
 **G1 Humanoid Velocity (flat terrain)**
 ```bash
-python run_mjlab.py --config rl_games/configs/mjlab/ppo_g1_velocity.yaml
+python runner.py --train --file rl_games/configs/mjlab/ppo_g1_velocity.yaml
 ```
 
 ## Configs
@@ -30,14 +30,14 @@ python run_mjlab.py --config rl_games/configs/mjlab/ppo_g1_velocity.yaml
 
 **Lift-Cube-Yam (manipulation)**
 ```bash
-python run_mjlab.py --config rl_games/configs/mjlab/ppo_lift_cube_yam.yaml
+python runner.py --train --file rl_games/configs/mjlab/ppo_lift_cube_yam.yaml
 ```
 
 **WujiHand in-hand cube reorientation** (external task plugin — install
 [wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab) from a source clone,
 `pip install -e <clone>`; its tasks register via mjlab entry points):
 ```bash
-python run_mjlab.py --config rl_games/configs/mjlab/ppo_wujihand_reorient.yaml
+python runner.py --train --file rl_games/configs/mjlab/ppo_wujihand_reorient.yaml
 ```
 Note for long-horizon manipulation configs: a positive entropy bonus on a global
 `fixed_sigma` can drive a sigma runaway over 1B+ frame runs (reproduced in both

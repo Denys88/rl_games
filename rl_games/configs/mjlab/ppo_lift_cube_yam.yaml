@@ -80,3 +80,5 @@ params:
           initializer:
             name: default
     kl_threshold: 0.01
+    vecenv_type: MJLAB
+    algo_observer: isaac

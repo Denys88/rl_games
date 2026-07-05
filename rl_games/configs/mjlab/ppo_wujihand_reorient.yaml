@@ -61,3 +61,5 @@ params:
       render: false
     save_frequency: 500
     save_best_after: 100
+    vecenv_type: MJLAB
+    algo_observer: isaac

@@ -6,7 +6,7 @@ params:
     name: continuous_a2c_logstd
   network:
     name: actor_critic
-    separate: False
+    separate: false
     space:
       continuous:
         mu_activation: None
@@ -16,21 +16,24 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
-        fixed_sigma: True
+        fixed_sigma: true
     mlp:
-      units: [256, 128, 64]
+      units:
+      - 256
+      - 128
+      - 64
       activation: elu
       initializer:
         name: default
   config:
     name: MJLab_Go1_Velocity
     env_name: mjlab_go1_velocity
-    normalize_input: True
-    normalize_value: True
-    value_bootstrap: True
+    normalize_input: true
+    normalize_value: true
+    value_bootstrap: true
     reward_shaper:
       scale_value: 1.0
-    normalize_advantage: True
+    normalize_advantage: true
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -38,15 +41,15 @@ params:
     kl_threshold: 0.008
     grad_norm: 1.0
     entropy_coef: 0.0
-    truncate_grads: True
+    truncate_grads: true
     e_clip: 0.2
-    clip_value: False
+    clip_value: false
     num_actors: 1024
     horizon_length: 16
     minibatch_size: 4096
     mini_epochs: 5
     critic_coef: 2
-    use_smooth_clamp: True
+    use_smooth_clamp: true
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     device: cuda:0
@@ -55,4 +58,6 @@ params:
       task_name: Mjlab-Velocity-Flat-Unitree-Go1
       device: cuda
     player:
-      render: False
+      render: false
+    vecenv_type: MJLAB
+    algo_observer: isaac

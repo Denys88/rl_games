@@ -106,6 +106,7 @@ class Runner:
         self.player_factory.register_builder('sac', lambda **kwargs : players.SACPlayer(**kwargs))
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
 
+        self._observer_was_injected = algo_observer is not None
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
 
         # Performance optimizations
@@ -126,6 +127,20 @@ class Runner:
             params (:obj:`dict`): Parameters passed in as a dict obtained from a yaml file or some other config format.
 
         """
+
+        config = params.get('config', {})
+        # config-driven env registration: bind env_name to a registered vecenv
+        # type (e.g. MJLAB) without a per-simulator launcher script
+        vecenv_type = config.get('vecenv_type')
+        if vecenv_type is not None and config.get('env_name'):
+            from rl_games.common import env_configurations
+            if config['env_name'] not in env_configurations.configurations:
+                env_configurations.register(config['env_name'], {'vecenv_type': vecenv_type})
+        # config-driven observer selection (object injection still wins)
+        observer_name = config.get('algo_observer')
+        if observer_name and not self._observer_was_injected:
+            from rl_games.common.algo_observer import DefaultAlgoObserver, IsaacAlgoObserver
+            self.algo_observer = {'default': DefaultAlgoObserver, 'isaac': IsaacAlgoObserver}[observer_name]()
 
         self.seed = params.get('seed', None)
         if self.seed is None:
