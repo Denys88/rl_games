@@ -73,11 +73,17 @@ class MjlabVecEnv(IVecEnv):
         if info.get('log') and 'episode' not in info:
             info['episode'] = info['log']
 
-        obs = obs_dict[self.actor_key]
+        if self.has_critic_obs:
+            # asymmetric actor-critic: privileged obs feed the central value net
+            obs = {'obs': obs_dict[self.actor_key], 'states': obs_dict['critic']}
+        else:
+            obs = obs_dict[self.actor_key]
         return obs, reward, done.float(), info
 
     def reset(self):
         obs_dict, _ = self.env.reset()
+        if self.has_critic_obs:
+            return {'obs': obs_dict[self.actor_key], 'states': obs_dict['critic']}
         return obs_dict[self.actor_key]
 
     def get_number_of_agents(self):
