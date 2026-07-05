@@ -190,7 +190,13 @@ class A2CBase(BaseAlgorithm):
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
-            self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
+            self.scheduler = schedulers.AdaptiveScheduler(
+                self.kl_threshold,
+                min_lr=config.get('min_lr', 1e-6),
+                max_lr=config.get('max_lr', 1e-2),
+                lr_multiplier=config.get('lr_multiplier', 1.5),
+                kl_high_factor=config.get('kl_high_factor', 2.0),
+                kl_low_factor=config.get('kl_low_factor', 0.5))
 
         elif self.linear_lr:
 
@@ -206,6 +212,7 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
+                    min_lr=config.get('min_lr', 1e-6),
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),

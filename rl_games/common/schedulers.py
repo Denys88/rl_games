@@ -17,18 +17,22 @@ class IdentityScheduler(RLScheduler):
 
 
 class AdaptiveScheduler(RLScheduler):
-    def __init__(self, kl_threshold = 0.008):
+    def __init__(self, kl_threshold=0.008, min_lr=1e-6, max_lr=1e-2,
+                 lr_multiplier=1.5, kl_high_factor=2.0, kl_low_factor=0.5):
         super().__init__()
-        self.min_lr = 1e-6
-        self.max_lr = 1e-2
+        self.min_lr = min_lr
+        self.max_lr = max_lr
         self.kl_threshold = kl_threshold
+        self.lr_multiplier = lr_multiplier
+        self.kl_high_factor = kl_high_factor
+        self.kl_low_factor = kl_low_factor
 
     def update(self, current_lr, entropy_coef, epoch, frames, kl_dist, **kwargs):
         lr = current_lr
-        if kl_dist > (2.0 * self.kl_threshold):
-            lr = max(current_lr / 1.5, self.min_lr)
-        if kl_dist < (0.5 * self.kl_threshold):
-            lr = min(current_lr * 1.5, self.max_lr)
+        if kl_dist > (self.kl_high_factor * self.kl_threshold):
+            lr = max(current_lr / self.lr_multiplier, self.min_lr)
+        if kl_dist < (self.kl_low_factor * self.kl_threshold):
+            lr = min(current_lr * self.lr_multiplier, self.max_lr)
         return lr, entropy_coef         
 
 
