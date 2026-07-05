@@ -68,10 +68,12 @@ class MjlabVecEnv(IVecEnv):
         info['time_outs'] = truncated
         # surface the env's episode metrics (success rates, per-term rewards)
         # so the observer logs them — reward totals alone hide task failure.
-        # mjlab emits an EMPTY log dict on non-reset steps; forwarding it would
-        # poison IsaacAlgoObserver (it keys its logging off the first entry)
-        if info.get('log') and 'episode' not in info:
-            info['episode'] = info['log']
+        # mjlab reuses its extras dict across steps and emits an empty 'log'
+        # on non-reset steps: refresh on every burst and copy (never alias)
+        if info.get('log'):
+            info['episode'] = dict(info['log'])
+        else:
+            info.pop('episode', None)
 
         if self.has_critic_obs:
             # asymmetric actor-critic: privileged obs feed the central value net
