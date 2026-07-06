@@ -327,6 +327,14 @@ class A2CBuilder(NetworkBuilder):
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
+                elif self.space_config['sigma_init'].get('name') == 'const_initializer':
+                    # state-dependent sigma head: the constant belongs in the
+                    # BIAS (uniform initial log-std); const-initializing the
+                    # weights makes the raw output val*sum(trunk) — enormous
+                    # state-dependent garbage that explodes exp heads and
+                    # makes softplus heads wildly over-explore
+                    torch.nn.init.zeros_(self.sigma.weight)
+                    torch.nn.init.constant_(self.sigma.bias, self.space_config['sigma_init'].get('val', 0.0))
                 else:
                     sigma_init(self.sigma.weight)
 
@@ -764,6 +772,14 @@ class A2CResnetBuilder(NetworkBuilder):
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
+                elif self.space_config['sigma_init'].get('name') == 'const_initializer':
+                    # state-dependent sigma head: the constant belongs in the
+                    # BIAS (uniform initial log-std); const-initializing the
+                    # weights makes the raw output val*sum(trunk) — enormous
+                    # state-dependent garbage that explodes exp heads and
+                    # makes softplus heads wildly over-explore
+                    torch.nn.init.zeros_(self.sigma.weight)
+                    torch.nn.init.constant_(self.sigma.bias, self.space_config['sigma_init'].get('val', 0.0))
                 else:
                     sigma_init(self.sigma.weight)
 

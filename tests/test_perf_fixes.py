@@ -267,3 +267,37 @@ class TestClassicReorientTask:
         assert set(cfg.rewards) == {'rot_reward', 'reach_goal_bonus', 'dist_penalty', 'action_penalty'}
         cmd = cfg.commands['reorient_command']
         assert (cmd.success_threshold, cmd.success_hold_steps, cmd.goal_switch_delay) == (0.2, 1, 0)
+
+
+class TestStateDependentSigmaInit:
+
+    def _sigmas(self, min_sigma=0.0, parametrization='exp'):
+        from rl_games.algos_torch.model_builder import ModelBuilder
+        params = {
+            'algo': {'name': 'a2c_continuous'},
+            'model': {'name': 'continuous_a2c_logstd'},
+            'network': {'name': 'actor_critic', 'separate': False,
+                'space': {'continuous': {
+                    'mu_activation': 'None', 'sigma_activation': 'None',
+                    'mu_init': {'name': 'default'},
+                    'sigma_init': {'name': 'const_initializer', 'val': -1.0},
+                    'fixed_sigma': False, 'min_sigma': min_sigma,
+                    'sigma_parametrization': parametrization}},
+                'mlp': {'units': [64, 32], 'activation': 'elu',
+                        'initializer': {'name': 'default'}}}}
+        model = ModelBuilder().load(params).build(
+            {'actions_num': 4, 'input_shape': (10,), 'num_seqs': 1, 'value_size': 1,
+             'normalize_value': False, 'normalize_input': False})
+        out = model({'is_train': False, 'obs': torch.randn(256, 10) * 3})
+        return out['sigmas']
+
+    def test_const_init_gives_uniform_initial_std_exp(self):
+        s = self._sigmas()
+        expected = torch.exp(torch.tensor(-1.0))
+        assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
+
+    def test_const_init_gives_uniform_initial_std_softplus(self):
+        s = self._sigmas(min_sigma=0.2, parametrization='softplus')
+        import torch.nn.functional as F
+        expected = F.softplus(torch.tensor(-1.0)) + 0.2
+        assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
