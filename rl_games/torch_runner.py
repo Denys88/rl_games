@@ -129,6 +129,10 @@ class Runner:
         """
 
         config = params.get('config', {})
+        # user modules imported for their registration side effects
+        # (custom tasks, networks, env plugins)
+        for module in config.get('import_modules', []):
+            __import__(module)
         # config-driven env registration: bind env_name to a registered vecenv
         # type (e.g. MJLAB) without a per-simulator launcher script
         vecenv_type = config.get('vecenv_type')

@@ -254,3 +254,16 @@ class TestConfigDrivenEnvRegistration:
         r.load_config({'algo': {'name': 'a2c_continuous'},
                        'config': {'algo_observer': 'isaac', 'reward_shaper': {}}})
         assert r.algo_observer is obs
+
+
+class TestClassicReorientTask:
+
+    def test_registers_with_classic_semantics(self):
+        pytest.importorskip('wuji_mjlab')
+        import rl_games.envs.mjlab_tasks.wuji_reorient_classic  # noqa: F401
+        from mjlab.tasks.registry import list_tasks, load_env_cfg
+        assert 'WujiHand_Reorient_Classic' in list_tasks()
+        cfg = load_env_cfg('WujiHand_Reorient_Classic')
+        assert set(cfg.rewards) == {'rot_reward', 'reach_goal_bonus', 'dist_penalty', 'action_penalty'}
+        cmd = cfg.commands['reorient_command']
+        assert (cmd.success_threshold, cmd.success_hold_steps, cmd.goal_switch_delay) == (0.2, 1, 0)
