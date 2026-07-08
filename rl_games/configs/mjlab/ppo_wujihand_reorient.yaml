@@ -32,13 +32,13 @@ params:
     env_name: mjlab_wujihand
     normalize_input: true
     normalize_value: true
-    value_bootstrap: false
+    value_bootstrap: true
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: true
     gamma: 0.99
     tau: 0.95
-    learning_rate: 0.0005
+    learning_rate: 0.0001
     grad_norm: 1.0
     entropy_coef: 0.001
     truncate_grads: true
@@ -46,12 +46,12 @@ params:
     clip_value: false
     num_actors: 8192
     horizon_length: 40
-    minibatch_size: 10240
+    minibatch_size: 16384
     mini_epochs: 4
     critic_coef: 0.5
     use_smooth_clamp: true
     bound_loss_type: regularisation
-    bounds_loss_coef: 0.005
+    bounds_loss_coef: 0.001
     device: cuda:0
     max_epochs: 5000
     env_config:
@@ -63,7 +63,7 @@ params:
     save_best_after: 100
     lr_schedule: adaptive
     central_value_config:
-      minibatch_size: 5120
+      minibatch_size: 16384
       mini_epochs: 4
       learning_rate: 0.0001
       kl_threshold: 0.01
@@ -87,5 +87,5 @@ params:
     algo_observer: isaac
     clip_actions: false
     kl_threshold: 0.01
-    min_lr: 2.0e-05
-    max_lr: 0.0001
+    min_lr: 0.0001
+    max_lr: 0.0002

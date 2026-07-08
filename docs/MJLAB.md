@@ -71,24 +71,31 @@ RSL-style config (v2) with separate actor-critic and entropy 0.001 reaches rewar
 In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
 trained on the unmodified wuji-mjlab task (reward design, DR, and success
 protocol exactly as released). Same-machine comparison against the vendored
-rsl-rl fork that ships with wuji-mjlab, identical batch geometry
+rsl-rl fork that ships with wuji-mjlab, identical data budget
 (8192 envs × 40 steps, 5000 iterations, ~1.6B frames):
 
-| Trainer | Goal reaches / episode (train metric) | Held-out eval | Wall-clock |
-|---------|--------------------------------------|---------------|------------|
-| wuji-mjlab rsl-rl fork | 16.4 | — | 4.1 h |
-| rl_games (`ppo_wujihand_reorient.yaml`) | 15.3 | 12.7 reaches/ep, 1.5% drops | 5.2 h |
+| Trainer | Goal reaches / episode (train, last-100 mean) | Held-out eval | Wall-clock |
+|---------|-----------------------------------------------|---------------|------------|
+| wuji-mjlab rsl-rl fork | 16.4 (peak 16.9) | — | 4.08 h |
+| rl_games (`ppo_wujihand_reorient.yaml`) | **17.1** (peak 17.6) | 15.1 reaches/ep | **4.07 h** |
 
-For scale: the officially released ONNX policy, reproduced locally under its
-own sim2sim evaluation protocol, scores 1.07 goal reaches per trial (success
-rate 1.0 on the reach-one-goal criterion).
+rl_games reaches the reference's final quality (16.4) at 3.34 h — 18% less
+wall-clock than the reference needs for its full run. For scale: the
+officially released ONNX policy, reproduced locally under its own sim2sim
+evaluation protocol, scores 1.07 goal reaches per trial (success rate 1.0 on
+the reach-one-goal criterion).
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
-privileged `critic` obs group, value normalization on, `value_bootstrap` off,
-adaptive LR with an explicit `max_lr` cap — without the cap the adaptive
-scheduler climbs into a late-training collapse on this task (the env's
-escalating out-of-cage penalties produce rare huge negative returns);
-state-dependent sigma with `sigma_parametrization: softplus` and
-`min_sigma: 0.2`, matching the exploration floor the task was designed around.
+privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
+truncation `value_bootstrap` on, minibatch 16384 — small minibatches (≤10240)
+make the KL-adaptive scheduler noisy, and very few optimizer steps per
+iteration (minibatch 32768 → 40 steps) starve the discovery phase on this
+task; adaptive LR on the band `min_lr 1e-4` – `max_lr 2e-4` — the floor keeps
+the early phase at the reference's proven rate, the cap prevents a
+late-training collapse (the env's escalating out-of-cage penalties produce
+rare huge negative return bursts that a high LR converts into an unrecoverable
+policy regression); state-dependent sigma with
+`sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
+exploration floor the task was designed around.
