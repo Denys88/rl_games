@@ -15,8 +15,10 @@ params:
           name: default
         sigma_init:
           name: const_initializer
-          val: 0
-        fixed_sigma: true
+          val: -1.05
+        fixed_sigma: false
+        min_sigma: 0.2
+        sigma_parametrization: softplus
     mlp:
       units:
       - 512
@@ -30,36 +32,60 @@ params:
     env_name: mjlab_wujihand
     normalize_input: true
     normalize_value: true
-    value_bootstrap: true
+    value_bootstrap: false
     reward_shaper:
       scale_value: 1.0
     normalize_advantage: true
     gamma: 0.99
     tau: 0.95
-    learning_rate: 0.0001
-    lr_schedule: adaptive
-    kl_threshold: 0.01
+    learning_rate: 0.0005
     grad_norm: 1.0
-    entropy_coef: 0.0
+    entropy_coef: 0.001
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
-    num_actors: 4096
+    num_actors: 8192
     horizon_length: 40
-    minibatch_size: 5120
+    minibatch_size: 10240
     mini_epochs: 4
-    critic_coef: 2
+    critic_coef: 0.5
     use_smooth_clamp: true
     bound_loss_type: regularisation
     bounds_loss_coef: 0.005
     device: cuda:0
-    max_epochs: 7500
+    max_epochs: 5000
     env_config:
-      task_name: WujiHand_Reorient_Light
+      task_name: WujiHand_Reorient
       device: cuda
     player:
       render: false
     save_frequency: 500
     save_best_after: 100
+    lr_schedule: adaptive
+    central_value_config:
+      minibatch_size: 5120
+      mini_epochs: 4
+      learning_rate: 0.0001
+      kl_threshold: 0.01
+      clip_value: true
+      normalize_input: true
+      network:
+        name: actor_critic
+        central_value: true
+        mlp:
+          units:
+          - 512
+          - 512
+          - 256
+          - 128
+          activation: elu
+          initializer:
+            name: default
+      truncate_grads: true
+      grad_norm: 1.0
     vecenv_type: MJLAB
     algo_observer: isaac
+    clip_actions: false
+    kl_threshold: 0.01
+    min_lr: 2.0e-05
+    max_lr: 0.0001

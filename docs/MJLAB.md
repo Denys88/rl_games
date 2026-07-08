@@ -44,8 +44,7 @@ Note for long-horizon manipulation configs: a positive entropy bonus on a global
 fp32 and bf16). The Lift-Cube-Yam config is **validated to task success**: episode success
 0.85 over held-out evaluation episodes vs 0.72 for the reference rsl-rl recipe at the
 same 491M-frame budget (asymmetric central-value critic on the env's privileged obs
-group + value normalization + adaptive LR; see the config for the full recipe). The
-WujiHand config is training-stable but not yet solved — treat it as a starting point.
+group + value normalization + adaptive LR; see the config for the full recipe).
 
 ## Results
 
@@ -66,3 +65,30 @@ Central value network significantly improves rough terrain performance (~60 vs ~
 RSL-style config (v2) with separate actor-critic and entropy 0.001 reaches reward ~65. Baseline config with shared network reaches ~11.
 
 ![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison.png)
+
+### WujiHand In-Hand Cube Reorientation
+
+In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
+trained on the unmodified wuji-mjlab task (reward design, DR, and success
+protocol exactly as released). Same-machine comparison against the vendored
+rsl-rl fork that ships with wuji-mjlab, identical batch geometry
+(8192 envs × 40 steps, 5000 iterations, ~1.6B frames):
+
+| Trainer | Goal reaches / episode (train metric) | Held-out eval | Wall-clock |
+|---------|--------------------------------------|---------------|------------|
+| wuji-mjlab rsl-rl fork | 16.4 | — | 4.1 h |
+| rl_games (`ppo_wujihand_reorient.yaml`) | 15.3 | 12.7 reaches/ep, 1.5% drops | 5.2 h |
+
+For scale: the officially released ONNX policy, reproduced locally under its
+own sim2sim evaluation protocol, scores 1.07 goal reaches per trial (success
+rate 1.0 on the reach-one-goal criterion).
+
+![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
+
+Recipe notes (all in the config): asymmetric central-value critic on the env's
+privileged `critic` obs group, value normalization on, `value_bootstrap` off,
+adaptive LR with an explicit `max_lr` cap — without the cap the adaptive
+scheduler climbs into a late-training collapse on this task (the env's
+escalating out-of-cage penalties produce rare huge negative returns);
+state-dependent sigma with `sigma_parametrization: softplus` and
+`min_sigma: 0.2`, matching the exploration floor the task was designed around.
