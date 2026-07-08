@@ -80,10 +80,11 @@ rsl-rl fork that ships with wuji-mjlab, identical data budget
 | rl_games (`ppo_wujihand_reorient.yaml`) | **17.1** (peak 17.6) | 15.1 reaches/ep | **4.07 h** |
 
 rl_games reaches the reference's final quality (16.4) at 3.34 h — 18% less
-wall-clock than the reference needs for its full run. For scale: the
-officially released ONNX policy, reproduced locally under its own sim2sim
-evaluation protocol, scores 1.07 goal reaches per trial (success rate 1.0 on
-the reach-one-goal criterion).
+wall-clock than the reference needs for its full run. Under the project's own
+sim2sim deployment protocol (100 trials, reach-one-goal criterion), the
+rl_games policy exported to ONNX scores identically to the officially
+released policy: success rate 1.00, drop rate 0.0, 1.07 goal reaches per
+trial (the protocol saturates after the first reach).
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
