@@ -6,7 +6,7 @@ params:
     name: continuous_a2c_logstd
   network:
     name: actor_critic
-    separate: true
+    separate: false
     space:
       continuous:
         mu_activation: None
@@ -19,7 +19,7 @@ params:
         fixed_sigma: true
     mlp:
       units:
-      - 256
+      - 512
       - 256
       - 128
       activation: elu
@@ -36,28 +36,49 @@ params:
     normalize_advantage: true
     gamma: 0.99
     tau: 0.95
-    learning_rate: 3e-4
+    learning_rate: 0.001
     lr_schedule: adaptive
-    kl_threshold: 0.008
+    kl_threshold: 0.016
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
-    num_actors: 1024
-    horizon_length: 32
-    minibatch_size: 4096
+    num_actors: 4096
+    horizon_length: 24
+    minibatch_size: 24576
     mini_epochs: 5
-    critic_coef: 2
+    critic_coef: 1
     use_smooth_clamp: true
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     device: cuda:0
-    max_epochs: 3000
+    max_epochs: 5000
     env_config:
       task_name: Mjlab-Velocity-Flat-Unitree-G1
       device: cuda
     player:
       render: false
+    save_frequency: 1000
+    schedule_type: standard
+    central_value_config:
+      minibatch_size: 24576
+      mini_epochs: 5
+      learning_rate: 0.0005
+      clip_value: true
+      normalize_input: true
+      network:
+        name: actor_critic
+        central_value: true
+        mlp:
+          units:
+          - 512
+          - 256
+          - 128
+          activation: elu
+          initializer:
+            name: default
+      truncate_grads: true
+      grad_norm: 1.0
     vecenv_type: MJLAB
     algo_observer: isaac

@@ -25,8 +25,8 @@ python runner.py --train --file rl_games/configs/mjlab/ppo_g1_velocity.yaml
 
 | Environment | Config | Envs | Horizon | Epochs |
 |-------------|--------|------|---------|--------|
-| Go1 Velocity (flat) | `configs/mjlab/ppo_go1_velocity.yaml` | 1024 | 16 | 3000 |
-| G1 Velocity (flat) | `configs/mjlab/ppo_g1_velocity.yaml` | 1024 | 32 | 3000 |
+| Go1 Velocity (flat) | `configs/mjlab/ppo_go1_velocity.yaml` | 4096 | 24 | 5000 |
+| G1 Velocity (flat) | `configs/mjlab/ppo_g1_velocity.yaml` | 4096 | 24 | 5000 |
 
 **Lift-Cube-Yam (manipulation)**
 ```bash
@@ -50,9 +50,17 @@ group + value normalization + adaptive LR; see the config for the full recipe).
 
 ### Go1 Flat Velocity
 
-1024 parallel envs, ~57k FPS on RTX 5090. Converges to reward ~75 within 1000 epochs.
+Same-machine comparison against mjlab's own rsl-rl reference recipe, both at
+the reference batch geometry (4096 envs × 24 steps) and a 5000-epoch budget
+(the command curriculum's stage-1 range; mjlab's 10k default only adds the
+harder stage-2 commands after 5000):
 
-![Go1 Flat Velocity](pictures/mjlab/go1_flat_training.png)
+| Trainer | Mean episode reward (last-100) |
+|---------|-------------------------------|
+| mjlab rsl-rl reference | 94.0 |
+| rl_games (`ppo_go1_velocity.yaml`) | **97.0** (peak 98.9) |
+
+![Go1 Flat Velocity](pictures/mjlab/go1_flat_comparison_5000.png)
 
 ### Go1 Rough Velocity
 
@@ -62,9 +70,21 @@ Central value network significantly improves rough terrain performance (~60 vs ~
 
 ### G1 Humanoid Flat Velocity
 
-RSL-style config (v2) with separate actor-critic and entropy 0.001 reaches reward ~65. Baseline config with shared network reaches ~11.
+Same protocol as Go1 (5000-epoch budget, reference geometry):
 
-![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison.png)
+| Trainer | Mean episode reward (last-100) |
+|---------|-------------------------------|
+| mjlab rsl-rl reference | 69.6 |
+| rl_games (`ppo_g1_velocity.yaml`) | **72.1** (peak 76.5) |
+
+![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison_5000.png)
+
+Recipe (both locomotion configs): asymmetric central value on the privileged
+`critic` obs group, same size as the actor net, trained at the full 5 mini-epochs —
+halving CV epochs was tested and rejected (Go1 drops from 97.0 to 92.6; the
+critic quality carries the advantage estimates throughout, not just early);
+`schedule_type: standard` with `kl_threshold: 0.016`, entropy 0, truncation
+bootstrap on.
 
 ### WujiHand In-Hand Cube Reorientation
 
