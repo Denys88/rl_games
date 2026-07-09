@@ -31,6 +31,21 @@ class MjlabVecEnv(IVecEnv):
         cfg = load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
 
+        # optional override of a step-scheduled command curriculum (velocity
+        # tasks): stage switch points in env steps, e.g. [0, 60000, 120000].
+        # The reference schedule stays the default; this is a training-protocol
+        # knob for our own runs, not an env modification.
+        stage_steps = kwargs.pop('velocity_stage_steps', None)
+        if stage_steps is not None:
+            term = cfg.curriculum['command_vel']
+            stages = term.params['velocity_stages']
+            if len(stage_steps) != len(stages):
+                raise ValueError(
+                    f"velocity_stage_steps has {len(stage_steps)} entries, "
+                    f"task schedule has {len(stages)} stages")
+            for stage, step in zip(stages, stage_steps):
+                stage['step'] = int(step)
+
         self.env = ManagerBasedRlEnv(cfg, device=self.device)
 
         obs, _ = self.env.reset()
