@@ -19,6 +19,8 @@ class SACAgent(BaseAlgorithm):
     def __init__(self, base_name, params):
 
         self.config = config = params['config']
+        # Retain the full run params so an optional URML capability_manifest can travel with checkpoints.
+        self.params = params
         print(config)
 
         # TODO: Get obs shape and self.network
@@ -311,6 +313,9 @@ class SACAgent(BaseAlgorithm):
 
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
+
+        # Optional URML capability manifest (no-op when absent), stored verbatim.
+        torch_ext.add_capability_manifest(state, self.params)
 
         return state
 

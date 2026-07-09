@@ -87,6 +87,22 @@ def safe_load(filename):
         checkpoint = torch.load(filename, weights_only=False)
     return checkpoint
 
+def add_capability_manifest(state, params):
+    """Pass an optional URML capability manifest from the run params into a checkpoint, verbatim.
+
+    URML (https://urml.dev) declares the command ranges, terrain and payload
+    limits a policy was trained under. When the training params carry an
+    optional top-level ``capability_manifest`` block, this copies it into the
+    checkpoint state dict so the declaration travels with the policy. rl_games
+    takes no position on its schema: the block is stored verbatim, and this is
+    a no-op when absent. Consumers read ``checkpoint['capability_manifest']``.
+    """
+    manifest = (params or {}).get('capability_manifest')
+    if manifest is not None:
+        state['capability_manifest'] = manifest
+    return state
+
+
 def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
     safe_save(state, filename + '.pth')

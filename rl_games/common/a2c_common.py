@@ -69,6 +69,8 @@ class A2CBase(BaseAlgorithm):
     def __init__(self, base_name, params):
 
         self.config = config = params['config']
+        # Retain the full run params so an optional URML capability_manifest can travel with checkpoints.
+        self.params = params
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
@@ -659,6 +661,9 @@ class A2CBase(BaseAlgorithm):
         if self.vec_env is not None:
             env_state = self.vec_env.get_env_state()
             state['env_state'] = env_state
+
+        # Optional URML capability manifest (no-op when absent), stored verbatim.
+        torch_ext.add_capability_manifest(state, self.params)
 
         return state
 
