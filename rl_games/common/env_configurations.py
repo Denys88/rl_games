@@ -310,6 +310,9 @@ configurations = {
     'envpool' : {
         'vecenv_type': 'ENVPOOL'
     },
+    'dmc_soccer_selfplay' : {
+        'vecenv_type': 'DMC_SOCCER_SELFPLAY'
+    },
     'ray' : {
         'env_creator' : lambda **kwargs : gym.make(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'
