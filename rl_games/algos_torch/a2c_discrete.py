@@ -185,7 +185,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        self.scaler.scale(loss).backward()
+        loss.backward()
         self.trancate_gradients_and_step()
 
         with torch.no_grad():

@@ -27,32 +27,23 @@ class TestReplayBufferNoPinning:
         assert s_obs.shape == (2, 4) and s_trunc.shape == (2, 1)
 
 
-class TestScalerDisabledForBf16:
+class TestNoGradScaler:
 
-    def test_disabled_scaler_full_step_chain(self):
-        scaler = torch.amp.GradScaler('cuda', enabled=False)
-        model = torch.nn.Linear(4, 2)
-        opt = torch.optim.Adam(model.parameters())
-        loss = model(torch.randn(8, 4)).sum()
-        scaler.scale(loss).backward()
-        scaler.unscale_(opt)
-        scaler.step(opt)
-        scaler.update()
-        assert scaler.state_dict() == {}
-
-    def test_a2c_scaler_construction_disabled(self):
-        # the constructor arg is what a2c_common now uses regardless of mixed_precision
+    def test_no_scaler_anywhere_in_train_paths(self):
+        # bf16 autocast needs no loss scaling; the scaler was deleted, not disabled
         import inspect
         from rl_games.common import a2c_common
-        src = inspect.getsource(a2c_common.A2CBase.__init__)
-        assert "GradScaler('cuda', enabled=False)" in src
+        from rl_games.algos_torch import central_value, a2c_continuous, a2c_discrete
+        for mod in (a2c_common, central_value, a2c_continuous, a2c_discrete):
+            src = inspect.getsource(mod)
+            assert 'GradScaler' not in src.replace('no GradScaler', ''), mod.__name__
+            assert 'scaler.' not in src, mod.__name__
 
     def test_central_value_autocast_is_bf16(self):
         import inspect
         from rl_games.algos_torch import central_value
         src = inspect.getsource(central_value)
         assert src.count('dtype=torch.bfloat16') == 2
-        assert 'GradScaler(enabled=False)' in src
 
 
 class TestSacCompileInPlace:
