@@ -301,8 +301,12 @@ class ModelA2CContinuousLogStd(BaseModel):
                 # head output IS the std (rsl-rl HeteroscedasticGaussian
                 # std_type 'scalar'): entropy pressure on the raw output
                 # scales as 1/sigma, so a fixed entropy coefficient
-                # self-limits instead of inflating sigma exponentially
-                sigma = torch.clamp(logstd, min=max(min_sigma, 1e-3))
+                # self-limits instead of inflating sigma exponentially.
+                # The floor must be smooth — a hard clamp has a zero-gradient
+                # dead zone that removes the 1/sigma restoring barrier and
+                # lets log-prob gradients (~1/sigma^2 at the floor) blow up.
+                floor = max(min_sigma, 1e-3)
+                sigma = floor + torch.nn.functional.softplus(logstd - floor)
                 logstd = torch.log(sigma)
             else:
                 logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)

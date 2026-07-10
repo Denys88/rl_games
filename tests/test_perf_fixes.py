@@ -281,11 +281,15 @@ class TestStateDependentSigmaInit:
         assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
 
     def test_scalar_parametrization_head_output_is_std(self):
-        # head output IS the std: const init val 1.0 -> uniform initial std 1.0
+        # smooth floor: sigma = floor + softplus(raw - floor); uniform at init
+        import torch.nn.functional as F
         s = self._sigmas(min_sigma=0.05, parametrization='scalar', init_val=1.0)
-        assert torch.allclose(s, torch.ones_like(s), rtol=1e-4), (s.min(), s.max())
+        expected = 0.05 + F.softplus(torch.tensor(1.0 - 0.05))
+        assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
 
-    def test_scalar_parametrization_clamps_at_floor(self):
-        # negative raw output clamps to the min_sigma floor, never <= 0
-        s = self._sigmas(min_sigma=0.1, parametrization='scalar', init_val=-1.0)
-        assert torch.allclose(s, torch.full_like(s, 0.1), rtol=1e-4), (s.min(), s.max())
+    def test_scalar_parametrization_floor_is_smooth_and_positive(self):
+        # very negative raw output approaches (never crosses) the floor,
+        # and the sigma path stays finite - no hard-clamp dead zone
+        s = self._sigmas(min_sigma=0.1, parametrization='scalar', init_val=-5.0)
+        assert (s > 0.1).all() and (s < 0.12).all(), (s.min(), s.max())
+        assert torch.isfinite(s).all()
