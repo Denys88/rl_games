@@ -293,8 +293,16 @@ class ModelA2CContinuousLogStd(BaseModel):
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
             min_sigma = getattr(self.a2c_network, 'min_sigma', 0.0)
-            if getattr(self.a2c_network, 'sigma_parametrization', 'exp') == 'softplus':
+            sigma_parametrization = getattr(self.a2c_network, 'sigma_parametrization', 'exp')
+            if sigma_parametrization == 'softplus':
                 sigma = torch.nn.functional.softplus(logstd) + min_sigma
+                logstd = torch.log(sigma)
+            elif sigma_parametrization == 'scalar':
+                # head output IS the std (rsl-rl HeteroscedasticGaussian
+                # std_type 'scalar'): entropy pressure on the raw output
+                # scales as 1/sigma, so a fixed entropy coefficient
+                # self-limits instead of inflating sigma exponentially
+                sigma = torch.clamp(logstd, min=max(min_sigma, 1e-3))
                 logstd = torch.log(sigma)
             else:
                 logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)

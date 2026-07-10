@@ -249,7 +249,7 @@ class TestConfigDrivenEnvRegistration:
 
 class TestStateDependentSigmaInit:
 
-    def _sigmas(self, min_sigma=0.0, parametrization='exp'):
+    def _sigmas(self, min_sigma=0.0, parametrization='exp', init_val=-1.0):
         from rl_games.algos_torch.model_builder import ModelBuilder
         params = {
             'algo': {'name': 'a2c_continuous'},
@@ -258,7 +258,7 @@ class TestStateDependentSigmaInit:
                 'space': {'continuous': {
                     'mu_activation': 'None', 'sigma_activation': 'None',
                     'mu_init': {'name': 'default'},
-                    'sigma_init': {'name': 'const_initializer', 'val': -1.0},
+                    'sigma_init': {'name': 'const_initializer', 'val': init_val},
                     'fixed_sigma': False, 'min_sigma': min_sigma,
                     'sigma_parametrization': parametrization}},
                 'mlp': {'units': [64, 32], 'activation': 'elu',
@@ -279,3 +279,13 @@ class TestStateDependentSigmaInit:
         import torch.nn.functional as F
         expected = F.softplus(torch.tensor(-1.0)) + 0.2
         assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
+
+    def test_scalar_parametrization_head_output_is_std(self):
+        # head output IS the std: const init val 1.0 -> uniform initial std 1.0
+        s = self._sigmas(min_sigma=0.05, parametrization='scalar', init_val=1.0)
+        assert torch.allclose(s, torch.ones_like(s), rtol=1e-4), (s.min(), s.max())
+
+    def test_scalar_parametrization_clamps_at_floor(self):
+        # negative raw output clamps to the min_sigma floor, never <= 0
+        s = self._sigmas(min_sigma=0.1, parametrization='scalar', init_val=-1.0)
+        assert torch.allclose(s, torch.full_like(s, 0.1), rtol=1e-4), (s.min(), s.max())
