@@ -31,13 +31,30 @@ class MjlabVecEnv(IVecEnv):
         cfg = load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
 
+        # optional override of a step-scheduled command curriculum (velocity
+        # tasks): stage switch points in env steps, e.g. [0, 60000, 120000].
+        # The reference schedule stays the default; this is a training-protocol
+        # knob for our own runs, not an env modification.
+        stage_steps = kwargs.pop('velocity_stage_steps', None)
+        if stage_steps is not None:
+            term = cfg.curriculum['command_vel']
+            stages = term.params['velocity_stages']
+            if len(stage_steps) != len(stages):
+                raise ValueError(
+                    f"velocity_stage_steps has {len(stage_steps)} entries, "
+                    f"task schedule has {len(stages)} stages")
+            for stage, step in zip(stages, stage_steps):
+                stage['step'] = int(step)
+
         self.env = ManagerBasedRlEnv(cfg, device=self.device)
 
         obs, _ = self.env.reset()
 
-        # Extract spaces from first obs
-        self.num_envs = obs['actor'].shape[0]
-        self.obs_dim = obs['actor'].shape[-1]
+        # mjlab's own tasks name the policy obs group 'actor'; Isaac Lab-style
+        # task plugins (e.g. wuji-mjlab) use 'policy' — accept both
+        self.actor_key = 'actor' if 'actor' in obs else 'policy'
+        self.num_envs = obs[self.actor_key].shape[0]
+        self.obs_dim = obs[self.actor_key].shape[-1]
         self.has_critic_obs = 'critic' in obs
 
         from gymnasium import spaces
@@ -59,18 +76,41 @@ class MjlabVecEnv(IVecEnv):
                 shape=(critic_dim,), dtype=np.float32
             )
 
+    @staticmethod
+    def _extract_episode_log(info):
+        """Copy the env's per-episode metrics into info['episode'].
+
+        mjlab reuses its extras dict (and may reuse value tensors) across
+        steps and emits an empty 'log' between reset bursts: refresh every
+        burst and deep-copy tensor values so nothing aliases env internals.
+        """
+        log = info.get('log')
+        if log:
+            info['episode'] = {
+                k: v.clone() if torch.is_tensor(v) else v for k, v in log.items()
+            }
+        else:
+            info.pop('episode', None)
+
     def step(self, actions):
         obs_dict, reward, terminated, truncated, info = self.env.step(actions)
 
         done = terminated | truncated
         info['time_outs'] = truncated
+        self._extract_episode_log(info)
 
-        obs = obs_dict['actor']
+        if self.has_critic_obs:
+            # asymmetric actor-critic: privileged obs feed the central value net
+            obs = {'obs': obs_dict[self.actor_key], 'states': obs_dict['critic']}
+        else:
+            obs = obs_dict[self.actor_key]
         return obs, reward, done.float(), info
 
     def reset(self):
         obs_dict, _ = self.env.reset()
-        return obs_dict['actor']
+        if self.has_critic_obs:
+            return {'obs': obs_dict[self.actor_key], 'states': obs_dict['critic']}
+        return obs_dict[self.actor_key]
 
     def get_number_of_agents(self):
         return 1

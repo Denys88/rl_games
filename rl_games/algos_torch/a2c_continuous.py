@@ -207,7 +207,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        self.scaler.scale(loss).backward()
+        loss.backward()
         #TODO: Refactor this ugliest code of they year
         self.trancate_gradients_and_step()
 

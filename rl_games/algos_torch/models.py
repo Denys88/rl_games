@@ -263,6 +263,29 @@ class ModelA2CContinuous(BaseModel):
                 return result
 
 
+def apply_sigma_parametrization(raw, network):
+    """Map the sigma head's raw output to (sigma, logstd).
+
+    'exp': raw is log-std (optionally clamped to logstd_bounds, floored by
+    min_sigma). 'softplus': sigma = softplus(raw) + min_sigma. logstd is
+    recomputed from the final sigma so log-probs stay consistent.
+    """
+    min_sigma = getattr(network, 'min_sigma', 0.0)
+    parametrization = getattr(network, 'sigma_parametrization', 'exp')
+    if parametrization == 'softplus':
+        sigma = torch.nn.functional.softplus(raw) + min_sigma
+    else:
+        logstd_bounds = getattr(network, 'logstd_bounds', None)
+        if logstd_bounds is not None:
+            raw = torch.clamp(raw, logstd_bounds[0], logstd_bounds[1])
+        sigma = torch.exp(raw)
+        if min_sigma > 0:
+            sigma = sigma + min_sigma
+        else:
+            return sigma, raw
+    return sigma, torch.log(sigma)
+
+
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -292,7 +315,7 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
-            sigma = torch.exp(logstd)
+            sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)

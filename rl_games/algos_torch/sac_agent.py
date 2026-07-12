@@ -55,7 +55,7 @@ class SACAgent(BaseAlgorithm):
         self.replay_buffer_size = config["replay_buffer_size"]
         self.save_replay_buffer = config.get("save_replay_buffer", False)
         self.normalize_input = config.get("normalize_input", False)
-        self.enable_mixed_precision = config.get("mixed_precision", False)
+        self.enable_mixed_precision = config.get("mixed_precision", torch_ext.default_mixed_precision())
 
         # Update the actor once every policy_frequency critic updates
         self.policy_frequency = config.get("policy_frequency", 2)

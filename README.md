@@ -15,6 +15,7 @@
 * OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation: https://cremebrule.github.io/oscar-web/ https://arxiv.org/abs/2110.00704
 * EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine: https://arxiv.org/abs/2206.10558 and https://github.com/sail-sg/envpool
 * TimeChamber: A Massively Parallel Large Scale Self-Play Framework: https://github.com/inspirai/TimeChamber
+* DextrAH-RGB: Visuomotor Policies to Grasp Anything with Dexterous Hands: https://dextrah-rgb.github.io/ https://arxiv.org/abs/2412.01791
 
 
 ## Some results on the different environments  
@@ -35,11 +36,19 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
-* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion, dexterous manipulation
 
 ![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
 ![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
 ![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
+
+**WujiHand in-hand cube reorientation** ([wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab)):
+on the unmodified task, rl_games trains to **17.1 goal reaches per episode vs 16.4** for the
+reference rsl-rl fork at the same training budget, and the exported ONNX policy matches the
+officially released policy on the project's sim2sim deployment protocol (success rate 1.00).
+Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
+
+![WujiHand Reorient](docs/pictures/mjlab/wujihand_reorient.gif)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [BRAX](docs/BRAX.md)

@@ -190,7 +190,11 @@ class A2CBase(BaseAlgorithm):
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
-            self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
+            self.scheduler = schedulers.AdaptiveScheduler(
+                self.kl_threshold,
+                min_lr=config.get('min_lr', 1e-6),
+                max_lr=config.get('max_lr', 1e-2),
+                lr_multiplier=config.get('lr_multiplier', 1.5))
 
         elif self.linear_lr:
 
@@ -206,6 +210,7 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
+                    min_lr=config.get('min_lr', 1e-6),
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),
@@ -287,8 +292,10 @@ class A2CBase(BaseAlgorithm):
 
         self.mini_epochs_num = self.config['mini_epochs']
 
-        self.mixed_precision = self.config.get('mixed_precision', False)
-        self.scaler = torch.amp.GradScaler('cuda', enabled=self.mixed_precision)
+        # bf16 autocast is enabled by default on capable GPUs; set
+        # mixed_precision: False in the config to opt out. bf16 has fp32's
+        # exponent range, so no GradScaler/loss scaling is involved.
+        self.mixed_precision = self.config.get('mixed_precision', torch_ext.default_mixed_precision())
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -371,11 +378,9 @@ class A2CBase(BaseAlgorithm):
                     offset += param.numel()
 
         if self.truncate_grads:
-            self.scaler.unscale_(self.optimizer)
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
+        self.optimizer.step()
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -694,8 +699,6 @@ class A2CBase(BaseAlgorithm):
         state = {}
         if self.normalize_rms_advantage:
             state['advantage_mean_std'] = self.advantage_mean_std.state_dict()
-        if self.mixed_precision:
-            state['scaler'] = self.scaler.state_dict()
         if self.has_central_value:
             state['central_val_stats'] = self.central_value_net.get_stats_weights(model_stats)
         if model_stats:
@@ -714,8 +717,6 @@ class A2CBase(BaseAlgorithm):
             self.model.running_mean_std.load_state_dict(weights['running_mean_std'])
         if self.normalize_value and 'reward_mean_std' in weights:
             self.model.value_mean_std.load_state_dict(weights['reward_mean_std'])
-        if self.mixed_precision and 'scaler' in weights:
-            self.scaler.load_state_dict(weights['scaler'])
 
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])

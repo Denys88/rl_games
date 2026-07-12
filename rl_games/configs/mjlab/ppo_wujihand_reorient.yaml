@@ -15,8 +15,10 @@ params:
           name: default
         sigma_init:
           name: const_initializer
-          val: 0
-        fixed_sigma: true
+          val: -1.05
+        fixed_sigma: false
+        min_sigma: 0.2
+        sigma_parametrization: softplus
     mlp:
       units:
       - 512
@@ -26,8 +28,8 @@ params:
       initializer:
         name: default
   config:
-    name: MJLab_Go1_Velocity
-    env_name: mjlab_go1_velocity
+    name: MJLab_WujiHand_Reorient
+    env_name: mjlab_wujihand
     normalize_input: true
     normalize_value: true
     value_bootstrap: true
@@ -36,35 +38,35 @@ params:
     normalize_advantage: true
     gamma: 0.99
     tau: 0.95
-    learning_rate: 0.001
-    lr_schedule: adaptive
-    kl_threshold: 0.016
+    learning_rate: 0.0001
     grad_norm: 1.0
-    entropy_coef: 0.0
+    entropy_coef: 0.001
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
-    num_actors: 4096
-    horizon_length: 24
-    minibatch_size: 24576
-    mini_epochs: 5
-    critic_coef: 1
+    num_actors: 8192
+    horizon_length: 40
+    minibatch_size: 16384
+    mini_epochs: 4
+    critic_coef: 0.5
     use_smooth_clamp: true
     bound_loss_type: regularisation
-    bounds_loss_coef: 0.0
+    bounds_loss_coef: 0.001
     device: cuda:0
     max_epochs: 5000
     env_config:
-      task_name: Mjlab-Velocity-Flat-Unitree-Go1
+      task_name: WujiHand_Reorient
       device: cuda
     player:
       render: false
-    save_frequency: 1000
-    schedule_type: standard
+    save_frequency: 500
+    save_best_after: 100
+    lr_schedule: adaptive
     central_value_config:
-      minibatch_size: 24576
-      mini_epochs: 5
-      learning_rate: 0.0005
+      minibatch_size: 16384
+      mini_epochs: 4
+      learning_rate: 0.0001
+      kl_threshold: 0.01
       clip_value: true
       normalize_input: true
       network:
@@ -72,6 +74,7 @@ params:
         central_value: true
         mlp:
           units:
+          - 512
           - 512
           - 256
           - 128
@@ -82,3 +85,7 @@ params:
       grad_norm: 1.0
     vecenv_type: MJLAB
     algo_observer: isaac
+    clip_actions: false
+    kl_threshold: 0.01
+    min_lr: 0.0001
+    max_lr: 0.0002

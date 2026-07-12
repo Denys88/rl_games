@@ -311,6 +311,11 @@ def get_mean(v):
     return mean
 
 
+def default_mixed_precision():
+    """bf16 autocast default: on for CUDA GPUs with native bf16 support."""
+    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+
 class AverageMeter(nn.Module):
     def __init__(self, in_shape, max_size):
         super(AverageMeter, self).__init__()

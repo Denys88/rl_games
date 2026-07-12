@@ -17,6 +17,7 @@ params:
           name: const_initializer
           val: 0
         fixed_sigma: true
+        min_sigma: 0.15
     mlp:
       units:
       - 512
@@ -26,8 +27,8 @@ params:
       initializer:
         name: default
   config:
-    name: MJLab_Go1_Velocity
-    env_name: mjlab_go1_velocity
+    name: MJLab_Lift_Cube_Yam
+    env_name: mjlab_lift_cube_yam
     normalize_input: true
     normalize_value: true
     value_bootstrap: true
@@ -38,9 +39,8 @@ params:
     tau: 0.95
     learning_rate: 0.001
     lr_schedule: adaptive
-    kl_threshold: 0.016
     grad_norm: 1.0
-    entropy_coef: 0.0
+    entropy_coef: 0.005
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
@@ -49,22 +49,23 @@ params:
     minibatch_size: 24576
     mini_epochs: 5
     critic_coef: 1
-    use_smooth_clamp: true
+    use_smooth_clamp: false
     bound_loss_type: regularisation
-    bounds_loss_coef: 0.0
+    bounds_loss_coef: 0.0001
     device: cuda:0
     max_epochs: 5000
     env_config:
-      task_name: Mjlab-Velocity-Flat-Unitree-Go1
+      task_name: Mjlab-Lift-Cube-Yam
       device: cuda
     player:
       render: false
-    save_frequency: 1000
-    schedule_type: standard
+    save_frequency: 500
+    clip_actions: false
     central_value_config:
       minibatch_size: 24576
       mini_epochs: 5
-      learning_rate: 0.0005
+      learning_rate: 0.001
+      kl_threshold: 0.01
       clip_value: true
       normalize_input: true
       network:
@@ -78,7 +79,6 @@ params:
           activation: elu
           initializer:
             name: default
-      truncate_grads: true
-      grad_norm: 1.0
+    kl_threshold: 0.01
     vecenv_type: MJLAB
     algo_observer: isaac
