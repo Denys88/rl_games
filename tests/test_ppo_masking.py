@@ -235,3 +235,18 @@ class TestScalarSigmaParametrization:
         sigma = floor + torch.nn.functional.softplus(raw - floor)
         sigma.sum().backward()
         assert (raw.grad > 0).all(), "zero gradient below the floor: dead zone is back"
+
+
+class TestScheduleTypeAlias:
+
+    def test_legacy_aliases_to_per_minibatch(self):
+        agent, _ = make_ppo_agent(schedule_type='legacy')
+        assert agent.schedule_type == 'per_minibatch'
+
+    def test_default_is_per_minibatch(self):
+        agent, _ = make_ppo_agent()
+        assert agent.schedule_type == 'per_minibatch'
+
+    def test_standard_untouched(self):
+        agent, _ = make_ppo_agent(schedule_type='standard')
+        assert agent.schedule_type == 'standard'

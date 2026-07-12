@@ -185,7 +185,17 @@ class A2CBase(BaseAlgorithm):
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
-        self.schedule_type = config.get('schedule_type', 'legacy')
+        # adaptive-LR stepping granularity:
+        #   'per_minibatch' (default; alias 'legacy' — rl_games' original
+        #       stepping, hence the old name; rsl-rl adopted the same
+        #       mechanism): update after every minibatch on that minibatch's
+        #       KL; needs reliable KL estimates (large minibatches)
+        #   'standard': once per mini-epoch on the epoch-mean KL — smoother,
+        #       slower to react to on-policy KL swings
+        #   'standard_epoch': once per full epoch
+        self.schedule_type = config.get('schedule_type', 'per_minibatch')
+        if self.schedule_type == 'legacy':
+            self.schedule_type = 'per_minibatch'
 
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
@@ -1336,7 +1346,7 @@ class ContinuousA2CBase(A2CBase):
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)
-                if self.schedule_type == 'legacy':
+                if self.schedule_type == 'per_minibatch':
                     av_kls = kl
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
