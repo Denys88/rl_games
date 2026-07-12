@@ -164,10 +164,13 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
+                    # per-head sizes (heads may differ); torch.split keeps
+                    # masks on-device (np.split equal-chunked and crashed on CUDA)
+                    action_masks = torch.split(
+                        action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
-                prev_neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, prev_actions)]
+                prev_neglogp = [-c.log_prob(a.squeeze(-1)) for c, a in zip(categorical, prev_actions)]
                 prev_neglogp = torch.stack(prev_neglogp, dim=-1).sum(dim=-1)
                 entropy = [c.entropy() for c in categorical]
                 entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
@@ -183,11 +186,14 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
+                    # per-head sizes (heads may differ); torch.split keeps
+                    # masks on-device (np.split equal-chunked and crashed on CUDA)
+                    action_masks = torch.split(
+                        action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
 
                 selected_action = [c.sample().long() for c in categorical]
-                neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, selected_action)]
+                neglogp = [-c.log_prob(a) for c, a in zip(categorical, selected_action)]
                 selected_action = torch.stack(selected_action, dim=-1)
                 neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
                 result = {

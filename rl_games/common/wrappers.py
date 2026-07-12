@@ -719,3 +719,30 @@ def make_car_racing(env_id, skip=4):
 def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False, **kwargs):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
     return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
+
+
+class DiscretizeActions(gym.ActionWrapper):
+    """Discretize a Box action space into a Tuple of Discrete heads
+    (multi-discrete PPO over continuous control, Tang & Agrawal 2020).
+
+    Each action dimension becomes Discrete(bins) over a uniform grid between
+    that dimension's low/high. `bins` may be an int (same for every dim) or a
+    per-dimension list (heterogeneous heads).
+    """
+
+    def __init__(self, env, bins=11):
+        gym.ActionWrapper.__init__(self, env)
+        box = env.action_space
+        assert isinstance(box, spaces.Box) and len(box.shape) == 1
+        dim = box.shape[0]
+        self._bins = [bins] * dim if np.isscalar(bins) else list(bins)
+        assert len(self._bins) == dim
+        self._grids = [np.linspace(box.low[i], box.high[i], self._bins[i])
+                       for i in range(dim)]
+        self.action_space = spaces.Tuple(
+            [spaces.Discrete(b) for b in self._bins])
+
+    def action(self, action):
+        idx = np.asarray(action, dtype=np.int64)
+        return np.array([g[i] for g, i in zip(self._grids, idx)],
+                        dtype=np.float32)
