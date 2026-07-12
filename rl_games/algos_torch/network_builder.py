@@ -11,6 +11,20 @@ from rl_games.common.layers.value import TwoHotEncodedValue, DefaultValue
 from rl_games.algos_torch.spatial_softmax import SpatialSoftArgmax
 
 
+def init_state_dependent_sigma_head(sigma_layer, space_config, sigma_init):
+    """Initialize a state-dependent (fixed_sigma: False) sigma head.
+
+    A const initializer must write the BIAS (uniform initial log-std /
+    raw std) with zeroed weights; writing the weight matrix instead makes
+    the raw output val * sum(trunk activations) -- state-dependent garbage.
+    """
+    if space_config['sigma_init'].get('name') == 'const_initializer':
+        torch.nn.init.zeros_(sigma_layer.weight)
+        torch.nn.init.constant_(sigma_layer.bias, space_config['sigma_init'].get('val', 0.0))
+    else:
+        sigma_init(sigma_layer.weight)
+
+
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
@@ -327,16 +341,8 @@ class A2CBuilder(NetworkBuilder):
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
-                elif self.space_config['sigma_init'].get('name') == 'const_initializer':
-                    # state-dependent sigma head: the constant belongs in the
-                    # BIAS (uniform initial log-std); const-initializing the
-                    # weights makes the raw output val*sum(trunk) — enormous
-                    # state-dependent garbage that explodes exp heads and
-                    # makes softplus heads wildly over-explore
-                    torch.nn.init.zeros_(self.sigma.weight)
-                    torch.nn.init.constant_(self.sigma.bias, self.space_config['sigma_init'].get('val', 0.0))
                 else:
-                    sigma_init(self.sigma.weight)
+                    init_state_dependent_sigma_head(self.sigma, self.space_config, sigma_init)
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
@@ -772,16 +778,8 @@ class A2CResnetBuilder(NetworkBuilder):
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
-                elif self.space_config['sigma_init'].get('name') == 'const_initializer':
-                    # state-dependent sigma head: the constant belongs in the
-                    # BIAS (uniform initial log-std); const-initializing the
-                    # weights makes the raw output val*sum(trunk) — enormous
-                    # state-dependent garbage that explodes exp heads and
-                    # makes softplus heads wildly over-explore
-                    torch.nn.init.zeros_(self.sigma.weight)
-                    torch.nn.init.constant_(self.sigma.bias, self.space_config['sigma_init'].get('val', 0.0))
                 else:
-                    sigma_init(self.sigma.weight)
+                    init_state_dependent_sigma_head(self.sigma, self.space_config, sigma_init)
 
             mlp_init(self.value.weight)     
 

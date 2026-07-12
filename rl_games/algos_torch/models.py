@@ -263,6 +263,35 @@ class ModelA2CContinuous(BaseModel):
                 return result
 
 
+def apply_sigma_parametrization(raw, network):
+    """Map the sigma head's raw output to (sigma, logstd).
+
+    'exp': raw is log-std (optionally clamped to logstd_bounds, floored by
+    min_sigma). 'softplus': sigma = softplus(raw) + min_sigma. 'scalar': raw
+    IS the std with a smooth softplus floor -- entropy pressure then scales
+    as 1/sigma and self-limits (a hard clamp's zero-gradient dead zone breaks
+    that and blows up log-prob gradients at the floor). logstd is always
+    recomputed from the final sigma so log-probs stay consistent.
+    """
+    min_sigma = getattr(network, 'min_sigma', 0.0)
+    parametrization = getattr(network, 'sigma_parametrization', 'exp')
+    if parametrization == 'softplus':
+        sigma = torch.nn.functional.softplus(raw) + min_sigma
+    elif parametrization == 'scalar':
+        floor = max(min_sigma, 1e-3)
+        sigma = floor + torch.nn.functional.softplus(raw - floor)
+    else:
+        logstd_bounds = getattr(network, 'logstd_bounds', None)
+        if logstd_bounds is not None:
+            raw = torch.clamp(raw, logstd_bounds[0], logstd_bounds[1])
+        sigma = torch.exp(raw)
+        if min_sigma > 0:
+            sigma = sigma + min_sigma
+        else:
+            return sigma, raw
+    return sigma, torch.log(sigma)
+
+
 class ModelA2CContinuousLogStd(BaseModel):
     def __init__(self, network):
         BaseModel.__init__(self, 'a2c')
@@ -292,33 +321,7 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
-            min_sigma = getattr(self.a2c_network, 'min_sigma', 0.0)
-            sigma_parametrization = getattr(self.a2c_network, 'sigma_parametrization', 'exp')
-            if sigma_parametrization == 'softplus':
-                sigma = torch.nn.functional.softplus(logstd) + min_sigma
-                logstd = torch.log(sigma)
-            elif sigma_parametrization == 'scalar':
-                # head output IS the std (rsl-rl HeteroscedasticGaussian
-                # std_type 'scalar'): entropy pressure on the raw output
-                # scales as 1/sigma, so a fixed entropy coefficient
-                # self-limits instead of inflating sigma exponentially.
-                # The floor must be smooth — a hard clamp has a zero-gradient
-                # dead zone that removes the 1/sigma restoring barrier and
-                # lets log-prob gradients (~1/sigma^2 at the floor) blow up.
-                floor = max(min_sigma, 1e-3)
-                sigma = floor + torch.nn.functional.softplus(logstd - floor)
-                logstd = torch.log(sigma)
-            else:
-                logstd_bounds = getattr(self.a2c_network, 'logstd_bounds', None)
-                if logstd_bounds is not None:
-                    logstd = torch.clamp(logstd, logstd_bounds[0], logstd_bounds[1])
-                sigma = torch.exp(logstd)
-                # optional exploration floor: sigma can never collapse below
-                # min_sigma (prevents policy freeze on hard-exploration tasks);
-                # logstd is recomputed so log-probs stay consistent
-                if min_sigma > 0:
-                    sigma = sigma + min_sigma
-                    logstd = torch.log(sigma)
+            sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)

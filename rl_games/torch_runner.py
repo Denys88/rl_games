@@ -20,6 +20,26 @@ from rl_games.algos_torch import sac_agent
 torch.set_printoptions(precision=3, sci_mode=False)
 
 
+def _default_compile_modes(agent):
+    """Per-algorithm compile modes when torch_compile is a bare bool.
+
+    SAC's update loop is launch-overhead-bound, so CUDA-graph replay
+    ('reduce-overhead') is the measured win; PPO uses 'default' — CUDA
+    graphs are incompatible with RNN rollouts.
+    """
+    sac_default = hasattr(agent.model, 'sac_network')
+    mode = "reduce-overhead" if sac_default else "default"
+    return mode, mode
+
+
+def _compile_sac_submodules(sac_network, actor_mode, critic_mode):
+    """Compile the submodules SAC actually invokes (never model.forward),
+    in place so optimizer param refs and state_dict keys are unchanged."""
+    sac_network.actor.compile(mode=actor_mode)
+    sac_network.critic.compile(mode=critic_mode)
+    sac_network.critic_target.compile(mode=critic_mode)
+
+
 def _restore(agent, args):
     if 'checkpoint' in args and args['checkpoint'] is not None and args['checkpoint'] !='':
         if args['train'] and args.get('load_critic_only', False):
@@ -266,12 +286,7 @@ class Runner:
         else:
             # Parse configuration
             if isinstance(compile_config, bool):
-                # SAC's update loop is dominated by per-call launch overhead on
-                # typical net sizes; CUDA-graph replay is the measured win
-                # (+17-28% total fps), while 'default' mode loses to eager.
-                sac_default = hasattr(agent.model, 'sac_network')
-                actor_mode = "reduce-overhead" if sac_default else "default"
-                critic_mode = actor_mode
+                actor_mode, critic_mode = _default_compile_modes(agent)
             elif isinstance(compile_config, str):
                 actor_mode = compile_config
                 critic_mode = compile_config
@@ -285,12 +300,7 @@ class Runner:
 
             sac_network = getattr(agent.model, 'sac_network', None)
             if sac_network is not None:
-                # SAC never calls model.forward — compile the submodules it
-                # actually invokes. In place, so optimizer param refs and
-                # state_dict keys are unchanged.
-                sac_network.actor.compile(mode=actor_mode)
-                sac_network.critic.compile(mode=critic_mode)
-                sac_network.critic_target.compile(mode=critic_mode)
+                _compile_sac_submodules(sac_network, actor_mode, critic_mode)
                 print(f"torch.compile: Enabled for SAC actor (mode='{actor_mode}') and critics (mode='{critic_mode}')")
             else:
                 print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")

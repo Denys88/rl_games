@@ -76,19 +76,28 @@ class MjlabVecEnv(IVecEnv):
                 shape=(critic_dim,), dtype=np.float32
             )
 
+    @staticmethod
+    def _extract_episode_log(info):
+        """Copy the env's per-episode metrics into info['episode'].
+
+        mjlab reuses its extras dict (and may reuse value tensors) across
+        steps and emits an empty 'log' between reset bursts: refresh every
+        burst and deep-copy tensor values so nothing aliases env internals.
+        """
+        log = info.get('log')
+        if log:
+            info['episode'] = {
+                k: v.clone() if torch.is_tensor(v) else v for k, v in log.items()
+            }
+        else:
+            info.pop('episode', None)
+
     def step(self, actions):
         obs_dict, reward, terminated, truncated, info = self.env.step(actions)
 
         done = terminated | truncated
         info['time_outs'] = truncated
-        # surface the env's episode metrics (success rates, per-term rewards)
-        # so the observer logs them — reward totals alone hide task failure.
-        # mjlab reuses its extras dict across steps and emits an empty 'log'
-        # on non-reset steps: refresh on every burst and copy (never alias)
-        if info.get('log'):
-            info['episode'] = dict(info['log'])
-        else:
-            info.pop('episode', None)
+        self._extract_episode_log(info)
 
         if self.has_critic_obs:
             # asymmetric actor-critic: privileged obs feed the central value net
