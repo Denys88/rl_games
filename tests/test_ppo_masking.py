@@ -192,3 +192,46 @@ def test_multi_agent_next_step_guard_raises():
     env_info['agents'] = 2
     with pytest.raises(ValueError, match="multi-agent"):
         make_ppo_agent(env_info=env_info)
+
+
+class TestScalarSigmaParametrization:
+    """sigma_parametrization: 'scalar' — head output IS the std (smooth floor)."""
+
+    def _sigmas(self, min_sigma, init_val):
+        from rl_games.algos_torch.model_builder import ModelBuilder
+        params = {
+            'algo': {'name': 'a2c_continuous'},
+            'model': {'name': 'continuous_a2c_logstd'},
+            'network': {'name': 'actor_critic', 'separate': False,
+                'space': {'continuous': {
+                    'mu_activation': 'None', 'sigma_activation': 'None',
+                    'mu_init': {'name': 'default'},
+                    'sigma_init': {'name': 'const_initializer', 'val': init_val},
+                    'fixed_sigma': False, 'min_sigma': min_sigma,
+                    'sigma_parametrization': 'scalar'}},
+                'mlp': {'units': [16], 'activation': 'elu',
+                        'initializer': {'name': 'default'}}}}
+        model = ModelBuilder().load(params).build(
+            {'actions_num': 3, 'input_shape': (6,), 'num_seqs': 1, 'value_size': 1,
+             'normalize_value': False, 'normalize_input': False})
+        out = model({'is_train': False, 'obs': torch.randn(64, 6) * 3})
+        return out['sigmas']
+
+    def test_uniform_init_through_smooth_floor(self):
+        import torch.nn.functional as F
+        s = self._sigmas(min_sigma=0.05, init_val=1.0)
+        expected = 0.05 + F.softplus(torch.tensor(1.0 - 0.05))
+        assert torch.allclose(s, expected.expand_as(s), rtol=1e-4)
+
+    def test_floor_is_smooth_positive_and_finite(self):
+        s = self._sigmas(min_sigma=0.1, init_val=-5.0)
+        assert (s > 0.1).all() and (s < 0.12).all()
+        assert torch.isfinite(s).all()
+
+    def test_gradient_alive_below_floor(self):
+        # the smooth floor must keep a restoring gradient where a hard clamp dies
+        raw = torch.tensor([-5.0, 0.05, 1.0], requires_grad=True)
+        floor = 0.1
+        sigma = floor + torch.nn.functional.softplus(raw - floor)
+        sigma.sum().backward()
+        assert (raw.grad > 0).all(), "zero gradient below the floor: dead zone is back"

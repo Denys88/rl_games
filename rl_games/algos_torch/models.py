@@ -267,13 +267,20 @@ def apply_sigma_parametrization(raw, network):
     """Map the sigma head's raw output to (sigma, logstd).
 
     'exp': raw is log-std (optionally clamped to logstd_bounds, floored by
-    min_sigma). 'softplus': sigma = softplus(raw) + min_sigma. logstd is
-    recomputed from the final sigma so log-probs stay consistent.
+    min_sigma). 'softplus': sigma = softplus(raw) + min_sigma. 'scalar': raw
+    IS the std with a smooth softplus floor — entropy pressure then scales as
+    1/sigma and self-limits (the floor must be smooth: a hard clamp's
+    zero-gradient dead zone removes the restoring barrier and log-prob
+    gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
+    final sigma so log-probs stay consistent.
     """
     min_sigma = getattr(network, 'min_sigma', 0.0)
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
         sigma = torch.nn.functional.softplus(raw) + min_sigma
+    elif parametrization == 'scalar':
+        floor = max(min_sigma, 1e-3)
+        sigma = floor + torch.nn.functional.softplus(raw - floor)
     else:
         logstd_bounds = getattr(network, 'logstd_bounds', None)
         if logstd_bounds is not None:
