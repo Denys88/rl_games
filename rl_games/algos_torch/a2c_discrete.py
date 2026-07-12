@@ -145,9 +145,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
 
-        rnn_masks = None
+        # masks may exist without an RNN: next_step-autoreset garbage rows
+        rnn_masks = input_dict.get('rnn_masks', None)
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_length
             batch_dict['bptt_len'] = self.bptt_len

@@ -223,6 +223,22 @@ class A2CBase(BaseAlgorithm):
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
+
+        # next_step autoreset (envpool, native gymnasium 1.x vector envs): the
+        # reset step's row is garbage — action ignored, filler reward, obs is
+        # the PREVIOUS episode's terminal obs. Those rows are excluded from
+        # losses and advantage normalization via the masks channel; same_step
+        # (Isaac-style) and ray paths are unaffected (no mask produced).
+        self.autoreset_mode = (self.env_info or {}).get('autoreset_mode', 'same_step')
+        self.mask_autoreset_rows = self.autoreset_mode == 'next_step'
+        # dones from the previous env step, carried ACROSS rollouts; None until
+        # the first step after env_reset (fresh episodes: no pending reset row).
+        # self.dones itself can't serve: it is initialized to ones for the RNN
+        # fresh-state convention, which would wrongly flag the first row.
+        self._autoreset_prev_dones = None
+        if self.mask_autoreset_rows and self.num_agents > 1:
+            raise ValueError("PPO next_step autoreset masking does not support multi-agent envs; "
+                             "wrap the env with a same_step autoreset adapter instead")
         self.horizon_length = config['horizon_length']
 
         # seq_length is used only with rnn policy and value functions
@@ -788,6 +804,10 @@ class A2CBase(BaseAlgorithm):
         update_list = self.update_list
 
         step_time = 0.0
+        if self.mask_autoreset_rows:
+            mb_valid = torch.ones(
+                (self.horizon_length, self.num_actors * self.num_agents),
+                dtype=torch.float32, device=self.ppo_device)
 
         for n in range(self.horizon_length):
             if self.use_action_masks:
@@ -797,6 +817,11 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_action_values(self.obs)
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
+            if self.mask_autoreset_rows:
+                prev_dones = self._autoreset_prev_dones
+                if prev_dones is None:
+                    prev_dones = torch.zeros_like(self.dones)
+                mb_valid[n] = 1.0 - prev_dones.float()
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -805,6 +830,8 @@ class A2CBase(BaseAlgorithm):
 
             step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            if self.mask_autoreset_rows:
+                self._autoreset_prev_dones = self.dones.clone()
             step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
@@ -815,9 +842,17 @@ class A2CBase(BaseAlgorithm):
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards.add_(rewards)
-            self.current_shaped_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
+            if self.mask_autoreset_rows:
+                # rows whose previous step ended an episode are reset steps:
+                # keep filler rewards/lengths out of the episode stats
+                live_rows = mb_valid[n]
+                self.current_rewards.add_(rewards * live_rows.unsqueeze(1))
+                self.current_shaped_rewards.add_(shaped_rewards * live_rows.unsqueeze(1))
+                self.current_lengths.add_(live_rows)
+            else:
+                self.current_rewards.add_(rewards)
+                self.current_shaped_rewards.add_(shaped_rewards)
+                self.current_lengths.add_(1)
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
@@ -846,6 +881,8 @@ class A2CBase(BaseAlgorithm):
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         batch_dict['step_time'] = step_time
+        if self.mask_autoreset_rows:
+            batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
 
         return batch_dict
 
@@ -853,6 +890,10 @@ class A2CBase(BaseAlgorithm):
         update_list = self.update_list
         mb_rnn_states = self.mb_rnn_states
         step_time = 0.0
+        if self.mask_autoreset_rows:
+            mb_valid = torch.ones(
+                (self.horizon_length, self.num_actors * self.num_agents),
+                dtype=torch.float32, device=self.ppo_device)
 
         for n in range(self.horizon_length):
             if n % self.seq_length == 0:
@@ -871,6 +912,11 @@ class A2CBase(BaseAlgorithm):
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
+            if self.mask_autoreset_rows:
+                prev_dones = self._autoreset_prev_dones
+                if prev_dones is None:
+                    prev_dones = torch.zeros_like(self.dones)
+                mb_valid[n] = 1.0 - prev_dones.float()
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -879,6 +925,8 @@ class A2CBase(BaseAlgorithm):
 
             step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            if self.mask_autoreset_rows:
+                self._autoreset_prev_dones = self.dones.clone()
             step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
@@ -890,9 +938,17 @@ class A2CBase(BaseAlgorithm):
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards.add_(rewards)
-            self.current_shaped_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
+            if self.mask_autoreset_rows:
+                # rows whose previous step ended an episode are reset steps:
+                # keep filler rewards/lengths out of the episode stats
+                live_rows = mb_valid[n]
+                self.current_rewards.add_(rewards * live_rows.unsqueeze(1))
+                self.current_shaped_rewards.add_(shaped_rewards * live_rows.unsqueeze(1))
+                self.current_lengths.add_(live_rows)
+            else:
+                self.current_rewards.add_(rewards)
+                self.current_shaped_rewards.add_(shaped_rewards)
+                self.current_lengths.add_(1)
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
 
@@ -927,6 +983,8 @@ class A2CBase(BaseAlgorithm):
 
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
+        if self.mask_autoreset_rows:
+            batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
         states = []
         for mb_s in mb_rnn_states:
             t_size = mb_s.size()[0] * mb_s.size()[2]
@@ -1045,7 +1103,7 @@ class DiscreteA2CBase(A2CBase):
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
+            if rnn_masks is not None:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
                 else:
@@ -1332,7 +1390,7 @@ class ContinuousA2CBase(A2CBase):
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
+            if rnn_masks is not None:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
                 else:
