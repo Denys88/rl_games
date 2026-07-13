@@ -681,14 +681,29 @@ class A2CBase(BaseAlgorithm):
             if getattr(cv_model, 'value_mean_std', None) is not None:
                 modules.append(cv_model.value_mean_std)
         for m in modules:
-            n = m.count.clone()
-            weighted_mean = m.running_mean * n
-            weighted_sq = (m.running_var + m.running_mean ** 2) * n
-            for t in (n, weighted_mean, weighted_sq):
+            # merge per-epoch DELTAS against the last merged snapshot: after a
+            # merge every rank shares identical history, so re-summing full
+            # per-rank totals would double-weight that shared history each
+            # epoch (counts grow geometrically and the normalizer freezes)
+            cur = (m.count.clone(),
+                   m.running_mean * m.count,
+                   (m.running_var + m.running_mean ** 2) * m.count)
+            prev = getattr(m, '_stats_sync_snapshot', None)
+            if prev is None:
+                deltas = [c.clone() for c in cur]
+                base = [torch.zeros_like(c) for c in cur]
+            else:
+                deltas = [c - p for c, p in zip(cur, prev)]
+                base = prev
+            for t in deltas:
                 dist.all_reduce(t, op=dist.ReduceOp.SUM)
+            n = base[0] + deltas[0]
+            weighted_mean = base[1] + deltas[1]
+            weighted_sq = base[2] + deltas[2]
             m.count.copy_(n)
             m.running_mean.copy_(weighted_mean / n)
             m.running_var.copy_((weighted_sq / n - m.running_mean ** 2).clamp_(min=1e-8))
+            m._stats_sync_snapshot = (n.clone(), weighted_mean.clone(), weighted_sq.clone())
 
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)

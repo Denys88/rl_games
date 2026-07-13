@@ -266,3 +266,28 @@ def test_running_stats_moment_merge_math():
     full = torch.cat([a, b])
     assert torch.allclose(mean, full.mean(0), atol=1e-5)
     assert torch.allclose(var, full.var(0, unbiased=False), atol=1e-4)
+
+
+def test_running_stats_delta_merge_iterated():
+    # simulate 2 ranks x 3 epochs: delta-based merge must equal stats over
+    # ALL data seen, with no double-weighting of shared history
+    torch.manual_seed(9)
+    dim = 3
+    all_data = []
+    # global state each rank holds after merge: (count, wmean, wsq)
+    base = [torch.zeros(1), torch.zeros(dim), torch.zeros(dim)]
+    for epoch in range(3):
+        deltas = []
+        for rank in range(2):
+            x = torch.randn(200 + 50 * rank, dim) * (rank + 1) + epoch
+            all_data.append(x)
+            n = torch.tensor([float(len(x))])
+            deltas.append([n, x.sum(0), (x ** 2).sum(0)])
+        summed = [d0 + d1 for d0, d1 in zip(*deltas)]
+        base = [b + s for b, s in zip(base, summed)]
+        mean = base[1] / base[0]
+        var = base[2] / base[0] - mean ** 2
+    full = torch.cat(all_data)
+    assert torch.allclose(mean, full.mean(0), atol=1e-4)
+    assert torch.allclose(var, full.var(0, unbiased=False), atol=1e-3)
+    assert abs(base[0].item() - len(full)) < 1e-3   # counts exact, no doubling
