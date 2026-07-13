@@ -37,6 +37,12 @@ class MjlabVecEnv(IVecEnv):
 
         cfg = load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
+        # honor the runner-injected seed (already rank-offset under multi-GPU):
+        # without this mjlab draws a random seed and env randomization is
+        # neither reproducible nor tied to the config seed
+        seed = kwargs.pop('seed', None)
+        if seed is not None:
+            cfg.seed = int(seed)
 
         # optional override of a step-scheduled command curriculum (velocity
         # tasks): stage switch points in env steps, e.g. [0, 60000, 120000].
