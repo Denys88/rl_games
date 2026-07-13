@@ -250,3 +250,19 @@ class TestScheduleTypeAlias:
     def test_standard_untouched(self):
         agent, _ = make_ppo_agent(schedule_type='standard')
         assert agent.schedule_type == 'standard'
+
+
+def test_running_stats_moment_merge_math():
+    # the cross-rank merge must equal stats computed on the concatenated data
+    torch.manual_seed(3)
+    a = torch.randn(500, 4) * 2 + 1
+    b = torch.randn(300, 4) * 5 - 2
+    n1, n2 = float(len(a)), float(len(b))
+    m1, v1 = a.mean(0), a.var(0, unbiased=False)
+    m2, v2 = b.mean(0), b.var(0, unbiased=False)
+    n = n1 + n2
+    mean = (m1 * n1 + m2 * n2) / n
+    var = ((v1 + m1 ** 2) * n1 + (v2 + m2 ** 2) * n2) / n - mean ** 2
+    full = torch.cat([a, b])
+    assert torch.allclose(mean, full.mean(0), atol=1e-5)
+    assert torch.allclose(var, full.var(0, unbiased=False), atol=1e-4)

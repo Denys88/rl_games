@@ -658,6 +658,38 @@ class A2CBase(BaseAlgorithm):
     def prepare_dataset(self, batch_dict):
         pass
 
+    def sync_running_stats(self):
+        """Merge per-rank running normalization statistics across ranks.
+
+        Without this every rank's obs/value normalizers drift on their local
+        shard, so ranks train subtly different models whose averaged
+        gradients conflict — measured as an early-training deficit vs
+        single-GPU at identical global geometry. Moment-based parallel merge:
+        mu = sum(n_i mu_i)/N, var = sum(n_i (var_i + mu_i^2))/N - mu^2.
+        """
+        if not self.multi_gpu:
+            return
+        modules = []
+        if self.normalize_input and hasattr(self.model, 'running_mean_std'):
+            modules.append(self.model.running_mean_std)
+        if self.normalize_value and getattr(self.model, 'value_mean_std', None) is not None:
+            modules.append(self.model.value_mean_std)
+        if self.has_central_value:
+            cv_model = self.central_value_net.model
+            if getattr(cv_model, 'running_mean_std', None) is not None:
+                modules.append(cv_model.running_mean_std)
+            if getattr(cv_model, 'value_mean_std', None) is not None:
+                modules.append(cv_model.value_mean_std)
+        for m in modules:
+            n = m.count.clone()
+            weighted_mean = m.running_mean * n
+            weighted_sq = (m.running_var + m.running_mean ** 2) * n
+            for t in (n, weighted_mean, weighted_sq):
+                dist.all_reduce(t, op=dist.ReduceOp.SUM)
+            m.count.copy_(n)
+            m.running_mean.copy_(weighted_mean / n)
+            m.running_var.copy_((weighted_sq / n - m.running_mean ** 2).clamp_(min=1e-8))
+
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)
 
@@ -1085,6 +1117,7 @@ class DiscreteA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1367,6 +1400,7 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
