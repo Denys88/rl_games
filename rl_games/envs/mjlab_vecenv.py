@@ -7,6 +7,8 @@ Available tasks: Mjlab-Velocity-Flat-Unitree-G1, Mjlab-Velocity-Rough-Unitree-G1
 Mjlab-Velocity-Flat-Unitree-Go1, Mjlab-Tracking-Flat-Unitree-G1, etc.
 """
 
+import os
+
 import torch
 from rl_games.common.ivecenv import IVecEnv
 
@@ -27,6 +29,11 @@ class MjlabVecEnv(IVecEnv):
 
         task_name = kwargs.pop('task_name', config_name)
         self.device = kwargs.pop('device', 'cuda')
+        # multi-GPU (torchrun): a bare 'cuda' would put every rank's env on
+        # cuda:0 — pin each rank's simulation to its own device
+        local_rank = os.getenv('LOCAL_RANK')
+        if self.device == 'cuda' and local_rank is not None:
+            self.device = f'cuda:{local_rank}'
 
         cfg = load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
