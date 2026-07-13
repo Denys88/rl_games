@@ -60,3 +60,8 @@ The practical failure modes to know: `per_minibatch` with *small* minibatches
 rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
 size, not the schedule); `standard` on tasks with fast on-policy KL swings
 adapts too slowly and can leave measurable reward on the table.
+
+Multi-GPU note: `per_minibatch` performs a KL all-reduce and an LR broadcast
+per split per mini-epoch; `standard` does one per mini-epoch. On a single
+node the difference is small; at multi-node latencies the extra collectives
+compound — prefer `standard` there unless per-task evidence says otherwise.
