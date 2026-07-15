@@ -191,7 +191,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         with torch.no_grad():
             kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
             if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
+                # mean over VALID rows only: dividing by numel() understates
+                # KL by the invalid fraction and biases adaptive LR upward
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
             else:
                 kl_dist = kl_dist.mean()
 

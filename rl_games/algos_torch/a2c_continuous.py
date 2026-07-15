@@ -216,7 +216,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             reduce_kl = rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+                # mean over VALID rows only: dividing by numel() understates
+                # KL by the invalid fraction and biases adaptive LR upward
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
 
         self.diagnostics.mini_batch(self,
         {
