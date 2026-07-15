@@ -291,3 +291,45 @@ def test_running_stats_delta_merge_iterated():
     assert torch.allclose(mean, full.mean(0), atol=1e-4)
     assert torch.allclose(var, full.var(0, unbiased=False), atol=1e-3)
     assert abs(base[0].item() - len(full)) < 1e-3   # counts exact, no doubling
+
+
+def _allreduce_two_identical_ranks(t):
+    # SUM all-reduce where both ranks hold identical tensors
+    # (int multiplier: count tensors are integer dtype, like real NCCL SUM)
+    t.mul_(2)
+
+
+def test_merge_rank_stats_fresh_start_sums_local_histories():
+    from rl_games.common.a2c_common import merge_rank_stats
+    from rl_games.algos_torch.running_mean_std import RunningMeanStd
+    torch.manual_seed(5)
+    m = RunningMeanStd((3,))
+    m.train()
+    m(torch.randn(400, 3) * 2 + 1)
+    c0, mean0, var0 = m.count.clone(), m.running_mean.clone(), m.running_var.clone()
+    merge_rank_stats(m, _allreduce_two_identical_ranks)
+    # fresh start: each rank's history is genuinely local data -> counts add
+    assert torch.allclose(m.count.float(), 2 * c0.float(), rtol=1e-6)
+    assert torch.allclose(m.running_mean, mean0, atol=1e-5)
+    assert torch.allclose(m.running_var, var0, atol=1e-4)
+
+
+def test_seeded_snapshot_prevents_resume_count_inflation():
+    from rl_games.common.a2c_common import merge_rank_stats, seed_stats_sync_snapshot
+    from rl_games.algos_torch.running_mean_std import RunningMeanStd
+    torch.manual_seed(6)
+    m = RunningMeanStd((3,))
+    m.train()
+    m(torch.randn(400, 3) + 2)
+    # emulate checkpoint restore: every rank loads IDENTICAL stats (shared
+    # history) -- the restore path seeds the snapshot so the first sync
+    # must not re-sum that history across ranks
+    seed_stats_sync_snapshot(m)
+    c0, mean0 = m.count.clone(), m.running_mean.clone()
+    merge_rank_stats(m, _allreduce_two_identical_ranks)
+    assert torch.allclose(m.count.float(), c0.float(), rtol=1e-6)  # NOT x world_size
+    assert torch.allclose(m.running_mean, mean0, atol=1e-6)
+    # data collected AFTER the resume is fresh per-rank: only the delta sums
+    m(torch.randn(100, 3) - 1)
+    merge_rank_stats(m, _allreduce_two_identical_ranks)
+    assert torch.allclose(m.count.float(), c0.float() + 200.0, rtol=1e-5)
