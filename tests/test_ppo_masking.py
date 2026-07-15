@@ -333,3 +333,15 @@ def test_seeded_snapshot_prevents_resume_count_inflation():
     m(torch.randn(100, 3) - 1)
     merge_rank_stats(m, _allreduce_two_identical_ranks)
     assert torch.allclose(m.count.float(), c0.float() + 200.0, rtol=1e-5)
+
+
+def test_apply_masks_divides_by_valid_count():
+    from rl_games.algos_torch import torch_ext
+    losses = [torch.ones(8, 1)]
+    mask = torch.tensor([1., 1., 1., 1., 0., 0., 0., 0.])
+    res, sum_mask = torch_ext.apply_masks(losses, mask)
+    assert float(sum_mask) == 4.0
+    # mean over valid rows; the old numel() divisor returned 0.5 here,
+    # silently scaling every loss (and the KL fed to adaptive LR) by the
+    # valid fraction
+    assert torch.allclose(res[0], torch.tensor(1.0))
