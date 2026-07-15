@@ -65,3 +65,32 @@ Multi-GPU note: `per_minibatch` performs a KL all-reduce and an LR broadcast
 per split per mini-epoch; `standard` does one per mini-epoch. On a single
 node the difference is small; at multi-node latencies the extra collectives
 compound — prefer `standard` there unless per-task evidence says otherwise.
+
+## Sigma Parametrization (under `network: space: continuous:`)
+
+### `sigma_parametrization`
+
+How the sigma head's raw output `r` becomes the Gaussian policy's std.
+Default `exp` (historical rl_games behavior, fully backward compatible).
+
+| value | std | notes |
+|---|---|---|
+| `exp` | `exp(r)` | `r` is a log-std. Entropy bonus applies a **constant** upward force on `r` regardless of current sigma — on weak-reward tasks this can run away (sigma grows exponentially). |
+| `softplus` | `softplus(r) + min_sigma` | smooth positive map with an additive floor. |
+| `scalar` | `floor + softplus(r - floor)`, `floor = max(min_sigma, 1e-3)` | std-space: the head output *is* the std away from the floor (identity for `r >> floor`). Entropy pressure decays as `1/sigma`, so the same coefficient self-attenuates as sigma grows. Matches the reference `std_type="scalar"` distributions used by common locomotion recipes. |
+
+The floor is a softplus, not a hard clamp, on purpose: a clamp has zero
+gradient below the floor, stranding dimensions that drift under it (no
+restoring gradient; observed to produce NaNs). The smooth floor keeps
+`d(sigma)/dr > 0` everywhere.
+
+**`sigma_init.val` units depend on the parametrization.** Under `exp` it is
+a log-std (`val: 0.0` → σ₀ = 1). Under `scalar` it is in std units but the
+floor shifts it: σ₀ = `floor + softplus(val - floor)` — e.g. `val: 1.0`,
+`min_sigma: 0.05` gives σ₀ ≈ 1.29, not 1.0. To hit a target σ₀ exactly:
+`val = floor + softplus_inverse(σ₀ - floor)` (`val: 0.511` → σ₀ ≈ 1.0 at
+floor 0.05).
+
+**Entropy coefficients do not transplant across parametrizations** — the
+same number is a constant log-space force under `exp` and a `1/sigma`-
+decaying std-space force under `scalar`. Retune when switching.

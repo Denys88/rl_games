@@ -59,6 +59,12 @@ class MjlabVecEnv(IVecEnv):
             for stage, step in zip(stages, stage_steps):
                 stage['step'] = int(step)
 
+        if kwargs:
+            # a silently ignored env_config key means the run trains under
+            # different settings than the config claims (a schedule override
+            # dropped this way once cost a full training campaign cell)
+            print(f"WARNING: mjlab wrapper ignoring unknown env_config keys: {sorted(kwargs)}")
+
         self.env = ManagerBasedRlEnv(cfg, device=self.device)
 
         obs, _ = self.env.reset()
