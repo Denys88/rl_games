@@ -20,7 +20,7 @@
 
 ## Some results on the different environments  
 
-* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
+* [NVIDIA Isaac Gym (legacy — use rl_games <= 1.6.5)](docs/ISAAC_GYM.md)
 
 ![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
 ![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
@@ -75,7 +75,7 @@ Humanoid keeps improving well past the standard 1M-frame budget — a single run
 
 * PPO with the support of asymmetric actor-critic variant
 * SAC
-* Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
+* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab, Brax. Legacy Isaac Gym: rl_games <= 1.6.5
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
@@ -154,29 +154,14 @@ uv pip install -e ".[atari,mujoco]"
 ```
 
 ## Training
-**NVIDIA Isaac Gym**
+**NVIDIA Isaac Gym (legacy)**
 
-Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
-And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
-
-*Ant*
-
-```bash
-python train.py task=Ant headless=True
-python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100
-```
-
-*Humanoid*
-
-```bash
-python train.py task=Humanoid headless=True
-python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
-```
-
-*Shadow Hand block orientation task*
-
-```python train.py task=ShadowHand headless=True```
-```python train.py task=ShadowHand test=True checkpoint=nn/ShadowHand.pth num_envs=100```
+Isaac Gym Preview is end-of-life and not supported by current rl_games
+(it requires Python <= 3.8). To run legacy Isaac Gym / IsaacGymEnvs
+projects use the last supporting release, `rl-games==1.6.5`, and its
+documentation: https://github.com/Denys88/rl_games/tree/v1.6.5 — see
+[docs/ISAAC_GYM.md](docs/ISAAC_GYM.md). For current GPU-accelerated
+training see [MJLab (MuJoCo Warp)](docs/MJLAB.md) and Isaac Lab.
 
 **Other**
 
