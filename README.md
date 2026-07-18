@@ -75,7 +75,7 @@ Humanoid keeps improving well past the standard 1M-frame budget — a single run
 
 * PPO with the support of asymmetric actor-critic variant
 * SAC
-* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab, Brax. Legacy Isaac Gym: rl_games <= 1.6.5
+* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab. Legacy Isaac Gym: rl_games <= 1.6.5
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
@@ -91,7 +91,6 @@ Humanoid keeps improving well past the standard 1M-frame budget — a single run
 Explore RL Games quick and easily in colab notebooks:
 
 * [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
 * [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
@@ -114,7 +113,7 @@ With optional extras (e.g. Atari, Mujoco, EnvPool):
 pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `envpool`, `brax`, `pufferlib`.
+Available extras: `atari`, `mujoco`, `envpool`, `pufferlib`.
 
 For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
@@ -170,15 +169,6 @@ training see [MJLab (MuJoCo Warp)](docs/MJLAB.md) and Isaac Lab.
 ```bash
 python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
 python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
-```
-
-*Brax Ant*
-
-```bash
-pip install -U "jax[cuda12]"
-pip install brax
-python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
-python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
 ## Experiment tracking

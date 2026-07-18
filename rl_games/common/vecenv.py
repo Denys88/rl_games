@@ -392,8 +392,6 @@ def create_vec_env(config_name, num_actors, **kwargs):
 
 register('RAY', lambda config_name, num_actors, **kwargs: RayVecEnv(config_name, num_actors, **kwargs))
 
-from rl_games.envs.brax import BraxEnv
-register('BRAX', lambda config_name, num_actors, **kwargs: BraxEnv(config_name, num_actors, **kwargs))
 
 from rl_games.envs.maniskill import ManiskillEnv
 register('MANISKILL', lambda config_name, num_actors, **kwargs: ManiskillEnv(config_name, num_actors, **kwargs))

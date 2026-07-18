@@ -39,7 +39,7 @@ rl_games uses the following base classes to define algorithms, instantiate envir
     - In rl_games environments are instantiated by the algorithm. Depending on the config setup, you can also run multiple envs in parallel.
 
 4. **Environments** - `rl_games.common.vecenv` & `rl_games.common.env_configurations`
-    - The `vecenv` script holds classes to instantiate different environments based on their type. Since rl_games is quite a broad library, it supports multiple environment types (such as openAI gym envs, brax envs, cule envs etc). These environment types and their base classes are stored in the `rl_games.common.vecenv.vecenv_config` dictionary. The environment class enables stuff like running multiple parallel environments, or running multi-agent environments. By default, all available environments are already added. Adding new environments is explained below.
+    - The `vecenv` script holds classes to instantiate different environments based on their type. Since rl_games is quite a broad library, it supports multiple environment types (such as gym/gymnasium envs, envpool, MJLab etc). These environment types and their base classes are stored in the `rl_games.common.vecenv.vecenv_config` dictionary. The environment class enables stuff like running multiple parallel environments, or running multi-agent environments. By default, all available environments are already added. Adding new environments is explained below.
 
     - `rl_games.common.env_configurations.configurations` is another dictionary that stores `env_name: {'vecenv_type', 'env_creator}` information. For example, the following stores the environment name "CartPole-v1" with a value for its type and a lambda function that instantiates the respective gym env.
         ```python    

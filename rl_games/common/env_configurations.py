@@ -1,7 +1,6 @@
 import rl_games.envs.test
 from rl_games.common import wrappers
 from rl_games.common import tr_helpers
-from rl_games.envs.brax import create_brax_env
 from rl_games.envs.maniskill import create_maniskill_env
 from rl_games.common.gymnasium_vecenv import create_gymnasium_env, wrap_atari
 from gymnasium.wrappers import FlattenObservation
@@ -294,10 +293,6 @@ configurations = {
     'multiwalker_env' : {
         'env_creator' : lambda **kwargs : create_multiwalker_env(**kwargs),
         'vecenv_type' : 'GYMNASIUM'
-    },
-    'brax' : {
-        'env_creator': lambda **kwargs: create_brax_env(**kwargs),
-        'vecenv_type': 'BRAX'
     },
     'maniskill' : {
         'env_creator': lambda **kwargs: create_maniskill_env(**kwargs),
