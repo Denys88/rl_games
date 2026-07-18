@@ -120,3 +120,11 @@ rare huge negative return bursts that a high LR converts into an unrecoverable
 policy regression); state-dependent sigma with
 `sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
 exploration floor the task was designed around.
+
+## Notebooks
+
+- `notebooks/mjlab_training.ipynb` — end-to-end Go1 velocity training at notebook scale
+  (2048 envs, 1000 epochs, minutes on a modern GPU), plots the curve, saves a checkpoint.
+- `notebooks/mjlab_visualization.ipynb` — loads a checkpoint, renders a rollout video
+  inline, and runs a commanded-vs-achieved velocity probe (the notebook-scale walker
+  achieves ~0.8 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
