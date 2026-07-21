@@ -128,3 +128,11 @@ exploration floor the task was designed around.
 - `notebooks/mjlab_visualization.ipynb` — loads a checkpoint, renders a rollout video
   inline, and runs a commanded-vs-achieved velocity probe (the notebook-scale walker
   achieves ~0.8 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
+- `notebooks/mjlab_training_colab.ipynb` / `mjlab_visualization_colab.ipynb` — Colab
+  variants: install rl_games from git (until the PyPI release) and mjlab from PyPI,
+  auto-scale env count by GPU VRAM. L4/A100 runtimes recommended; T4 untested.
+
+**Version pin (2026-07-18):** `warp-lang` 1.15.0 with `mujoco-warp` 3.10.0.2 crashes
+mjlab env resets (CUDA illegal memory access in the warp/torch mask interop). Pin
+`warp-lang==1.14.0 mujoco-warp==3.10.0.1` until fixed upstream; the Colab notebooks
+carry these pins.

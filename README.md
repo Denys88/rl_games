@@ -93,6 +93,8 @@ Explore RL Games quick and easily in colab notebooks:
 * [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
 * [MJLab training](notebooks/mjlab_training.ipynb) GPU-parallel robot locomotion with MJLab (MuJoCo Warp) — trains a Unitree Go1 walking policy in minutes. Local GPU required.
 * [MJLab visualization](notebooks/mjlab_visualization.ipynb) Render a trained MJLab policy to video and run command-tracking probes.
+* [MJLab training on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_training_colab.ipynb) Same Go1 pipeline for Colab GPUs — L4/A100 recommended (T4 untested).
+* [MJLab visualization on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_visualization_colab.ipynb) Video + velocity probe on Colab.
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
 * [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
