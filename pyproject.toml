@@ -22,7 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 atari = ["ale-py>=0.8", "AutoROM[accept-rom-license]>=0.4.2"]
-brax = ["brax>=0.0.13", "jax>=0.3.13"]
 mujoco = ["mujoco>=3.0.0", "imageio"]
 # envpool 1.2.5 is the first release verified against numpy 2.x (declares
 # numpy>=1.19 with no upper pin); releases <=1.1.x predate numpy 2.0.

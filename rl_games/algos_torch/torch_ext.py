@@ -158,7 +158,11 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.numel()
+        # mean over VALID rows. This used to divide by numel(), which scaled
+        # every loss down by the invalid fraction — equivalent to silently
+        # lowering the LR for masked (RNN / autoreset) training. 2.0.0
+        # behavior change; see release notes.
+        sum_mask = mask.sum().clamp(min=1.0)
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]

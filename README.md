@@ -20,7 +20,7 @@
 
 ## Some results on the different environments  
 
-* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
+* [NVIDIA Isaac Gym (legacy — use rl_games <= 1.6.5)](docs/ISAAC_GYM.md)
 
 ![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
 ![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
@@ -75,7 +75,7 @@ Humanoid keeps improving well past the standard 1M-frame budget — a single run
 
 * PPO with the support of asymmetric actor-critic variant
 * SAC
-* Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
+* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab. Legacy Isaac Gym: rl_games <= 1.6.5
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
@@ -91,7 +91,10 @@ Humanoid keeps improving well past the standard 1M-frame budget — a single run
 Explore RL Games quick and easily in colab notebooks:
 
 * [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [MJLab training](notebooks/mjlab_training.ipynb) GPU-parallel robot locomotion with MJLab (MuJoCo Warp) — trains a Unitree Go1 walking policy in minutes. Local GPU required.
+* [MJLab visualization](notebooks/mjlab_visualization.ipynb) Render a trained MJLab policy to video and run command-tracking probes.
+* [MJLab training on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_training_colab.ipynb) Same Go1 pipeline for Colab GPUs — L4/A100 recommended (T4 untested).
+* [MJLab visualization on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_visualization_colab.ipynb) Video + velocity probe on Colab.
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
 * [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
@@ -114,7 +117,7 @@ With optional extras (e.g. Atari, Mujoco, EnvPool):
 pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `envpool`, `brax`, `pufferlib`.
+Available extras: `atari`, `mujoco`, `envpool`, `pufferlib`.
 
 For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
@@ -154,29 +157,14 @@ uv pip install -e ".[atari,mujoco]"
 ```
 
 ## Training
-**NVIDIA Isaac Gym**
+**NVIDIA Isaac Gym (legacy)**
 
-Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
-And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
-
-*Ant*
-
-```bash
-python train.py task=Ant headless=True
-python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100
-```
-
-*Humanoid*
-
-```bash
-python train.py task=Humanoid headless=True
-python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
-```
-
-*Shadow Hand block orientation task*
-
-```python train.py task=ShadowHand headless=True```
-```python train.py task=ShadowHand test=True checkpoint=nn/ShadowHand.pth num_envs=100```
+Isaac Gym Preview is end-of-life and not supported by current rl_games
+(it requires Python <= 3.8). To run legacy Isaac Gym / IsaacGymEnvs
+projects use the last supporting release, `rl-games==1.6.5`, and its
+documentation: https://github.com/Denys88/rl_games/tree/v1.6.5 — see
+[docs/ISAAC_GYM.md](docs/ISAAC_GYM.md). For current GPU-accelerated
+training see [MJLab (MuJoCo Warp)](docs/MJLAB.md) and Isaac Lab.
 
 **Other**
 
@@ -185,15 +173,6 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 ```bash
 python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
 python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
-```
-
-*Brax Ant*
-
-```bash
-pip install -U "jax[cuda12]"
-pip install brax
-python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
-python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
 ## Experiment tracking

@@ -7,6 +7,8 @@ Available tasks: Mjlab-Velocity-Flat-Unitree-G1, Mjlab-Velocity-Rough-Unitree-G1
 Mjlab-Velocity-Flat-Unitree-Go1, Mjlab-Tracking-Flat-Unitree-G1, etc.
 """
 
+import os
+
 import torch
 from rl_games.common.ivecenv import IVecEnv
 
@@ -27,9 +29,20 @@ class MjlabVecEnv(IVecEnv):
 
         task_name = kwargs.pop('task_name', config_name)
         self.device = kwargs.pop('device', 'cuda')
+        # multi-GPU (torchrun): a bare 'cuda' would put every rank's env on
+        # cuda:0 — pin each rank's simulation to its own device
+        local_rank = os.getenv('LOCAL_RANK')
+        if self.device == 'cuda' and local_rank is not None:
+            self.device = f'cuda:{local_rank}'
 
         cfg = load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
+        # honor the runner-injected seed (already rank-offset under multi-GPU):
+        # without this mjlab draws a random seed and env randomization is
+        # neither reproducible nor tied to the config seed
+        seed = kwargs.pop('seed', None)
+        if seed is not None:
+            cfg.seed = int(seed)
 
         # optional override of a step-scheduled command curriculum (velocity
         # tasks): stage switch points in env steps, e.g. [0, 60000, 120000].
@@ -45,6 +58,12 @@ class MjlabVecEnv(IVecEnv):
                     f"task schedule has {len(stages)} stages")
             for stage, step in zip(stages, stage_steps):
                 stage['step'] = int(step)
+
+        if kwargs:
+            # a silently ignored env_config key means the run trains under
+            # different settings than the config claims (a schedule override
+            # dropped this way once cost a full training campaign cell)
+            print(f"WARNING: mjlab wrapper ignoring unknown env_config keys: {sorted(kwargs)}")
 
         self.env = ManagerBasedRlEnv(cfg, device=self.device)
 

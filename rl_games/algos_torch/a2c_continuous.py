@@ -129,7 +129,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
         a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+        bounds_coef = self.bounds_loss_coef if self.bounds_loss_coef is not None else 0.0
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * bounds_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
     def calc_gradients(self, input_dict):
@@ -160,9 +161,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs': obs_batch,
         }
 
-        rnn_masks = None
+        # masks may exist without an RNN: next_step-autoreset garbage rows
+        rnn_masks = input_dict.get('rnn_masks', None)
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_length
 
@@ -215,7 +216,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             reduce_kl = rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+                # mean over VALID rows only: dividing by numel() understates
+                # KL by the invalid fraction and biases adaptive LR upward
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
 
         self.diagnostics.mini_batch(self,
         {
@@ -249,5 +252,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
-            b_loss = 0
+            # zero TENSOR, not int: the masked-loss path calls .unsqueeze on it
+            b_loss = torch.zeros(mu.shape[0], device=mu.device)
         return b_loss
