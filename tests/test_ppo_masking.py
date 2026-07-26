@@ -195,7 +195,18 @@ def test_multi_agent_next_step_guard_raises():
 
 
 class TestScalarSigmaParametrization:
-    """sigma_parametrization: 'scalar' — head output IS the std (smooth floor)."""
+    """sigma_parametrization: 'linear' (alias 'scalar') — head output IS the std (smooth floor)."""
+
+    def test_scalar_aliases_to_linear(self):
+        from rl_games.algos_torch import torch_ext  # noqa: F401  (import guard)
+        import types
+        from rl_games.algos_torch.models import apply_sigma_parametrization
+        net_l = types.SimpleNamespace(sigma_parametrization='linear', min_sigma=0.05)
+        net_s = types.SimpleNamespace(sigma_parametrization='scalar', min_sigma=0.05)
+        raw = torch.linspace(-2.0, 3.0, 11)
+        s_l, _ = apply_sigma_parametrization(raw, net_l)
+        s_s, _ = apply_sigma_parametrization(raw, net_s)
+        assert torch.equal(s_l, s_s)
 
     def _sigmas(self, min_sigma, init_val):
         from rl_games.algos_torch.model_builder import ModelBuilder

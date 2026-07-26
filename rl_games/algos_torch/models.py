@@ -278,7 +278,10 @@ def apply_sigma_parametrization(raw, network):
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
         sigma = torch.nn.functional.softplus(raw) + min_sigma
-    elif parametrization == 'scalar':
+    elif parametrization in ('linear', 'scalar'):
+        # 'scalar' is the reference-compat alias (rsl-rl lineage
+        # noise_std_type / std_type="scalar" = std-space); canonical name is
+        # 'linear': sigma ~= raw away from the smooth floor
         floor = max(min_sigma, 1e-3)
         sigma = floor + torch.nn.functional.softplus(raw - floor)
     else:
