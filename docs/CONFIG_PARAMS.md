@@ -77,7 +77,7 @@ Default `exp` (historical rl_games behavior, fully backward compatible).
 |---|---|---|
 | `exp` | `exp(r)` | `r` is a log-std. Entropy bonus applies a **constant** upward force on `r` regardless of current sigma — on weak-reward tasks this can run away (sigma grows exponentially). |
 | `softplus` | `softplus(r) + min_sigma` | smooth positive map with an additive floor. |
-| `scalar` | `floor + softplus(r - floor)`, `floor = max(min_sigma, 1e-3)` | std-space: the head output *is* the std away from the floor (identity for `r >> floor`). Entropy pressure decays as `1/sigma`, so the same coefficient self-attenuates as sigma grows. Matches the reference `std_type="scalar"` distributions used by common locomotion recipes. |
+| `scalar` | `floor + softplus(r - floor)`, `floor = max(min_sigma, 1e-3)` | std-space: the head output *is* the std away from the floor — asymptotically: the identity holds for `r >> floor`, with a maximum deviation of `ln 2 ≈ 0.693` at `r = floor` (e.g. `r = 1.0`, floor `0.05` gives sigma ≈ 1.29, not 1.0). Entropy pressure decays as `1/sigma`, so the same coefficient self-attenuates as sigma grows. Matches the reference `std_type="scalar"` distributions used by common locomotion recipes. |
 
 The floor is a softplus, not a hard clamp, on purpose: a clamp has zero
 gradient below the floor, stranding dimensions that drift under it (no

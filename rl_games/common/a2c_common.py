@@ -662,6 +662,9 @@ class A2CBase(BaseAlgorithm):
     def env_reset(self):
         obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        # a fresh reset invalidates the autoreset tracker: the first row after
+        # an explicit reset is always a real step, never a filler reset row
+        self._autoreset_prev_dones = None
         return obs
 
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
@@ -670,22 +673,6 @@ class A2CBase(BaseAlgorithm):
             last_extrinsic_values, fdones,
             self.gamma, self.tau,
         )
-
-    def discount_values_masks(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_masks):
-        lastgaelam = 0
-        mb_advs = torch.zeros_like(mb_rewards)
-        for t in reversed(range(self.horizon_length)):
-            if t == self.horizon_length - 1:
-                nextnonterminal = 1.0 - fdones
-                nextvalues = last_extrinsic_values
-            else:
-                nextnonterminal = 1.0 - mb_fdones[t+1]
-                nextvalues = mb_extrinsic_values[t+1]
-            nextnonterminal = nextnonterminal.unsqueeze(1)
-            masks_t = mb_masks[t].unsqueeze(1)
-            delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t])
-            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
-        return mb_advs
 
     def clear_stats(self, clean_rewards=True):
         self.game_rewards.clear()
@@ -1022,6 +1009,15 @@ class A2CBase(BaseAlgorithm):
                 if prev_dones is None:
                     prev_dones = torch.zeros_like(self.dones)
                 mb_valid[n] = 1.0 - prev_dones.float()
+                if self.zero_rnn_on_done:
+                    # this row is a filler reset row for envs with prev_dones:
+                    # its forward pass just absorbed the dead episode's terminal
+                    # obs into the freshly zeroed state — re-zero so the first
+                    # real row of the new episode starts from a clean state
+                    reset_idx = prev_dones.nonzero(as_tuple=False)
+                    if len(reset_idx) > 0:
+                        for s in self.rnn_states:
+                            s[:, reset_idx, :] = 0
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -1090,6 +1086,16 @@ class A2CBase(BaseAlgorithm):
         batch_dict['played_frames'] = self.batch_size
         if self.mask_autoreset_rows:
             batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
+            if self.zero_rnn_on_done:
+                # batch 'dones' feeds ONLY the RNN state-reset path at train
+                # time (GAE above consumed the pure buffer copy): also fire the
+                # reset ENTERING the first real row after a filler reset row,
+                # mirroring the rollout-side re-zero of the absorbed state
+                rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
+                garbage = (mb_valid == 0.0)
+                rnn_dones[1:] = torch.maximum(
+                    rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
+                batch_dict['dones'] = swap_and_flatten01(rnn_dones)
         states = []
         for mb_s in mb_rnn_states:
             t_size = mb_s.size()[0] * mb_s.size()[2]
@@ -1201,10 +1207,22 @@ class DiscreteA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
-            self.value_mean_std.train()
-            values = self.value_mean_std(values)
-            returns = self.value_mean_std(returns)
-            self.value_mean_std.eval()
+            if rnn_masks is not None:
+                # autoreset filler rows carry meaningless returns (their GAE
+                # delta uses a bogus value target): update the normalizer's
+                # statistics from valid rows only, then normalize everything
+                valid = rnn_masks.bool()
+                self.value_mean_std.train()
+                self.value_mean_std(values[valid])
+                self.value_mean_std(returns[valid])
+                self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+            else:
+                self.value_mean_std.train()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
@@ -1488,11 +1506,24 @@ class ContinuousA2CBase(A2CBase):
         if self.normalize_value:
             if self.config.get('freeze_critic', False):
                 self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+            elif rnn_masks is not None:
+                # autoreset filler rows carry meaningless returns (their GAE
+                # delta uses a bogus value target): update the normalizer's
+                # statistics from valid rows only, then normalize everything
+                valid = rnn_masks.bool()
+                self.value_mean_std.train()
+                self.value_mean_std(values[valid])
+                self.value_mean_std(returns[valid])
+                self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
-            values = self.value_mean_std(values)
-            returns = self.value_mean_std(returns)
-            self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 

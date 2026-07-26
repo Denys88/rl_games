@@ -345,3 +345,74 @@ def test_apply_masks_divides_by_valid_count():
     # silently scaling every loss (and the KL fed to adaptive LR) by the
     # valid fraction
     assert torch.allclose(res[0], torch.tensor(1.0))
+
+
+def test_env_reset_clears_autoreset_tracker():
+    # a fresh env_reset must invalidate stale prev-dones: the first row after
+    # an explicit reset is a real step and must not be masked
+    agent, fake = make_ppo_agent(seed=11)
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    with torch.no_grad():
+        agent.play_steps()
+    assert agent._autoreset_prev_dones is not None  # tracker engaged mid-rollout
+    agent.obs = agent.env_reset()                   # re-reset (eval interleave etc.)
+    assert agent._autoreset_prev_dones is None
+    with torch.no_grad():
+        batch = agent.play_steps()
+    first_row_masks = batch['rnn_masks'].view(agent.num_actors, agent.horizon_length)[:, 0]
+    assert torch.all(first_row_masks == 1.0), "first row after explicit reset wrongly masked"
+
+
+def test_rnn_state_isolated_from_garbage_obs():
+    # the complete RNN invariant: poison the OBS of garbage rows — with the
+    # rollout re-zero + the shifted rnn-dones channel, neither the losses nor
+    # the recurrent state may transport the poison into any update
+    # (normalize_input off: the input normalizer is a separate, unmasked
+    # channel — garbage rows feed it real terminal observations, see PR notes)
+    results = []
+    for poison in (False, True):
+        agent, fake = make_ppo_agent(seed=321, rnn=True, normalize_input=False,
+                                     normalize_value=False)
+        batch = _rollout_batch(agent)
+        if poison:
+            garbage = batch['rnn_masks'] == 0.0
+            batch['obses'] = batch['obses'].clone()
+            batch['obses'][garbage] = 1e6
+        agent.prepare_dataset(batch)
+        torch.manual_seed(0)
+        for _ in range(agent.mini_epochs_num):
+            for i in range(len(agent.dataset)):
+                agent.train_actor_critic(agent.dataset[i])
+        results.append(copy.deepcopy(agent.model.state_dict()))
+    clean, poisoned = results
+    for k in clean:
+        assert torch.allclose(clean[k], poisoned[k], atol=0, rtol=0), (
+            f"parameter {k} differs: garbage obs leaked through the RNN state")
+
+
+def test_value_normalizer_ignores_garbage_returns():
+    # normalize_value=True (the default): garbage-row returns must not move
+    # the value normalizer's statistics, else they rescale live-row critic
+    # targets and reach the weights through that side channel
+    results = []
+    for poison in (False, True):
+        agent, fake = make_ppo_agent(seed=99, normalize_value=True)
+        batch = _rollout_batch(agent)
+        if poison:
+            garbage = batch['rnn_masks'] == 0.0
+            batch['returns'] = batch['returns'].clone()
+            batch['returns'][garbage] = 1e6
+        agent.prepare_dataset(batch)
+        torch.manual_seed(0)
+        for _ in range(agent.mini_epochs_num):
+            for i in range(len(agent.dataset)):
+                agent.train_actor_critic(agent.dataset[i])
+        results.append((copy.deepcopy(agent.model.state_dict()),
+                        agent.value_mean_std.running_mean.clone()))
+    (clean, clean_rm), (poisoned, poisoned_rm) = results
+    assert torch.allclose(clean_rm, poisoned_rm, atol=0, rtol=0), (
+        "value normalizer statistics moved by garbage returns")
+    for k in clean:
+        assert torch.allclose(clean[k], poisoned[k], atol=0, rtol=0), (
+            f"parameter {k} differs: garbage returns leaked via the value normalizer")
