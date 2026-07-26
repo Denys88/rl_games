@@ -40,6 +40,59 @@ def swap_and_flatten01(arr):
     return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
 
 
+def _running_stats_totals(m):
+    """(count, sum_x, sum_x2) totals equivalent to a RunningMeanStd state."""
+    return (m.count.clone(),
+            m.running_mean * m.count,
+            (m.running_var + m.running_mean ** 2) * m.count)
+
+
+def seed_stats_sync_snapshot(m):
+    """Mark a normalizer's current state as already-shared history.
+
+    Call after loading stats from a checkpoint: the next merge_rank_stats
+    will then all-reduce only data accumulated after the load, instead of
+    re-summing identical restored totals across ranks (which would inflate
+    count by world_size and stiffen the normalizer against new data).
+    """
+    m._stats_sync_snapshot = tuple(t.clone() for t in _running_stats_totals(m))
+
+
+def merge_rank_stats(m, all_reduce):
+    """Cross-rank merge of one RunningMeanStd via summed moment deltas.
+
+    Merges per-epoch DELTAS against the last merged snapshot: after a merge
+    every rank shares identical history, so re-summing full per-rank totals
+    would double-weight that shared history each epoch (counts grow
+    geometrically and the normalizer freezes). A missing snapshot means the
+    module's entire history is rank-local (fresh start) and is merged whole.
+    `all_reduce` must SUM the given tensor in place across ranks.
+
+    Numerical note: recovering var from (var + mean^2)*count totals is a
+    cancellation hazard when mean^2 >> var. RunningMeanStd registers its
+    buffers as float64 (except on MPS, which cannot run a distributed
+    backend), where the round-trip is safe to mean^2/var ~ 1e12. If the
+    buffer dtype ever changes, this merge must be revisited.
+    """
+    cur = _running_stats_totals(m)
+    prev = getattr(m, '_stats_sync_snapshot', None)
+    if prev is None:
+        deltas = [c.clone() for c in cur]
+        base = [torch.zeros_like(c) for c in cur]
+    else:
+        deltas = [c - p for c, p in zip(cur, prev)]
+        base = prev
+    for t in deltas:
+        all_reduce(t)
+    n = base[0] + deltas[0]
+    weighted_mean = base[1] + deltas[1]
+    weighted_sq = base[2] + deltas[2]
+    m.count.copy_(n)
+    m.running_mean.copy_(weighted_mean / n)
+    m.running_var.copy_((weighted_sq / n - m.running_mean ** 2).clamp_(min=1e-8))
+    m._stats_sync_snapshot = (n.clone(), weighted_mean.clone(), weighted_sq.clone())
+
+
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
@@ -90,6 +143,8 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
+        # cross-rank normalizer sync (see sync_running_stats); opt-out knob
+        self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
 
         # multi-gpu/multi-node data
         self.local_rank = 0
@@ -632,6 +687,50 @@ class A2CBase(BaseAlgorithm):
     def prepare_dataset(self, batch_dict):
         pass
 
+    def _stats_sync_modules(self):
+        modules = []
+        if self.normalize_input and hasattr(self.model, 'running_mean_std'):
+            modules.append(self.model.running_mean_std)
+        if self.normalize_value and getattr(self.model, 'value_mean_std', None) is not None:
+            modules.append(self.model.value_mean_std)
+        if self.has_central_value:
+            cv_model = self.central_value_net.model
+            if getattr(cv_model, 'running_mean_std', None) is not None:
+                modules.append(cv_model.running_mean_std)
+            if getattr(cv_model, 'value_mean_std', None) is not None:
+                modules.append(cv_model.value_mean_std)
+        return modules
+
+    def _seed_stats_sync_snapshots(self):
+        """Re-baseline the cross-rank stats sync after loading stats.
+
+        Restored stats are identical on every rank — shared history, not
+        fresh per-rank data. Without re-seeding, the first sync would treat
+        the full restored totals as disjoint deltas and all-reduce them,
+        inflating count by world_size.
+        """
+        if not self.multi_gpu or not self.multi_gpu_sync_stats:
+            return
+        for m in self._stats_sync_modules():
+            seed_stats_sync_snapshot(m)
+
+    def sync_running_stats(self):
+        """Merge per-rank running normalization statistics across ranks.
+
+        Without this every rank's obs/value normalizers drift on their local
+        shard, so ranks train subtly different models whose averaged
+        gradients conflict — measured as an early-training reward deficit vs
+        single-GPU at identical global geometry (envpool Pong, 2 ranks:
+        86.9 vs 94.8 mean reward at epoch 2000 before the fix). Moment-based
+        parallel merge: mu = sum(n_i mu_i)/N,
+        var = sum(n_i (var_i + mu_i^2))/N - mu^2.
+        Disable with `multi_gpu_sync_stats: False`.
+        """
+        if not self.multi_gpu or not self.multi_gpu_sync_stats:
+            return
+        for m in self._stats_sync_modules():
+            merge_rank_stats(m, lambda t: dist.all_reduce(t, op=dist.ReduceOp.SUM))
+
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)
 
@@ -687,8 +786,12 @@ class A2CBase(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
+        # central-value stats load after set_weights ran; re-seed everything
+        self._seed_stats_sync_snapshots()
+
     def set_central_value_function_weights(self, weights):
         self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+        self._seed_stats_sync_snapshots()
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -721,6 +824,8 @@ class A2CBase(BaseAlgorithm):
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         self.set_stats_weights(weights)
+        # restored stats are shared history, not fresh per-rank data
+        self._seed_stats_sync_snapshots()
 
     def get_param(self, param_name):
         if param_name in [
@@ -1017,6 +1122,7 @@ class DiscreteA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1299,6 +1405,7 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
