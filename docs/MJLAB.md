@@ -131,7 +131,9 @@ exploration floor the task was designed around.
   from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM.
   L4/A100 runtimes recommended; T4 untested.
 
-**Version pin (2026-07-18):** `warp-lang` 1.15.0 with `mujoco-warp` 3.10.0.2 crashes
-mjlab env resets (CUDA illegal memory access in the warp/torch mask interop). Pin
-`warp-lang==1.14.0 mujoco-warp==3.10.0.1` until fixed upstream; the Colab notebook
-carries these pins.
+**Versioning (updated 2026-08-02):** do not hand-pin `warp-lang`/`mujoco-warp` —
+install `mjlab>=1.5.3` and let it resolve its own pair (warp 1.15.0 +
+mujoco-warp 3.10.0.3 as of this writing). History: mjlab 1.5.0 with warp 1.15 /
+mujoco-warp 3.10.0.2 crashed env resets (fixed in 3.10.0.3), and pinning back to
+warp 1.14 segfaulted the raytracer on Blackwell (sm_120, Colab G4 tier) — warp
+1.15's BVH out-of-bounds fix is required there.
