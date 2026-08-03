@@ -124,12 +124,28 @@ exploration floor the task was designed around.
 ## Notebooks
 
 - `notebooks/mjlab_training.ipynb` — end-to-end at notebook scale: Go1 velocity training
-  (2048 envs, 1000 epochs, minutes on a modern GPU), training curve, then rendering of the
+  (4096 envs, 1000 epochs, minutes on a modern GPU), training curve, then rendering of the
   trained policy and a commanded-vs-achieved velocity probe (the notebook-scale walker
   achieves ~0.8 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
 - `notebooks/mjlab_training_colab.ipynb` — the same pipeline for Colab: installs rl_games
-  from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM.
-  L4/A100 runtimes recommended; T4 untested.
+  from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM
+  (8192 envs on ≥20 GiB runtimes, 4096 below).
+- `notebooks/mjlab_render_smoke_colab.ipynb` — rendering diagnostic: a ladder of isolated
+  subprocess probes (pure GL → mjlab sim → mjlab render → context-order repros) ending in
+  an actual replayed video. Run this first when video fails on a new runtime; each step's
+  PASS/FAIL localizes the fault without waiting on training.
+
+**Rendering design — record-then-replay (2026-08-03):** the notebooks never render
+from the simulation process. The rollout process (warp/CUDA, zero GL) dumps the
+compiled `MjModel` plus per-frame `qpos`; a second process (plain `mujoco` +
+EGL, zero warp) replays the states through `mujoco.Renderer` with a tracked
+camera. Reason: on some cloud driver stacks (observed: Colab G4, sm_120,
+driver 13.0) creating an EGL context in a process where the full mjlab env
+holds CUDA segfaults — and with the GL context created first, it deadlocks
+instead. Context-creation-order probes alone pass; the fault needs the full
+env in-process, so the only robust fix is not sharing the process at all.
+Both phases run as subprocesses of the notebook kernel: a native fault
+surfaces as an exit code, never a kernel crash.
 
 **Versioning (updated 2026-08-02):** do not hand-pin `warp-lang`/`mujoco-warp` —
 install `mjlab>=1.5.3` and let it resolve its own pair (warp 1.15.0 +
