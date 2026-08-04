@@ -130,10 +130,6 @@ exploration floor the task was designed around.
 - `notebooks/mjlab_training_colab.ipynb` — the same pipeline for Colab: installs rl_games
   from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM
   (8192 envs on ≥20 GiB runtimes, 4096 below).
-- `notebooks/mjlab_render_smoke_colab.ipynb` — rendering diagnostic: a ladder of isolated
-  subprocess probes (pure GL → mjlab sim → mjlab render → context-order repros) ending in
-  an actual replayed video. Run this first when video fails on a new runtime; each step's
-  PASS/FAIL localizes the fault without waiting on training.
 
 **Rendering design — record-then-replay (2026-08-03):** the notebooks never render
 from the simulation process. The rollout process (warp/CUDA, zero GL) dumps the
@@ -145,7 +141,9 @@ holds CUDA segfaults — and with the GL context created first, it deadlocks
 instead. Context-creation-order probes alone pass; the fault needs the full
 env in-process, so the only robust fix is not sharing the process at all.
 Both phases run as subprocesses of the notebook kernel: a native fault
-surfaces as an exit code, never a kernel crash.
+surfaces as an exit code, never a kernel crash. (The step-by-step diagnostic
+notebook that isolated this is in git history — removed once the fix was
+confirmed on a Colab G4 runtime, 2026-08-03.)
 
 **Versioning (updated 2026-08-02):** do not hand-pin `warp-lang`/`mujoco-warp` —
 install `mjlab>=1.5.3` and let it resolve its own pair (warp 1.15.0 +
