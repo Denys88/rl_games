@@ -124,9 +124,13 @@ exploration floor the task was designed around.
 ## Notebooks
 
 - `notebooks/mjlab_training.ipynb` — end-to-end at notebook scale: Go1 velocity training
-  (4096 envs, 1000 epochs, minutes on a modern GPU), training curve, then rendering of the
+  (8192 envs, 1000 epochs, ~17 min on an RTX 4090), training curve, then rendering of the
   trained policy and a commanded-vs-achieved velocity probe (the notebook-scale walker
-  achieves ~0.8 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
+  achieves ~0.9 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
+  Env count A/B'd back-to-back on an RTX 4090 (minibatch 16384, 1000 epochs): 8192 envs
+  reach 95.2 final reward in 17.1 min vs 4096's 88.8 in 11.8 min — same reward-per-frame
+  curve, 2× data; throughput scales (200k vs 145k total FPS) and VRAM is no constraint
+  (1.7 GiB peak — MJLab is compute-bound, not memory-bound).
 - `notebooks/mjlab_training_colab.ipynb` — the same pipeline for Colab: installs rl_games
   from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM
   (8192 envs on ≥20 GiB runtimes, 4096 below).
