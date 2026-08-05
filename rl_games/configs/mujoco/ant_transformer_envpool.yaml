@@ -1,0 +1,67 @@
+params:
+  seed: 5
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic_transformer
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: -1.0
+        fixed_sigma: true
+    mlp:
+      units:
+      - 64
+      activation: elu
+      initializer:
+        name: default
+    transformer:
+      max_steps: 16
+      n_layers: 2
+      n_heads: 4
+      n_kv_heads: 2
+      ffn_hidden: 128
+      memory: true
+  config:
+    name: Ant-v5_transformer_envpool
+    env_name: envpool
+    normalize_input: true
+    normalize_value: true
+    value_bootstrap: true
+    normalize_advantage: true
+    mixed_precision: true
+    reward_shaper:
+      scale_value: 1
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: true
+    use_smooth_clamp: true
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
+    max_epochs: 1000
+    num_actors: 64
+    horizon_length: 64
+    minibatch_size: 2048
+    mini_epochs: 4
+    critic_coef: 2
+    env_config:
+      env_name: Ant-v5
+      seed: 5
+    player:
+      render: false
+    seq_length: 8
