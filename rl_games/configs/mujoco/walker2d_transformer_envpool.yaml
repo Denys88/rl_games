@@ -19,8 +19,6 @@ params:
         fixed_sigma: true
     mlp:
       units:
-      - 256
-      - 128
       - 64
       activation: elu
       initializer:
@@ -31,16 +29,16 @@ params:
       n_heads: 4
       n_kv_heads: 2
       ffn_hidden: 128
+      memory: true
   config:
-    name: Ant-v5_transformer_envpool
+    name: Walker2d-v5_transformer_envpool
     env_name: envpool
     normalize_input: true
     normalize_value: true
     value_bootstrap: true
-    normalize_advantage: true
-    mixed_precision: true
     reward_shaper:
-      scale_value: 1
+      scale_value: 0.1
+    normalize_advantage: true
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -50,19 +48,19 @@ params:
     entropy_coef: 0.0
     truncate_grads: true
     e_clip: 0.2
-    clip_value: true
+    clip_value: false
+    num_actors: 64
+    horizon_length: 128
+    minibatch_size: 2048
+    mini_epochs: 5
+    critic_coef: 2
     use_smooth_clamp: true
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
-    max_epochs: 1000
-    num_actors: 64
-    horizon_length: 64
-    minibatch_size: 2048
-    mini_epochs: 4
-    critic_coef: 2
+    max_epochs: 2500
     env_config:
-      env_name: Ant-v5
+      env_name: Walker2d-v5
       seed: 5
     player:
       render: false
-    seq_length: 16
+    seq_length: 8

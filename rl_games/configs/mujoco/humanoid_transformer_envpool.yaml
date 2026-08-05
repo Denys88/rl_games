@@ -19,9 +19,7 @@ params:
         fixed_sigma: true
     mlp:
       units:
-      - 256
       - 128
-      - 64
       activation: elu
       initializer:
         name: default
@@ -30,17 +28,19 @@ params:
       n_layers: 2
       n_heads: 4
       n_kv_heads: 2
-      ffn_hidden: 128
+      ffn_hidden: 256
+      memory: true
   config:
-    name: Ant-v5_transformer_envpool
+    name: Humanoid-v5_transformer_envpool
     env_name: envpool
+    score_to_win: 20000
     normalize_input: true
     normalize_value: true
     value_bootstrap: true
-    normalize_advantage: true
     mixed_precision: true
     reward_shaper:
-      scale_value: 1
+      scale_value: 0.1
+    normalize_advantage: true
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -53,16 +53,15 @@ params:
     clip_value: true
     use_smooth_clamp: true
     bound_loss_type: regularisation
-    bounds_loss_coef: 0.0
-    max_epochs: 1000
+    bounds_loss_coef: 0.0005
+    max_epochs: 2500
     num_actors: 64
-    horizon_length: 64
+    horizon_length: 128
     minibatch_size: 2048
-    mini_epochs: 4
-    critic_coef: 2
+    mini_epochs: 5
+    critic_coef: 4
     env_config:
-      env_name: Ant-v5
-      seed: 5
+      env_name: Humanoid-v5
     player:
       render: false
-    seq_length: 16
+    seq_length: 8
