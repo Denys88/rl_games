@@ -15,13 +15,11 @@ params:
           name: default
         sigma_init:
           name: const_initializer
-          val: 0
+          val: -1.0
         fixed_sigma: true
     mlp:
       units:
-      - 128
       - 64
-      - 32
       activation: elu
       initializer:
         name: variance_scaling_initializer
@@ -32,6 +30,7 @@ params:
       n_heads: 4
       n_kv_heads: 2
       ffn_hidden: 128
+      memory: true
   config:
     name: HalfCheetah-v5_transformer_envpool
     env_name: envpool
@@ -64,4 +63,4 @@ params:
       seed: 5
     player:
       render: false
-    seq_length: 16
+    seq_length: 8
