@@ -1,0 +1,57 @@
+params:
+  torch_threads: 4
+  algo:
+    name: a2c_discrete
+  model:
+    name: discrete_a2c
+  load_checkpoint: false
+  load_path: path
+  network:
+    name: actor_critic_transformer
+    separate: false
+    space:
+      discrete: null
+    mlp:
+      units:
+      - 64
+      - 64
+      activation: relu
+      normalization: layer_norm
+      norm_only_first_layer: true
+      initializer:
+        name: default
+      regularizer:
+        name: None
+    transformer:
+      max_steps: 16
+      n_layers: 2
+      n_heads: 4
+      n_kv_heads: 2
+      ffn_hidden: 128
+  config:
+    env_name: CartPoleMaskedVelocity-v1
+    reward_shaper:
+      scale_value: 0.1
+    normalize_advantage: true
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 1e-4
+    name: cartpole_vel_transformer
+    score_to_win: 500
+    grad_norm: 0.5
+    entropy_coef: 0.01
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: true
+    num_actors: 16
+    horizon_length: 256
+    minibatch_size: 2048
+    mini_epochs: 4
+    critic_coef: 1
+    lr_schedule: None
+    kl_threshold: 0.008
+    normalize_input: false
+    seq_length: 16
+    max_epochs: 800
+    player:
+      render: false

@@ -1,0 +1,71 @@
+params:
+  torch_threads: 4
+  seed: 8
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic_transformer
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: true
+    mlp:
+      units:
+      - 256
+      - 128
+      - 64
+      d2rl: false
+      activation: elu
+      initializer:
+        name: default
+    transformer:
+      max_steps: 16
+      n_layers: 2
+      n_heads: 4
+      n_kv_heads: 2
+      ffn_hidden: 128
+  config:
+    env_name: BipedalWalker-v3
+    name: walker_transformer
+    reward_shaper:
+      min_val: -1
+      scale_value: 0.1
+    normalize_advantage: true
+    gamma: 0.995
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.004
+    save_best_after: 10
+    score_to_win: 100000
+    grad_norm: 1.5
+    entropy_coef: -0.003
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: false
+    num_actors: 16
+    horizon_length: 256
+    minibatch_size: 2048
+    mini_epochs: 4
+    critic_coef: 2
+    normalize_input: true
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.001
+    max_epochs: 700
+    seq_length: 16
+    normalize_value: true
+    use_diagnostics: true
+    value_bootstrap: true
+    weight_decay: 0.0001
+    use_smooth_clamp: true
+    player:
+      render: false

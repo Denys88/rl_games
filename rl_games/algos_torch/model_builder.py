@@ -1,6 +1,7 @@
 from rl_games.common import object_factory
 import rl_games.algos_torch
 from rl_games.algos_torch import network_builder
+from rl_games.algos_torch import transformer_network
 from rl_games.algos_torch import models
 
 NETWORK_REGISTRY = {}
@@ -21,6 +22,8 @@ class NetworkBuilder:
         self.network_factory.register_builder('resnet_actor_critic',
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
+        self.network_factory.register_builder('actor_critic_transformer',
+                                              lambda **kwargs: transformer_network.TransformerBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
 
     def load(self, params):
