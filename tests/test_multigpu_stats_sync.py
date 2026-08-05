@@ -171,3 +171,22 @@ def test_two_process_gloo_broadcast_makes_ranks_byte_identical():
         assert torch.equal(a, b)      # rank 0 unchanged
     for a, b in zip(post1, pre0):
         assert torch.equal(a, b)      # rank 1 adopted rank 0 exactly
+
+
+def test_dict_obs_normalizer_flattens_to_children():
+    from rl_games.common.a2c_common import (_stats_sync_flatten,
+                                            broadcast_rank_stats)
+    from rl_games.algos_torch.running_mean_std import RunningMeanStdObs
+    torch.manual_seed(13)
+    obs = RunningMeanStdObs({'proprio': (4,), 'camera': (6,)})
+    obs.train()
+    obs({'proprio': torch.randn(100, 4) + 2, 'camera': torch.randn(100, 6) - 1})
+    flat = _stats_sync_flatten(obs)
+    assert len(flat) == 2 and all(hasattr(m, 'count') for m in flat)
+    # both sync primitives operate on the flattened children without error
+    for m in flat:
+        merge_rank_stats(m, _allreduce_two_identical_ranks)
+        broadcast_rank_stats(m, lambda t: t)
+    # plain normalizer passes through unchanged
+    plain = RunningMeanStd((3,))
+    assert _stats_sync_flatten(plain) == [plain]

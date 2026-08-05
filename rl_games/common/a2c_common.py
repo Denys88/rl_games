@@ -103,13 +103,34 @@ def resolve_stats_sync_mode(mode):
     return mode
 
 
+def _stats_sync_flatten(m):
+    """Yield the flat RunningMeanStd modules inside a normalizer.
+
+    Dict-obs models use RunningMeanStdObs: a container of per-key
+    RunningMeanStd children with no top-level count/mean/var buffers.
+    Both sync modes must operate on the flat children. Duck-typed (not
+    isinstance) because the container may be jit-scripted. Child order is
+    module insertion order -- identical on every rank, as the collectives
+    require.
+    """
+    if hasattr(m, 'count'):
+        return [m]
+    inner = getattr(m, 'running_mean_std', None)
+    if inner is not None:
+        return list(inner.children())
+    return []
+
+
 def broadcast_rank_stats(m, broadcast):
     """Overwrite one RunningMeanStd with rank 0's state.
 
     The standard DDP treatment of running-stat buffers (broadcast_buffers):
     every rank adopts rank 0's statistics, which estimate the same data
-    distribution from 1/world_size of the stream -- unbiased, marginally
-    higher variance, and all ranks are byte-identical after the call.
+    distribution from 1/world_size of the stream -- unbiased, and all
+    ranks are byte-identical after the call. Scaling caveat: estimator
+    variance and the within-update-phase drift of rank-local deltas are
+    both ~world_size x pooled's (each decays as 1/epoch). Indistinguishable
+    at 2 ranks; at 8+ ranks pooled has the better statistical footing.
     Stateless by construction: no snapshot bookkeeping, idempotent, and
     restore paths need no special handling (whatever rank 0 restored is
     simply what every rank uses). `broadcast` must overwrite the given
@@ -728,7 +749,7 @@ class A2CBase(BaseAlgorithm):
                 modules.append(cv_model.running_mean_std)
             if getattr(cv_model, 'value_mean_std', None) is not None:
                 modules.append(cv_model.value_mean_std)
-        return modules
+        return [flat for m in modules for flat in _stats_sync_flatten(m)]
 
     def _seed_stats_sync_snapshots(self):
         """Re-baseline the cross-rank stats sync after loading stats.
