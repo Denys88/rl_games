@@ -93,6 +93,33 @@ def merge_rank_stats(m, all_reduce):
     m._stats_sync_snapshot = (n.clone(), weighted_mean.clone(), weighted_sq.clone())
 
 
+STATS_SYNC_MODES = ('pooled', 'broadcast')
+
+
+def resolve_stats_sync_mode(mode):
+    if mode not in STATS_SYNC_MODES:
+        raise ValueError(
+            f"multi_gpu_sync_stats_mode must be one of {STATS_SYNC_MODES}, got '{mode}'")
+    return mode
+
+
+def broadcast_rank_stats(m, broadcast):
+    """Overwrite one RunningMeanStd with rank 0's state.
+
+    The standard DDP treatment of running-stat buffers (broadcast_buffers):
+    every rank adopts rank 0's statistics, which estimate the same data
+    distribution from 1/world_size of the stream -- unbiased, marginally
+    higher variance, and all ranks are byte-identical after the call.
+    Stateless by construction: no snapshot bookkeeping, idempotent, and
+    restore paths need no special handling (whatever rank 0 restored is
+    simply what every rank uses). `broadcast` must overwrite the given
+    tensor in place with rank 0's value.
+    """
+    broadcast(m.count)
+    broadcast(m.running_mean)
+    broadcast(m.running_var)
+
+
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
@@ -145,6 +172,8 @@ class A2CBase(BaseAlgorithm):
         self.multi_gpu = config.get('multi_gpu', False)
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
+        self.multi_gpu_sync_stats_mode = resolve_stats_sync_mode(
+            config.get('multi_gpu_sync_stats_mode', 'pooled'))
 
         # multi-gpu/multi-node data
         self.local_rank = 0
@@ -711,6 +740,8 @@ class A2CBase(BaseAlgorithm):
         """
         if not self.multi_gpu or not self.multi_gpu_sync_stats:
             return
+        if self.multi_gpu_sync_stats_mode == 'broadcast':
+            return   # broadcast is stateless: nothing to re-baseline
         for m in self._stats_sync_modules():
             seed_stats_sync_snapshot(m)
 
@@ -724,9 +755,20 @@ class A2CBase(BaseAlgorithm):
         86.9 vs 94.8 mean reward at epoch 2000 before the fix). Moment-based
         parallel merge: mu = sum(n_i mu_i)/N,
         var = sum(n_i (var_i + mu_i^2))/N - mu^2.
-        Disable with `multi_gpu_sync_stats: False`.
+        Two modes (`multi_gpu_sync_stats_mode`):
+        - 'pooled' (default): moment-based parallel merge of per-epoch
+          deltas -- every rank gets statistics of the pooled global stream
+          (mu = sum(n_i mu_i)/N, var = sum(n_i (var_i + mu_i^2))/N - mu^2).
+        - 'broadcast': every rank adopts rank 0's statistics (standard DDP
+          broadcast_buffers semantics) -- stateless and idempotent; rank
+          0's shard is an unbiased estimate of the same distribution.
+        Disable entirely with `multi_gpu_sync_stats: False`.
         """
         if not self.multi_gpu or not self.multi_gpu_sync_stats:
+            return
+        if self.multi_gpu_sync_stats_mode == 'broadcast':
+            for m in self._stats_sync_modules():
+                broadcast_rank_stats(m, lambda t: dist.broadcast(t, src=0))
             return
         for m in self._stats_sync_modules():
             merge_rank_stats(m, lambda t: dist.all_reduce(t, op=dist.ReduceOp.SUM))

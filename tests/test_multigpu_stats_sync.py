@@ -113,3 +113,61 @@ def test_two_process_gloo_merge_matches_pooled_data():
     exp_var = (pooled.pow(2).sum(0) + n_prior * 1.0) / c0.float() - exp_mean ** 2
     assert torch.allclose(mean0, exp_mean, atol=1e-6)
     assert torch.allclose(var0, exp_var, atol=1e-5)
+
+
+def test_unknown_sync_mode_raises():
+    from rl_games.common.a2c_common import resolve_stats_sync_mode
+    assert resolve_stats_sync_mode('pooled') == 'pooled'
+    assert resolve_stats_sync_mode('broadcast') == 'broadcast'
+    with pytest.raises(ValueError, match='multi_gpu_sync_stats_mode'):
+        resolve_stats_sync_mode('all_reduce')
+
+
+def test_broadcast_is_stateless_and_idempotent():
+    from rl_games.common.a2c_common import broadcast_rank_stats
+    torch.manual_seed(11)
+    m = RunningMeanStd((3,))
+    m.train()
+    m(torch.randn(250, 3) * 3 + 5)
+    c0, mean0, var0 = m.count.clone(), m.running_mean.clone(), m.running_var.clone()
+    identity = lambda t: t   # rank 0's own broadcast is a no-op
+    broadcast_rank_stats(m, identity)
+    broadcast_rank_stats(m, identity)
+    assert torch.equal(m.count, c0)
+    assert torch.equal(m.running_mean, mean0)
+    assert torch.equal(m.running_var, var0)
+    # stateless: no snapshot bookkeeping is created
+    assert not hasattr(m, '_stats_sync_snapshot')
+
+
+def _gloo_broadcast_worker(rank, world_size, port, results):
+    import torch.distributed as dist
+    from rl_games.common.a2c_common import broadcast_rank_stats
+    dist.init_process_group(
+        'gloo', rank=rank, world_size=world_size,
+        init_method=f'tcp://127.0.0.1:{port}')
+    torch.manual_seed(200 + rank)
+    m = RunningMeanStd((2,))
+    m.train()
+    # deliberately DIFFERENT per-rank streams
+    m(torch.randn(300, 2) * (1 + 3 * rank) + 10 * rank)
+    pre = (m.count.clone(), m.running_mean.clone(), m.running_var.clone())
+    broadcast_rank_stats(m, lambda t: dist.broadcast(t, src=0))
+    results[rank] = (pre, (m.count.clone(), m.running_mean.clone(), m.running_var.clone()))
+    dist.destroy_process_group()
+
+
+def test_two_process_gloo_broadcast_makes_ranks_byte_identical():
+    import torch.multiprocessing as mp
+    port = 30517 + os.getpid() % 1000
+    with mp.Manager() as mgr:
+        results = mgr.dict()
+        mp.spawn(_gloo_broadcast_worker, args=(2, port, results), nprocs=2, join=True)
+        (pre0, post0), (pre1, post1) = results[0], results[1]
+    # ranks disagreed before...
+    assert not torch.allclose(pre0[1], pre1[1])
+    # ...and are BYTE-identical to rank 0's pre-broadcast state after
+    for a, b in zip(post0, pre0):
+        assert torch.equal(a, b)      # rank 0 unchanged
+    for a, b in zip(post1, pre0):
+        assert torch.equal(a, b)      # rank 1 adopted rank 0 exactly
