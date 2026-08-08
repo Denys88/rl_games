@@ -50,3 +50,18 @@ def test_scripted_denorm_roundtrip():
     y = m(x)
     back = m(y, denorm=True)
     assert torch.allclose(back['a'], x['a'], atol=1e-4)
+
+
+def test_key_mismatch_fails_loudly():
+    import pytest
+    eager = RunningMeanStdObs({'a': (3,)})
+    scripted = torch.jit.script(RunningMeanStdObs({'a': (3,)}))
+    good = {'a': torch.randn(8, 3)}
+    extra = {'a': torch.randn(8, 3), 'stray': torch.randn(8, 2)}
+    missing = {}
+    for m in (eager, scripted):
+        m(good)   # sanity: matching keys pass
+        with pytest.raises(Exception, match='normalizer keys'):
+            m(extra)
+        with pytest.raises(Exception):
+            m(missing)
