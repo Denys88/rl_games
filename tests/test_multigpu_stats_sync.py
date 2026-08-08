@@ -190,3 +190,20 @@ def test_dict_obs_normalizer_flattens_to_children():
     # plain normalizer passes through unchanged
     plain = RunningMeanStd((3,))
     assert _stats_sync_flatten(plain) == [plain]
+
+
+def test_dict_obs_flatten_works_on_scripted_container():
+    # reachable end-to-end since #364: models.py jit-scripts the dict-obs
+    # container, so the sync must flatten a RecursiveScriptModule too
+    from rl_games.common.a2c_common import (_stats_sync_flatten,
+                                            broadcast_rank_stats)
+    from rl_games.algos_torch.running_mean_std import RunningMeanStdObs
+    scripted = torch.jit.script(RunningMeanStdObs({'proprio': (4,), 'camera': (6,)}))
+    scripted.train()
+    scripted({'proprio': torch.randn(64, 4) + 2, 'camera': torch.randn(64, 6)})
+    flat = _stats_sync_flatten(scripted)
+    assert len(flat) == 2
+    for m in flat:
+        assert hasattr(m, 'count') and hasattr(m, 'running_mean')
+        merge_rank_stats(m, _allreduce_two_identical_ranks)
+        broadcast_rank_stats(m, lambda t: t)
