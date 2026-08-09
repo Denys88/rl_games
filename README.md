@@ -51,7 +51,6 @@ Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
 ![WujiHand Reorient](docs/pictures/mjlab/wujihand_reorient.gif)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
-* [BRAX](docs/BRAX.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
 * [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
 * [Random Envs](docs/OTHER.md)
