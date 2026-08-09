@@ -427,3 +427,139 @@ def test_value_normalizer_ignores_garbage_returns():
     for k in clean:
         assert torch.allclose(clean[k], poisoned[k], atol=0, rtol=0), (
             f"parameter {k} differs: garbage returns leaked via the value normalizer")
+
+
+def test_recurrent_central_value_state_isolated_from_filler_rows():
+    """Recurrent central critic must get the same post-filler re-zero as the
+    actor: its get_value in get_action_values advances rnn_states on the
+    filler observation, and without the mirrored reset the first real row of
+    every new episode inherits filler-contaminated critic state (external
+    review 2026-08-08, confirmed by repro: 6/6 boundaries contaminated)."""
+    import numpy as np
+    import torch
+    from gymnasium import spaces
+    from rl_games.torch_runner import Runner
+    from tests.test_sac_correctness import (StaggeredFakeNextStepVecEnv,
+                                            EP_LEN, OBS_DIM)
+
+    NUM_ENVS = 4
+    HORIZON = 3 * EP_LEN
+
+    class DictObsNextStepEnv(StaggeredFakeNextStepVecEnv):
+        def _wrap(self, o):
+            return {'obs': o, 'states': (o * 10.0 + 1.0).astype(np.float32)}
+
+        def reset(self):
+            return self._wrap(super().reset())
+
+        def step(self, actions):
+            o, r, d, i = super().step(actions)
+            return self._wrap(o), r, d, i
+
+        def get_env_info(self):
+            info = super().get_env_info()
+            info['state_space'] = spaces.Box(-np.inf, np.inf, (OBS_DIM,), dtype=np.float32)
+            return info
+
+    class TorchDictEnvAdapter:
+        def __init__(self, fake):
+            self.fake = fake
+
+        def _t(self, obs):
+            return {k: torch.from_numpy(v) for k, v in obs.items()}
+
+        def reset(self):
+            return self._t(self.fake.reset())
+
+        def step(self, actions):
+            obs, rew, dones, infos = self.fake.step(actions.detach().cpu().numpy())
+            return self._t(obs), torch.from_numpy(rew), torch.from_numpy(dones), infos
+
+        def get_env_info(self):
+            return self.fake.get_env_info()
+
+        def get_env_state(self):
+            return None
+
+        def set_env_state(self, state):
+            pass
+
+    torch.manual_seed(7)
+    np.random.seed(7)
+    fake = DictObsNextStepEnv(NUM_ENVS, EP_LEN)
+    env = TorchDictEnvAdapter(fake)
+    rnn = {'name': 'lstm', 'units': 8, 'layers': 1}
+    network = {
+        'name': 'actor_critic', 'separate': False,
+        'space': {'continuous': {
+            'mu_activation': 'None', 'sigma_activation': 'None',
+            'mu_init': {'name': 'default'},
+            'sigma_init': {'name': 'const_initializer', 'val': 0.0},
+            'fixed_sigma': True}},
+        'mlp': {'units': [16], 'activation': 'elu', 'initializer': {'name': 'default'}},
+        'rnn': rnn,
+    }
+    config = {
+        'name': 'cv_rnn_filler', 'env_name': 'unused',
+        'reward_shaper': {'scale_value': 1.0},
+        'device': 'cpu', 'multi_gpu': False, 'mixed_precision': False,
+        'normalize_input': False, 'normalize_value': False,
+        'normalize_advantage': True, 'value_bootstrap': False,
+        'num_actors': NUM_ENVS, 'horizon_length': HORIZON,
+        'minibatch_size': NUM_ENVS * HORIZON, 'mini_epochs': 1,
+        'learning_rate': 1e-4, 'lr_schedule': None, 'kl_threshold': 0.008,
+        'gamma': 0.99, 'tau': 0.95, 'e_clip': 0.2, 'clip_value': False,
+        'critic_coef': 1.0, 'entropy_coef': 0.0, 'truncate_grads': False,
+        'grad_norm': 1.0, 'seq_length': 5,
+        'max_epochs': 1, 'save_frequency': 0, 'save_best_after': 10_000,
+        'print_stats': False, 'train_dir': '/tmp/pytest_cv_rnn_filler',
+        'env_info': fake.get_env_info(),
+        'central_value_config': {
+            'minibatch_size': NUM_ENVS * HORIZON, 'mini_epochs': 1,
+            'learning_rate': 1e-4, 'clip_value': False,
+            'normalize_input': False, 'truncate_grads': False,
+            'network': {'name': 'actor_critic', 'central_value': True,
+                        'mlp': {'units': [16], 'activation': 'elu',
+                                'initializer': {'name': 'default'}},
+                        'rnn': rnn},
+        },
+    }
+    runner = Runner()
+    runner.load({'params': {'algo': {'name': 'a2c_continuous'},
+                            'model': {'name': 'continuous_a2c_logstd'},
+                            'network': network, 'config': config}})
+    runner.params['config']['vec_env'] = env
+    agent = runner.algo_factory.create(runner.algo_name, base_name='cv_rnn_filler',
+                                       params=runner.params)
+    assert agent.is_rnn and agent.has_central_value
+    assert agent.central_value_net.is_rnn and agent.mask_autoreset_rows
+
+    # spy on states ENTERING each row's forward
+    log = []
+    orig_gav = agent.get_action_values
+
+    def spy_gav(obs):
+        prev = agent._autoreset_prev_dones
+        prev = prev.clone() if prev is not None else torch.zeros(NUM_ENVS)
+        amag = torch.stack([s.abs().amax(dim=(0, 2)) for s in agent.rnn_states]).amax(0)
+        cmag = torch.stack([s.abs().amax(dim=(0, 2))
+                            for s in agent.central_value_net.rnn_states]).amax(0)
+        log.append((prev, amag, cmag))
+        return orig_gav(obs)
+
+    agent.get_action_values = spy_gav
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    with torch.no_grad():
+        agent.play_steps_rnn()
+
+    checked = 0
+    for n in range(len(log) - 1):
+        prev, _, _ = log[n]
+        _, amag2, cmag2 = log[n + 1]
+        for e in range(NUM_ENVS):
+            if prev[e] > 0:      # row n was a filler row for env e
+                checked += 1
+                assert amag2[e].item() == 0.0, f'actor state dirty at env {e} row {n+1}'
+                assert cmag2[e].item() == 0.0, f'CV state dirty at env {e} row {n+1}'
+    assert checked >= 4, f'staggered env produced too few boundaries ({checked})'

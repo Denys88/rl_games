@@ -1018,6 +1018,10 @@ class A2CBase(BaseAlgorithm):
                     if len(reset_idx) > 0:
                         for s in self.rnn_states:
                             s[:, reset_idx, :] = 0
+                        if self.has_central_value:
+                            # get_action_values advanced the central critic's
+                            # states on the same filler obs — re-zero them too
+                            self.central_value_net.post_step_rnn(reset_idx)
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
