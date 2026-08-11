@@ -19,30 +19,23 @@ class GeneralizedMovingStats(nn.Module):
         self.eps = eps
         self.perclo = perclo
         self.perchi = perchi
+        # statistics are buffers: not learnable, still checkpointed under the
+        # same state_dict keys as the former requires_grad=False Parameters
         if self.impl == 'off':
             pass
-        elif self.impl == 'mean_std':
-            self.step = torch.nn.Parameter(torch.ones((1), dtype=torch.int32), requires_grad=False)
-            self.mean = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-            self.sqrs = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-        elif self.impl == 'mean_std_corr':
-            self.step = torch.nn.Parameter(torch.ones((1), dtype=torch.int32), requires_grad=False)
-            self.mean = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-            self.sqrs = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)            
-        elif self.impl == 'min_max':
-            self.low = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-            self.high = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-        elif self.impl == 'perc_ema':
-            self.low = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-            self.high = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
+        elif self.impl in ('mean_std', 'mean_std_corr'):
+            self.register_buffer('step', torch.ones((1), dtype=torch.int32))
+            self.register_buffer('mean', torch.zeros((insize), dtype=torch.float32))
+            self.register_buffer('sqrs', torch.zeros((insize), dtype=torch.float32))
+        elif self.impl in ('min_max', 'perc_ema'):
+            self.register_buffer('low', torch.zeros((insize), dtype=torch.float32))
+            self.register_buffer('high', torch.zeros((insize), dtype=torch.float32))
         elif self.impl == 'perc_ema_corr':
-            self.step = torch.nn.Parameter(torch.ones((1), dtype=torch.int32), requires_grad=False)
-            self.low = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-            self.high = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-        elif self.impl == 'mean_mag':
-            self.mag = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
-        elif self.impl == 'max_mag':
-            self.mag = torch.nn.Parameter(torch.zeros((insize), dtype=torch.float32), requires_grad=False)
+            self.register_buffer('step', torch.ones((1), dtype=torch.int32))
+            self.register_buffer('low', torch.zeros((insize), dtype=torch.float32))
+            self.register_buffer('high', torch.zeros((insize), dtype=torch.float32))
+        elif self.impl in ('mean_mag', 'max_mag'):
+            self.register_buffer('mag', torch.zeros((insize), dtype=torch.float32))
         else:
             raise NotImplementedError(self.impl)
 
@@ -96,18 +89,21 @@ class GeneralizedMovingStats(nn.Module):
         sqrs.mul_(m).add_(mean_factor * x_sqr_mean)
         return mean, sqrs
 
-    def _update_stats(self, x):
+    def _update_stats(self, x, mask=None):
+        if mask is not None:
+            # honor the validity mask: masked-out rows (RNN padding, autoreset
+            # filler) must not move the statistics
+            valid = mask.reshape(-1) > 0
+            if not bool(valid.any()):
+                return
+            x = x[valid]
         m = self.decay
         if self.impl == 'off':
             pass
-        elif self.impl == 'mean_std':
-            self.step.data += 1
-            # Use the compiled function instead of separate operations
-            self.mean, self.sqrs = self.update_moving_stats(self.mean.data, self.sqrs.data, x, m)
-        elif self.impl == 'mean_std_corr':
-            self.step.data += 1
-            # Use the compiled function
-            self.mean, self.sqrs = self.update_moving_stats(self.mean.data, self.sqrs.data, x, m)
+        elif self.impl in ('mean_std', 'mean_std_corr'):
+            self.step += 1
+            # update_moving_stats mutates mean/sqrs in place
+            self.update_moving_stats(self.mean, self.sqrs, x, m)
         elif self.impl == 'min_max':
             low, high = torch.min(x), torch.max(x)
             self.low.data.mul_(m).add_((1 - m) * torch.minimum(self.low.data, low))
@@ -124,7 +120,7 @@ class GeneralizedMovingStats(nn.Module):
 
     def forward(self, input, mask=None, denorm=False):
         if self.training:
-            self._update_stats(input)
+            self._update_stats(input, mask)
 
         offset, invscale = self._get_stats()
         if denorm:
