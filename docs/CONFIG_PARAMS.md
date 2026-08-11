@@ -51,12 +51,15 @@ behavior.
 **Type:** str | **Default:** `'pooled'` | **Options:** `'pooled'`, `'broadcast'`
 
 - `'pooled'`: moment-based merge of per-epoch deltas — every rank gets the
-  statistics of the pooled global stream. Statistically exact at any world
-  size; the default.
+  statistics of the pooled global stream. Exact at any world size up to one
+  startup artifact: each rank's mean-0/var-1 initialization prior is counted
+  once, so a fresh merge carries `world_size` prior pseudo-samples instead
+  of one (relative effect ~1e-5 against real per-epoch batches, decaying as
+  1/epoch). The default.
 - `'broadcast'`: every rank adopts rank 0's statistics (standard DDP
   `broadcast_buffers` semantics). Stateless and idempotent, but estimator
-  variance and within-update drift grow ~linearly with world size — fine
-  at 2 ranks, prefer `'pooled'` at 8+.
+  variance and within-update drift grow ~linearly with world size (at fixed
+  per-rank batch geometry) — fine at 2 ranks, prefer `'pooled'` at 8+.
 
 A/B at 2 ranks (envpool Pong, 3 back-to-back seed pairs, 400 epochs):
 parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
