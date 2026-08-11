@@ -180,11 +180,14 @@ def normalization_with_masks(values, masks):
     return normalized_values
 
 def get_mean_var_with_masks(values, masks):
-    sum_mask = masks.sum()
+    # clamp the denominators so degenerate masks (0 or 1 valid rows) yield
+    # finite (mean, 0) instead of NaN poisoning the whole batch -- same
+    # guard style as apply_masks
+    sum_mask = masks.sum().clamp(min=1.0)
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_var = min_sqr * sum_mask / (sum_mask-1)
+    values_var = min_sqr * sum_mask / (sum_mask - 1).clamp(min=1.0)
     return values_mean, values_var
 
 def get_mean_std_with_masks(values, masks):

@@ -429,7 +429,7 @@ def test_value_normalizer_ignores_garbage_returns():
             f"parameter {k} differs: garbage returns leaked via the value normalizer")
 
 
-def test_recurrent_central_value_state_isolated_from_filler_rows():
+def test_recurrent_central_value_state_isolated_from_filler_rows(tmp_path):
     """Recurrent central critic must get the same post-filler re-zero as the
     actor: its get_value in get_action_values advances rnn_states on the
     filler observation, and without the mirrored reset the first real row of
@@ -512,7 +512,7 @@ def test_recurrent_central_value_state_isolated_from_filler_rows():
         'critic_coef': 1.0, 'entropy_coef': 0.0, 'truncate_grads': False,
         'grad_norm': 1.0, 'seq_length': 5,
         'max_epochs': 1, 'save_frequency': 0, 'save_best_after': 10_000,
-        'print_stats': False, 'train_dir': '/tmp/pytest_cv_rnn_filler',
+        'print_stats': False, 'train_dir': str(tmp_path),
         'env_info': fake.get_env_info(),
         'central_value_config': {
             'minibatch_size': NUM_ENVS * HORIZON, 'mini_epochs': 1,
@@ -563,3 +563,22 @@ def test_recurrent_central_value_state_isolated_from_filler_rows():
                 assert amag2[e].item() == 0.0, f'actor state dirty at env {e} row {n+1}'
                 assert cmag2[e].item() == 0.0, f'CV state dirty at env {e} row {n+1}'
     assert checked >= 4, f'staggered env produced too few boundaries ({checked})'
+
+
+def test_masked_moments_finite_on_degenerate_masks():
+    """0 or 1 valid rows must yield finite moments, not NaN (follow-up review
+    2026-08-10; unreachable from autoreset masking, defensive for degenerate
+    geometries)."""
+    import torch
+    from rl_games.algos_torch.torch_ext import get_mean_var_with_masks
+    v = torch.randn(8)
+    for n_valid in (0, 1, 2):
+        m = torch.zeros(8)
+        m[:n_valid] = 1.0
+        mean, var = get_mean_var_with_masks(v, m)
+        assert torch.isfinite(mean) and torch.isfinite(var), (n_valid, mean, var)
+    # sanity: >=2 valid rows still produce the unbiased sample variance
+    m = torch.ones(8)
+    mean, var = get_mean_var_with_masks(v, m)
+    assert torch.allclose(mean, v.mean(), atol=1e-6)
+    assert torch.allclose(var, v.var(unbiased=True), atol=1e-5)
