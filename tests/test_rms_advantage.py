@@ -22,7 +22,7 @@ def test_first_update_does_not_crash_and_converges():
         gms.train()
         for _ in range(300):
             gms(torch.randn(256) * 2.0 + 3.0)     # the #315 crash site
-        mean, std = gms._get_stats()
+        mean, std = gms.get_mean_std()
         assert abs(mean.item() - 3.0) < 0.2, (impl, mean)
         assert abs(std.item() - 2.0) < 0.2, (impl, std)
 
@@ -175,5 +175,5 @@ def test_agent_level_rms_advantage_full_epoch():
     agent.obs = agent.env_reset()
     agent.train_epoch()                       # crashed with TypeError pre-fix
     assert agent.advantage_mean_std.step.item() > 1
-    mean, std = agent.advantage_mean_std._get_stats()
+    mean, std = agent.advantage_mean_std.get_mean_std()
     assert torch.isfinite(mean).all() and torch.isfinite(std).all()

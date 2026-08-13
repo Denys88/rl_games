@@ -39,6 +39,16 @@ class GeneralizedMovingStats(nn.Module):
         else:
             raise NotImplementedError(self.impl)
 
+    def get_mean_std(self):
+        """Public accessor for the normalization statistics.
+
+        Returns (offset, invscale) as used for normalization. Note the
+        invscale/std is the EFFECTIVE value: variance is clamped to at
+        least 1/max^2 and eps is added before the square root, so it is
+        not the raw EMA variance (raw: sqrs - mean^2 for 'mean_std').
+        """
+        return self._get_stats()
+
     def _get_stats(self):
         if self.impl == 'off':
             return 0.0, 1.0
@@ -90,6 +100,11 @@ class GeneralizedMovingStats(nn.Module):
         return mean, sqrs
 
     def _update_stats(self, x, mask=None):
+        # EMA semantics: every update moves the statistics by the same decay
+        # regardless of how many (valid) rows the batch carries -- a 3-row
+        # masked batch weighs as much as a 3000-row one. Statistics are also
+        # rank-local under multi-GPU (not covered by the cross-rank sync of
+        # obs/value normalizers; see #363).
         if mask is not None:
             # honor the validity mask: masked-out rows (RNN padding, autoreset
             # filler) must not move the statistics

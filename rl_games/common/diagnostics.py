@@ -31,7 +31,8 @@ class PpoDiagnostics(DefaultDiagnostics):
     def epoch(self, agent, current_epoch):
         self.current_epoch = current_epoch
         if agent.normalize_rms_advantage:
-            adv_mean, adv_std = agent.advantage_mean_std._get_stats()
+            # effective (clamped + eps) normalization stats, not raw EMA moments
+            adv_mean, adv_std = agent.advantage_mean_std.get_mean_std()
             self.diag_dict['diagnostics/rms_advantage/mean'] = adv_mean.detach()
             self.diag_dict['diagnostics/rms_advantage/var'] = (adv_std * adv_std).detach()
         if agent.normalize_value:
