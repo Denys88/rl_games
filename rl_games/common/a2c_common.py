@@ -40,6 +40,107 @@ def swap_and_flatten01(arr):
     return arr.transpose(0, 1).reshape(s[0] * s[1], *s[2:])
 
 
+def _running_stats_totals(m):
+    """(count, sum_x, sum_x2) totals equivalent to a RunningMeanStd state."""
+    return (m.count.clone(),
+            m.running_mean * m.count,
+            (m.running_var + m.running_mean ** 2) * m.count)
+
+
+def seed_stats_sync_snapshot(m):
+    """Mark a normalizer's current state as already-shared history.
+
+    Call after loading stats from a checkpoint: the next merge_rank_stats
+    will then all-reduce only data accumulated after the load, instead of
+    re-summing identical restored totals across ranks (which would inflate
+    count by world_size and stiffen the normalizer against new data).
+    """
+    m._stats_sync_snapshot = tuple(t.clone() for t in _running_stats_totals(m))
+
+
+def merge_rank_stats(m, all_reduce):
+    """Cross-rank merge of one RunningMeanStd via summed moment deltas.
+
+    Merges per-epoch DELTAS against the last merged snapshot: after a merge
+    every rank shares identical history, so re-summing full per-rank totals
+    would double-weight that shared history each epoch (counts grow
+    geometrically and the normalizer freezes). A missing snapshot means the
+    module's entire history is rank-local (fresh start) and is merged whole.
+    `all_reduce` must SUM the given tensor in place across ranks.
+
+    Numerical note: recovering var from (var + mean^2)*count totals is a
+    cancellation hazard when mean^2 >> var. RunningMeanStd registers its
+    buffers as float64 (except on MPS, which cannot run a distributed
+    backend), where the round-trip is safe to mean^2/var ~ 1e12. If the
+    buffer dtype ever changes, this merge must be revisited.
+    """
+    cur = _running_stats_totals(m)
+    prev = getattr(m, '_stats_sync_snapshot', None)
+    if prev is None:
+        deltas = [c.clone() for c in cur]
+        base = [torch.zeros_like(c) for c in cur]
+    else:
+        deltas = [c - p for c, p in zip(cur, prev)]
+        base = prev
+    for t in deltas:
+        all_reduce(t)
+    n = base[0] + deltas[0]
+    weighted_mean = base[1] + deltas[1]
+    weighted_sq = base[2] + deltas[2]
+    m.count.copy_(n)
+    m.running_mean.copy_(weighted_mean / n)
+    m.running_var.copy_((weighted_sq / n - m.running_mean ** 2).clamp_(min=1e-8))
+    m._stats_sync_snapshot = (n.clone(), weighted_mean.clone(), weighted_sq.clone())
+
+
+STATS_SYNC_MODES = ('pooled', 'broadcast')
+
+
+def resolve_stats_sync_mode(mode):
+    if mode not in STATS_SYNC_MODES:
+        raise ValueError(
+            f"multi_gpu_sync_stats_mode must be one of {STATS_SYNC_MODES}, got '{mode}'")
+    return mode
+
+
+def _stats_sync_flatten(m):
+    """Yield the flat RunningMeanStd modules inside a normalizer.
+
+    Dict-obs models use RunningMeanStdObs: a container of per-key
+    RunningMeanStd children with no top-level count/mean/var buffers.
+    Both sync modes must operate on the flat children. Duck-typed (not
+    isinstance) because the container may be jit-scripted. Child order is
+    module insertion order -- identical on every rank, as the collectives
+    require.
+    """
+    if hasattr(m, 'count'):
+        return [m]
+    inner = getattr(m, 'running_mean_std', None)
+    if inner is not None:
+        return list(inner.children())
+    return []
+
+
+def broadcast_rank_stats(m, broadcast):
+    """Overwrite one RunningMeanStd with rank 0's state.
+
+    The standard DDP treatment of running-stat buffers (broadcast_buffers):
+    every rank adopts rank 0's statistics, which estimate the same data
+    distribution from 1/world_size of the stream -- unbiased, and all
+    ranks are byte-identical after the call. Scaling caveat: estimator
+    variance and the within-update-phase drift of rank-local deltas are
+    both ~world_size x pooled's (each decays as 1/epoch). Indistinguishable
+    at 2 ranks; at 8+ ranks pooled has the better statistical footing.
+    Stateless by construction: no snapshot bookkeeping, idempotent, and
+    restore paths need no special handling (whatever rank 0 restored is
+    simply what every rank uses). `broadcast` must overwrite the given
+    tensor in place with rank 0's value.
+    """
+    broadcast(m.count)
+    broadcast(m.running_mean)
+    broadcast(m.running_var)
+
+
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
@@ -90,6 +191,10 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
+        # cross-rank normalizer sync (see sync_running_stats); opt-out knob
+        self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
+        self.multi_gpu_sync_stats_mode = resolve_stats_sync_mode(
+            config.get('multi_gpu_sync_stats_mode', 'pooled'))
 
         # multi-gpu/multi-node data
         self.local_rank = 0
@@ -185,7 +290,17 @@ class A2CBase(BaseAlgorithm):
 
         self.is_adaptive_lr = config['lr_schedule'] == 'adaptive'
         self.linear_lr = config['lr_schedule'] == 'linear'
-        self.schedule_type = config.get('schedule_type', 'legacy')
+        # adaptive-LR stepping granularity:
+        #   'per_minibatch' (default; alias 'legacy' — rl_games' original
+        #       stepping, hence the old name; rsl-rl adopted the same
+        #       mechanism): update after every minibatch on that minibatch's
+        #       KL; needs reliable KL estimates (large minibatches)
+        #   'standard': once per mini-epoch on the epoch-mean KL — smoother,
+        #       slower to react to on-policy KL swings
+        #   'standard_epoch': once per full epoch
+        self.schedule_type = config.get('schedule_type', 'per_minibatch')
+        if self.schedule_type == 'legacy':
+            self.schedule_type = 'per_minibatch'
 
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
@@ -223,6 +338,22 @@ class A2CBase(BaseAlgorithm):
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
+
+        # next_step autoreset (envpool, native gymnasium 1.x vector envs): the
+        # reset step's row is garbage — action ignored, filler reward, obs is
+        # the PREVIOUS episode's terminal obs. Those rows are excluded from
+        # losses and advantage normalization via the masks channel; same_step
+        # (Isaac-style) and ray paths are unaffected (no mask produced).
+        self.autoreset_mode = (self.env_info or {}).get('autoreset_mode', 'same_step')
+        self.mask_autoreset_rows = self.autoreset_mode == 'next_step'
+        # dones from the previous env step, carried ACROSS rollouts; None until
+        # the first step after env_reset (fresh episodes: no pending reset row).
+        # self.dones itself can't serve: it is initialized to ones for the RNN
+        # fresh-state convention, which would wrongly flag the first row.
+        self._autoreset_prev_dones = None
+        if self.mask_autoreset_rows and self.num_agents > 1:
+            raise ValueError("PPO next_step autoreset masking does not support multi-agent envs; "
+                             "wrap the env with a same_step autoreset adapter instead")
         self.horizon_length = config['horizon_length']
 
         # seq_length is used only with rnn policy and value functions
@@ -590,6 +721,9 @@ class A2CBase(BaseAlgorithm):
     def env_reset(self):
         obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        # a fresh reset invalidates the autoreset tracker: the first row after
+        # an explicit reset is always a real step, never a filler reset row
+        self._autoreset_prev_dones = None
         return obs
 
     def discount_values(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards):
@@ -598,22 +732,6 @@ class A2CBase(BaseAlgorithm):
             last_extrinsic_values, fdones,
             self.gamma, self.tau,
         )
-
-    def discount_values_masks(self, fdones, last_extrinsic_values, mb_fdones, mb_extrinsic_values, mb_rewards, mb_masks):
-        lastgaelam = 0
-        mb_advs = torch.zeros_like(mb_rewards)
-        for t in reversed(range(self.horizon_length)):
-            if t == self.horizon_length - 1:
-                nextnonterminal = 1.0 - fdones
-                nextvalues = last_extrinsic_values
-            else:
-                nextnonterminal = 1.0 - mb_fdones[t+1]
-                nextvalues = mb_extrinsic_values[t+1]
-            nextnonterminal = nextnonterminal.unsqueeze(1)
-            masks_t = mb_masks[t].unsqueeze(1)
-            delta = (mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_extrinsic_values[t])
-            mb_advs[t] = lastgaelam = (delta + self.gamma * self.tau * nextnonterminal * lastgaelam) * masks_t
-        return mb_advs
 
     def clear_stats(self, clean_rewards=True):
         self.game_rewards.clear()
@@ -631,6 +749,63 @@ class A2CBase(BaseAlgorithm):
 
     def prepare_dataset(self, batch_dict):
         pass
+
+    def _stats_sync_modules(self):
+        modules = []
+        if self.normalize_input and hasattr(self.model, 'running_mean_std'):
+            modules.append(self.model.running_mean_std)
+        if self.normalize_value and getattr(self.model, 'value_mean_std', None) is not None:
+            modules.append(self.model.value_mean_std)
+        if self.has_central_value:
+            cv_model = self.central_value_net.model
+            if getattr(cv_model, 'running_mean_std', None) is not None:
+                modules.append(cv_model.running_mean_std)
+            if getattr(cv_model, 'value_mean_std', None) is not None:
+                modules.append(cv_model.value_mean_std)
+        return [flat for m in modules for flat in _stats_sync_flatten(m)]
+
+    def _seed_stats_sync_snapshots(self):
+        """Re-baseline the cross-rank stats sync after loading stats.
+
+        Restored stats are identical on every rank — shared history, not
+        fresh per-rank data. Without re-seeding, the first sync would treat
+        the full restored totals as disjoint deltas and all-reduce them,
+        inflating count by world_size.
+        """
+        if not self.multi_gpu or not self.multi_gpu_sync_stats:
+            return
+        if self.multi_gpu_sync_stats_mode == 'broadcast':
+            return   # broadcast is stateless: nothing to re-baseline
+        for m in self._stats_sync_modules():
+            seed_stats_sync_snapshot(m)
+
+    def sync_running_stats(self):
+        """Merge per-rank running normalization statistics across ranks.
+
+        Without this every rank's obs/value normalizers drift on their local
+        shard, so ranks train subtly different models whose averaged
+        gradients conflict — measured as an early-training reward deficit vs
+        single-GPU at identical global geometry (envpool Pong, 2 ranks:
+        86.9 vs 94.8 mean reward at epoch 2000 before the fix). Moment-based
+        parallel merge: mu = sum(n_i mu_i)/N,
+        var = sum(n_i (var_i + mu_i^2))/N - mu^2.
+        Two modes (`multi_gpu_sync_stats_mode`):
+        - 'pooled' (default): moment-based parallel merge of per-epoch
+          deltas -- every rank gets statistics of the pooled global stream
+          (mu = sum(n_i mu_i)/N, var = sum(n_i (var_i + mu_i^2))/N - mu^2).
+        - 'broadcast': every rank adopts rank 0's statistics (standard DDP
+          broadcast_buffers semantics) -- stateless and idempotent; rank
+          0's shard is an unbiased estimate of the same distribution.
+        Disable entirely with `multi_gpu_sync_stats: False`.
+        """
+        if not self.multi_gpu or not self.multi_gpu_sync_stats:
+            return
+        if self.multi_gpu_sync_stats_mode == 'broadcast':
+            for m in self._stats_sync_modules():
+                broadcast_rank_stats(m, lambda t: dist.broadcast(t, src=0))
+            return
+        for m in self._stats_sync_modules():
+            merge_rank_stats(m, lambda t: dist.all_reduce(t, op=dist.ReduceOp.SUM))
 
     def train_epoch(self):
         self.vec_env.set_train_info(self.frame, self)
@@ -687,8 +862,12 @@ class A2CBase(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
+        # central-value stats load after set_weights ran; re-seed everything
+        self._seed_stats_sync_snapshots()
+
     def set_central_value_function_weights(self, weights):
         self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
+        self._seed_stats_sync_snapshots()
 
     def get_weights(self):
         state = self.get_stats_weights()
@@ -721,6 +900,8 @@ class A2CBase(BaseAlgorithm):
     def set_weights(self, weights):
         self.model.load_state_dict(weights['model'])
         self.set_stats_weights(weights)
+        # restored stats are shared history, not fresh per-rank data
+        self._seed_stats_sync_snapshots()
 
     def get_param(self, param_name):
         if param_name in [
@@ -788,6 +969,10 @@ class A2CBase(BaseAlgorithm):
         update_list = self.update_list
 
         step_time = 0.0
+        if self.mask_autoreset_rows:
+            mb_valid = torch.ones(
+                (self.horizon_length, self.num_actors * self.num_agents),
+                dtype=torch.float32, device=self.ppo_device)
 
         for n in range(self.horizon_length):
             if self.use_action_masks:
@@ -797,6 +982,11 @@ class A2CBase(BaseAlgorithm):
                 res_dict = self.get_action_values(self.obs)
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones)
+            if self.mask_autoreset_rows:
+                prev_dones = self._autoreset_prev_dones
+                if prev_dones is None:
+                    prev_dones = torch.zeros_like(self.dones)
+                mb_valid[n] = 1.0 - prev_dones.float()
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -805,6 +995,8 @@ class A2CBase(BaseAlgorithm):
 
             step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            if self.mask_autoreset_rows:
+                self._autoreset_prev_dones = self.dones.clone()
             step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
@@ -815,9 +1007,17 @@ class A2CBase(BaseAlgorithm):
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards.add_(rewards)
-            self.current_shaped_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
+            if self.mask_autoreset_rows:
+                # rows whose previous step ended an episode are reset steps:
+                # keep filler rewards/lengths out of the episode stats
+                live_rows = mb_valid[n]
+                self.current_rewards.add_(rewards * live_rows.unsqueeze(1))
+                self.current_shaped_rewards.add_(shaped_rewards * live_rows.unsqueeze(1))
+                self.current_lengths.add_(live_rows)
+            else:
+                self.current_rewards.add_(rewards)
+                self.current_shaped_rewards.add_(shaped_rewards)
+                self.current_lengths.add_(1)
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
@@ -846,6 +1046,8 @@ class A2CBase(BaseAlgorithm):
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         batch_dict['step_time'] = step_time
+        if self.mask_autoreset_rows:
+            batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
 
         return batch_dict
 
@@ -853,6 +1055,10 @@ class A2CBase(BaseAlgorithm):
         update_list = self.update_list
         mb_rnn_states = self.mb_rnn_states
         step_time = 0.0
+        if self.mask_autoreset_rows:
+            mb_valid = torch.ones(
+                (self.horizon_length, self.num_actors * self.num_agents),
+                dtype=torch.float32, device=self.ppo_device)
 
         for n in range(self.horizon_length):
             if n % self.seq_length == 0:
@@ -871,6 +1077,24 @@ class A2CBase(BaseAlgorithm):
             self.rnn_states = res_dict['rnn_states']
             self.experience_buffer.update_data('obses', n, self.obs['obs'])
             self.experience_buffer.update_data('dones', n, self.dones.byte())
+            if self.mask_autoreset_rows:
+                prev_dones = self._autoreset_prev_dones
+                if prev_dones is None:
+                    prev_dones = torch.zeros_like(self.dones)
+                mb_valid[n] = 1.0 - prev_dones.float()
+                if self.zero_rnn_on_done:
+                    # this row is a filler reset row for envs with prev_dones:
+                    # its forward pass just absorbed the dead episode's terminal
+                    # obs into the freshly zeroed state — re-zero so the first
+                    # real row of the new episode starts from a clean state
+                    reset_idx = prev_dones.nonzero(as_tuple=False)
+                    if len(reset_idx) > 0:
+                        for s in self.rnn_states:
+                            s[:, reset_idx, :] = 0
+                        if self.has_central_value:
+                            # get_action_values advanced the central critic's
+                            # states on the same filler obs — re-zero them too
+                            self.central_value_net.post_step_rnn(reset_idx)
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -879,6 +1103,8 @@ class A2CBase(BaseAlgorithm):
 
             step_time_start = time.perf_counter()
             self.obs, rewards, self.dones, infos = self.env_step(res_dict['actions'])
+            if self.mask_autoreset_rows:
+                self._autoreset_prev_dones = self.dones.clone()
             step_time_end = time.perf_counter()
 
             step_time += (step_time_end - step_time_start)
@@ -890,9 +1116,17 @@ class A2CBase(BaseAlgorithm):
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
-            self.current_rewards.add_(rewards)
-            self.current_shaped_rewards.add_(shaped_rewards)
-            self.current_lengths.add_(1)
+            if self.mask_autoreset_rows:
+                # rows whose previous step ended an episode are reset steps:
+                # keep filler rewards/lengths out of the episode stats
+                live_rows = mb_valid[n]
+                self.current_rewards.add_(rewards * live_rows.unsqueeze(1))
+                self.current_shaped_rewards.add_(shaped_rewards * live_rows.unsqueeze(1))
+                self.current_lengths.add_(live_rows)
+            else:
+                self.current_rewards.add_(rewards)
+                self.current_shaped_rewards.add_(shaped_rewards)
+                self.current_lengths.add_(1)
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
 
@@ -927,6 +1161,18 @@ class A2CBase(BaseAlgorithm):
 
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
+        if self.mask_autoreset_rows:
+            batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
+            if self.zero_rnn_on_done:
+                # batch 'dones' feeds ONLY the RNN state-reset path at train
+                # time (GAE above consumed the pure buffer copy): also fire the
+                # reset ENTERING the first real row after a filler reset row,
+                # mirroring the rollout-side re-zero of the absorbed state
+                rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
+                garbage = (mb_valid == 0.0)
+                rnn_dones[1:] = torch.maximum(
+                    rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
+                batch_dict['dones'] = swap_and_flatten01(rnn_dones)
         states = []
         for mb_s in mb_rnn_states:
             t_size = mb_s.size()[0] * mb_s.size()[2]
@@ -1017,6 +1263,7 @@ class DiscreteA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1037,15 +1284,27 @@ class DiscreteA2CBase(A2CBase):
         advantages = returns - values
 
         if self.normalize_value:
-            self.value_mean_std.train()
-            values = self.value_mean_std(values)
-            returns = self.value_mean_std(returns)
-            self.value_mean_std.eval()
+            if rnn_masks is not None:
+                # autoreset filler rows carry meaningless returns (their GAE
+                # delta uses a bogus value target): update the normalizer's
+                # statistics from valid rows only, then normalize everything
+                valid = rnn_masks.bool()
+                self.value_mean_std.train()
+                self.value_mean_std(values[valid])
+                self.value_mean_std(returns[valid])
+                self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+            else:
+                self.value_mean_std.train()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
+            if rnn_masks is not None:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
                 else:
@@ -1278,7 +1537,7 @@ class ContinuousA2CBase(A2CBase):
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)
-                if self.schedule_type == 'legacy':
+                if self.schedule_type == 'per_minibatch':
                     av_kls = kl
                     if self.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
@@ -1299,6 +1558,7 @@ class ContinuousA2CBase(A2CBase):
             if self.normalize_input:
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
+        self.sync_running_stats()
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1323,16 +1583,29 @@ class ContinuousA2CBase(A2CBase):
         if self.normalize_value:
             if self.config.get('freeze_critic', False):
                 self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+            elif rnn_masks is not None:
+                # autoreset filler rows carry meaningless returns (their GAE
+                # delta uses a bogus value target): update the normalizer's
+                # statistics from valid rows only, then normalize everything
+                valid = rnn_masks.bool()
+                self.value_mean_std.train()
+                self.value_mean_std(values[valid])
+                self.value_mean_std(returns[valid])
+                self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
-            values = self.value_mean_std(values)
-            returns = self.value_mean_std(returns)
-            self.value_mean_std.eval()
+                values = self.value_mean_std(values)
+                returns = self.value_mean_std(returns)
+                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
         if self.normalize_advantage:
-            if self.is_rnn:
+            if rnn_masks is not None:
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages, mask=rnn_masks)
                 else:

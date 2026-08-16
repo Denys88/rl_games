@@ -2,7 +2,7 @@ from rl_games.algos_torch import torch_ext
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 def _running_stats_dtype():
@@ -123,6 +123,13 @@ class RunningMeanStdObs(nn.Module):
             k: RunningMeanStd(v, epsilon, per_channel, norm_only) for k, v in insize.items()
         })
 
-    def forward(self, input, denorm:bool=False):
-        res = {k: self.running_mean_std[k](v, denorm) for k, v in input.items()}
+    def forward(self, input: Dict[str, torch.Tensor], denorm: bool = False) -> Dict[str, torch.Tensor]:
+        # loud key-mismatch guard: extra input keys would otherwise be
+        # silently dropped, masking an env/config mismatch (missing keys
+        # already fail loudly on the dict access below)
+        assert len(input) == len(self.running_mean_std), \
+            'observation dict keys do not match the normalizer keys'
+        res: Dict[str, torch.Tensor] = {}
+        for k, m in self.running_mean_std.items():
+            res[k] = m(input[k], denorm)
         return res

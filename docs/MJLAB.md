@@ -120,3 +120,38 @@ rare huge negative return bursts that a high LR converts into an unrecoverable
 policy regression); state-dependent sigma with
 `sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
 exploration floor the task was designed around.
+
+## Notebooks
+
+- `notebooks/mjlab_training.ipynb` — end-to-end at notebook scale: Go1 velocity training
+  (8192 envs, 1000 epochs, ~17 min on an RTX 4090), training curve, then rendering of the
+  trained policy and a commanded-vs-achieved velocity probe (the notebook-scale walker
+  achieves ~0.9 m/s at commanded 1.0; undertrained or under-diversified policies probe ~0).
+  Env count A/B'd back-to-back on an RTX 4090 (minibatch 16384, 1000 epochs): 8192 envs
+  reach 95.2 final reward in 17.1 min vs 4096's 88.8 in 11.8 min — same reward-per-frame
+  curve, 2× data; throughput scales (200k vs 145k total FPS) and VRAM is no constraint
+  (1.7 GiB peak — MJLab is compute-bound, not memory-bound).
+- `notebooks/mjlab_training_colab.ipynb` — the same pipeline for Colab: installs rl_games
+  from git (until the PyPI release) and mjlab from PyPI, auto-scales env count by GPU VRAM
+  (8192 envs on ≥20 GiB runtimes, 4096 below).
+
+**Rendering design — record-then-replay (2026-08-03):** the notebooks never render
+from the simulation process. The rollout process (warp/CUDA, zero GL) dumps the
+compiled `MjModel` plus per-frame `qpos`; a second process (plain `mujoco` +
+EGL, zero warp) replays the states through `mujoco.Renderer` with a tracked
+camera. Reason: on some cloud driver stacks (observed: Colab G4, sm_120,
+driver 13.0) creating an EGL context in a process where the full mjlab env
+holds CUDA segfaults — and with the GL context created first, it deadlocks
+instead. Context-creation-order probes alone pass; the fault needs the full
+env in-process, so the only robust fix is not sharing the process at all.
+Both phases run as subprocesses of the notebook kernel: a native fault
+surfaces as an exit code, never a kernel crash. (The step-by-step diagnostic
+notebook that isolated this is in git history — removed once the fix was
+confirmed on a Colab G4 runtime, 2026-08-03.)
+
+**Versioning (updated 2026-08-02):** do not hand-pin `warp-lang`/`mujoco-warp` —
+install `mjlab>=1.5.3` and let it resolve its own pair (warp 1.15.0 +
+mujoco-warp 3.10.0.3 as of this writing). History: mjlab 1.5.0 with warp 1.15 /
+mujoco-warp 3.10.0.2 crashed env resets (fixed in 3.10.0.3), and pinning back to
+warp 1.14 segfaulted the raytracer on Blackwell (sm_120, Colab G4 tier) — warp
+1.15's BVH out-of-bounds fix is required there.

@@ -317,6 +317,9 @@ class A2CBuilder(NetworkBuilder):
                 # 'exp' (default) or 'softplus' (Brax/rsl-rl style: raw head grows
                 # the std linearly, not exponentially — robust when fixed_sigma False)
                 self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
+                if self.sigma_parametrization == 'scalar':
+                    # reference-compat alias (rsl-rl lineage std-space naming)
+                    self.sigma_parametrization = 'linear'
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
