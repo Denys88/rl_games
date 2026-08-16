@@ -734,9 +734,13 @@ class DiscretizeActions(gym.ActionWrapper):
         gym.ActionWrapper.__init__(self, env)
         box = env.action_space
         assert isinstance(box, spaces.Box) and len(box.shape) == 1
+        assert np.isfinite(box.low).all() and np.isfinite(box.high).all(), \
+            "DiscretizeActions needs finite Box bounds (a uniform grid over " \
+            "infinite bounds would produce nan/inf actions)"
         dim = box.shape[0]
         self._bins = [bins] * dim if np.isscalar(bins) else list(bins)
         assert len(self._bins) == dim
+        self._dtype = box.dtype
         self._grids = [np.linspace(box.low[i], box.high[i], self._bins[i])
                        for i in range(dim)]
         self.action_space = spaces.Tuple(
@@ -745,4 +749,4 @@ class DiscretizeActions(gym.ActionWrapper):
     def action(self, action):
         idx = np.asarray(action, dtype=np.int64)
         return np.array([g[i] for g, i in zip(self._grids, idx)],
-                        dtype=np.float32)
+                        dtype=self._dtype)

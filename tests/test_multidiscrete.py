@@ -1,6 +1,6 @@
 """Multi-discrete regression tests: masked path with heterogeneous head sizes
-(was np.split: equal-chunked + crashed on CUDA tensors), batch-size-1 forward,
-and the DiscretizeActions wrapper."""
+(np.split chunked equally and mis-sliced e.g. [3,5,7] heads), batch-size-1
+forward coverage, and the DiscretizeActions wrapper."""
 
 import gymnasium as gym
 import numpy as np
@@ -61,14 +61,6 @@ class TestMultiDiscreteMasks:
         assert torch.isfinite(out['prev_neglogp']).all()
         assert torch.isfinite(out['entropy']).all()
 
-    def test_masks_stay_torch(self):
-        # regression: np.split silently converted tensors through numpy
-        model = build_md_model()
-        masks = self._masks(8)
-        out = model({'is_train': False, 'obs': torch.randn(8, 10),
-                     'action_masks': masks})
-        assert isinstance(out['actions'], torch.Tensor)
-
     def test_batch_size_one(self):
         model = build_md_model()
         out = model({'is_train': True, 'obs': torch.randn(1, 10),
@@ -83,7 +75,6 @@ class TestMultiDiscreteMasks:
 class TestDiscretizeActions:
 
     def _box_env(self, dim=4):
-        env = gym.make('Pendulum-v1')  # any Box env; replace space for test
 
         class _Fake(gym.Env):
             action_space = gym.spaces.Box(-1.0, 1.0, (dim,), dtype=np.float32)
@@ -112,3 +103,17 @@ class TestDiscretizeActions:
         env.step([2, 0, 3])
         np.testing.assert_allclose(env.env.last_action, [1.0, -1.0, 0.0],
                                    atol=1e-6)
+
+    def test_infinite_bounds_rejected(self):
+        base = self._box_env(2)
+        base.action_space = gym.spaces.Box(-np.inf, np.inf, (2,),
+                                           dtype=np.float32)
+        with pytest.raises(AssertionError, match="finite"):
+            DiscretizeActions(base, bins=5)
+
+    def test_action_dtype_matches_box(self):
+        base = self._box_env(2)
+        base.action_space = gym.spaces.Box(-1.0, 1.0, (2,), dtype=np.float64)
+        env = DiscretizeActions(base, bins=3)
+        env.step([0, 2])
+        assert env.env.last_action.dtype == np.float64

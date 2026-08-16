@@ -164,8 +164,8 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    # per-head sizes (heads may differ); torch.split keeps
-                    # masks on-device (np.split equal-chunked and crashed on CUDA)
+                    # split by per-head size: np.split chunked EQUALLY, mis-slicing
+                    # heterogeneous heads (e.g. [3,5,7]) and crashing the forward
                     action_masks = torch.split(
                         action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
@@ -186,8 +186,8 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    # per-head sizes (heads may differ); torch.split keeps
-                    # masks on-device (np.split equal-chunked and crashed on CUDA)
+                    # split by per-head size: np.split chunked EQUALLY, mis-slicing
+                    # heterogeneous heads (e.g. [3,5,7]) and crashing the forward
                     action_masks = torch.split(
                         action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
