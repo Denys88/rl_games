@@ -158,7 +158,11 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.numel()
+        # mean over VALID rows. This used to divide by numel(), which scaled
+        # every loss down by the invalid fraction — equivalent to silently
+        # lowering the LR for masked (RNN / autoreset) training. 2.0.0
+        # behavior change; see release notes.
+        sum_mask = mask.sum().clamp(min=1.0)
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
@@ -176,11 +180,14 @@ def normalization_with_masks(values, masks):
     return normalized_values
 
 def get_mean_var_with_masks(values, masks):
-    sum_mask = masks.sum()
+    # clamp the denominators so degenerate masks (0 or 1 valid rows) yield
+    # finite (mean, 0) instead of NaN poisoning the whole batch -- same
+    # guard style as apply_masks
+    sum_mask = masks.sum().clamp(min=1.0)
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_var = min_sqr * sum_mask / (sum_mask-1)
+    values_var = min_sqr * sum_mask / (sum_mask - 1).clamp(min=1.0)
     return values_mean, values_var
 
 def get_mean_std_with_masks(values, masks):
