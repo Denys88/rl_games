@@ -1,5 +1,10 @@
 # dm_control soccer self-play (EnvPool)
 
+> **Status: experimental.** Research feature; interfaces and reward shaping
+> may change. Requires an unreleased EnvPool build (see below). Detailed
+> tests, docs, and training results land with the planned self-play
+> improvements pass.
+
 Trains dm_control locomotion soccer 2v2 (BoxHead walkers) with PPO and
 **symmetric self-play**: a single shared policy controls the home team while
 an **opponent league** plays the away team. Observations are egocentric and
