@@ -34,3 +34,14 @@ def test_seed_zero_actually_seeds():
     np.random.seed(0)
     expected = (torch.rand(3).tolist(), np.random.rand(3).tolist())
     assert draws[0] == expected
+
+
+def test_legacy_seq_len_falls_back_instead_of_silently_dropping():
+    # the deprecation warning implied the old key still worked; it was
+    # discarded and the RNN silently trained with seq_length=4 (a shipped
+    # config, ppo_pacman_torch_rnn.yaml, hit this)
+    # (batch is 16 in the tiny factory: keep seq values divisible)
+    agent = make_cartpole_agent(seq_len=8)
+    assert agent.seq_length == 8
+    agent = make_cartpole_agent(seq_len=4, seq_length=8)   # new key wins
+    assert agent.seq_length == 8

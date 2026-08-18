@@ -360,7 +360,7 @@ class A2CBase(BaseAlgorithm):
         if 'seq_len' in config:
             print('WARNING: seq_len is deprecated, use seq_length instead')
 
-        self.seq_length = self.config.get('seq_length', 4)
+        self.seq_length = self.config.get('seq_length', self.config.get('seq_len', 4))
         print('seq_length:', self.seq_length)
         self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now; never showed a benefit
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
