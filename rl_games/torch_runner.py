@@ -193,7 +193,7 @@ class Runner:
         self.algo_name = self.algo_params['name']
         self.exp_config = None
 
-        if self.seed:
+        if self.seed is not None:
             torch.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
             np.random.seed(self.seed)
