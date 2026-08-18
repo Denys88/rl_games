@@ -45,3 +45,12 @@ def test_legacy_seq_len_falls_back_instead_of_silently_dropping():
     assert agent.seq_length == 8
     agent = make_cartpole_agent(seq_len=4, seq_length=8)   # new key wins
     assert agent.seq_length == 8
+
+
+def test_sac_rejects_multi_gpu():
+    # SAC reads RANK only to gate the writer -- no DDP wrapper, no gradient
+    # collective. torchrun silently trained N independent agents racing on
+    # the same checkpoint files. Refuse loudly until real support exists.
+    from tests.test_sac_correctness import make_fake_env_sac_agent
+    with pytest.raises(NotImplementedError, match='multi_gpu is not supported for SAC'):
+        make_fake_env_sac_agent(multi_gpu=True)
