@@ -54,3 +54,25 @@ def test_sac_rejects_multi_gpu():
     from tests.test_sac_correctness import make_fake_env_sac_agent
     with pytest.raises(NotImplementedError, match='multi_gpu is not supported for SAC'):
         make_fake_env_sac_agent(multi_gpu=True)
+
+
+def test_adaptive_lr_state_survives_resume():
+    # the optimizer LR was checkpointed but last_lr was not: after restore the
+    # next scheduler.update restarted the adaptive walk from the config LR
+    # (up to ~30x too high late in training -- KL spike on resume)
+    src = make_cartpole_agent()
+    src.last_lr = 3.7e-5
+    src.entropy_coef = 0.0123
+    state = src.get_full_state_weights()
+    dst = make_cartpole_agent()
+    assert dst.last_lr != 3.7e-5
+    dst.set_full_state_weights(state)
+    assert dst.last_lr == 3.7e-5
+    assert dst.entropy_coef == 0.0123
+    # old checkpoints without the keys keep config-derived values
+    for k in ('last_lr', 'entropy_coef'):
+        state.pop(k)
+    legacy = make_cartpole_agent()
+    before = (legacy.last_lr, legacy.entropy_coef)
+    legacy.set_full_state_weights(state)
+    assert (legacy.last_lr, legacy.entropy_coef) == before
