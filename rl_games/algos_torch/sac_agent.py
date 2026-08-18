@@ -312,9 +312,9 @@ class SACAgent(BaseAlgorithm):
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
 
-        # Optional capability_manifest passthrough: an opaque config-declared
-        # block stored verbatim so it travels with the policy (rl_games takes
-        # no position on its schema).
+        # If the config declares a `capability_manifest`, store it in the
+        # checkpoint as-is so the metadata travels with the policy.
+        # rl_games never interprets its contents.
         capability_manifest = self.config.get('capability_manifest')
         if capability_manifest is not None:
             state['capability_manifest'] = capability_manifest
@@ -344,10 +344,8 @@ class SACAgent(BaseAlgorithm):
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
 
-        # Optional capability_manifest passthrough (see get_full_state_weights).
-        # An explicitly-declared config manifest wins over the checkpoint's:
-        # the running config is the operator's intent, the checkpoint is
-        # history.
+        # Adopt the checkpoint's capability_manifest unless the current config
+        # already declares one -- an explicit config value takes precedence.
         if 'capability_manifest' in weights:
             declared = self.config.get('capability_manifest')
             if declared is not None and declared != weights['capability_manifest']:

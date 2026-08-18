@@ -1,12 +1,12 @@
-"""Optional `capability_manifest` config key rides checkpoints verbatim.
+"""The optional `capability_manifest` config key travels with checkpoints.
 
-A config may declare an opaque `capability_manifest:` block (e.g. the command
-ranges / terrain envelope a policy was trained under, for downstream
-consumers). rl_games stores it in the checkpoint and restores it on load; an
-explicitly-declared config manifest wins over the checkpoint's on restore.
+Whatever the config declares under `capability_manifest` is saved into
+full-state checkpoints and restored on load (PPO and SAC). rl_games never
+interprets it. On restore, a manifest declared in the current config wins
+over the checkpoint's.
 
-Reimplementation of #357 (idoco2003) on current master, adding: precedence
-rule, SAC coverage, disk round-trip.
+Reimplementation of #357 (idoco2003), adding: precedence rule, SAC
+coverage, disk round-trip.
 """
 import pytest
 

@@ -126,12 +126,19 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
 
 ### `capability_manifest`
 
-**Type:** any (opaque) | **Default:** unset | **Applies:** PPO and SAC checkpoints
+**Type:** any | **Default:** unset | **Applies:** PPO and SAC full-state checkpoints
 
-An arbitrary config block stored verbatim in full-state checkpoints and
-restored on load, so metadata travels with the policy (e.g. the command
-ranges or terrain envelope it was trained under, for downstream consumers).
-rl_games takes no position on its schema. On restore, a manifest explicitly
-declared in the current config takes precedence over the checkpoint's (with
-a warning if they differ); otherwise the checkpoint's manifest is adopted
-into the running config.
+Free-form metadata that travels with the policy: whatever this key holds is
+saved into the checkpoint and restored on load. rl_games never interprets
+it. Use it for anything a checkpoint consumer needs to know about the
+policy, for example:
+
+```yaml
+config:
+  capability_manifest:
+    command_ranges: [{quantity: linear_velocity_x, min: -1.5, max: 1.5}]
+    terrain_classes: [rigid]
+```
+
+On restore, a manifest already declared in the config takes precedence over
+the checkpoint's (a warning is printed if they differ).
