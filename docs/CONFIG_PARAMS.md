@@ -123,3 +123,22 @@ behavior.
 
 A/B at 2 ranks (envpool Pong, 3 back-to-back seed pairs, 400 epochs):
 parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
+
+### `capability_manifest`
+
+**Type:** any | **Default:** unset | **Applies:** PPO and SAC full-state checkpoints
+
+Free-form metadata that travels with the policy: whatever this key holds is
+saved into the checkpoint and restored on load. rl_games never interprets
+it. Use it for anything a checkpoint consumer needs to know about the
+policy, for example:
+
+```yaml
+config:
+  capability_manifest:
+    command_ranges: [{quantity: linear_velocity_x, min: -1.5, max: 1.5}]
+    terrain_classes: [rigid]
+```
+
+On restore, a manifest already declared in the config takes precedence over
+the checkpoint's (a warning is printed if they differ).

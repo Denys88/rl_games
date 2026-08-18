@@ -312,6 +312,13 @@ class SACAgent(BaseAlgorithm):
         if self.save_replay_buffer:
             state['replay_buffer'] = self.replay_buffer.state_dict()
 
+        # If the config declares a `capability_manifest`, store it in the
+        # checkpoint as-is so the metadata travels with the policy.
+        # rl_games never interprets its contents.
+        capability_manifest = self.config.get('capability_manifest')
+        if capability_manifest is not None:
+            state['capability_manifest'] = capability_manifest
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -336,6 +343,16 @@ class SACAgent(BaseAlgorithm):
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
+
+        # Adopt the checkpoint's capability_manifest unless the current config
+        # already declares one -- an explicit config value takes precedence.
+        if 'capability_manifest' in weights:
+            declared = self.config.get('capability_manifest')
+            if declared is not None and declared != weights['capability_manifest']:
+                print('WARNING: config capability_manifest differs from the '
+                      'checkpoint one; keeping the config value')
+            else:
+                self.config['capability_manifest'] = weights['capability_manifest']
 
     def restore(self, fn, set_epoch=True):
         if not os.path.exists(fn):
