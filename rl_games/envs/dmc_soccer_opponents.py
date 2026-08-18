@@ -102,6 +102,7 @@ class OpponentLeague:
         self.refresh_every = refresh_every
         self.rng = rng or np.random.RandomState(0)
         self._step = 0
+        self._warned_refresh = False
         self._latest = None  # FrozenPolicy
         self._old = None
 
@@ -119,8 +120,16 @@ class OpponentLeague:
                 pick = paths[self.rng.randint(0, len(paths) - 1)]
                 if self._old is None or self._old.path != pick:
                     self._old = FrozenPolicy(pick)
-        except Exception:
-            pass  # mid-write checkpoint etc.; keep previous nets
+        except Exception as e:
+            # mid-write checkpoint etc.: keep previous nets, but say so ONCE --
+            # a persistent load failure silently degrades the league to
+            # weak-random opponents, which invalidates a self-play run while
+            # looking like healthy training
+            if not self._warned_refresh:
+                print(f'WARNING: opponent league checkpoint refresh failed '
+                      f'({type(e).__name__}: {e}); keeping previous opponents. '
+                      f'Further failures will be silent.')
+                self._warned_refresh = True
 
     def actions(self, obs_away_dict, flat_obs_away):
         """obs_away_dict: per-key arrays sliced to away players (M, P_away, ...)

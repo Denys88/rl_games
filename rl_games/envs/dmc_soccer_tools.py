@@ -23,8 +23,6 @@ import numpy as np
 import envpool.mujoco.dmc.registration  # noqa: F401
 from envpool.registration import make_gymnasium
 
-import numpy as np
-
 from rl_games.envs.dmc_soccer_opponents import FrozenPolicy, chaser, keeper
 from rl_games.envs.dmc_soccer_selfplay import _OBS_KEYS
 
@@ -75,7 +73,6 @@ def team_obs_dict(obs, num_matches, players, team):
         for k in ("ball_ego_position", "team_goal_mid")
     }
 
-# dev-build assets fallback (same as train.py)
 
 
 

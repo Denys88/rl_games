@@ -128,6 +128,7 @@ class SoccerSelfPlay(IVecEnv):
                 self.num_matches, types=league_types,
                 ckpt_dir=league_ckpt_dir, refresh_every=league_refresh,
                 rng=np.random.RandomState(seed + 12345))
+        self._away_rng = np.random.RandomState(seed + 54321)
         self._last_obs_dict = None
 
     def _flatten_all(self, obs):
@@ -162,7 +163,8 @@ class SoccerSelfPlay(IVecEnv):
         vel_ball = obs["stats_vel_ball_to_goal"].reshape(
             self.num_matches, self.players)
         vel_player = obs["stats_closest_vel_to_ball"].reshape(
-            self.num_matches, self.players)
+            self.num_matches, self.players).copy()   # team-chase writes below
+        #   -- never mutate the env's obs dict through the reshape view
         # one-sided ball progress: reward pushing the ball toward the opponent
         # goal, but DON'T punish when the opponent pushes it toward ours —
         # uncontrollable negatives teach avoidance.
@@ -204,7 +206,7 @@ class SoccerSelfPlay(IVecEnv):
                     self._away_obs_dict(self._last_obs_dict),
                     self._flat_away)
             else:
-                away = np.random.uniform(
+                away = self._away_rng.uniform(
                     -1, 1,
                     (self.num_matches, self.players - self.controlled,
                      self.act_dim))
