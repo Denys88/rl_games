@@ -1,0 +1,36 @@
+"""Regression tests for the 2.0 release-blocker batch (silent-wrong-behavior
+class): seed 0, legacy seq_len, SAC multi_gpu guard, adaptive-LR resume."""
+
+import copy
+
+import numpy as np
+import pytest
+import torch
+
+from rl_games.torch_runner import Runner
+from tests.test_critical_fixes import (_load_params, CARTPOLE_YAML,
+                                       make_cartpole_agent)
+
+
+def _load_runner_with_seed(seed):
+    # seed is a TOP-LEVEL params key (not config), so build params directly
+    params = _load_params(CARTPOLE_YAML)
+    params['seed'] = seed
+    r = Runner()
+    r.load({'params': copy.deepcopy(params)})
+    return r
+
+
+def test_seed_zero_actually_seeds():
+    # seed: 0 is a conventional choice; `if self.seed:` treated it as falsy and
+    # silently skipped ALL seeding while logging that seed 0 was in effect
+    draws = []
+    for _ in range(2):
+        _load_runner_with_seed(0)
+        draws.append((torch.rand(3).tolist(), np.random.rand(3).tolist()))
+    assert draws[0] == draws[1], 'seed 0 did not seed torch/numpy'
+    # and seed 0 is genuinely seed 0, not some other stream
+    torch.manual_seed(0)
+    np.random.seed(0)
+    expected = (torch.rand(3).tolist(), np.random.rand(3).tolist())
+    assert draws[0] == expected
