@@ -601,10 +601,13 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 
 class OldGymWrapper(gym.Env):
-    """Wrapper to convert gymnasium env to old gym-style 4-tuple API.
+    """Adapt an old-gym OR gymnasium env to the gymnasium API.
 
-    This is useful for environments that use the new gymnasium API
-    but need to interface with code expecting the old gym API.
+    Accepts an inner env speaking either API (4-tuple step / bare reset, or
+    5-tuple step / (obs, info) reset) and always emits gymnasium-style
+    results, flattening structured observation/action spaces on the way.
+    Used for suites still on the old gym API (e.g. native MyoSuite via
+    `myo_gym`).
     """
     def __init__(self, env):
         self.env = env
