@@ -1,14 +1,12 @@
-params:  
+params:
   seed: 8
   algo:
     name: a2c_continuous
-
   model:
     name: continuous_a2c_logstd
-
   network:
     name: actor_critic
-    separate: False
+    separate: false
     space:
       continuous:
         mu_activation: None
@@ -18,25 +16,28 @@ params:
         sigma_init:
           name: const_initializer
           val: 0
-        fixed_sigma: True
+        fixed_sigma: true
     mlp:
-      units: [512, 256, 128]
-      d2rl: False
+      units:
+      - 512
+      - 256
+      - 128
+      d2rl: false
       activation: elu
       initializer:
         name: default
         scale: 2
   config:
-    env_name: myo_gym
+    env_name: envpool
     name: MyoLegWalk
     reward_shaper:
       scale_value: 1.0
-      log_val: False
-    mixed_precision: True
-    normalize_input: True
-    normalize_value: True
-    value_bootstrap: True
-    normalize_advantage: True
+      log_val: false
+    mixed_precision: true
+    normalize_input: true
+    normalize_value: true
+    value_bootstrap: true
+    normalize_advantage: true
     gamma: 0.99
     tau: 0.95
     learning_rate: 3e-4
@@ -46,23 +47,24 @@ params:
     save_frequency: 500
     grad_norm: 1.0
     entropy_coef: 0.0
-    truncate_grads: True
+    truncate_grads: true
     e_clip: 0.2
-    clip_value: False
-    num_actors: 32
+    clip_value: false
+    num_actors: 64
     horizon_length: 256
     minibatch_size: 2048
     mini_epochs: 6
     critic_coef: 2
     bounds_loss_coef: 0.001
     max_epochs: 50000
-    use_diagnostics: True
+    use_diagnostics: true
     weight_decay: 0.0
-    use_smooth_clamp: True
+    use_smooth_clamp: true
     env_config:
-      name: myoLegWalk-v0
+      env_name: MyoSuite/myoLegWalk-v0
     player:
-      render: True
-      deterministic: True
+      deterministic: true
       render_sleep: 0.01
       games_num: 1000
+    min_lr: 1.0e-05
+    max_lr: 0.001
