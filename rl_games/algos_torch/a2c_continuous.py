@@ -4,6 +4,7 @@ from rl_games.algos_torch import torch_ext
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
+from rl_games.triton_kernels.ppo_loss_kernel import fused_ppo_loss, fused_ppo_loss_available
 
 from torch import optim
 import torch
@@ -73,6 +74,19 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+
+        # Single fused Triton kernel for the whole PPO loss (fwd + analytic bwd).
+        # The kernel computes the diagonal-Gaussian neglogp/entropy itself, so it
+        # only applies to models with a plain Normal(mu, sigma) distribution
+        # (e.g. not the tanh-squashed model).
+        from rl_games.algos_torch import models as _models
+        is_gaussian_model = isinstance(
+            self.model, (_models.ModelA2CContinuousLogStd.Network, _models.ModelA2CContinuous.Network))
+        self.use_fused_kernel = self.config.get('use_fused_ppo_kernel', True) \
+            and fused_ppo_loss_available(self.ppo_device) and is_gaussian_model
+        if self.use_fused_kernel:
+            print('Using fused Triton PPO loss kernel')
+
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -132,6 +146,33 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
+    def calc_losses_fused(
+        self,
+        old_action_log_probs_batch,
+        advantage,
+        curr_e_clip,
+        value_preds_batch,
+        values,
+        return_batch,
+        actions_batch,
+        mu,
+        sigma,
+        old_mu_batch,
+        old_sigma_batch,
+        rnn_masks
+    ):
+        """Whole PPO loss (incl. policy KL) in a single fused Triton kernel."""
+        bound_loss_type = self.bound_loss_type if self.bound_loss_type in ('regularisation', 'bound') else 'none'
+        return fused_ppo_loss(
+            mu, sigma, values, actions_batch,
+            old_action_log_probs_batch, advantage,
+            old_mu_batch, old_sigma_batch,
+            value_preds_batch, return_batch, rnn_masks,
+            curr_e_clip, self.critic_coef, self.entropy_coef, self.bounds_loss_coef,
+            is_ppo=self.ppo, use_smooth_clamp=self.use_smooth_clamp,
+            clip_value=self.clip_value, bound_loss_type=bound_loss_type,
+            has_value_loss=self.has_value_loss)
+
     def calc_gradients(self, input_dict):
         """Compute gradients needed to step the networks of the algorithm.
 
@@ -177,19 +218,36 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
-            loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(
-                self.actor_loss_func,
-                old_action_log_probs_batch,
-                action_log_probs,
-                advantage,
-                curr_e_clip,
-                value_preds_batch,
-                values,
-                return_batch,
-                mu,
-                entropy,
-                rnn_masks
-            )
+            fused_kl_dist = None
+            if self.use_fused_kernel:
+                loss, a_loss, c_loss, entropy, b_loss, fused_kl_dist, sum_mask = self.calc_losses_fused(
+                    old_action_log_probs_batch,
+                    advantage,
+                    curr_e_clip,
+                    value_preds_batch,
+                    values,
+                    return_batch,
+                    actions_batch,
+                    mu,
+                    sigma,
+                    old_mu_batch,
+                    old_sigma_batch,
+                    rnn_masks
+                )
+            else:
+                loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(
+                    self.actor_loss_func,
+                    old_action_log_probs_batch,
+                    action_log_probs,
+                    advantage,
+                    curr_e_clip,
+                    value_preds_batch,
+                    values,
+                    return_batch,
+                    mu,
+                    entropy,
+                    rnn_masks
+                )
 
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
@@ -211,11 +269,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         #TODO: Refactor this ugliest code of they year
         self.trancate_gradients_and_step()
 
-        with torch.no_grad():
-            reduce_kl = rnn_masks is None
-            kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
-            if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+        if fused_kl_dist is not None:
+            kl_dist = fused_kl_dist
+        else:
+            with torch.no_grad():
+                reduce_kl = rnn_masks is None
+                kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
+                if rnn_masks is not None:
+                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
 
         self.diagnostics.mini_batch(self,
         {

@@ -5,6 +5,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.algos_torch import central_value
 from rl_games.common import common_losses
 from rl_games.common import datasets
+from rl_games.triton_kernels.ppo_loss_kernel import fused_ppo_loss_discrete, fused_ppo_loss_available
 
 from torch import optim
 import torch
@@ -75,6 +76,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+
+        # Single fused Triton kernel for the whole PPO loss (fwd + analytic bwd).
+        self.use_fused_kernel = self.config.get('use_fused_ppo_kernel', True) \
+            and fused_ppo_loss_available(self.ppo_device)
+        if self.use_fused_kernel:
+            print('Using fused Triton PPO loss kernel')
+
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -163,16 +171,26 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
-            a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
-
-            if self.has_value_loss:
-                c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+            fused_kl_dist = None
+            if self.use_fused_kernel:
+                loss, a_loss, c_loss, entropy, fused_kl_dist, sum_mask = fused_ppo_loss_discrete(
+                    action_log_probs, entropy, values,
+                    old_action_log_probs_batch, advantage,
+                    value_preds_batch, return_batch, rnn_masks,
+                    curr_e_clip, self.critic_coef, self.entropy_coef,
+                    is_ppo=self.ppo, use_smooth_clamp=self.use_smooth_clamp,
+                    clip_value=self.clip_value, has_value_loss=self.has_value_loss)
             else:
-                c_loss = torch.zeros(1, device=self.ppo_device)
+                a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
 
-            losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
-            a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
+                if self.has_value_loss:
+                    c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                else:
+                    c_loss = torch.zeros(1, device=self.ppo_device)
+
+                losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
+                a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
+                loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
             if aux_loss is not None:
@@ -192,12 +210,15 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         self.scaler.scale(loss).backward()
         self.trancate_gradients_and_step()
 
-        with torch.no_grad():
-            kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
-            if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
-            else:
-                kl_dist = kl_dist.mean()
+        if fused_kl_dist is not None:
+            kl_dist = fused_kl_dist
+        else:
+            with torch.no_grad():
+                kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
+                if rnn_masks is not None:
+                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
+                else:
+                    kl_dist = kl_dist.mean()
 
         self.diagnostics.mini_batch(self,
         {

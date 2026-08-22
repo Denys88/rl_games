@@ -1,1 +1,2 @@
 from rl_games.triton_kernels.gae_kernel import compute_gae
+from rl_games.triton_kernels.ppo_loss_kernel import fused_ppo_loss, fused_ppo_loss_discrete, fused_ppo_loss_available
