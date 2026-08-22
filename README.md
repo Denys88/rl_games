@@ -319,6 +319,10 @@ Additional environment supported properties and functions
 
 ## Release Notes
 
+Unreleased
+
+* Added a fused single-kernel Triton PPO loss (continuous + discrete): the whole minibatch loss — neglogp, clipped surrogate, clipped value loss, entropy, bounds loss, RNN masking, reductions and policy KL — runs as one forward + one analytic backward kernel. Enabled by default on CUDA when triton is available (`use_fused_ppo_kernel: False` or `RLG_NO_TRITON=1` to disable). See [docs/FUSED_PPO_KERNEL.md](docs/FUSED_PPO_KERNEL.md).
+
 1.6.5
 
 * Added torch.compile support with configurable modes. Provides 10-40% performance improvement. Requires torch 2.2 or newer.
