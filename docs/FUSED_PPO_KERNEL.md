@@ -77,6 +77,49 @@ that overhead, and the gain repeats `mini_epochs * num_minibatches` times per
 training epoch. End-to-end gains depend on how large the loss section is
 relative to network forward/backward and simulation.
 
+## Experimental: fusing the network too
+
+`rl_games/triton_kernels/mlp_kernel.py` extends the idea to the actor-critic
+network itself: the standard 3-layer ELU MLP trunk plus `mu`/`value` heads run
+as **one forward kernel** (inter-layer activations staged through L2-resident
+scratch) and **one analytic backward kernel** (weight/bias grads accumulated
+with fp32 atomics, dW tiles chunked to fit shared memory). Chained with the
+fused loss, the whole PPO minibatch update — network forward, loss
+forward/backward, network backward — is a **4-kernel pipeline** (optimizer
+excluded; `fused=True` Adam is already a single kernel).
+
+Measured on RTX 5090, TF32 (rl_games default), obs=36, units=[256,128,64],
+actions=8, verified against autograd to ~1e-5 in IEEE mode
+(`tests/test_fused_mlp_kernel.py`):
+
+| Section | Batch | Eager | torch.compile (cudagraph) | Fused | Speedup |
+|---|---|---|---|---|---|
+| MLP fwd+bwd | 8192 | 0.69 ms | 0.58 ms | 0.22 ms | 3.1x / 2.6x |
+| MLP fwd+bwd | 32768 | 0.71 ms | 0.59 ms | 0.57 ms | 1.2x / 1.0x |
+| full update chain | 8192 | 1.82 ms | 1.83 ms | ~0.72 ms | ~2.5x |
+| full update chain | 32768 | 1.82 ms | 1.74 ms | ~0.72 ms | ~2.5x |
+
+At large batch the backward becomes atomic/compute-bound and the MLP-only gap
+vs CUDA-graphed torch closes; the full-chain advantage (~2.5x) persists because
+the loss section and inter-op gaps are gone entirely.
+
+Why it is not wired into the agents yet:
+
+- applies only to plain MLP actor-critic nets (`separate: False`, no
+  CNN/RNN, flat observations); the current 3-layer trunk is a prototype
+  constraint (generalizing layer count means one compiled variant per depth);
+- `normalize_input` (RunningMeanStd) updates its statistics inside the train
+  forward — that update has to be replicated or folded into layer 1;
+- weights live transposed (`[in, out]`) relative to `nn.Linear`, so
+  integration needs either synced transposed copies per optimizer step or
+  checkpoint-compatible transposed storage;
+- grad clipping / multi-GPU reduce operate on `param.grad`, so grads must be
+  scattered back into the module parameters.
+
+None of these is fundamental; it is engineering. The measured ceiling —
+another ~2.5x on the update math on top of the fused loss — says the follow-up
+is worth doing for GPU-vec-env workloads with high `mini_epochs`.
+
 ## Notes
 
 - Advantage normalization and GAE are upstream of the minibatch loss; GAE has
