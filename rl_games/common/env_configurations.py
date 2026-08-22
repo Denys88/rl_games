@@ -328,6 +328,9 @@ configurations = {
     'pufferlib' : {
         'vecenv_type': 'PUFFERLIB'
     },
+    'mjlab' : {
+        'vecenv_type': 'MJLAB'
+    },
 }
 
 def get_env_info(env):
