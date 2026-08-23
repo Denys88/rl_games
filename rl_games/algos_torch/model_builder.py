@@ -6,6 +6,11 @@ from rl_games.algos_torch import models
 NETWORK_REGISTRY = {}
 MODEL_REGISTRY = {}
 
+def _create_fused_mlp_builder(**kwargs):
+    # lazy import: needs triton/CUDA only when actually used
+    from rl_games.algos_torch.fused_mlp_network import FusedMLPA2CBuilder
+    return FusedMLPA2CBuilder()
+
 def register_network(name, target_class):
     NETWORK_REGISTRY[name] = lambda **kwargs: target_class()
 
@@ -22,6 +27,7 @@ class NetworkBuilder:
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
+        self.network_factory.register_builder('fused_mlp_actor_critic', _create_fused_mlp_builder)
 
     def load(self, params):
         network_name = params['name']

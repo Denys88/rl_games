@@ -103,22 +103,44 @@ At large batch the backward becomes atomic/compute-bound and the MLP-only gap
 vs CUDA-graphed torch closes; the full-chain advantage (~2.5x) persists because
 the loss section and inter-op gaps are gone entirely.
 
-Why it is not wired into the agents yet:
+### Using it: the `fused_mlp_actor_critic` network
 
-- applies only to plain MLP actor-critic nets (`separate: False`, no
-  CNN/RNN, flat observations); the current 3-layer trunk is a prototype
-  constraint (generalizing layer count means one compiled variant per depth);
-- `normalize_input` (RunningMeanStd) updates its statistics inside the train
-  forward — that update has to be replicated or folded into layer 1;
-- weights live transposed (`[in, out]`) relative to `nn.Linear`, so
-  integration needs either synced transposed copies per optimizer step or
-  checkpoint-compatible transposed storage;
-- grad clipping / multi-GPU reduce operate on `param.grad`, so grads must be
-  scattered back into the module parameters.
+The kernels are integrated as a **custom network** (no changes to
+`network_builder.py`), registered as `fused_mlp_actor_critic`
+(`rl_games/algos_torch/fused_mlp_network.py`). It is a verified drop-in for
+the standard `actor_critic` MLP network — same outputs and parameter
+gradients (`tests/test_fused_mlp_network.py`):
 
-None of these is fundamental; it is engineering. The measured ceiling —
-another ~2.5x on the update math on top of the fused loss — says the follow-up
-is worth doing for GPU-vec-env workloads with high `mini_epochs`.
+```yaml
+network:
+  name: fused_mlp_actor_critic   # instead of actor_critic
+  space:
+    continuous:
+      fixed_sigma: True
+      sigma_init: {name: const_initializer, val: 0}
+  mlp:
+    units: [256, 128, 64]        # exactly 3 layers
+    activation: elu
+```
+
+Requirements: flat observations, exactly 3 MLP layers, ELU, `fixed_sigma:
+True`, `separate: False`, continuous space, CUDA + triton. `normalize_input`
+and `normalize_value` work unchanged (they live in the model wrapper), and
+the network owns its (transposed) state_dict layout so checkpoints are
+self-consistent. Grads land in `param.grad` as usual, so grad clipping,
+multi-GPU reduce and the fused Adam are untouched. Since the same forward
+also serves rollout inference, both phases benefit.
+
+End-to-end on VMAS balance (RTX 5090, 1024 worlds, 200 epochs): mean total
+fps 26.3K with `fused_mlp_actor_critic` + fused loss, vs 24.5K with the
+standard net + fused loss, vs 23.2K fully eager — **+13% end-to-end**, with
+an equivalent reward curve. Gains grow with `mini_epochs` and shrink with
+sim cost.
+
+Remaining limits (fall back to `actor_critic` where they bite): fixed
+3-layer depth (other depths need additional kernel variants), no CNN/RNN,
+no tanh-squashed distribution, and the large-batch backward is atomic-bound
+(a partials+reduce variant would lift that).
 
 ## Notes
 
