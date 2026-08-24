@@ -31,21 +31,34 @@ def make_random_opponent(num_points=81):
     return opponent_fn
 
 
-def make_baseline_opponent(download_dir='baselines', temperature=0.0):
-    """pgx AlphaZero baseline go_9x9_v0. temperature=0 -> greedy (strongest);
-    >0 -> sampled, useful for game variety in repeated evals."""
+def make_baseline_opponent(download_dir='baselines', temperature=0.0,
+                           opening_temp=1.0, opening_stones=8):
+    """pgx AlphaZero baseline go_9x9_v0.
+
+    Plays greedy (full strength) except while the board holds fewer than
+    `opening_stones` stones, where it samples at `opening_temp` — otherwise a
+    deterministic opponent funnels repeated eval games into a handful of
+    near-identical transcripts and the effective sample size collapses.
+    Set opening_stones=0 for pure greedy; temperature>0 samples every move.
+    """
     import pgx
     model = pgx.make_baseline_model('go_9x9_v0', download_dir=download_dir)
 
     def opponent_fn(params, obs, mask, rng):
         logits, _ = model(obs[None].astype(jnp.float32))
         logits = jnp.where(mask, logits[0], -jnp.inf)
-        if temperature > 0:
-            action = jax.random.categorical(rng, logits / temperature)
-            dist = jax.nn.softmax(logits / temperature)
-        else:
-            action = jnp.argmax(logits)
-            dist = jax.nn.one_hot(action, logits.shape[-1])
+        # plies proxy: stones on the current board (obs planes 0/1)
+        stones = obs[..., 0].sum() + obs[..., 1].sum()
+        in_opening = stones < opening_stones
+        temp = jnp.where(in_opening, jnp.float32(max(opening_temp, 1e-6)),
+                         jnp.float32(max(temperature, 1e-6)))
+        sampled = jax.random.categorical(rng, logits / temp)
+        greedy = jnp.argmax(logits)
+        use_sampling = in_opening | (temperature > 0)
+        action = jnp.where(use_sampling, sampled, greedy)
+        dist = jnp.where(use_sampling,
+                         jax.nn.softmax(logits / temp),
+                         jax.nn.one_hot(greedy, logits.shape[-1]))
         return action, dist
 
     return opponent_fn
