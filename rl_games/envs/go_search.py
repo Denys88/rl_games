@@ -26,21 +26,28 @@ from rl_games.envs.go_flax import GoResNetFlax
 def make_search_policy(env, blocks=6, channels=64, gpool_every=2,
                        value_units=128, num_simulations=32,
                        max_num_considered_actions=16, gumbel_scale=1.0,
-                       max_depth=None):
+                       max_depth=None, priors_fn=None):
     """Returns jitted (params, state, rng) -> (action, action_weights).
 
     `state` is a batched pgx State; actions/weights are in the env
     (canonical) frame. At num_simulations == 0 falls back to the raw policy
     argmax over legal moves (identical to search disabled).
+
+    priors_fn: optional (params, observation) -> (logits, value) replacing
+    the Go flax net — e.g. the pgx AlphaZero baseline model, giving that
+    anchor the same search machinery for search-vs-search evals.
     """
     import mctx
 
-    net = GoResNetFlax(blocks=blocks, channels=channels,
-                       gpool_every=gpool_every, value_units=value_units)
+    if priors_fn is None:
+        net = GoResNetFlax(blocks=blocks, channels=channels,
+                           gpool_every=gpool_every, value_units=value_units)
+
+        def priors_fn(params, observation):
+            return net.apply({'params': params}, observation.astype(jnp.float32))
 
     def _priors(params, state):
-        logits, value = net.apply({'params': params},
-                                  state.observation.astype(jnp.float32))
+        logits, value = priors_fn(params, state.observation)
         logits = jnp.where(state.legal_action_mask, logits, -jnp.inf)
         return logits, value
 
