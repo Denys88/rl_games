@@ -191,7 +191,7 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
-        self.multi_gpu_ddp = config.get('multi_gpu_ddp', False)
+        self.multi_gpu_ddp = config.get('multi_gpu_ddp', True)
         self.multi_gpu_defer_kl = config.get('multi_gpu_defer_kl', False)
         self._ddp_active = False
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
