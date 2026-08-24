@@ -206,6 +206,12 @@ class GoLeagueObserver(GoObserver):
         if resample or self._last_ids is None:
             self._last_ids = self.league.sample_groups(
                 env.pool_groups, self.p_self, self.p_pfsp, self.p_uniform)
+        else:
+            # an eviction may have removed members since this assignment was
+            # sampled — remap those groups to latest main
+            self._last_ids = np.array(
+                [mid if mid in self.league.members or mid == 0 else 0
+                 for mid in self._last_ids])
         stacked = self.league.build_stacked(self._last_ids, self._main_flax)
         env.set_pool_assignment(stacked, self._last_ids)
 

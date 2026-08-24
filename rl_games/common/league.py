@@ -126,8 +126,12 @@ class League:
     # ------------------------------------------------------------ stacking
 
     def build_stacked(self, group_ids, main_params):
-        """Stack per-group params into one pytree with leading axis n_groups."""
-        trees = [main_params if mid == MAIN_ID else self.members[mid].params
+        """Stack per-group params into one pytree with leading axis n_groups.
+
+        Ids of members evicted since the assignment was sampled fall back to
+        main (the assignment may be reused across snapshots/evictions)."""
+        trees = [main_params if (mid == MAIN_ID or mid not in self.members)
+                 else self.members[mid].params
                  for mid in group_ids]
         return jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *trees)
 
