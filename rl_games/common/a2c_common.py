@@ -191,6 +191,9 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
+        self.multi_gpu_ddp = config.get('multi_gpu_ddp', False)
+        self.multi_gpu_defer_kl = config.get('multi_gpu_defer_kl', False)
+        self._ddp_active = False
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
         self.multi_gpu_sync_stats_mode = resolve_stats_sync_mode(
@@ -491,7 +494,7 @@ class A2CBase(BaseAlgorithm):
         self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
-        if self.multi_gpu:
+        if self.multi_gpu and not self._ddp_active:
             # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
             all_grads_list = []
             for param in self.model.parameters():
@@ -1556,7 +1559,11 @@ class ContinuousA2CBase(A2CBase):
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'per_minibatch':
                     av_kls = kl
-                    if self.multi_gpu:
+                    # this all-reduce only feeds rank 0's scheduler (other
+                    # ranks run Identity and receive lr via update_lr's
+                    # broadcast), so multi_gpu_defer_kl may skip the rendezvous
+                    # and let rank 0 use its local KL estimate instead
+                    if self.multi_gpu and not self.multi_gpu_defer_kl:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.world_size
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
