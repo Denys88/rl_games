@@ -331,6 +331,9 @@ configurations = {
     'mjlab' : {
         'vecenv_type': 'MJLAB'
     },
+    'pgx_go' : {
+        'vecenv_type': 'PGX'
+    },
 }
 
 def get_env_info(env):

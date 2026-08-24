@@ -119,7 +119,10 @@ class PpoPlayerDiscrete(BasePlayer):
         if not self.has_batch_dimension:
             obs = unsqueeze_obs(obs)
         obs = self._preproc_obs(obs)
-        action_masks = torch.Tensor(action_masks).to(self.device).bool()
+        if torch.is_tensor(action_masks):
+            action_masks = action_masks.to(device=self.device, dtype=torch.bool)
+        else:
+            action_masks = torch.Tensor(action_masks).to(self.device).bool()
         input_dict = {
             'is_train': False,
             'prev_actions': None,

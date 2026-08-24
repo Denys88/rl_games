@@ -1,0 +1,89 @@
+# Phase 3: league training on pgx Go 9x9.
+# Boards are partitioned into pool_groups groups; each group plays one league
+# member (latest main for self-play groups, PFSP-sampled snapshots otherwise).
+# Driven by GoLeagueObserver (scripts/go_train.py --league) — SelfPlayManager
+# is NOT used here.
+params:
+  seed: 322
+
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: go_resnet
+    blocks: 6
+    channels: 64
+    gpool_every: 2
+    value_units: 128
+    aux_heads: [ownership, score_dist, opp_policy, plies_left]
+    aux_weights:
+      ownership: 1.0
+      score_dist: 0.25
+      opp_policy: 0.15
+      plies_left: 0.05
+    aux_anneal_to: 0.5
+
+  config:
+    name: go9_league
+    env_name: pgx_go
+    reward_shaper:
+      scale_value: 1.0
+    device: cuda
+    use_action_masks: True
+    normalize_input: False
+    normalize_value: True
+    normalize_advantage: True
+    gamma: 1.0
+    tau: 0.97
+    learning_rate: 3e-4
+    lr_schedule: linear
+    min_lr: 3e-4
+    schedule_entropy: True
+    min_entropy_coef: 0.002
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: False
+    critic_coef: 1
+    num_actors: 4096
+    horizon_length: 16
+    minibatch_size: 16384
+    mini_epochs: 2
+    max_epochs: 5000
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 1000
+    games_to_track: 4096
+
+    league:
+      max_pool: 32
+      snapshot_every: 100
+      snapshot_if_winrate: 0.55
+      snapshot_dominance: 0.70
+      remap_every: 10
+      push_main_every: 5
+      matchmaking: {p_self: 0.35, p_pfsp: 0.50, p_uniform: 0.15}
+      pfsp: {mode: hard, floor: 0.02}
+
+    env_config:
+      komi: 7.0
+      opponent: pool
+      pool_groups: 32
+      blocks: 6
+      channels: 64
+      gpool_every: 2
+      value_units: 128
+      opponent_temperature: 1.0
+      symmetry: True
+      pass_mask_moves: 20
+      score_reward_w: 0.5
+      seed: 322
+
+    player:
+      games_num: 512
+      deterministic: True
+      use_vecenv: True

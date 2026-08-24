@@ -11,6 +11,10 @@ def _create_fused_mlp_builder(**kwargs):
     from rl_games.algos_torch.fused_mlp_network import FusedMLPA2CBuilder
     return FusedMLPA2CBuilder()
 
+def _create_go_resnet_builder(**kwargs):
+    from rl_games.envs.go_network import GoResNetBuilder
+    return GoResNetBuilder()
+
 def register_network(name, target_class):
     NETWORK_REGISTRY[name] = lambda **kwargs: target_class()
 
@@ -28,6 +32,7 @@ class NetworkBuilder:
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())
         self.network_factory.register_builder('soft_actor_critic', lambda **kwargs: network_builder.SACBuilder())
         self.network_factory.register_builder('fused_mlp_actor_critic', _create_fused_mlp_builder)
+        self.network_factory.register_builder('go_resnet', _create_go_resnet_builder)
 
     def load(self, params):
         network_name = params['name']

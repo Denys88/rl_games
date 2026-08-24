@@ -136,6 +136,18 @@ class A2CBase(BaseAlgorithm):
             self.vec_env = config.get('vec_env', None)
 
         self.ppo_device = config.get('device', 'cuda:0')
+
+        # Optional env-provided rollout targets (e.g. Go aux heads): the env
+        # declares per-step info tensors to record and a processor that turns
+        # the recorded (T, N, ...) stacks into training targets after the
+        # rollout (back-filling terminal quantities). See rl_games/envs/pgx_go.py.
+        self.rollout_targets_proc = getattr(self.vec_env, 'process_rollout_targets', None)
+        self.rollout_info_specs = None
+        self.rollout_extras = None
+        self.rollout_target_keys = []
+        if self.rollout_targets_proc is not None:
+            self.rollout_info_specs = self.vec_env.rollout_info_specs()
+
         self.value_size = self.env_info.get('value_size', 1)
         self.observation_space = self.env_info['observation_space']
         self.weight_decay = config.get('weight_decay', 0.0)
@@ -206,10 +218,12 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
+                    min_lr=float(config.get('min_lr', 1e-6)),
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),
-                    start_entropy_coef=config.get('entropy_coef'))
+                    start_entropy_coef=config.get('entropy_coef'),
+                    min_entropy_coef=float(config.get('min_entropy_coef', 0.0001)))
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
@@ -508,6 +522,15 @@ class A2CBase(BaseAlgorithm):
         current_rewards_shape = (batch_size, self.value_size)
         self.init_current_rewards(batch_size, current_rewards_shape)
 
+        if self.rollout_info_specs is not None:
+            self.rollout_extras = {
+                k: torch.zeros((self.horizon_length, batch_size) + tuple(shape),
+                               dtype=dtype, device=self.ppo_device)
+                for k, (shape, dtype) in self.rollout_info_specs.items()
+            }
+            self.rollout_extras['_dones'] = torch.zeros(
+                (self.horizon_length, batch_size), dtype=torch.float32, device=self.ppo_device)
+
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
             self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
@@ -800,6 +823,11 @@ class A2CBase(BaseAlgorithm):
 
             step_time += (step_time_end - step_time_start)
 
+            if self.rollout_extras is not None:
+                for k in self.rollout_info_specs:
+                    self.rollout_extras[k][n] = infos[k]
+                self.rollout_extras['_dones'][n] = self.dones.float()
+
             shaped_rewards = self.rewards_shaper(rewards)
             if self.value_bootstrap and 'time_outs' in infos:
                 shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
@@ -837,6 +865,13 @@ class A2CBase(BaseAlgorithm):
         batch_dict['returns'] = swap_and_flatten01(mb_returns)
         batch_dict['played_frames'] = self.batch_size
         batch_dict['step_time'] = step_time
+
+        if self.rollout_extras is not None:
+            targets = self.rollout_targets_proc(
+                self.rollout_extras, self.experience_buffer.tensor_dict['obses'])
+            self.rollout_target_keys = list(targets.keys())
+            for k, v in targets.items():
+                batch_dict[k] = swap_and_flatten01(v)
 
         return batch_dict
 
@@ -960,6 +995,10 @@ class DiscreteA2CBase(A2CBase):
     def train_epoch(self):
         super().train_epoch()
 
+        net = getattr(self.model, 'a2c_network', None)
+        if net is not None and hasattr(net, 'set_train_progress'):
+            net.set_train_progress(self.epoch_num, self.max_epochs)
+
         self.set_eval()
         play_time_start = time.perf_counter()
 
@@ -1060,6 +1099,9 @@ class DiscreteA2CBase(A2CBase):
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
+
+        for k in self.rollout_target_keys:
+            dataset_dict[k] = batch_dict[k]
 
         self.dataset.update_values_dict(dataset_dict)
         if self.has_central_value:

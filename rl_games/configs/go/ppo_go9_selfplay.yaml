@@ -1,0 +1,93 @@
+# Phase 1: PPO self-play on pgx Go 9x9.
+# The opponent is the flax twin of the learner net, living inside the jitted
+# env step. SelfPlayManager pushes the learner's weights into the env when the
+# mean reward vs the current opponent exceeds update_score.
+# NOTE: network arch (blocks/channels/gpool_every/value_units) must match
+# between `network:` and `env_config:` — the flax opponent mirrors the learner.
+params:
+  seed: 322
+
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: go_resnet
+    blocks: 6
+    channels: 64
+    gpool_every: 2
+    value_units: 128
+    aux_heads: [ownership, score_dist, opp_policy, plies_left]
+    aux_weights:
+      ownership: 1.0
+      score_dist: 0.25
+      opp_policy: 0.15
+      plies_left: 0.05
+    aux_anneal_to: 0.5
+
+  config:
+    name: go9_selfplay
+    env_name: pgx_go
+    reward_shaper:
+      scale_value: 1.0
+    device: cuda
+    use_action_masks: True
+    normalize_input: False
+    normalize_value: True
+    normalize_advantage: True
+    gamma: 1.0
+    tau: 0.97
+    learning_rate: 3e-4
+    # NOTE: adaptive-KL LR is deliberately off — with a nonstationary
+    # self-play opponent and masked categoricals it thrashes the LR.
+    # linear + min_lr == learning_rate keeps LR constant while the entropy
+    # coefficient anneals 0.01 -> 0.002 over the run (plan 2.4).
+    lr_schedule: linear
+    min_lr: 3e-4
+    schedule_entropy: True
+    min_entropy_coef: 0.002
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: True
+    e_clip: 0.2
+    clip_value: False
+    critic_coef: 1
+    num_actors: 4096
+    horizon_length: 16
+    minibatch_size: 16384
+    mini_epochs: 2
+    max_epochs: 5000
+    save_best_after: 50
+    save_frequency: 200
+    score_to_win: 1000
+
+    # games_to_track must be >= games_to_check: SelfPlayManager requires
+    # len(game_rewards) >= games_to_check and the meter is capped at
+    # games_to_track (default 100 would never trigger an update).
+    games_to_track: 4096
+
+    self_play_config:
+      update_score: 0.60
+      games_to_check: 4096
+      check_scores: False
+      env_update_num: 1
+
+    env_config:
+      komi: 7.0
+      opponent: net
+      blocks: 6
+      channels: 64
+      gpool_every: 2
+      value_units: 128
+      opponent_temperature: 1.0
+      symmetry: True
+      pass_mask_moves: 20
+      score_reward_w: 0.5
+      seed: 322
+
+    player:
+      games_num: 512
+      deterministic: True
+      use_vecenv: True

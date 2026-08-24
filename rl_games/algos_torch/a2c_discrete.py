@@ -99,7 +99,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
     def get_masked_action_values(self, obs, action_masks):
         processed_obs = self._preproc_obs(obs['obs'])
-        action_masks = torch.BoolTensor(action_masks).to(self.ppo_device)
+        if torch.is_tensor(action_masks):
+            action_masks = action_masks.to(device=self.ppo_device, dtype=torch.bool)
+        else:
+            action_masks = torch.BoolTensor(action_masks).to(self.ppo_device)
         input_dict = {
             'is_train': False,
             'prev_actions': None,
@@ -156,6 +159,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
+
+        for k in self.rollout_target_keys:
+            batch_dict[k] = input_dict[k]
 
         rnn_masks = None
         if self.is_rnn:
