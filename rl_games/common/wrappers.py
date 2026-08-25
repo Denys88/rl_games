@@ -606,8 +606,8 @@ class OldGymWrapper(gym.Env):
     Accepts an inner env speaking either API (4-tuple step / bare reset, or
     5-tuple step / (obs, info) reset) and always emits gymnasium-style
     results, flattening structured observation/action spaces on the way.
-    Used for suites still on the old gym API (e.g. native MyoSuite via
-    `myo_gym`).
+    No in-tree instance consumer since MyoSuite proved gymnasium-native with
+    flat spaces; kept one release for downstream users of the old contract.
     """
     def __init__(self, env):
         self.env = env

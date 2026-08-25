@@ -61,11 +61,11 @@ def _create_gymnasium_single_env(**kwargs):
 
 
 def create_myo(**kwargs):
+    # MyoSuite is gymnasium-API (via its myosuite.utils shim) with flat Box
+    # observation/action spaces across the suite -- no wrapper needed
     from myosuite.utils import gym
     name = kwargs.pop('name')
-    env = gym.make(name, **kwargs)
-    env = wrappers.OldGymWrapper(env)
-    return env
+    return gym.make(name, **kwargs)
 
 
 def create_atari_gym_env(**kwargs):
