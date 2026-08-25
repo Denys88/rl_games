@@ -100,11 +100,21 @@ class Runner:
         self.algo_factory.register_builder('sac', lambda **kwargs: sac_agent.SACAgent(**kwargs))
         #self.algo_factory.register_builder('dqn', lambda **kwargs : dqnagent.DQNAgent(**kwargs))
 
+        def _create_go_az(**kwargs):
+            from rl_games.algos_torch.go_az_agent import GoAZAgent
+            return GoAZAgent(**kwargs)
+        self.algo_factory.register_builder('go_az', _create_go_az)
+
         self.player_factory = object_factory.ObjectFactory()
         self.player_factory.register_builder('a2c_continuous', lambda **kwargs : players.PpoPlayerContinuous(**kwargs))
         self.player_factory.register_builder('a2c_discrete', lambda **kwargs : players.PpoPlayerDiscrete(**kwargs))
         self.player_factory.register_builder('sac', lambda **kwargs : players.SACPlayer(**kwargs))
         #self.player_factory.register_builder('dqn', lambda **kwargs : players.DQNPlayer(**kwargs))
+
+        def _create_go_player(**kwargs):
+            from rl_games.algos_torch.go_player import GoPlayer
+            return GoPlayer(**kwargs)
+        self.player_factory.register_builder('go_az', _create_go_player)
 
         self.algo_observer = algo_observer if algo_observer else DefaultAlgoObserver()
 
@@ -169,7 +179,7 @@ class Runner:
                         params['config']['env_config']['seed'] += self.seed
 
         config = params['config']
-        config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config['reward_shaper'])
+        config['reward_shaper'] = tr_helpers.DefaultRewardsShaper(**config.get('reward_shaper', {}))
         if 'features' not in config:
             config['features'] = {}
         config['features']['observer'] = self.algo_observer

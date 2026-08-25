@@ -26,6 +26,70 @@ MAX_PLIES = 162
 PASS = 81
 
 
+class GameBuffer:
+    """Rolling replay buffer of finished self-play games.
+
+    Stores generation dicts as produced by make_selfplay(): packed
+    observations, per-ply search weights (refreshable by Reanalyze), move
+    lists, outcomes and terminal aux targets. Positions are sampled
+    length-weighted across generations."""
+
+    def __init__(self, max_positions):
+        self.max_positions = max_positions
+        self.chunks = []
+        self.total = 0
+
+    def add(self, gen):
+        self.chunks.append(gen)
+        self.total += int(gen['lengths'].sum())
+        while self.total > self.max_positions and len(self.chunks) > 1:
+            old = self.chunks.pop(0)
+            self.total -= int(old['lengths'].sum())
+
+    def sample(self, batch):
+        weights = np.array([c['lengths'].sum() for c in self.chunks], dtype=np.float64)
+        ci = np.random.choice(len(self.chunks), size=batch, p=weights / weights.sum())
+        gi = np.zeros(batch, dtype=np.int64)
+        pi = np.zeros(batch, dtype=np.int64)
+        for k in range(batch):
+            c = self.chunks[ci[k]]
+            lens = c['lengths']
+            g = np.random.choice(len(lens), p=lens / lens.sum())
+            gi[k] = g
+            pi[k] = np.random.randint(lens[g])
+        return ci, gi, pi
+
+    def gather(self, ci, gi, pi):
+        b = len(ci)
+        obs = np.zeros((b, 1384), dtype=np.uint8)  # unpackbits(173 bytes)
+        pol = np.zeros((b, 82), dtype=np.float32)
+        z = np.zeros(b, dtype=np.float32)
+        own = np.zeros((b, 81), dtype=np.float32)
+        score = np.zeros(b, dtype=np.float32)
+        plies_left = np.zeros(b, dtype=np.float32)
+        for k in range(b):
+            c = self.chunks[ci[k]]
+            g, t = gi[k], pi[k]
+            obs[k] = np.unpackbits(c['obs_bits'][t, g])
+            pol[k] = c['weights'][t, g].astype(np.float32)
+            sign = 1.0 if (t % 2 == 0) else -1.0  # mover colour alternates
+            z[k] = c['z_black'][g] * sign
+            own[k] = c['ownership_black'][g] * sign
+            score[k] = c['score_black'][g] * sign
+            plies_left[k] = c['lengths'][g] - t
+        return obs[:, :1377], pol, z, own, score, plies_left
+
+    def moves_for(self, ci, gi):
+        out = np.zeros((len(ci), MAX_PLIES), dtype=np.int32)
+        for k in range(len(ci)):
+            out[k] = self.chunks[ci[k]]['moves'][:, gi[k]]
+        return out
+
+    def write_weights(self, ci, gi, pi, fresh):
+        for k in range(len(ci)):
+            self.chunks[ci[k]]['weights'][pi[k], gi[k]] = fresh[k]
+
+
 def _ownership_batch(boards, size=9):
     """boards: (B, 81) int32 (black=+1). Returns (B, 81) float in {-1,0,1}."""
     import pgx._src.games.go as gcore

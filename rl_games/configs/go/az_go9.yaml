@@ -1,0 +1,65 @@
+# Phase 4: Gumbel AlphaZero + Reanalyze on pgx Go 9x9, rl_games-style.
+#   python runner.py --train --file rl_games/configs/go/az_go9.yaml \
+#       --checkpoint <go_resnet ckpt>          # optional warm start (PPO ok)
+# Epoch == one self-play generation. Player: GoPlayer (search toggle works).
+params:
+  seed: 322
+
+  algo:
+    name: go_az
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: go_resnet
+    blocks: 6
+    channels: 64
+    gpool_every: 2
+    value_units: 128
+    aux_heads: [ownership, score_dist, plies_left]
+    aux_weights:
+      ownership: 1.0
+      score_dist: 0.25
+      plies_left: 0.05
+    aux_anneal_to: 1.0        # AZ targets are full-coverage; no anneal
+
+  config:
+    name: go9_az
+    env_name: pgx_go
+    device: cuda
+    torch_compile: False   # keep plain state-dict keys (player-compatible)
+    normalize_input: False
+    normalize_value: False
+    use_action_masks: True
+    learning_rate: 5e-5
+    weight_decay: 1e-4
+    max_epochs: 100000
+    save_frequency: 10
+    games_to_track: 100
+
+    alphazero:
+      games_per_gen: 768
+      num_simulations: 16
+      max_num_considered_actions: 16
+      temperature_plies: 24
+      batch_size: 1024
+      train_ratio: 1.0
+      reanalyze_frac: 0.4
+      buffer_positions: 1500000
+      eval_every: 10
+      eval_games: 256
+      eval_temperature: 0.35
+
+    env_config:
+      komi: 7.0
+      symmetry: False
+      seed: 322
+
+    player:
+      use_vecenv: True
+      games_num: 512
+      deterministic: True
+      search:
+        enabled: false
+        num_simulations: 32
