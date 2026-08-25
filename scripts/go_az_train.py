@@ -102,6 +102,9 @@ def main():
     ap.add_argument('--generations', type=int, default=100000)
     ap.add_argument('--eval-every', type=int, default=10)
     ap.add_argument('--eval-games', type=int, default=256)
+    # AZ nets are trained toward soft search targets, so their policies are
+    # intentionally higher-entropy — temp-1.0 sampling understates them badly
+    ap.add_argument('--eval-temp', type=float, default=0.35)
     args = ap.parse_args()
 
     from pgx import go
@@ -160,7 +163,7 @@ def main():
             with torch.no_grad():
                 logits, _, _ = net({'obs': obs})
             logits[~mask] = -torch.inf
-            probs = torch.softmax(logits, -1)
+            probs = torch.softmax(logits / max(args.eval_temp, 1e-6), -1)
             a = torch.multinomial(probs, 1).squeeze(1)
             obs, _, d, info = eval_env.step(a)
             db = d.bool()
