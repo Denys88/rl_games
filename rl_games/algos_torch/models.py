@@ -208,12 +208,7 @@ class ModelA2CMultiDiscrete(BaseModel):
                 return result
 
 
-class ModelA2CContinuous(BaseModel):
-    def __init__(self, network):
-        BaseModel.__init__(self, 'a2c')
-        self.network_builder = network
-
-    class Network(BaseModelNetwork):
+class Network(BaseModelNetwork):
         def __init__(self, a2c_network, **kwargs):
             BaseModelNetwork.__init__(self, **kwargs)
             self.a2c_network = a2c_network
