@@ -155,7 +155,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 batch_dict['dones'] = input_dict['dones']
 
         with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            res_dict = self.model(batch_dict)
+            res_dict = self.train_model()(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']

@@ -170,26 +170,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        # DDP wraps the model lazily on the first training step (after any
-        # checkpoint restore / torch.compile wrapping in torch_runner) and is
-        # used for the training forward ONLY: rollout inference, checkpoints
-        # and attribute access (a2c_network, running_mean_std, ...) keep going
-        # through self.model, so state_dict keys stay unprefixed.
-        # broadcast_buffers=False: running-stat buffers deliberately follow the
-        # multi_gpu_sync_stats policy instead of DDP's per-forward broadcast.
-        if self.multi_gpu and self.multi_gpu_ddp and not self._ddp_active:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            dev = torch.device(self.ppo_device)
-            self._ddp_model = DDP(
-                self.model,
-                device_ids=[dev.index] if dev.type == 'cuda' else None,
-                broadcast_buffers=False,
-                gradient_as_bucket_view=True,
-            )
-            self._ddp_active = True
-            print('Using DistributedDataParallel for gradient sync')
-
-        train_model = self._ddp_model if self._ddp_active else self.model
+        train_model = self.train_model()
         with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
             res_dict = train_model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']

@@ -34,6 +34,7 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
+        self._ddp_model = None
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -243,6 +244,22 @@ class CentralValueTrain(nn.Module):
 
         return value_preds, returns, actions, dones
 
+    def _train_model(self):
+        # DDP for the training forward only (lazy; see A2CBase.train_model)
+        if not self.multi_gpu:
+            return self.model
+        if self._ddp_model is None:
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            dev = torch.device(self.ppo_device)
+            self._ddp_model = DDP(
+                self.model,
+                device_ids=[dev.index] if dev.type == 'cuda' else None,
+                broadcast_buffers=False,
+                gradient_as_bucket_view=True,
+            )
+            print('Using DistributedDataParallel for central value gradient sync')
+        return self._ddp_model
+
     def train_net(self):
         """
         Train the value network on multiple mini-batches.
@@ -307,7 +324,7 @@ class CentralValueTrain(nn.Module):
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
-        res_dict = self.model(batch_dict)
+        res_dict = self._train_model()(batch_dict)
 
         values = res_dict['values']
         loss = self.calc_loss(
@@ -319,25 +336,8 @@ class CentralValueTrain(nn.Module):
 
         loss.backward()
 
-        if self.multi_gpu:
-            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
-            all_grads_list = []
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    all_grads_list.append(param.grad.view(-1))
-
-            if not all_grads_list:
-                return loss
-            all_grads = torch.cat(all_grads_list)
-            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-            offset = 0
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
-                    )
-                    offset += param.numel()
-
+        # multi-GPU gradient averaging is handled by DDP during backward
+        # (see _train_model())
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 

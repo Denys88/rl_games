@@ -191,9 +191,8 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
-        self.multi_gpu_ddp = config.get('multi_gpu_ddp', True)
         self.multi_gpu_defer_kl = config.get('multi_gpu_defer_kl', False)
-        self._ddp_active = False
+        self._ddp_model = None
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
         self.multi_gpu_sync_stats_mode = resolve_stats_sync_mode(
@@ -494,27 +493,38 @@ class A2CBase(BaseAlgorithm):
         self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
-        if self.multi_gpu and not self._ddp_active:
-            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
-            all_grads_list = []
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    all_grads_list.append(param.grad.view(-1))
-
-            all_grads = torch.cat(all_grads_list)
-            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-            offset = 0
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
-                    )
-                    offset += param.numel()
-
+        # multi-GPU gradient averaging is handled by DDP during backward
+        # (see train_model()); nothing to reduce here
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
+
+    def train_model(self):
+        """Model to use for the training forward pass.
+
+        Single GPU: self.model. Multi-GPU: self.model wrapped in
+        DistributedDataParallel, so gradients are bucket-reduced across ranks
+        during backward. The wrapper is created lazily on the first training
+        step (after any checkpoint restore / torch.compile wrapping) and is
+        used for the training forward ONLY: rollout inference, checkpoints and
+        attribute access keep going through self.model, so state_dict keys
+        stay unprefixed. broadcast_buffers=False: running-stat buffers follow
+        the multi_gpu_sync_stats policy instead of DDP's per-forward broadcast.
+        """
+        if not self.multi_gpu:
+            return self.model
+        if self._ddp_model is None:
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            dev = torch.device(self.ppo_device)
+            self._ddp_model = DDP(
+                self.model,
+                device_ids=[dev.index] if dev.type == 'cuda' else None,
+                broadcast_buffers=False,
+                gradient_as_bucket_view=True,
+            )
+            print('Using DistributedDataParallel for gradient sync')
+        return self._ddp_model
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
