@@ -191,6 +191,8 @@ class GoAZAgent:
         self.model.eval()
         obs = env.reset()
         wins = n = 0
+        cwins = {0: 0, 1: 0}
+        cn = {0: 0, 1: 0}
         while n < games:
             mask = env.get_action_masks()
             with torch.no_grad():
@@ -201,9 +203,23 @@ class GoAZAgent:
             obs, _, d, info = env.step(a)
             db = d.bool()
             if db.any():
-                wins += int((info['win'][db] > 0).sum().item())
+                w = (info['win'][db] > 0)
+                col = info['game_color'][db]
+                for c in (0, 1):
+                    cm = col == c
+                    cwins[c] += int((w & cm).sum().item())
+                    cn[c] += int(cm.sum().item())
+                wins += int(w.sum().item())
                 n += int(db.sum().item())
         self.model.train()
+        # near-optimal 9x9 at komi 7 is colour-determined at the boundary;
+        # the split shows how close each colour is to that wall
+        wb = cwins[0] / max(cn[0], 1)
+        ww = cwins[1] / max(cn[1], 1)
+        self.writer.add_scalar('go/eval_winrate_black', wb, self.frame)
+        self.writer.add_scalar('go/eval_winrate_white', ww, self.frame)
+        print(f'[go_az] eval split: as black {wb:.3f} ({cn[0]}g), '
+              f'as white {ww:.3f} ({cn[1]}g)', flush=True)
         return wins / n
 
     # -------------------------------------------------------------- train

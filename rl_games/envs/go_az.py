@@ -191,8 +191,12 @@ def make_selfplay(env, arch, num_simulations=16, max_num_considered_actions=16,
         score_diff_black = scores[:, 0] - scores[:, 1] - komi
         ownership_black = np.asarray(own_all(jnp.asarray(final_x_board)))
         lengths = alive.sum(axis=0).astype(np.int32)
-        # shaped outcome from black's perspective (win +-1 + 0.5 tanh(score/10))
-        z_black = rew_black + 0.5 * np.tanh(score_diff_black / 10.0) * (rew_black != 0)
+        # Shaped outcome from black's perspective. Near-optimal 9x9 play
+        # converges to B-W = komi exactly, and the tie-to-white rule then
+        # makes outcomes colour-determined (black ~10% despite even boards),
+        # collapsing the value signal — so the exact boundary counts as a
+        # DRAW (z=0) in training targets: sign(score) +-1 + 0.5 tanh(score/10).
+        z_black = np.sign(score_diff_black) + 0.5 * np.tanh(score_diff_black / 10.0)
         return {
             'moves': moves, 'weights': weights, 'alive': alive,
             'obs_bits': obs_bits, 'lengths': lengths,
