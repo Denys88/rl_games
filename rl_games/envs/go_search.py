@@ -110,3 +110,39 @@ def make_search_opponent(env, temperature=0.0, **search_kwargs):
 
     opponent_fn.is_batched = True
     return opponent_fn
+
+
+def make_pool_search_opponent(env, pool_groups, blocks=6, channels=64,
+                              gpool_every=2, value_units=128,
+                              num_simulations=8, max_num_considered_actions=16,
+                              max_depth=None):
+    """League pool opponents strengthened with small Gumbel search.
+
+    Batched env opponent for PgxGoVecEnv's pool_search mode: opp_params is
+    the pool assignment {'stacked': params with leading axis pool_groups,
+    'ids': (pool_groups,)}. One batched search runs over all boards; the
+    priors come from each board group's own member net (double-vmap inside
+    priors_fn — mctx never sees the grouping)."""
+    net = GoResNetFlax(blocks=blocks, channels=channels,
+                       gpool_every=gpool_every, value_units=value_units)
+
+    def priors_fn(opp_params, observation):
+        n = observation.shape[0]
+        per = n // pool_groups
+        obs = observation.astype(jnp.float32).reshape(
+            (pool_groups, per) + observation.shape[1:])
+        logits, value = jax.vmap(
+            lambda p, o: net.apply({'params': p}, o))(opp_params['stacked'], obs)
+        return logits.reshape(n, -1), value.reshape(n)
+
+    search_policy = make_search_policy(
+        env, num_simulations=num_simulations,
+        max_num_considered_actions=max_num_considered_actions,
+        max_depth=max_depth, priors_fn=priors_fn)
+
+    def opponent_fn(opp_params, state, rng):
+        action, weights = search_policy(opp_params, state, rng)
+        return action, weights
+
+    opponent_fn.is_batched = True
+    return opponent_fn

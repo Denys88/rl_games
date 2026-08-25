@@ -136,6 +136,26 @@ class PgxGoVecEnv(IVecEnv):
             temp = kwargs.pop('opponent_temperature', 1.0)
             opponent_fn, net = make_flax_opponent(temperature=temp, **self._net_cfg)
             self._opp_params = init_flax_params(net, seed=self._seed, size=self.size)
+        elif opponent == 'pool_search':
+            # league pool with small-Gumbel-search opponents (plan 4.1
+            # 'search' members generalized to the whole pool)
+            from rl_games.envs.go_flax import GoResNetFlax, init_flax_params
+            from rl_games.envs.go_search import make_pool_search_opponent
+            self._net_cfg = {k: kwargs.pop(k) for k in
+                             ('blocks', 'channels', 'gpool_every', 'value_units')
+                             if k in kwargs}
+            self.pool_groups = int(kwargs.pop('pool_groups', 16))
+            assert num_actors % self.pool_groups == 0
+            sims = int(kwargs.pop('opponent_search_sims', 8))
+            kwargs.pop('opponent_temperature', None)
+            opponent_fn = make_pool_search_opponent(
+                self.env, self.pool_groups, num_simulations=sims, **self._net_cfg)
+            net = GoResNetFlax(**self._net_cfg)
+            base = init_flax_params(net, seed=self._seed, size=self.size)
+            stacked = jax.tree_util.tree_map(
+                lambda x: jnp.stack([x] * self.pool_groups), base)
+            self._opp_params = {'stacked': stacked,
+                                'ids': jnp.zeros((self.pool_groups,), jnp.int32)}
         elif opponent == 'pool':
             # League mode: boards are partitioned into `pool_groups` groups,
             # each bound to one pool member's params (stacked pytree, vmapped
@@ -189,12 +209,19 @@ class PgxGoVecEnv(IVecEnv):
         init_env = jax.vmap(self.env.init)
 
         is_pool = (opponent == 'pool')
-        if opp_batched:
+        is_pool_search = (opponent == 'pool_search')
+        if opp_batched or is_pool_search:
             def _opp_move(opp_params, state, rng):
                 return opponent_fn(opp_params, state, rng)
 
-            def _opp_ids(opp_params):
-                return jnp.zeros((num,), dtype=jnp.int32)
+            if is_pool_search:
+                per_group_ps = num // self.pool_groups
+
+                def _opp_ids(opp_params):
+                    return jnp.repeat(opp_params['ids'], per_group_ps)
+            else:
+                def _opp_ids(opp_params):
+                    return jnp.zeros((num,), dtype=jnp.int32)
         elif is_pool:
             groups = self.pool_groups
             per_group = num // groups
