@@ -80,3 +80,6 @@ exclude = [
     "uv.lock",
     ".github/",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
