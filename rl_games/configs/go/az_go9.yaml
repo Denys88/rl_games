@@ -39,12 +39,16 @@ params:
     games_to_track: 100
 
     alphazero:
-      games_per_gen: 768
-      num_simulations: 16
-      max_num_considered_actions: 16
+      games_per_gen: 512
+      # 32 sims over only 8 candidates: >=2 visits each — 16x16 gave 1-visit
+      # completed-Q targets whose noise downgraded a strong warm-start policy
+      num_simulations: 32
+      max_num_considered_actions: 8
       temperature_plies: 24
       batch_size: 1024
       train_ratio: 1.0
+      policy_coef: 0.5      # gentle policy pull; value/aux at full strength
+      value_coef: 1.0
       reanalyze_frac: 0.4
       buffer_positions: 1500000
       eval_every: 10

@@ -257,7 +257,9 @@ class GoAZAgent:
             policy_loss = -(pol * logp).sum(-1).mean()
             value_loss = F.mse_loss(value.squeeze(-1), zt)
             aux = self.net.get_aux_loss() or {}
-            loss = policy_loss + value_loss + sum(aux.values())
+            loss = (self.az.get('policy_coef', 1.0) * policy_loss
+                    + self.az.get('value_coef', 1.0) * value_loss
+                    + sum(aux.values()))
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
