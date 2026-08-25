@@ -245,18 +245,11 @@ class CentralValueTrain(nn.Module):
         return value_preds, returns, actions, dones
 
     def _train_model(self):
-        # DDP for the training forward only (lazy; see A2CBase.train_model)
+        """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
         if not self.multi_gpu:
             return self.model
         if self._ddp_model is None:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            dev = torch.device(self.ppo_device)
-            self._ddp_model = DDP(
-                self.model,
-                device_ids=[dev.index] if dev.type == 'cuda' else None,
-                broadcast_buffers=False,
-                gradient_as_bucket_view=True,
-            )
+            self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
             print('Using DistributedDataParallel for central value gradient sync')
         return self._ddp_model
 
@@ -336,8 +329,6 @@ class CentralValueTrain(nn.Module):
 
         loss.backward()
 
-        # multi-GPU gradient averaging is handled by DDP during backward
-        # (see _train_model())
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 

@@ -5,6 +5,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+
+def wrap_model_ddp(model, device):
+    """DDP wrapper for the training forward pass only: gradients are bucket-averaged
+    across ranks during backward; running-stat buffers stay under the trainer's own
+    sync policy (broadcast_buffers=False)."""
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    dev = torch.device(device)
+    return DDP(
+        model,
+        device_ids=[dev.index] if dev.type == 'cuda' else None,
+        broadcast_buffers=False,
+        gradient_as_bucket_view=True,
+    )
 from torch.optim.optimizer import Optimizer
 
 

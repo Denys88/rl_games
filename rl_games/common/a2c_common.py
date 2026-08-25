@@ -493,36 +493,17 @@ class A2CBase(BaseAlgorithm):
         self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
-        # multi-GPU gradient averaging is handled by DDP during backward
-        # (see train_model()); nothing to reduce here
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
 
     def train_model(self):
-        """Model to use for the training forward pass.
-
-        Single GPU: self.model. Multi-GPU: self.model wrapped in
-        DistributedDataParallel, so gradients are bucket-reduced across ranks
-        during backward. The wrapper is created lazily on the first training
-        step (after any checkpoint restore / torch.compile wrapping) and is
-        used for the training forward ONLY: rollout inference, checkpoints and
-        attribute access keep going through self.model, so state_dict keys
-        stay unprefixed. broadcast_buffers=False: running-stat buffers follow
-        the multi_gpu_sync_stats policy instead of DDP's per-forward broadcast.
-        """
+        """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
         if not self.multi_gpu:
             return self.model
         if self._ddp_model is None:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            dev = torch.device(self.ppo_device)
-            self._ddp_model = DDP(
-                self.model,
-                device_ids=[dev.index] if dev.type == 'cuda' else None,
-                broadcast_buffers=False,
-                gradient_as_bucket_view=True,
-            )
+            self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
             print('Using DistributedDataParallel for gradient sync')
         return self._ddp_model
 
@@ -573,6 +554,15 @@ class A2CBase(BaseAlgorithm):
         self.model.train()
         if self.normalize_rms_advantage:
             self.advantage_mean_std.train()
+
+    def _kl_for_lr_schedule(self, kl):
+        """KL fed to the per-minibatch LR scheduler: the cross-rank mean, or rank 0's
+        local estimate when multi_gpu_defer_kl skips the rendezvous (lr is broadcast
+        from rank 0 either way)."""
+        if self.multi_gpu and not self.multi_gpu_defer_kl:
+            dist.all_reduce(kl, op=dist.ReduceOp.SUM)
+            kl /= self.world_size
+        return kl
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -1568,14 +1558,7 @@ class ContinuousA2CBase(A2CBase):
 
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'per_minibatch':
-                    av_kls = kl
-                    # this all-reduce only feeds rank 0's scheduler (other
-                    # ranks run Identity and receive lr via update_lr's
-                    # broadcast), so multi_gpu_defer_kl may skip the rendezvous
-                    # and let rank 0 use its local KL estimate instead
-                    if self.multi_gpu and not self.multi_gpu_defer_kl:
-                        dist.all_reduce(kl, op=dist.ReduceOp.SUM)
-                        av_kls /= self.world_size
+                    av_kls = self._kl_for_lr_schedule(kl)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
