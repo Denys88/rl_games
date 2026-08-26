@@ -505,7 +505,8 @@ class A2CBase(BaseAlgorithm):
                 torch_ext.flat_allreduce_grads(self.model, self.world_size)
             elif self._ddp_model is None:
                 raise RuntimeError(
-                    "multi-GPU gradient sync runs through DDP: route the training "
+                    "multi-GPU gradient sync runs through DDP: call "
+                    "setup_multi_gpu() before training and route the training "
                     "forward through self.train_model(), or set "
                     "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
@@ -513,14 +514,37 @@ class A2CBase(BaseAlgorithm):
 
         self.optimizer.step()
 
+    def inference_model(self):
+        """Model for rollout/inference forward passes: always the raw model."""
+        return self.model
+
     def train_model(self):
-        """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
-        if not self.multi_gpu or self.multi_gpu_grad_sync == 'flat_allreduce':
-            return self.model
-        if self._ddp_model is None:
+        """Model for the training forward pass: the DDP wrapper created by
+        setup_multi_gpu() when gradients are synced via DDP, the raw model
+        otherwise."""
+        return self._ddp_model if self._ddp_model is not None else self.model
+
+    def setup_multi_gpu(self):
+        """One-time multi-GPU setup at the start of train(): broadcast initial
+        weights from rank 0 and wrap the training forward in DDP (unless
+        multi_gpu_grad_sync is 'flat_allreduce')."""
+        if not self.multi_gpu:
+            return
+        torch.cuda.set_device(self.local_rank)
+        print("====================broadcasting parameters")
+        model_params = [self.model.state_dict()]
+        if self.has_central_value:
+            model_params.append(self.central_value_net.state_dict())
+        dist.broadcast_object_list(model_params, 0)
+        self.model.load_state_dict(model_params[0])
+        if self.has_central_value:
+            self.central_value_net.load_state_dict(model_params[1])
+
+        if self.multi_gpu_grad_sync == 'ddp':
             self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
             print('Using DistributedDataParallel for gradient sync')
-        return self._ddp_model
+            if self.has_central_value:
+                self.central_value_net.setup_train_model()
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -607,7 +631,7 @@ class A2CBase(BaseAlgorithm):
         }
 
         with torch.no_grad():
-            res_dict = self.model(input_dict)
+            res_dict = self.inference_model()(input_dict)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -639,7 +663,7 @@ class A2CBase(BaseAlgorithm):
                     'obs': processed_obs,
                     'rnn_states': self.rnn_states
                 }
-                result = self.model(input_dict)
+                result = self.inference_model()(input_dict)
                 value = result['values']
             return value
 
@@ -1385,16 +1409,7 @@ class DiscreteA2CBase(A2CBase):
 
         self.obs = self.env_reset()
 
-        if self.multi_gpu:
-            torch.cuda.set_device(self.local_rank)
-            print("====================broadcasting parameters")
-            model_params = [self.model.state_dict()]
-            if self.has_central_value:
-                model_params.append(self.central_value_net.state_dict())
-            dist.broadcast_object_list(model_params, 0)
-            self.model.load_state_dict(model_params[0])
-            if self.has_central_value:
-                self.central_value_net.load_state_dict(model_params[1])
+        self.setup_multi_gpu()
 
         while True:
             epoch_num = self.update_epoch()
@@ -1682,17 +1697,7 @@ class ContinuousA2CBase(A2CBase):
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
-        if self.multi_gpu:
-            torch.cuda.set_device(self.local_rank)
-            print("====================broadcasting parameters")
-            model_params = [self.model.state_dict()]
-            if self.has_central_value:
-                model_params.append(self.central_value_net.state_dict())
-            dist.broadcast_object_list(model_params, 0)
-            self.model.load_state_dict(model_params[0])
-            if self.has_central_value:
-                self.central_value_net.load_state_dict(model_params[1])
-            print("====================broadcast done")
+        self.setup_multi_gpu()
 
         while True:
             epoch_num = self.update_epoch()

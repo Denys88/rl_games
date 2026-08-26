@@ -247,14 +247,17 @@ class CentralValueTrain(nn.Module):
 
         return value_preds, returns, actions, dones
 
-    def _train_model(self):
-        """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
-        if not self.multi_gpu or self.multi_gpu_grad_sync == 'flat_allreduce':
-            return self.model
-        if self._ddp_model is None:
+    def setup_train_model(self):
+        """Wrap the training forward in DDP; called once from the agent's
+        setup_multi_gpu(). Plain-attribute assignment on purpose: nn.Module
+        registration would duplicate the wrapper's params in state_dict()."""
+        if self.multi_gpu and self.multi_gpu_grad_sync == 'ddp' and self._ddp_model is None:
             self.__dict__['_ddp_model'] = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
             print('Using DistributedDataParallel for central value gradient sync')
-        return self._ddp_model
+
+    def train_model(self):
+        """Model for the training forward pass (see setup_train_model)."""
+        return self._ddp_model if self._ddp_model is not None else self.model
 
     def train_net(self):
         """
@@ -320,7 +323,7 @@ class CentralValueTrain(nn.Module):
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
-        res_dict = self._train_model()(batch_dict)
+        res_dict = self.train_model()(batch_dict)
 
         values = res_dict['values']
         loss = self.calc_loss(
@@ -338,7 +341,7 @@ class CentralValueTrain(nn.Module):
             elif self._ddp_model is None:
                 raise RuntimeError(
                     "multi-GPU gradient sync runs through DDP: route the training "
-                    "forward through self._train_model(), or set "
+                    "forward through self.train_model(), or set "
                     "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
