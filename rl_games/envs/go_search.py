@@ -24,7 +24,8 @@ from rl_games.envs.go_flax import GoResNetFlax
 
 
 def make_search_policy(env, blocks=6, channels=64, gpool_every=2,
-                       value_units=128, num_simulations=32,
+                       value_units=128, block_type='res', bottleneck_channels=0,
+                       num_simulations=32,
                        max_num_considered_actions=16, gumbel_scale=1.0,
                        max_depth=None, priors_fn=None):
     """Returns jitted (params, state, rng) -> (action, action_weights).
@@ -41,7 +42,9 @@ def make_search_policy(env, blocks=6, channels=64, gpool_every=2,
 
     if priors_fn is None:
         net = GoResNetFlax(blocks=blocks, channels=channels,
-                           gpool_every=gpool_every, value_units=value_units)
+                           gpool_every=gpool_every, value_units=value_units,
+                           block_type=block_type,
+                           bottleneck_channels=bottleneck_channels)
 
         def priors_fn(params, observation):
             return net.apply({'params': params}, observation.astype(jnp.float32))
@@ -114,6 +117,7 @@ def make_search_opponent(env, temperature=0.0, **search_kwargs):
 
 def make_pool_search_opponent(env, pool_groups, blocks=6, channels=64,
                               gpool_every=2, value_units=128,
+                              block_type='res', bottleneck_channels=0,
                               num_simulations=8, max_num_considered_actions=16,
                               max_depth=None):
     """League pool opponents strengthened with small Gumbel search.
@@ -124,7 +128,9 @@ def make_pool_search_opponent(env, pool_groups, blocks=6, channels=64,
     priors come from each board group's own member net (double-vmap inside
     priors_fn — mctx never sees the grouping)."""
     net = GoResNetFlax(blocks=blocks, channels=channels,
-                       gpool_every=gpool_every, value_units=value_units)
+                       gpool_every=gpool_every, value_units=value_units,
+                       block_type=block_type,
+                       bottleneck_channels=bottleneck_channels)
 
     def priors_fn(opp_params, observation):
         n = observation.shape[0]

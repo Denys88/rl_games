@@ -131,7 +131,8 @@ class PgxGoVecEnv(IVecEnv):
             # (SelfPlayManager -> set_weights -> params_from_torch).
             from rl_games.envs.go_flax import make_flax_opponent, init_flax_params
             self._net_cfg = {k: kwargs.pop(k) for k in
-                             ('blocks', 'channels', 'gpool_every', 'value_units')
+                             ('blocks', 'channels', 'gpool_every', 'value_units',
+                              'block_type', 'bottleneck_channels')
                              if k in kwargs}
             temp = kwargs.pop('opponent_temperature', 1.0)
             opponent_fn, net = make_flax_opponent(temperature=temp, **self._net_cfg)
@@ -142,7 +143,8 @@ class PgxGoVecEnv(IVecEnv):
             from rl_games.envs.go_flax import GoResNetFlax, init_flax_params
             from rl_games.envs.go_search import make_pool_search_opponent
             self._net_cfg = {k: kwargs.pop(k) for k in
-                             ('blocks', 'channels', 'gpool_every', 'value_units')
+                             ('blocks', 'channels', 'gpool_every', 'value_units',
+                              'block_type', 'bottleneck_channels')
                              if k in kwargs}
             self.pool_groups = int(kwargs.pop('pool_groups', 16))
             assert num_actors % self.pool_groups == 0
@@ -165,7 +167,8 @@ class PgxGoVecEnv(IVecEnv):
             # the boundary games).
             from rl_games.envs.go_flax import make_flax_opponent, init_flax_params
             self._net_cfg = {k: kwargs.pop(k) for k in
-                             ('blocks', 'channels', 'gpool_every', 'value_units')
+                             ('blocks', 'channels', 'gpool_every', 'value_units',
+                              'block_type', 'bottleneck_channels')
                              if k in kwargs}
             temp = kwargs.pop('opponent_temperature', 1.0)
             self.pool_groups = int(kwargs.pop('pool_groups', 16))

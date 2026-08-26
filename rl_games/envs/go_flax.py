@@ -20,27 +20,51 @@ import numpy as np
 
 
 class GoResNetFlax(nn.Module):
-    """Mirror of go_network.GoResNetBuilder.Network (policy/value only)."""
+    """Mirror of go_network.GoResNetBuilder.Network (policy/value only).
+
+    block_type 'res' mirrors ResBlock; 'nbt' mirrors NestedBottleneckBlock
+    (KataGo-style b18c384nbt trunks)."""
 
     blocks: int = 6
     channels: int = 64
     gpool_every: int = 2
     value_units: int = 128
+    block_type: str = 'res'
+    bottleneck_channels: int = 0  # 0 -> channels // 2
+
+    def _gpool_add(self, y, name):
+        pooled = jnp.concatenate([y.mean(axis=(1, 2)), y.max(axis=(1, 2))], axis=-1)
+        return y + nn.Dense(y.shape[-1], name=name)(pooled)[:, None, None, :]
 
     @nn.compact
     def __call__(self, obs):
         # obs: (B, size, size, planes) float32, NHWC
         c = self.channels
+        mid = self.bottleneck_channels or c // 2
         x = nn.Conv(c, (3, 3), name='stem')(obs)
         for i in range(self.blocks):
             has_gpool = self.gpool_every > 0 and (i + 1) % self.gpool_every == 0
-            residual = x
-            y = nn.Conv(c, (3, 3), name=f'b{i}_conv1')(jax.nn.relu(x))
-            if has_gpool:
-                pooled = jnp.concatenate([y.mean(axis=(1, 2)), y.max(axis=(1, 2))], axis=-1)
-                y = y + nn.Dense(c, name=f'b{i}_gpool')(pooled)[:, None, None, :]
-            y = nn.Conv(c, (3, 3), name=f'b{i}_conv2')(jax.nn.relu(y))
-            x = residual + y
+            if self.block_type == 'nbt':
+                y = nn.Conv(mid, (1, 1), name=f'b{i}_down')(jax.nn.relu(x))
+                # inner residual 1
+                z = nn.Conv(mid, (3, 3), name=f'b{i}_i1_conv1')(jax.nn.relu(y))
+                z = nn.Conv(mid, (3, 3), name=f'b{i}_i1_conv2')(jax.nn.relu(z))
+                y = y + z
+                # inner residual 2 (carries the gpool, matching torch)
+                z = nn.Conv(mid, (3, 3), name=f'b{i}_i2_conv1')(jax.nn.relu(y))
+                if has_gpool:
+                    z = self._gpool_add(z, f'b{i}_i2_gpool')
+                z = nn.Conv(mid, (3, 3), name=f'b{i}_i2_conv2')(jax.nn.relu(z))
+                y = y + z
+                y = nn.Conv(c, (1, 1), name=f'b{i}_up')(jax.nn.relu(y))
+                x = x + y
+            else:
+                residual = x
+                y = nn.Conv(c, (3, 3), name=f'b{i}_conv1')(jax.nn.relu(x))
+                if has_gpool:
+                    y = self._gpool_add(y, f'b{i}_gpool')
+                y = nn.Conv(c, (3, 3), name=f'b{i}_conv2')(jax.nn.relu(y))
+                x = residual + y
         trunk = jax.nn.relu(x)
         pooled = jnp.concatenate([trunk.mean(axis=(1, 2)), trunk.max(axis=(1, 2))], axis=-1)
 
@@ -60,12 +84,12 @@ def _clean_key(key):
     return key
 
 
-def params_from_torch(state_dict, blocks=6, gpool_every=2, **_):
+def params_from_torch(state_dict, blocks=6, gpool_every=2, block_type='res', **_):
     """torch state_dict (from the model or the bare network) -> flax params.
 
     Handles the 'a2c_network.' model prefix and torch.compile's '_orig_mod.'.
     Conv weights OIHW -> HWIO, linear (out,in) -> (in,out). Aux-head and
-    normalizer entries are ignored.
+    normalizer entries are ignored. block_type 'res' | 'nbt'.
     """
     flat = {}
     for k, v in state_dict.items():
@@ -88,10 +112,21 @@ def params_from_torch(state_dict, blocks=6, gpool_every=2, **_):
         'value_fc2': dense('value_fc2'),
     }
     for i in range(blocks):
-        params[f'b{i}_conv1'] = conv(f'blocks.{i}.conv1')
-        params[f'b{i}_conv2'] = conv(f'blocks.{i}.conv2')
-        if gpool_every > 0 and (i + 1) % gpool_every == 0:
-            params[f'b{i}_gpool'] = dense(f'blocks.{i}.gpool.fc')
+        has_gpool = gpool_every > 0 and (i + 1) % gpool_every == 0
+        if block_type == 'nbt':
+            params[f'b{i}_down'] = conv(f'blocks.{i}.down')
+            params[f'b{i}_i1_conv1'] = conv(f'blocks.{i}.inner1.conv1')
+            params[f'b{i}_i1_conv2'] = conv(f'blocks.{i}.inner1.conv2')
+            params[f'b{i}_i2_conv1'] = conv(f'blocks.{i}.inner2.conv1')
+            params[f'b{i}_i2_conv2'] = conv(f'blocks.{i}.inner2.conv2')
+            if has_gpool:
+                params[f'b{i}_i2_gpool'] = dense(f'blocks.{i}.inner2.gpool.fc')
+            params[f'b{i}_up'] = conv(f'blocks.{i}.up')
+        else:
+            params[f'b{i}_conv1'] = conv(f'blocks.{i}.conv1')
+            params[f'b{i}_conv2'] = conv(f'blocks.{i}.conv2')
+            if has_gpool:
+                params[f'b{i}_gpool'] = dense(f'blocks.{i}.gpool.fc')
     return jax.tree_util.tree_map(jnp.asarray, params)
 
 
@@ -101,6 +136,7 @@ def init_flax_params(net, seed=0, size=9, planes=17):
 
 
 def make_flax_opponent(blocks=6, channels=64, gpool_every=2, value_units=128,
+                       block_type='res', bottleneck_channels=0,
                        temperature=1.0):
     """Jit-able opponent for PgxGoVecEnv: samples the flax policy.
 
@@ -109,7 +145,9 @@ def make_flax_opponent(blocks=6, channels=64, gpool_every=2, value_units=128,
     exactly what the opp_policy aux target wants.
     """
     net = GoResNetFlax(blocks=blocks, channels=channels,
-                       gpool_every=gpool_every, value_units=value_units)
+                       gpool_every=gpool_every, value_units=value_units,
+                       block_type=block_type,
+                       bottleneck_channels=bottleneck_channels)
 
     def opponent_fn(params, obs, mask, rng):
         logits, _ = net.apply({'params': params}, obs[None].astype(jnp.float32))

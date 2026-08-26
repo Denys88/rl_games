@@ -88,6 +88,33 @@ def test_flax_opponent_samples_legal(nets):
         assert d[~mask].max() == 0.0
 
 
+def test_nbt_parity():
+    """Nested-bottleneck (b18c384nbt-style) trunk: torch <-> flax."""
+    arch = dict(blocks=3, channels=64, gpool_every=2, value_units=64,
+                block_type='nbt', bottleneck_channels=32)
+    torch.manual_seed(7)
+    builder = GoResNetBuilder()
+    builder.load(dict(arch))
+    tnet = builder.build('go_resnet', input_shape=(9, 9, 17), actions_num=82)
+    with torch.no_grad():
+        for name, p in tnet.named_parameters():
+            if 'up.' in name or 'conv2' in name:
+                p.normal_(0, 0.05)
+    tnet.eval()
+    fnet = GoResNetFlax(**arch)
+    fparams = params_from_torch(tnet.state_dict(), **arch)
+    rng = np.random.RandomState(2)
+    obs = (rng.rand(64, 9, 9, 17) < 0.3).astype(np.float32)
+    with torch.no_grad():
+        t_logits, t_value, _ = tnet({'obs': torch.from_numpy(obs)})
+    with jax.default_matmul_precision('float32'):
+        f_logits, f_value = fnet.apply({'params': fparams}, jnp.asarray(obs))
+    dl = np.abs(t_logits.numpy() - np.asarray(f_logits)).max()
+    dv = np.abs(t_value.numpy()[:, 0] - np.asarray(f_value)).max()
+    assert dl < 1e-4, f'nbt policy logits diverge: {dl}'
+    assert dv < 1e-4, f'nbt value diverges: {dv}'
+
+
 def test_export_speed(nets):
     import time
     tnet, _, _ = nets

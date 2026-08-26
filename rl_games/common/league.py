@@ -49,7 +49,12 @@ class League:
     # ------------------------------------------------------------- pool ops
 
     def add(self, params, kind='snapshot', epoch=0):
-        """Add a member; evict if the pool is full. Returns member id."""
+        """Add a member; evict if the pool is full. Returns member id.
+
+        Params are moved to host memory — a big-net pool (32 x 26M) would
+        otherwise pin gigabytes of GPU; build_stacked re-uploads only the
+        pool_groups slices actually assigned."""
+        params = jax.device_get(params)
         if len(self.members) >= self.max_pool:
             self._evict()
         mid = self._next_id

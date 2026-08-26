@@ -82,6 +82,28 @@ class ResBlock(nn.Module):
         return x + y
 
 
+class NestedBottleneckBlock(nn.Module):
+    """KataGo-style nested bottleneck (the 'nbt' in b18c384nbt): 1x1 down to
+    `mid` channels, two nested residual pairs at mid, 1x1 back up, outer
+    residual. Pre-activation, norm-free (up-projection zero-init)."""
+
+    def __init__(self, channels, mid, gpool=False):
+        super().__init__()
+        self.down = nn.Conv2d(channels, mid, 1)
+        self.inner1 = ResBlock(mid)
+        self.inner2 = ResBlock(mid, gpool=gpool)
+        self.up = nn.Conv2d(mid, channels, 1)
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def forward(self, x):
+        y = self.down(F.relu(x))
+        y = self.inner1(y)
+        y = self.inner2(y)
+        y = self.up(F.relu(y))
+        return x + y
+
+
 class GoResNetBuilder(NetworkBuilder):
     def __init__(self, **kwargs):
         NetworkBuilder.__init__(self)
@@ -106,6 +128,9 @@ class GoResNetBuilder(NetworkBuilder):
             self.channels = params.get('channels', 64)
             gpool_every = params.get('gpool_every', 2)
             value_units = params.get('value_units', 128)
+            self.block_type = params.get('block_type', 'res')
+            self.bottleneck_channels = params.get(
+                'bottleneck_channels', self.channels // 2)
             self.aux_head_names = list(params.get(
                 'aux_heads', ['ownership', 'score_dist', 'opp_policy', 'plies_left']))
             weights = dict(DEFAULT_AUX_WEIGHTS)
@@ -117,10 +142,18 @@ class GoResNetBuilder(NetworkBuilder):
 
             c = self.channels
             self.stem = nn.Conv2d(in_planes, c, 3, padding=1)
-            self.blocks = nn.ModuleList([
-                ResBlock(c, gpool=(gpool_every > 0 and (i + 1) % gpool_every == 0))
-                for i in range(self.blocks_num)
-            ])
+            if self.block_type == 'nbt':
+                self.blocks = nn.ModuleList([
+                    NestedBottleneckBlock(
+                        c, self.bottleneck_channels,
+                        gpool=(gpool_every > 0 and (i + 1) % gpool_every == 0))
+                    for i in range(self.blocks_num)
+                ])
+            else:
+                self.blocks = nn.ModuleList([
+                    ResBlock(c, gpool=(gpool_every > 0 and (i + 1) % gpool_every == 0))
+                    for i in range(self.blocks_num)
+                ])
 
             # policy: per-point logits from a 1x1 conv, pass logit from the pool
             self.policy_conv = nn.Conv2d(c, 1, 1)
