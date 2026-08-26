@@ -139,8 +139,12 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
   through `self.model` directly; scheduled for removal.
 
 2-GPU A/B (Isaac Humanoid, 16k envs/rank): bit-identical gradients between
-modes; throughput within ±2% on a small policy net, DDP ahead ~1% at ~11M
-params. A multi-GPU run that never routes its training forward through
+modes. Throughput depends on model size: on the default small policy net
+`'flat_allreduce'` is faster (~4% eager, ~2.5% compiled — `DDP(compiled)`
+forfeits Dynamo's DDPOptimizer overlap), while at ~11M params `'ddp'` is
+ahead ~1% (97.4% scaling) and its advantage grows with model size and rank
+count. Pairing `'ddp'` with `multi_gpu_scheduler_kl: 'local'` recovers the
+small-net gap (+1.6% net over flat). A multi-GPU run that never routes its training forward through
 `train_model()` under `'ddp'` raises at the optimizer step instead of
 silently training rank-divergent.
 
