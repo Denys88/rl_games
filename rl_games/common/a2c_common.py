@@ -191,7 +191,14 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
-        self.multi_gpu_defer_kl = config.get('multi_gpu_defer_kl', False)
+        self.multi_gpu_grad_sync = config.get('multi_gpu_grad_sync', 'ddp')
+        if self.multi_gpu_grad_sync not in ('ddp', 'flat_allreduce'):
+            raise ValueError(
+                f"multi_gpu_grad_sync must be 'ddp' or 'flat_allreduce', got '{self.multi_gpu_grad_sync}'")
+        self.multi_gpu_scheduler_kl = config.get('multi_gpu_scheduler_kl', 'global')
+        if self.multi_gpu_scheduler_kl not in ('global', 'local'):
+            raise ValueError(
+                f"multi_gpu_scheduler_kl must be 'global' or 'local', got '{self.multi_gpu_scheduler_kl}'")
         self._ddp_model = None
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
@@ -493,6 +500,14 @@ class A2CBase(BaseAlgorithm):
         self.aux_loss_dict = {}
 
     def trancate_gradients_and_step(self):
+        if self.multi_gpu:
+            if self.multi_gpu_grad_sync == 'flat_allreduce':
+                torch_ext.flat_allreduce_grads(self.model, self.world_size)
+            elif self._ddp_model is None:
+                raise RuntimeError(
+                    "multi-GPU gradient sync runs through DDP: route the training "
+                    "forward through self.train_model(), or set "
+                    "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
@@ -500,7 +515,7 @@ class A2CBase(BaseAlgorithm):
 
     def train_model(self):
         """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
-        if not self.multi_gpu:
+        if not self.multi_gpu or self.multi_gpu_grad_sync == 'flat_allreduce':
             return self.model
         if self._ddp_model is None:
             self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
@@ -556,10 +571,10 @@ class A2CBase(BaseAlgorithm):
             self.advantage_mean_std.train()
 
     def _kl_for_lr_schedule(self, kl):
-        """KL fed to the per-minibatch LR scheduler: the cross-rank mean, or rank 0's
-        local estimate when multi_gpu_defer_kl skips the rendezvous (lr is broadcast
-        from rank 0 either way)."""
-        if self.multi_gpu and not self.multi_gpu_defer_kl:
+        """KL fed to the per-minibatch LR scheduler: the cross-rank mean ('global'),
+        or rank 0's local estimate ('local', skips one collective per minibatch;
+        lr is broadcast from rank 0 either way)."""
+        if self.multi_gpu and self.multi_gpu_scheduler_kl == 'global':
             dist.all_reduce(kl, op=dist.ReduceOp.SUM)
             kl /= self.world_size
         return kl

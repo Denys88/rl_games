@@ -34,7 +34,10 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self._ddp_model = None
+        self.multi_gpu_grad_sync = config.get('multi_gpu_grad_sync', 'ddp')
+        # plain attribute on purpose: nn.Module.__setattr__ would register the
+        # DDP wrapper as a child and duplicate its params in state_dict()
+        self.__dict__['_ddp_model'] = None
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -246,10 +249,10 @@ class CentralValueTrain(nn.Module):
 
     def _train_model(self):
         """Model for the training forward pass: DDP-wrapped when multi-GPU, created lazily."""
-        if not self.multi_gpu:
+        if not self.multi_gpu or self.multi_gpu_grad_sync == 'flat_allreduce':
             return self.model
         if self._ddp_model is None:
-            self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
+            self.__dict__['_ddp_model'] = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
             print('Using DistributedDataParallel for central value gradient sync')
         return self._ddp_model
 
@@ -329,6 +332,14 @@ class CentralValueTrain(nn.Module):
 
         loss.backward()
 
+        if self.multi_gpu:
+            if self.multi_gpu_grad_sync == 'flat_allreduce':
+                torch_ext.flat_allreduce_grads(self.model, self.world_size)
+            elif self._ddp_model is None:
+                raise RuntimeError(
+                    "multi-GPU gradient sync runs through DDP: route the training "
+                    "forward through self._train_model(), or set "
+                    "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 

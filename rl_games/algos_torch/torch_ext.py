@@ -19,6 +19,24 @@ def wrap_model_ddp(model, device):
         broadcast_buffers=False,
         gradient_as_bucket_view=True,
     )
+
+
+def flat_allreduce_grads(model, world_size):
+    """Average gradients across ranks with a single flat all-reduce
+    (legacy multi_gpu_grad_sync: 'flat_allreduce' mode)."""
+    import torch.distributed as dist
+    grads = [p.grad.view(-1) for p in model.parameters() if p.grad is not None]
+    if not grads:
+        return
+    all_grads = torch.cat(grads)
+    dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+    offset = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad.data.copy_(
+                all_grads[offset:offset + p.numel()].view_as(p.grad.data) / world_size
+            )
+            offset += p.numel()
 from torch.optim.optimizer import Optimizer
 
 

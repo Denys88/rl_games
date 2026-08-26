@@ -124,6 +124,38 @@ behavior.
 A/B at 2 ranks (envpool Pong, 3 back-to-back seed pairs, 400 epochs):
 parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
 
+### `multi_gpu_grad_sync`
+
+**Type:** str | **Default:** `'ddp'` | **Options:** `'ddp'`, `'flat_allreduce'` | **Applies:** multi-GPU (torchrun) PPO runs
+
+- `'ddp'`: gradients are averaged by `DistributedDataParallel` during
+  backward (bucketed, overlapped with compute). The training forward runs
+  through a lazily created DDP wrapper (`train_model()`); rollout inference,
+  checkpoints and attribute access keep using the raw model, so state_dict
+  keys are unchanged. The default.
+- `'flat_allreduce'`: the pre-2.x manual path — one flat all-reduce of all
+  gradients after backward. Kept for one release as a compatibility escape
+  hatch for downstream agents that override `calc_gradients()` and forward
+  through `self.model` directly; scheduled for removal.
+
+2-GPU A/B (Isaac Humanoid, 16k envs/rank): bit-identical gradients between
+modes; throughput within ±2% on a small policy net, DDP ahead ~1% at ~11M
+params. A multi-GPU run that never routes its training forward through
+`train_model()` under `'ddp'` raises at the optimizer step instead of
+silently training rank-divergent.
+
+### `multi_gpu_scheduler_kl`
+
+**Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU runs with `schedule_type: per_minibatch`
+
+- `'global'`: the adaptive-LR scheduler sees the cross-rank mean KL (one
+  all-reduce per minibatch). The default and historical behavior.
+- `'local'`: the scheduler uses rank 0's local KL estimate, dropping one of
+  the per-minibatch collectives. The KL sample size the scheduler sees drops
+  by `world_size`; lr is broadcast from rank 0 either way, so ranks never
+  diverge. Worth trying when per-rank minibatches are large and profiling
+  shows the update phase rendezvous-bound.
+
 ### `capability_manifest`
 
 **Type:** any | **Default:** unset | **Applies:** PPO and SAC full-state checkpoints

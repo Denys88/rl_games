@@ -59,7 +59,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': self.central_value_config,
+                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
@@ -119,7 +119,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 self.clip_value
             )
         else:
-            c_loss = torch.zeros(1, device=self.ppo_device)
+            # 0-coef term keeps the value head in the autograd graph so DDP's
+            # static bucket accounting sees every parameter (exact-zero grads)
+            c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
         if self.bound_loss_type == 'regularisation':
             b_loss = self.reg_loss(mu)
         elif self.bound_loss_type == 'bound':
