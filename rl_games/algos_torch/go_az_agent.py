@@ -68,7 +68,8 @@ class GoAZAgent:
         self.net = self.model.a2c_network
         self.arch = {k: params['network'].get(k, d) for k, d in
                      (('blocks', 6), ('channels', 64),
-                      ('gpool_every', 2), ('value_units', 128))}
+                      ('gpool_every', 2), ('value_units', 128),
+                      ('block_type', 'res'), ('bottleneck_channels', 0))}
 
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -232,7 +233,7 @@ class GoAZAgent:
         aux_sums = {}
         for _ in range(steps):
             ci, gi, pi = self.buffer.sample(batch)
-            obs_np, pol_np, z_np, own_np, score_np, pleft_np = \
+            obs_np, pol_np, z_np, own_np, score_np, pleft_np, opp_np, oppv_np = \
                 self.buffer.gather(ci, gi, pi)
             dev = self.device
             obs = torch.from_numpy(obs_np).to(dev).float().reshape(-1, 81, 17)
@@ -241,18 +242,22 @@ class GoAZAgent:
             own = torch.from_numpy(own_np).to(dev)
             score = torch.from_numpy(score_np).to(dev)
             pleft = torch.from_numpy(pleft_np).to(dev)
+            opp = torch.from_numpy(opp_np).to(dev)
+            oppv = torch.from_numpy(oppv_np).to(dev)
             sym = torch.randint(0, 8, (obs.shape[0],), device=dev)
             idx81 = self.sym_tables[sym][:, :81]
             obs = torch.gather(obs, 1, idx81.unsqueeze(-1).expand(-1, -1, 17))
             pol = torch.gather(pol, 1, self.sym_tables[sym])
             own = torch.gather(own, 1, idx81)
+            opp = torch.gather(opp, 1, self.sym_tables[sym])
             obs = obs.reshape(-1, 9, 9, 17)
 
             logits, value, _ = self.net({
                 'obs': obs, 'is_train': True,
                 'go_ownership': own,
                 'go_terminal_valid': torch.ones_like(zt),
-                'go_score': score, 'go_plies_left': pleft})
+                'go_score': score, 'go_plies_left': pleft,
+                'go_opp_dist': opp, 'go_opp_valid': oppv})
             logp = F.log_softmax(logits, dim=-1)
             policy_loss = -(pol * logp).sum(-1).mean()
             value_loss = F.mse_loss(value.squeeze(-1), zt)

@@ -67,6 +67,8 @@ class GameBuffer:
         own = np.zeros((b, 81), dtype=np.float32)
         score = np.zeros(b, dtype=np.float32)
         plies_left = np.zeros(b, dtype=np.float32)
+        opp = np.zeros((b, 82), dtype=np.float32)   # next ply's search weights
+        opp_valid = np.zeros(b, dtype=np.float32)
         for k in range(b):
             c = self.chunks[ci[k]]
             g, t = gi[k], pi[k]
@@ -77,7 +79,10 @@ class GameBuffer:
             own[k] = c['ownership_black'][g] * sign
             score[k] = c['score_black'][g] * sign
             plies_left[k] = c['lengths'][g] - t
-        return obs[:, :1377], pol, z, own, score, plies_left
+            if t + 1 < c['lengths'][g]:
+                opp[k] = c['weights'][t + 1, g].astype(np.float32)
+                opp_valid[k] = 1.0
+        return obs[:, :1377], pol, z, own, score, plies_left, opp, opp_valid
 
     def moves_for(self, ci, gi):
         out = np.zeros((len(ci), MAX_PLIES), dtype=np.int32)

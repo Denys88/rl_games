@@ -1,0 +1,74 @@
+# Gumbel AlphaZero FROM SCRATCH on the big b18c384nbt trunk (27.5M params).
+# Pure self-play + full aux stack (ownership / score_dist / plies_left, plus
+# opp_policy trained on the NEXT PLY's search weights — an AZ-only target).
+# Deeper search than the failed warm-start attempts: 32 sims over 8 root
+# candidates (>=4 visits each after sequential halving), reanalyze at the
+# same depth. From scratch there is no prior to damage — policy CE at full
+# strength, lr 2e-4.
+#   python runner.py --train --file rl_games/configs/go/az_go9_big.yaml
+params:
+  seed: 322
+
+  algo:
+    name: go_az
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: go_resnet
+    block_type: nbt
+    blocks: 18
+    channels: 384
+    bottleneck_channels: 192
+    gpool_every: 3
+    value_units: 256
+    aux_heads: [ownership, score_dist, opp_policy, plies_left]
+    aux_weights:
+      ownership: 1.0
+      score_dist: 0.25
+      opp_policy: 0.15
+      plies_left: 0.05
+    aux_anneal_to: 1.0
+
+  config:
+    name: go9_azbig
+    env_name: pgx_go
+    device: cuda
+    torch_compile: False
+    normalize_input: False
+    normalize_value: False
+    use_action_masks: True
+    learning_rate: 2e-4
+    weight_decay: 1e-4
+    max_epochs: 100000
+    save_frequency: 25
+    games_to_track: 100
+
+    alphazero:
+      games_per_gen: 512
+      num_simulations: 32
+      max_num_considered_actions: 8
+      temperature_plies: 24
+      batch_size: 1024
+      train_ratio: 1.0
+      policy_coef: 1.0
+      value_coef: 1.0
+      reanalyze_frac: 0.4
+      buffer_positions: 1500000
+      eval_every: 10
+      eval_games: 256
+      eval_temperature: 0.35
+
+    env_config:
+      komi: 7.0
+      symmetry: False
+      seed: 322
+
+    player:
+      use_vecenv: True
+      games_num: 512
+      deterministic: True
+      search:
+        enabled: false
+        num_simulations: 32
