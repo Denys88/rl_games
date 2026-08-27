@@ -63,6 +63,15 @@ Keep the default for continuous control. bf16 keeps 8 significant bits, so it ro
 
 Use `fp16` when the network update dominates the iteration time, for example with image encoders. With small MLPs the simulator dominates and TF32 is as fast.
 
+### `torch_compile`
+
+Wraps the model forwards in `torch.compile`. Default: `False`. Accepts `True`, a mode name
+(`default`, `reduce-overhead`, `max-autotune`) or a dict with `mode` and `critic_mode`.
+
+On default-size policy networks compile is a net loss of about 1 % of total throughput (RTX PRO 6000,
+torch 2.13), and it adds startup time. It pays on large networks, about +2–3 % at
+`[4096, 2048, 1024]`. `docs/TORCH_COMPILE.md` covers the modes.
+
 ## Adaptive LR (under `config:`)
 
 ### `schedule_type`
