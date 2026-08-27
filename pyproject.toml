@@ -25,7 +25,7 @@ atari = ["ale-py>=0.8", "AutoROM[accept-rom-license]>=0.4.2"]
 mujoco = ["mujoco>=3.0.0", "imageio"]
 # envpool 1.2.5 is the first release verified against numpy 2.x (declares
 # numpy>=1.19 with no upper pin); releases <=1.1.x predate numpy 2.0.
-envpool = ["envpool>=1.2.5"]
+envpool = ["envpool>=1.2.6"]
 # pufferlib releases up to 3.0.0 pin numpy<2.0 and gymnasium<=0.29.1, which
 # conflicts with this project's floors, so it cannot be a resolvable extra yet.
 # pufferlib 4.0 drops those pins (core deps: torch>=2.9, unpinned numpy) --

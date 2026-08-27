@@ -53,6 +53,7 @@ Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
 * [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
+* [MyoSuite](docs/MYOSUITE.md) — musculoskeletal control, envpool-vectorized
 * [Random Envs](docs/OTHER.md)
 
 ### SAC

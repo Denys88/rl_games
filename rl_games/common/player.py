@@ -181,7 +181,16 @@ class BasePlayer(object):
     def env_step(self, env, actions):
         if not self.is_tensor_obses:
             actions = actions.cpu().numpy()
-        obs, rewards, dones, infos = env.step(actions)
+        step_out = env.step(actions)
+        if len(step_out) == 5:
+            # gymnasium contract (e.g. the myo_gym path since MyoSuite went gymnasium-native)
+            obs, rewards, terminated, truncated, infos = step_out
+            if torch.is_tensor(terminated):
+                dones = torch.logical_or(terminated, truncated)
+            else:
+                dones = np.logical_or(terminated, truncated)
+        else:
+            obs, rewards, dones, infos = step_out
         if hasattr(obs, 'dtype') and obs.dtype == np.float64:
             obs = np.float32(obs)
         if self.value_size > 1:
@@ -237,6 +246,8 @@ class BasePlayer(object):
 
     def env_reset(self, env):
         obs = env.reset()
+        if isinstance(obs, tuple) and len(obs) == 2 and isinstance(obs[1], dict):
+            obs = obs[0]   # gymnasium (obs, info) reset
         return self.obs_to_torch(obs)
 
     def restore(self, fn):

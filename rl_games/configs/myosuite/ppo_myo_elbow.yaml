@@ -49,18 +49,19 @@ params:
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
-    num_actors: 64
+    num_actors: 128
     horizon_length: 128
-    minibatch_size: 2048
+    minibatch_size: 4096
     mini_epochs: 4
     critic_coef: 2
     bounds_loss_coef: 0.001
-    max_epochs: 1000
+    max_epochs: 200
     use_diagnostics: true
     weight_decay: 0.0
     use_smooth_clamp: true
     env_config:
       env_name: MyoSuite/myoElbowPose1D6MRandom-v0
+      seed: 5
     player:
       deterministic: true
       games_num: 200
