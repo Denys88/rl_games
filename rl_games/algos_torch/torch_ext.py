@@ -12,13 +12,25 @@ def wrap_model_ddp(model, device):
     across ranks during backward; running-stat buffers stay under the trainer's own
     sync policy (broadcast_buffers=False)."""
     from torch.nn.parallel import DistributedDataParallel as DDP
+
+    class _TrackedDDP(DDP):
+        # forward_seen lets the trainer detect a training forward that
+        # bypassed the wrapper (e.g. a custom calc_gradients using the raw
+        # model): DDP hooks never fire on such a forward and ranks would
+        # silently diverge. Set here, checked and cleared per optimizer step.
+        def forward(self, *args, **kwargs):
+            self.forward_seen = True
+            return super().forward(*args, **kwargs)
+
     dev = torch.device(device)
-    return DDP(
+    ddp = _TrackedDDP(
         model,
         device_ids=[dev.index] if dev.type == 'cuda' else None,
         broadcast_buffers=False,
         gradient_as_bucket_view=True,
     )
+    ddp.forward_seen = False
+    return ddp
 
 
 def flat_allreduce_grads(model, world_size):

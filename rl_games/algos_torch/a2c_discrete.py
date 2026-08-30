@@ -101,7 +101,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
 
         with torch.no_grad():
-            res_dict = self.model(input_dict)
+            res_dict = self.inference_model()(input_dict)
             if self.has_central_value:
                 input_dict = {
                     'is_train': False,
@@ -163,10 +163,14 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
-            else:
+            elif self._ddp_model is not None:
                 # 0-coef term keeps the value head in the autograd graph so DDP's
-                # static bucket accounting sees every parameter (exact-zero grads)
+                # static bucket accounting sees every parameter (exact-zero grads).
+                # Only under DDP: it turns the value head's None grads into zeros,
+                # which lets optimizer weight_decay act on an otherwise dead head.
                 c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
+            else:
+                c_loss = torch.zeros(1, device=self.ppo_device)
 
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]

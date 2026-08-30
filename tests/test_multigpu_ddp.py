@@ -129,3 +129,59 @@ def test_ddp_wrapper_stays_out_of_module_state_dict():
         fresh.load_state_dict(holder.state_dict(), strict=True)
     finally:
         dist.destroy_process_group()
+
+
+# ---- bypassed-training-forward guard ----
+
+class _GuardAgent:
+    """Just enough of A2CBase for trancate_gradients_and_step."""
+
+    def __init__(self, model, ddp_model):
+        self.multi_gpu = True
+        self.multi_gpu_grad_sync = 'ddp'
+        self._ddp_model = ddp_model
+        self.model = model
+        self.truncate_grads = False
+        self.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+
+
+def _bypass_guard_worker(rank, world_size, port, results):
+    import torch.distributed as dist
+    from rl_games.common.a2c_common import A2CBase
+    dist.init_process_group(
+        'gloo', rank=rank, world_size=world_size,
+        init_method=f'tcp://127.0.0.1:{port}')
+    net = _TwoHeadNet()
+    ddp_net = wrap_model_ddp(net, 'cpu')
+    agent = _GuardAgent(net, ddp_net)
+    x = _rank_data(rank)
+
+    # forward through the RAW model: DDP hooks never fired, step must raise
+    pi, v = net(x)
+    (pi.sum() + v.sum()).backward()
+    raised = False
+    try:
+        A2CBase.trancate_gradients_and_step(agent)
+    except RuntimeError as e:
+        raised = 'bypassed the DDP wrapper' in str(e)
+    net.zero_grad(set_to_none=True)
+
+    # forward through the wrapper: step passes and the flag clears after it
+    pi, v = ddp_net(x)
+    (pi.sum() + v.sum()).backward()
+    A2CBase.trancate_gradients_and_step(agent)
+    cleared = ddp_net.forward_seen is False
+
+    results[rank] = (raised, cleared)
+    dist.destroy_process_group()
+
+
+def test_bypassed_training_forward_raises_and_flag_clears():
+    import torch.multiprocessing as mp
+    port = 31017 + os.getpid() % 1000
+    with mp.Manager() as mgr:
+        results = mgr.dict()
+        mp.spawn(_bypass_guard_worker, args=(1, port, results), nprocs=1, join=True)
+        raised, cleared = results[0]
+    assert raised, 'bypassed forward must raise an actionable RuntimeError'
+    assert cleared, 'forward_seen must clear after the optimizer step'

@@ -118,10 +118,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 return_batch,
                 self.clip_value
             )
-        else:
+        elif self._ddp_model is not None:
             # 0-coef term keeps the value head in the autograd graph so DDP's
-            # static bucket accounting sees every parameter (exact-zero grads)
+            # static bucket accounting sees every parameter (exact-zero grads).
+            # Only under DDP: it turns the value head's None grads into zeros,
+            # which lets optimizer weight_decay act on an otherwise dead head.
             c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
+        else:
+            c_loss = torch.zeros(1, device=self.ppo_device)
         if self.bound_loss_type == 'regularisation':
             b_loss = self.reg_loss(mu)
         elif self.bound_loss_type == 'bound':

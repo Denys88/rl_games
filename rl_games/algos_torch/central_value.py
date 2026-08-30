@@ -350,26 +350,6 @@ class CentralValueTrain(nn.Module):
 
         return loss
 
-    def train_on_batch(self, input_dict):
-        """
-        Train the value network on a single batch of data.
-
-        Args:
-            input_dict: Dictionary containing 'obs' and 'returns'
-        """
-        self.optimizer.zero_grad(set_to_none=True)
-
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            values = self.model(input_dict)['values']
-            loss = (values - input_dict['returns']).pow(2).mean()
-
-        loss.backward()
-        if self.truncate_grads:
-            clip_grad_norm_(self.model.parameters(), self.grad_norm)
-        self.optimizer.step()
-
-        return loss
-
     def to(self, device):
         """
         Move the network to the specified device.

@@ -509,10 +509,19 @@ class A2CBase(BaseAlgorithm):
                     "setup_multi_gpu() before training and route the training "
                     "forward through self.train_model(), or set "
                     "multi_gpu_grad_sync: 'flat_allreduce'")
+            elif not getattr(self._ddp_model, 'forward_seen', False):
+                raise RuntimeError(
+                    "the training forward bypassed the DDP wrapper, so this "
+                    "step's gradients were never synced across ranks: route "
+                    "the training forward through self.train_model() (not "
+                    "self.model), or set multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
+
+        if self._ddp_model is not None:
+            self._ddp_model.forward_seen = False
 
     def inference_model(self):
         """Model for rollout/inference forward passes: always the raw model."""
