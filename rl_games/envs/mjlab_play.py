@@ -55,12 +55,25 @@ class CommandController:
     """Keyboard override for an mjlab velocity command term.
 
     A one-shot write to ``term.vel_command_b`` silently reverts: the term's
-    ``_update_command`` rewrites heading/standing envs and the resample timer
-    overwrites the rest. The pattern that sticks (mjlab's own viser joystick
-    uses it) is to re-assert the command around every ``env.step`` and
-    suppress the machinery that would revert it: standing/heading flags
-    cleared, resample timer pushed far out. :class:`PolicyAdapter` calls
-    :meth:`apply` on every policy evaluation, i.e. once per viewer step.
+    ``_update_command`` rewrites heading/standing/world-frame envs, the
+    resample timer overwrites the rest, and a mid-episode reset (a fall, or
+    the episode timer on tasks whose play cfg keeps finite episodes)
+    resamples that env's command INSIDE ``env.step`` -- after any write made
+    before the step. So the override is enforced on two fronts:
+
+    - :meth:`apply` re-asserts the command around every ``env.step`` with the
+      standing/heading/world flags cleared and the resample timer pushed far
+      out (mjlab's own viser joystick pins its override at the same
+      per-step cadence, from the term's ``compute``);
+    - the term's sampling distribution is collapsed onto the commanded
+      values (degenerate ranges, special-env fractions zeroed), so a
+      reset-time resample reproduces the override instead of drawing a
+      random command. Re-pinned every :meth:`apply`, because curricula (the
+      MicroDuck play cfg keeps its standing-envs curriculum) rewrite the
+      fractions at runtime.
+
+    :class:`PolicyAdapter` calls :meth:`apply` on every policy evaluation,
+    i.e. once per viewer step.
     """
 
     SPEED_STEP = 0.1
@@ -87,23 +100,98 @@ class CommandController:
                     f'no velocity command term found (command terms: {names})')
         self.term = term
         self.command = [0.0, 0.0, 0.0]  # vx, vy, wz -- body frame
+        self._saved_distribution = self._snapshot_distribution()
+        self._pin_resample_distribution()
+
+    # resample-fraction knobs that inject special-cased commands on reset
+    # (standing / heading / world-frame / forward-only / turn-in-place envs)
+    _REL_FRACTION_ATTRS = (
+        'rel_standing_envs', 'rel_heading_envs', 'rel_world_envs',
+        'rel_forward_envs', 'rel_turn_in_place_envs')
 
     def set_velocity(self, vx, vy, wz):
         self.command = [float(vx), float(vy), float(wz)]
         self.apply()
 
+    def _snapshot_distribution(self):
+        """Record the term's original sampling distribution (for restore)."""
+        cfg = getattr(self.term, 'cfg', None)
+        if cfg is None:
+            return None
+        snap = {'ranges': {}, 'fractions': {}}
+        ranges = getattr(cfg, 'ranges', None)
+        if ranges is not None:
+            for attr in ('lin_vel_x', 'lin_vel_y', 'ang_vel_z'):
+                val = getattr(ranges, attr, None)
+                if val is not None:
+                    snap['ranges'][attr] = tuple(val)
+        for attr in self._REL_FRACTION_ATTRS:
+            val = getattr(cfg, attr, None)
+            if val is not None:
+                snap['fractions'][attr] = val
+        return snap
+
+    def restore_distribution(self):
+        """Put the term's original sampling distribution back.
+
+        The pinning in :meth:`apply` mutates the live term cfg. Call this
+        before handing the env over to mjlab's own play UI: the viser GUI
+        derives its slider bounds from ``cfg.ranges``, and the degenerate
+        pinned ranges crash its construction.
+        """
+        snap = self._saved_distribution
+        if snap is None:
+            return
+        cfg = self.term.cfg
+        ranges = getattr(cfg, 'ranges', None)
+        for attr, val in snap['ranges'].items():
+            setattr(ranges, attr, val)
+        for attr, val in snap['fractions'].items():
+            setattr(cfg, attr, val)
+
+    def _pin_resample_distribution(self):
+        """Collapse the term's sampling distribution onto the override.
+
+        A mid-episode reset resamples that env's command inside ``env.step``
+        -- after :meth:`apply` already ran -- so re-assertion alone leaves the
+        policy acting on a random command for a step after every reset. With
+        the ranges degenerate at the override and the special-env fractions
+        zeroed, any resample reproduces the override instead. Config
+        attributes vary by term class: guard each.
+        """
+        cfg = getattr(self.term, 'cfg', None)
+        if cfg is None:
+            return
+        ranges = getattr(cfg, 'ranges', None)
+        if ranges is not None:
+            vx, vy, wz = self.command
+            for attr, val in (('lin_vel_x', vx), ('lin_vel_y', vy),
+                              ('ang_vel_z', wz)):
+                if getattr(ranges, attr, None) is not None:
+                    setattr(ranges, attr, (val, val))
+            # ranges.heading stays: heading envs are disabled via the fraction
+        for attr in self._REL_FRACTION_ATTRS:
+            if getattr(cfg, attr, None) is not None:
+                setattr(cfg, attr, 0.0)
+
     def apply(self):
         """Re-assert the override on ALL envs; call after/around every step."""
+        # re-pin every call: curricula rewrite the fractions at runtime
+        self._pin_resample_distribution()
         term = self.term
         cmd = term.vel_command_b  # (num_envs, 3) = [vx, vy, wz]
         cmd[:, 0] = self.command[0]
         cmd[:, 1] = self.command[1]
         cmd[:, 2] = self.command[2]
+        # world-frame envs recompute vel_command_b from vel_command_w every
+        # step: keep the reference copy in sync (and clear the flag below)
+        if hasattr(term, 'vel_command_w'):
+            term.vel_command_w[:] = cmd
         # flag/timer attributes vary by term class -- guard each
-        if hasattr(term, 'is_standing_env'):
-            term.is_standing_env[:] = False
-        if hasattr(term, 'is_heading_env'):
-            term.is_heading_env[:] = False
+        for flag in ('is_standing_env', 'is_heading_env', 'is_world_env',
+                     'is_forward_env'):
+            if hasattr(term, flag):
+                getattr(term, flag)[:] = False
         if hasattr(term, 'time_left'):
             term.time_left[:] = 1e9
 

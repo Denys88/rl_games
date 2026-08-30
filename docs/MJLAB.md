@@ -64,8 +64,11 @@ python -m rl_games.envs.mjlab_play \
     --checkpoint runs/MJLab_MicroDuck_Velocity/nn/MJLab_MicroDuck_Velocity.pth
 ```
 
-The task's play variant is loaded (`load_env_cfg(task, play=True)`: infinite
-episodes, observation corruption off). `--viewer auto` (the default) opens the
+The task's registered play variant is loaded (`load_env_cfg(task,
+play=True)`). What that changes is up to the task: mjlab's built-in velocity
+tasks make episodes infinite and switch observation corruption off, while
+task plugins define their own (MicroDuck's play cfg keeps the 20 s episodes
+and noisy actor observations, and shortens the push interval instead). `--viewer auto` (the default) opens the
 native MuJoCo window when a display is present (`DISPLAY`/`WAYLAND_DISPLAY`),
 otherwise it starts `ViserPlayViewer` -- a browser UI that works on headless
 boxes and prints a local URL (force it with `--viewer viser`). Other flags:
@@ -73,9 +76,15 @@ boxes and prints a local URL (force it with `--viewer viser`). Other flags:
 `--stochastic` (sample actions instead of the deterministic mean), `--device`.
 
 Command control (native viewer, velocity tasks): the `twist` command term is
-overridden and re-asserted every step, with the standing/heading rewrites and
-the resample timer suppressed so mjlab cannot silently revert it -- the same
-pattern mjlab's own viser joystick uses.
+overridden and re-asserted every step, with the standing/heading/world-frame
+rewrites and the resample timer suppressed, and the term's sampling
+distribution collapsed onto the commanded values. That last part matters:
+episode resets resample commands *inside* `env.step`, after the re-assert,
+so pinning the distribution is what keeps a reset from injecting a random
+command under the policy for a step. The pinning mutates the live term cfg;
+`CommandController.restore_distribution()` puts the original sampling back
+(required before handing the same env to mjlab's viser play UI, whose
+sliders derive their bounds from `cfg.ranges`).
 
 | Key | Action |
 |-----|--------|

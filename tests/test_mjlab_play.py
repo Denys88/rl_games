@@ -26,9 +26,19 @@ class FakeVelocityTerm:
 
     def __init__(self, num_envs=4):
         self.vel_command_b = torch.zeros(num_envs, 3)
+        self.vel_command_w = torch.zeros(num_envs, 3)
         self.is_standing_env = torch.ones(num_envs, dtype=torch.bool)
         self.is_heading_env = torch.ones(num_envs, dtype=torch.bool)
+        self.is_world_env = torch.ones(num_envs, dtype=torch.bool)
+        self.is_forward_env = torch.ones(num_envs, dtype=torch.bool)
         self.time_left = torch.full((num_envs,), 0.5)
+        self.cfg = types.SimpleNamespace(
+            ranges=types.SimpleNamespace(
+                lin_vel_x=(-0.4, 0.4), lin_vel_y=(-0.3, 0.3),
+                ang_vel_z=(-1.0, 1.0), heading=(-3.14, 3.14)),
+            rel_standing_envs=0.02, rel_heading_envs=1.0,
+            rel_world_envs=0.1, rel_forward_envs=0.15,
+            rel_turn_in_place_envs=0.15)
 
 
 class FakePoseTerm:
@@ -150,6 +160,84 @@ def test_apply_guards_missing_flag_attributes():
     ctrl.set_velocity(0.2, 0.0, -0.4)
     assert torch.allclose(term.vel_command_b,
                           torch.tensor([0.2, 0.0, -0.4]).expand(3, 3))
+
+
+def test_set_velocity_pins_resample_distribution():
+    # a mid-episode reset resamples INSIDE env.step, after apply() ran: the
+    # override only survives resets if the distribution itself is pinned
+    term = FakeVelocityTerm()
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.set_velocity(0.3, -0.1, 0.2)
+
+    assert term.cfg.ranges.lin_vel_x == (0.3, 0.3)
+    assert term.cfg.ranges.lin_vel_y == (-0.1, -0.1)
+    assert term.cfg.ranges.ang_vel_z == (0.2, 0.2)
+    for attr in ('rel_standing_envs', 'rel_heading_envs', 'rel_world_envs',
+                 'rel_forward_envs', 'rel_turn_in_place_envs'):
+        assert getattr(term.cfg, attr) == 0.0
+    # heading range untouched: heading envs are disabled via the fraction
+    assert term.cfg.ranges.heading == (-3.14, 3.14)
+
+
+def test_constructor_pins_distribution_to_zero_command():
+    # before any key press the robot should hold still -- resets must not
+    # resample a random command underneath the zero override
+    term = FakeVelocityTerm()
+    CommandController(make_env({'twist': term}))
+    assert term.cfg.ranges.lin_vel_x == (0.0, 0.0)
+    assert term.cfg.rel_turn_in_place_envs == 0.0
+
+
+def test_apply_repins_after_curriculum_rewrite():
+    # the MicroDuck play cfg keeps its standing-envs curriculum active, which
+    # rewrites rel_standing_envs at runtime -- apply() must re-pin
+    term = FakeVelocityTerm()
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.set_velocity(0.3, 0.0, 0.0)
+
+    term.cfg.rel_standing_envs = 0.05
+    term.cfg.ranges.lin_vel_x = (-0.4, 0.4)
+    ctrl.apply()
+    assert term.cfg.rel_standing_envs == 0.0
+    assert term.cfg.ranges.lin_vel_x == (0.3, 0.3)
+
+
+def test_apply_clears_world_envs_and_syncs_world_reference():
+    # world-frame envs recompute vel_command_b from vel_command_w every step:
+    # the flag must be cleared and the reference copy kept in sync
+    term = FakeVelocityTerm()
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.set_velocity(0.4, 0.0, 0.0)
+
+    assert not term.is_world_env.any()
+    assert not term.is_forward_env.any()
+    assert torch.allclose(term.vel_command_w,
+                          torch.tensor([0.4, 0.0, 0.0]).expand(4, 3))
+
+
+def test_restore_distribution_returns_original_sampling():
+    # mjlab's viser GUI builds sliders from cfg.ranges -- a detached
+    # controller must be able to hand back the env with the original
+    # distribution intact
+    term = FakeVelocityTerm()
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.set_velocity(0.3, 0.0, 0.0)
+
+    ctrl.restore_distribution()
+    assert term.cfg.ranges.lin_vel_x == (-0.4, 0.4)
+    assert term.cfg.ranges.lin_vel_y == (-0.3, 0.3)
+    assert term.cfg.ranges.ang_vel_z == (-1.0, 1.0)
+    assert term.cfg.rel_standing_envs == 0.02
+    assert term.cfg.rel_heading_envs == 1.0
+    assert term.cfg.rel_world_envs == 0.1
+    assert term.cfg.rel_forward_envs == 0.15
+    assert term.cfg.rel_turn_in_place_envs == 0.15
+
+
+def test_restore_distribution_guards_missing_cfg():
+    term = types.SimpleNamespace(vel_command_b=torch.zeros(2, 3))
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.restore_distribution()  # must not raise
 
 
 def test_key_callback_steps_command():
