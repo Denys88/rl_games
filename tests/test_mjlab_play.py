@@ -188,6 +188,19 @@ def test_constructor_pins_distribution_to_zero_command():
     assert term.cfg.rel_turn_in_place_envs == 0.0
 
 
+def test_constructor_applies_zero_override_immediately():
+    # the initial env.reset() runs before the controller exists: its random
+    # command draws must be overwritten at attach time, not at the first
+    # policy evaluation one viewer frame later
+    term = FakeVelocityTerm()
+    term.vel_command_b[:] = torch.tensor([0.3, -0.2, 0.5])
+    CommandController(make_env({'twist': term}))
+    assert torch.equal(term.vel_command_b, torch.zeros(4, 3))
+    assert not term.is_standing_env.any()
+    assert not term.is_heading_env.any()
+    assert (term.time_left > 1e8).all()
+
+
 def test_apply_repins_after_curriculum_rewrite():
     # the MicroDuck play cfg keeps its standing-envs curriculum active, which
     # rewrites rel_standing_envs at runtime -- apply() must re-pin
