@@ -6,7 +6,7 @@ Watch a checkpoint drive any registered mjlab task in real time::
         --file rl_games/configs/mjlab/ppo_go1_velocity.yaml \
         --checkpoint runs/MJLab_Go1_Velocity/nn/MJLab_Go1_Velocity.pth
 
-Uses mjlab's own viewers (mjlab >= 1.6):
+Uses mjlab's own viewers (mjlab >= 1.5):
 
 - ``NativeMujocoViewer``: local window; SPACE = pause, ENTER = reset
   (built-ins), plus keyboard velocity-command control on velocity tasks
@@ -101,7 +101,11 @@ class CommandController:
         self.term = term
         self.command = [0.0, 0.0, 0.0]  # vx, vy, wz -- body frame
         self._saved_distribution = self._snapshot_distribution()
-        self._pin_resample_distribution()
+        # establish the (zero) override immediately: pins the distribution AND
+        # overwrites the live commands drawn by the initial reset -- without
+        # this the policy chases a leftover random command until the first
+        # policy evaluation runs apply()
+        self.apply()
 
     # resample-fraction knobs that inject special-cased commands on reset
     # (standing / heading / world-frame / forward-only / turn-in-place envs)

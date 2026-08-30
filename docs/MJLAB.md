@@ -50,7 +50,7 @@ group + value normalization + adaptive LR; see the config for the full recipe).
 ## Live viewer play
 
 Watch a trained checkpoint drive any mjlab task in real time, using mjlab's
-own viewers (mjlab >= 1.6):
+own viewers (mjlab >= 1.5):
 
 ```bash
 # Go1
@@ -101,7 +101,10 @@ RNN policy recovers over a few steps instead of instantly.
 
 The MJLAB vecenv also accepts a `play: true` key under `env_config` (loads the
 play cfg through the normal wrapper) -- useful under `player.env_config` for
-`runner.py --play` evaluation runs.
+`runner.py --play` evaluation runs. Set `player.use_vecenv: true` alongside it:
+MJLAB env registrations carry no single-env creator, so the player must build
+the env through the vecenv path (without it, `BasePlayer.create_env` raises a
+`KeyError`).
 
 ## MicroDuck
 
