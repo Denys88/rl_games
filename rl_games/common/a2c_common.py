@@ -165,6 +165,38 @@ def print_statistics(print_stats, curr_frames, step_time, step_inference_time, t
             print(f'fps step: {fps_step:.0f} fps step and policy inference: {fps_step_inference:.0f} fps total: {fps_total:.0f} epoch: {epoch_num:.0f}/{max_epochs:.0f} frames: {frame:.0f}/{max_frames:.0f}')
 
 
+
+def resolve_obs_norm_init_count(value, mini_epochs, batch_size):
+    """Resolve `normalize_input_init_count` from the config.
+
+    None (the default) derives one PPO epoch of *counted* samples: the obs
+    normalizer updates on every training minibatch (set_train() re-enables
+    updates before each epoch), so its count accrues mini_epochs * batch_size
+    per epoch — the derivation matches that accounting, not the number of
+    unique frames. If stat updates ever move to collection time (one update
+    per rollout), drop the mini_epochs factor here or the prior becomes
+    mini_epochs times too heavy. Under multi-GPU pooled stats sync the first
+    merge sums every rank's seeded prior, so the effective prior weight is
+    exactly one *global* epoch.
+
+    Explicit values are validated: YAML scientific notation may arrive as a
+    float or a string (`8.2e4`), so cast via float; anything below 1 is an
+    error (a count of 0 or negative silently poisons the running stats).
+    """
+    if value is None:
+        return mini_epochs * batch_size
+    try:
+        count = int(float(value))
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"normalize_input_init_count must be a number >= 1 or null, got {value!r}")
+    if count < 1:
+        raise ValueError(
+            f"normalize_input_init_count must be >= 1, got {value!r}; "
+            "use 1 for the legacy cold start")
+    return count
+
+
 class A2CBase(BaseAlgorithm):
 
     def __init__(self, base_name, params):
@@ -424,14 +456,11 @@ class A2CBase(BaseAlgorithm):
         self.mini_epochs_num = self.config['mini_epochs']
         # obs-normalizer warm-start: seed the running-stat count so the fresh
         # zero-mean/unit-var prior is not overwritten by the first minibatch.
-        # None (the default) derives one PPO epoch of samples — early updates
-        # then nudge the stats, keeping the first epoch's recomputed policy
-        # close to the rollout policy (small KL) instead of divorcing them.
-        # Set 1 to restore the legacy cold start.
-        init_count = self.config.get('normalize_input_init_count', None)
-        if init_count is None:
-            init_count = self.mini_epochs_num * self.batch_size
-        self.normalize_input_init_count = init_count
+        # See resolve_obs_norm_init_count for the default derivation and its
+        # coupling to the per-minibatch update accounting.
+        self.normalize_input_init_count = resolve_obs_norm_init_count(
+            self.config.get('normalize_input_init_count', None),
+            self.mini_epochs_num, self.batch_size)
 
         # bf16 autocast is enabled by default on capable GPUs; set
         # mixed_precision: False in the config to opt out. bf16 has fp32's

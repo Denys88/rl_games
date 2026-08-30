@@ -30,7 +30,7 @@ class BaseModel():
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
-        obs_init_count = config.get('normalize_input_init_count') or 1
+        obs_init_count = int(float(config.get('normalize_input_init_count') or 1))
         value_size = config.get('value_size', 1)
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
             normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size,

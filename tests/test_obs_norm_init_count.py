@@ -67,3 +67,31 @@ if __name__ == '__main__':
     test_normalization_uses_prior_early()
     test_dict_obs_pass_through()
     print('obs-norm init-count tests passed')
+
+
+def test_resolution_and_validation():
+    from rl_games.common.a2c_common import resolve_obs_norm_init_count as resolve
+    # default derivation: one PPO epoch of counted samples
+    assert resolve(None, 5, 16384) == 5 * 16384
+    # legacy opt-out
+    assert resolve(1, 5, 16384) == 1
+    # YAML scientific notation can arrive as float or string
+    assert resolve(8.2e4, 5, 16384) == 82000
+    assert resolve("8.2e4", 5, 16384) == 82000
+    assert resolve("1e6", 5, 16384) == 1000000
+    # anything below 1 poisons the running stats: reject loudly
+    for bad in (0, 0.9, -16, "0", "-1e3"):
+        try:
+            resolve(bad, 5, 16384)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad!r} must raise")
+    # garbage types raise too
+    for bad in ("auto", [1]):
+        try:
+            resolve(bad, 5, 16384)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{bad!r} must raise")
