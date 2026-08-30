@@ -1,0 +1,95 @@
+params:
+  seed: 42
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: true
+    mlp:
+      units:
+      - 512
+      - 256
+      - 128
+      activation: elu
+      initializer:
+        name: default
+  config:
+    name: MJLab_MicroDuck_Velocity
+    env_name: mjlab_microduck_velocity
+    normalize_input: true
+    # the tuned upstream RSL-RL recipe runs WITHOUT value normalization --
+    # match it first, A/B normalize_value: true later
+    normalize_value: false
+    # 20 s episodes end in truncation, not failure: bootstrap is essential
+    value_bootstrap: true
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: true
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 0.001
+    lr_schedule: adaptive
+    kl_threshold: 0.01
+    grad_norm: 1.0
+    entropy_coef: 0.01
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: false
+    num_actors: 4096
+    horizon_length: 24
+    minibatch_size: 24576  # 4096 envs x 24 steps / 4 minibatches
+    mini_epochs: 5
+    critic_coef: 1
+    use_smooth_clamp: true
+    bound_loss_type: regularisation
+    bounds_loss_coef: 0.0
+    device: cuda:0
+    max_epochs: 4000
+    save_best_after: 100
+    env_config:
+      # Requires the MicroDuck task registered under mjlab >= 1.6:
+      # pollen-robotics/microduck_rl upstream targets an older mjlab -- install
+      # its mjlab-1.6 port branch as an editable task plugin so
+      # Mjlab-Velocity-Flat-MicroDuck resolves in the registry
+      # (see docs/MJLAB.md, "MicroDuck").
+      # Task: 50 Hz control, 20 s episodes, actor obs 61 / privileged critic
+      # obs 76.
+      task_name: Mjlab-Velocity-Flat-MicroDuck
+      device: cuda
+    player:
+      render: false
+    save_frequency: 500
+    schedule_type: standard
+    central_value_config:
+      minibatch_size: 24576
+      mini_epochs: 5
+      learning_rate: 0.001
+      clip_value: true
+      normalize_input: true
+      network:
+        name: actor_critic
+        central_value: true
+        mlp:
+          units:
+          - 512
+          - 256
+          - 128
+          activation: elu
+          initializer:
+            name: default
+      truncate_grads: true
+      grad_norm: 1.0
+    vecenv_type: MJLAB
+    algo_observer: isaac

@@ -27,6 +27,7 @@ python runner.py --train --file rl_games/configs/mjlab/ppo_g1_velocity.yaml
 |-------------|--------|------|---------|--------|
 | Go1 Velocity (flat) | `configs/mjlab/ppo_go1_velocity.yaml` | 4096 | 24 | 5000 |
 | G1 Velocity (flat) | `configs/mjlab/ppo_g1_velocity.yaml` | 4096 | 24 | 5000 |
+| MicroDuck Velocity (flat) | `configs/mjlab/ppo_microduck_velocity.yaml` | 4096 | 24 | 4000 |
 
 **Lift-Cube-Yam (manipulation)**
 ```bash
@@ -45,6 +46,76 @@ fp32 and bf16). The Lift-Cube-Yam config is **validated to task success**: episo
 0.85 over held-out evaluation episodes vs 0.72 for the reference rsl-rl recipe at the
 same 491M-frame budget (asymmetric central-value critic on the env's privileged obs
 group + value normalization + adaptive LR; see the config for the full recipe).
+
+## Live viewer play
+
+Watch a trained checkpoint drive any mjlab task in real time, using mjlab's
+own viewers (mjlab >= 1.6):
+
+```bash
+# Go1
+python -m rl_games.envs.mjlab_play \
+    --file rl_games/configs/mjlab/ppo_go1_velocity.yaml \
+    --checkpoint runs/MJLab_Go1_Velocity/nn/MJLab_Go1_Velocity.pth
+
+# MicroDuck
+python -m rl_games.envs.mjlab_play \
+    --file rl_games/configs/mjlab/ppo_microduck_velocity.yaml \
+    --checkpoint runs/MJLab_MicroDuck_Velocity/nn/MJLab_MicroDuck_Velocity.pth
+```
+
+The task's play variant is loaded (`load_env_cfg(task, play=True)`: infinite
+episodes, observation corruption off). `--viewer auto` (the default) opens the
+native MuJoCo window when a display is present (`DISPLAY`/`WAYLAND_DISPLAY`),
+otherwise it starts `ViserPlayViewer` -- a browser UI that works on headless
+boxes and prints a local URL (force it with `--viewer viser`). Other flags:
+`--task` (override the config's task id), `--num-envs` (default 4),
+`--stochastic` (sample actions instead of the deterministic mean), `--device`.
+
+Command control (native viewer, velocity tasks): the `twist` command term is
+overridden and re-asserted every step, with the standing/heading rewrites and
+the resample timer suppressed so mjlab cannot silently revert it -- the same
+pattern mjlab's own viser joystick uses.
+
+| Key | Action |
+|-----|--------|
+| `W` / `↑`, `S` / `↓` | forward velocity +/- 0.1 m/s |
+| `A` / `←`, `D` / `→` | yaw rate +/- 0.1 rad/s |
+| `Q`, `E` | lateral velocity +/- 0.1 m/s |
+| `X` | zero the command |
+| `SPACE`, `ENTER` | pause / reset (viewer built-ins) |
+
+The keyboard override is attached only to the native window (the viser viewer
+ships its own play UI). Known v1 limitation: the viewer's ENTER reset exposes
+no post-reset hook, so RNN policy hidden states are not zeroed on reset -- an
+RNN policy recovers over a few steps instead of instantly.
+
+The MJLAB vecenv also accepts a `play: true` key under `env_config` (loads the
+play cfg through the normal wrapper) -- useful under `player.env_config` for
+`runner.py --play` evaluation runs.
+
+## MicroDuck
+
+[MicroDuck](https://github.com/pollen-robotics/microduck_rl) is Pollen
+Robotics' palm-sized open-source biped.
+`configs/mjlab/ppo_microduck_velocity.yaml` translates their tuned RSL-RL
+velocity recipe: actor and critic [512, 256, 128] elu with obs normalization
+on both nets, **no value normalization** (matched first; A/B it later),
+adaptive LR from 1e-3 at desired KL 0.01, entropy 0.01, 4096 envs x 24 steps
+in 4 minibatches x 5 mini-epochs, learned scalar std from 1.0, 50 Hz control.
+Episodes are 20 s and end in truncation, so `value_bootstrap: true` is
+essential. Asymmetric actor-critic: actor obs 61, privileged critic obs 76
+(central value network on the `critic` obs group).
+
+**Port status:** the upstream
+[microduck_rl](https://github.com/pollen-robotics/microduck_rl) task targets
+an older [mjlab](https://github.com/NVlabs/mjlab) API -- running
+`Mjlab-Velocity-Flat-MicroDuck` under mjlab 1.6 requires the `mjlab-1.6` port
+branch of microduck_rl, installed as an editable task plugin (its tasks
+register via mjlab entry points, like wuji-mjlab above).
+
+**Tuning target:** the project's simulated forward-velocity record of
+1.6 m/s.
 
 ## Results
 
