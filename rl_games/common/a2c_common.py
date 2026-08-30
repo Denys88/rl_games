@@ -360,7 +360,7 @@ class A2CBase(BaseAlgorithm):
         if 'seq_len' in config:
             print('WARNING: seq_len is deprecated, use seq_length instead')
 
-        self.seq_length = self.config.get('seq_length', 4)
+        self.seq_length = self.config.get('seq_length', self.config.get('seq_len', 4))
         print('seq_length:', self.seq_length)
         self.bptt_len = self.config.get('bptt_length', self.seq_length) # not used right now; never showed a benefit
         self.zero_rnn_on_done = self.config.get('zero_rnn_on_done', True)
@@ -847,6 +847,11 @@ class A2CBase(BaseAlgorithm):
         if capability_manifest is not None:
             state['capability_manifest'] = capability_manifest
 
+        # adaptive-LR scheduler state: without these, resume restarts the
+        # adaptive walk from the config LR (KL spike after late resumes)
+        state['last_lr'] = self.last_lr
+        state['entropy_coef'] = self.entropy_coef
+
         return state
 
     def set_full_state_weights(self, weights, set_epoch=True):
@@ -878,6 +883,10 @@ class A2CBase(BaseAlgorithm):
                       'checkpoint one; keeping the config value')
             else:
                 self.config['capability_manifest'] = weights['capability_manifest']
+
+        # old checkpoints lack these keys: keep config-derived values then
+        self.last_lr = weights.get('last_lr', self.last_lr)
+        self.entropy_coef = weights.get('entropy_coef', self.entropy_coef)
 
         # central-value stats load after set_weights ran; re-seed everything
         self._seed_stats_sync_snapshots()

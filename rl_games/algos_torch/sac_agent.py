@@ -142,6 +142,13 @@ class SACAgent(BaseAlgorithm):
         # ────────────────────────────────────
         # Summary writer
         # ────────────────────────────────────
+        if config.get('multi_gpu', False):
+            # SAC has no gradient/parameter synchronization: torchrun would
+            # silently train independent seed-offset agents racing on the
+            # same checkpoint paths. Refuse rather than mistrain.
+            raise NotImplementedError(
+                'multi_gpu is not supported for SAC (no DDP/gradient sync); '
+                'distributed training is PPO-only for now')
         self.global_rank = int(os.getenv("RANK", "0"))
 
         if self.global_rank == 0:
