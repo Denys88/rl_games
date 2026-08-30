@@ -422,6 +422,16 @@ class A2CBase(BaseAlgorithm):
             )
 
         self.mini_epochs_num = self.config['mini_epochs']
+        # obs-normalizer warm-start: seed the running-stat count so the fresh
+        # zero-mean/unit-var prior is not overwritten by the first minibatch.
+        # None (the default) derives one PPO epoch of samples — early updates
+        # then nudge the stats, keeping the first epoch's recomputed policy
+        # close to the rollout policy (small KL) instead of divorcing them.
+        # Set 1 to restore the legacy cold start.
+        init_count = self.config.get('normalize_input_init_count', None)
+        if init_count is None:
+            init_count = self.mini_epochs_num * self.batch_size
+        self.normalize_input_init_count = init_count
 
         # bf16 autocast is enabled by default on capable GPUs; set
         # mixed_precision: False in the config to opt out. bf16 has fp32's

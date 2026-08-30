@@ -30,13 +30,15 @@ class BaseModel():
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
+        obs_init_count = config.get('normalize_input_init_count') or 1
         value_size = config.get('value_size', 1)
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size,
+            obs_init_count=obs_init_count)
 
 
 class BaseModelNetwork(nn.Module):
-    def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
+    def __init__(self, obs_shape, normalize_value, normalize_input, value_size, obs_init_count=1):
         nn.Module.__init__(self)
         self.obs_shape = obs_shape
         self.normalize_value = normalize_value
@@ -47,9 +49,9 @@ class BaseModelNetwork(nn.Module):
             self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape, init_count=obs_init_count))
             else:
-                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape, init_count=obs_init_count))
 
     def norm_obs(self, observation):
         with torch.no_grad():
