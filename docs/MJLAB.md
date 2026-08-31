@@ -110,14 +110,10 @@ the env through the vecenv path (without it, `BasePlayer.create_env` raises a
 
 [MicroDuck](https://github.com/pollen-robotics/microduck_rl) is Pollen
 Robotics' palm-sized open-source biped.
-`configs/mjlab/ppo_microduck_velocity.yaml` translates their tuned RSL-RL
-velocity recipe: actor and critic [512, 256, 128] elu with obs normalization
-on both nets, **no value normalization** (matched first; A/B it later),
-adaptive LR from 1e-3 at desired KL 0.01, entropy 0.01, 4096 envs x 24 steps
-in 4 minibatches x 5 mini-epochs, learned scalar std from 1.0, 50 Hz control.
-Episodes are 20 s and end in truncation, so `value_bootstrap: true` is
-essential. Asymmetric actor-critic: actor obs 61, privileged critic obs 76
-(central value network on the `critic` obs group).
+`configs/mjlab/ppo_microduck_velocity.yaml` is the default MicroDuck
+velocity config: asymmetric actor-critic (actor obs 61, privileged critic
+obs 76 on the `critic` obs group), 4096 envs, 50 Hz control. Episodes are
+20 s and end in truncation, so `value_bootstrap: true` is essential.
 
 **Port status:** the upstream
 [microduck_rl](https://github.com/pollen-robotics/microduck_rl) task targets

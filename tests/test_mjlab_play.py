@@ -365,7 +365,7 @@ def test_microduck_config_parses_and_matches_recipe():
     assert config['num_actors'] * config['horizon_length'] == 4 * config['minibatch_size']
     assert config['mini_epochs'] == 5
 
-    # the RSL-RL recipe translation
+    # the default MicroDuck config
     assert config['normalize_input'] is True
     assert config['normalize_value'] is False
     assert config['value_bootstrap'] is True    # 20 s truncation
