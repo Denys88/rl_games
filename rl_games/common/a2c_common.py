@@ -191,6 +191,15 @@ class A2CBase(BaseAlgorithm):
         self.load_networks(params)
 
         self.multi_gpu = config.get('multi_gpu', False)
+        self.multi_gpu_grad_sync = config.get('multi_gpu_grad_sync', 'ddp')
+        if self.multi_gpu_grad_sync not in ('ddp', 'flat_allreduce'):
+            raise ValueError(
+                f"multi_gpu_grad_sync must be 'ddp' or 'flat_allreduce', got '{self.multi_gpu_grad_sync}'")
+        self.multi_gpu_scheduler_kl = config.get('multi_gpu_scheduler_kl', 'global')
+        if self.multi_gpu_scheduler_kl not in ('global', 'local'):
+            raise ValueError(
+                f"multi_gpu_scheduler_kl must be 'global' or 'local', got '{self.multi_gpu_scheduler_kl}'")
+        self._ddp_model = None
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
         self.multi_gpu_sync_stats_mode = resolve_stats_sync_mode(
@@ -492,26 +501,59 @@ class A2CBase(BaseAlgorithm):
 
     def trancate_gradients_and_step(self):
         if self.multi_gpu:
-            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
-            all_grads_list = []
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    all_grads_list.append(param.grad.view(-1))
-
-            all_grads = torch.cat(all_grads_list)
-            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-            offset = 0
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
-                    )
-                    offset += param.numel()
-
+            if self.multi_gpu_grad_sync == 'flat_allreduce':
+                torch_ext.flat_allreduce_grads(self.model, self.world_size)
+            elif self._ddp_model is None:
+                raise RuntimeError(
+                    "multi-GPU gradient sync runs through DDP: call "
+                    "setup_multi_gpu() before training and route the training "
+                    "forward through self.train_model(), or set "
+                    "multi_gpu_grad_sync: 'flat_allreduce'")
+            elif not getattr(self._ddp_model, 'forward_seen', False):
+                raise RuntimeError(
+                    "the training forward bypassed the DDP wrapper, so this "
+                    "step's gradients were never synced across ranks: route "
+                    "the training forward through self.train_model() (not "
+                    "self.model), or set multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
         self.optimizer.step()
+
+        if self._ddp_model is not None:
+            self._ddp_model.forward_seen = False
+
+    def inference_model(self):
+        """Model for rollout/inference forward passes: always the raw model."""
+        return self.model
+
+    def train_model(self):
+        """Model for the training forward pass: the DDP wrapper created by
+        setup_multi_gpu() when gradients are synced via DDP, the raw model
+        otherwise."""
+        return self._ddp_model if self._ddp_model is not None else self.model
+
+    def setup_multi_gpu(self):
+        """One-time multi-GPU setup at the start of train(): broadcast initial
+        weights from rank 0 and wrap the training forward in DDP (unless
+        multi_gpu_grad_sync is 'flat_allreduce')."""
+        if not self.multi_gpu:
+            return
+        torch.cuda.set_device(self.local_rank)
+        print("====================broadcasting parameters")
+        model_params = [self.model.state_dict()]
+        if self.has_central_value:
+            model_params.append(self.central_value_net.state_dict())
+        dist.broadcast_object_list(model_params, 0)
+        self.model.load_state_dict(model_params[0])
+        if self.has_central_value:
+            self.central_value_net.load_state_dict(model_params[1])
+
+        if self.multi_gpu_grad_sync == 'ddp':
+            self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
+            print('Using DistributedDataParallel for gradient sync')
+            if self.has_central_value:
+                self.central_value_net.setup_train_model()
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -561,6 +603,15 @@ class A2CBase(BaseAlgorithm):
         if self.normalize_rms_advantage:
             self.advantage_mean_std.train()
 
+    def _kl_for_lr_schedule(self, kl):
+        """KL fed to the per-minibatch LR scheduler: the cross-rank mean ('global'),
+        or rank 0's local estimate ('local', skips one collective per minibatch;
+        lr is broadcast from rank 0 either way)."""
+        if self.multi_gpu and self.multi_gpu_scheduler_kl == 'global':
+            dist.all_reduce(kl, op=dist.ReduceOp.SUM)
+            kl /= self.world_size
+        return kl
+
     def update_lr(self, lr):
         if self.multi_gpu:
             # broadcast both schedule outputs from rank 0: non-zero ranks run an
@@ -589,7 +640,7 @@ class A2CBase(BaseAlgorithm):
         }
 
         with torch.no_grad():
-            res_dict = self.model(input_dict)
+            res_dict = self.inference_model()(input_dict)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -621,7 +672,7 @@ class A2CBase(BaseAlgorithm):
                     'obs': processed_obs,
                     'rnn_states': self.rnn_states
                 }
-                result = self.model(input_dict)
+                result = self.inference_model()(input_dict)
                 value = result['values']
             return value
 
@@ -1376,16 +1427,7 @@ class DiscreteA2CBase(A2CBase):
 
         self.obs = self.env_reset()
 
-        if self.multi_gpu:
-            torch.cuda.set_device(self.local_rank)
-            print("====================broadcasting parameters")
-            model_params = [self.model.state_dict()]
-            if self.has_central_value:
-                model_params.append(self.central_value_net.state_dict())
-            dist.broadcast_object_list(model_params, 0)
-            self.model.load_state_dict(model_params[0])
-            if self.has_central_value:
-                self.central_value_net.load_state_dict(model_params[1])
+        self.setup_multi_gpu()
 
         while True:
             epoch_num = self.update_epoch()
@@ -1564,10 +1606,7 @@ class ContinuousA2CBase(A2CBase):
 
                 self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'per_minibatch':
-                    av_kls = kl
-                    if self.multi_gpu:
-                        dist.all_reduce(kl, op=dist.ReduceOp.SUM)
-                        av_kls /= self.world_size
+                    av_kls = self._kl_for_lr_schedule(kl)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
 
@@ -1676,17 +1715,7 @@ class ContinuousA2CBase(A2CBase):
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
-        if self.multi_gpu:
-            torch.cuda.set_device(self.local_rank)
-            print("====================broadcasting parameters")
-            model_params = [self.model.state_dict()]
-            if self.has_central_value:
-                model_params.append(self.central_value_net.state_dict())
-            dist.broadcast_object_list(model_params, 0)
-            self.model.load_state_dict(model_params[0])
-            if self.has_central_value:
-                self.central_value_net.load_state_dict(model_params[1])
-            print("====================broadcast done")
+        self.setup_multi_gpu()
 
         while True:
             epoch_num = self.update_epoch()

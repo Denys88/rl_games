@@ -59,7 +59,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': self.central_value_config,
+                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
@@ -118,6 +118,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 return_batch,
                 self.clip_value
             )
+        elif self._ddp_model is not None:
+            # 0-coef term keeps the value head in the autograd graph so DDP's
+            # static bucket accounting sees every parameter (exact-zero grads).
+            # Only under DDP: it turns the value head's None grads into zeros,
+            # which lets optimizer weight_decay act on an otherwise dead head.
+            c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
         else:
             c_loss = torch.zeros(1, device=self.ppo_device)
         if self.bound_loss_type == 'regularisation':
@@ -170,8 +176,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
+        train_model = self.train_model()
         with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            res_dict = self.model(batch_dict)
+            res_dict = train_model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']

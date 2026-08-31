@@ -5,6 +5,50 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+
+def wrap_model_ddp(model, device):
+    """DDP wrapper for the training forward pass only: gradients are bucket-averaged
+    across ranks during backward; running-stat buffers stay under the trainer's own
+    sync policy (broadcast_buffers=False)."""
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    class _TrackedDDP(DDP):
+        # forward_seen lets the trainer detect a training forward that
+        # bypassed the wrapper (e.g. a custom calc_gradients using the raw
+        # model): DDP hooks never fire on such a forward and ranks would
+        # silently diverge. Set here, checked and cleared per optimizer step.
+        def forward(self, *args, **kwargs):
+            self.forward_seen = True
+            return super().forward(*args, **kwargs)
+
+    dev = torch.device(device)
+    ddp = _TrackedDDP(
+        model,
+        device_ids=[dev.index] if dev.type == 'cuda' else None,
+        broadcast_buffers=False,
+        gradient_as_bucket_view=True,
+    )
+    ddp.forward_seen = False
+    return ddp
+
+
+def flat_allreduce_grads(model, world_size):
+    """Average gradients across ranks with a single flat all-reduce
+    (legacy multi_gpu_grad_sync: 'flat_allreduce' mode)."""
+    import torch.distributed as dist
+    grads = [p.grad.view(-1) for p in model.parameters() if p.grad is not None]
+    if not grads:
+        return
+    all_grads = torch.cat(grads)
+    dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+    offset = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad.data.copy_(
+                all_grads[offset:offset + p.numel()].view_as(p.grad.data) / world_size
+            )
+            offset += p.numel()
 from torch.optim.optimizer import Optimizer
 
 

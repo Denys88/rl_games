@@ -34,6 +34,10 @@ class CentralValueTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
+        self.multi_gpu_grad_sync = config.get('multi_gpu_grad_sync', 'ddp')
+        # plain attribute on purpose: nn.Module.__setattr__ would register the
+        # DDP wrapper as a child and duplicate its params in state_dict()
+        self.__dict__['_ddp_model'] = None
         self.config = config
         self.normalize_input = config['normalize_input']
         self.zero_rnn_on_done = zero_rnn_on_done
@@ -243,6 +247,18 @@ class CentralValueTrain(nn.Module):
 
         return value_preds, returns, actions, dones
 
+    def setup_train_model(self):
+        """Wrap the training forward in DDP; called once from the agent's
+        setup_multi_gpu(). Plain-attribute assignment on purpose: nn.Module
+        registration would duplicate the wrapper's params in state_dict()."""
+        if self.multi_gpu and self.multi_gpu_grad_sync == 'ddp' and self._ddp_model is None:
+            self.__dict__['_ddp_model'] = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
+            print('Using DistributedDataParallel for central value gradient sync')
+
+    def train_model(self):
+        """Model for the training forward pass (see setup_train_model)."""
+        return self._ddp_model if self._ddp_model is not None else self.model
+
     def train_net(self):
         """
         Train the value network on multiple mini-batches.
@@ -307,7 +323,7 @@ class CentralValueTrain(nn.Module):
         if self.is_rnn:
             batch_dict['rnn_states'] = batch['rnn_states']
 
-        res_dict = self.model(batch_dict)
+        res_dict = self.train_model()(batch_dict)
 
         values = res_dict['values']
         loss = self.calc_loss(
@@ -320,47 +336,16 @@ class CentralValueTrain(nn.Module):
         loss.backward()
 
         if self.multi_gpu:
-            # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
-            all_grads_list = []
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    all_grads_list.append(param.grad.view(-1))
-
-            if not all_grads_list:
-                return loss
-            all_grads = torch.cat(all_grads_list)
-            dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
-            offset = 0
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.data.copy_(
-                        all_grads[offset : offset + param.numel()].view_as(param.grad.data) / self.world_size
-                    )
-                    offset += param.numel()
-
+            if self.multi_gpu_grad_sync == 'flat_allreduce':
+                torch_ext.flat_allreduce_grads(self.model, self.world_size)
+            elif self._ddp_model is None:
+                raise RuntimeError(
+                    "multi-GPU gradient sync runs through DDP: route the training "
+                    "forward through self.train_model(), or set "
+                    "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        self.optimizer.step()
-
-        return loss
-
-    def train_on_batch(self, input_dict):
-        """
-        Train the value network on a single batch of data.
-
-        Args:
-            input_dict: Dictionary containing 'obs' and 'returns'
-        """
-        self.optimizer.zero_grad(set_to_none=True)
-
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            values = self.model(input_dict)['values']
-            loss = (values - input_dict['returns']).pow(2).mean()
-
-        loss.backward()
-        if self.truncate_grads:
-            clip_grad_norm_(self.model.parameters(), self.grad_norm)
         self.optimizer.step()
 
         return loss
