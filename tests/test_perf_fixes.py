@@ -215,13 +215,17 @@ class TestSchedulerTunables:
         lr, _ = s.update(6e-4, 0.0, 0, 0, kl_dist=0.03)   # floor respected
         assert lr == pytest.approx(5e-4)
 
-    def test_adaptive_defaults_unchanged(self):
+    def test_adaptive_defaults(self):
         from rl_games.common.schedulers import AdaptiveScheduler
         s = AdaptiveScheduler(kl_threshold=0.008)
         lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.02)
         assert lr == pytest.approx(1e-3 / 1.5)
+        # raising from 1e-3 saturates at the new default ceiling (1e-3 since
+        # 2.0; the legacy 1e-2 ceiling sat ~10x above healthy KL equilibria)
         lr, _ = s.update(1e-3, 0.0, 0, 0, kl_dist=0.003)
-        assert lr == pytest.approx(1.5e-3)
+        assert lr == pytest.approx(1e-3)
+        lr, _ = s.update(5e-4, 0.0, 0, 0, kl_dist=0.003)
+        assert lr == pytest.approx(7.5e-4)
 
 
 class TestConfigDrivenEnvRegistration:
@@ -282,3 +286,13 @@ class TestStateDependentSigmaInit:
         expected = F.softplus(torch.tensor(-1.0)) + 0.2
         assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
 
+
+
+class TestAdaptiveLrDefaultCeiling:
+
+    def test_default_max_lr_is_1e_3(self):
+        # A 1e-2 ceiling lets the KL controller rail an order of magnitude
+        # above healthy locomotion equilibria (measured ~2.5e-4) and amplified
+        # a sigma-explosion feedback on MicroDuck; 1e-3 is the sane default.
+        from rl_games.common.schedulers import AdaptiveScheduler
+        assert AdaptiveScheduler().max_lr == 1e-3

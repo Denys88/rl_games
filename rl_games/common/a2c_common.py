@@ -349,7 +349,7 @@ class A2CBase(BaseAlgorithm):
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
                 min_lr=config.get('min_lr', 1e-6),
-                max_lr=config.get('max_lr', 1e-2),
+                max_lr=config.get('max_lr', 1e-3),
                 lr_multiplier=config.get('lr_multiplier', 1.5))
 
         elif self.linear_lr:
