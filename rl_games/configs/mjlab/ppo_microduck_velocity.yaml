@@ -29,7 +29,7 @@ params:
     name: MJLab_MicroDuck_Velocity
     env_name: mjlab_microduck_velocity
     normalize_input: true
-    # the tuned upstream RSL-RL recipe runs WITHOUT value normalization --
+    # default is no value normalization -- A/B normalize_value: true later
     # match it first, A/B normalize_value: true later
     normalize_value: false
     # 20 s episodes end in truncation, not failure: bootstrap is essential
