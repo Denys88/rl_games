@@ -42,11 +42,22 @@ params:
     learning_rate: 0.001
     lr_schedule: adaptive
     kl_threshold: 0.01
+    # explicit adaptive-LR band (these are the scheduler defaults; stated
+    # so the recipe is self-documenting)
+    min_lr: 1.0e-6
+    max_lr: 1.0e-3
     grad_norm: 1.0
-    entropy_coef: 0.01
+    # MUST stay 0 on the free per-dim logstd head (fixed_sigma: true):
+    # a constant positive entropy bonus puts a persistent gradient on the
+    # logstd parameter and Adam grows sigma exponentially -> collapse.
+    entropy_coef: 0.0
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
+    # mjlab scales/clamps position targets in the env; rl_games' default
+    # pre-clamp to [-1, 1] would distort both the actions and the KL the
+    # adaptive LR reads
+    clip_actions: false
     num_actors: 4096
     horizon_length: 24
     minibatch_size: 24576  # 4096 envs x 24 steps / 4 minibatches
