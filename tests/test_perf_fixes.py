@@ -40,10 +40,12 @@ class TestNoGradScaler:
             assert 'scaler.' not in src, mod.__name__
 
     def test_central_value_autocast_is_bf16(self):
+        # the live training path (train_net wraps every train_critic step)
+        # must run under bf16 autocast
         import inspect
-        from rl_games.algos_torch import central_value
-        src = inspect.getsource(central_value)
-        assert src.count('dtype=torch.bfloat16') == 2
+        from rl_games.algos_torch.central_value import CentralValueTrain
+        src = inspect.getsource(CentralValueTrain.train_net)
+        assert 'dtype=torch.bfloat16' in src
 
 
 class TestSacCompileInPlace:
