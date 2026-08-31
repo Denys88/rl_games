@@ -47,7 +47,7 @@ config:
   schedule_type: per_minibatch   # default; 'legacy' is a permanent alias
   kl_threshold: 0.008
   min_lr: 1e-5                   # ALWAYS set both bounds explicitly:
-  max_lr: 1e-3                   # class defaults (1e-6 / 1e-2) are too wide
+  max_lr: 1e-3                   # = the default ceiling (was 1e-2 before 2.0; still set bounds explicitly per task)
 ```
 
 | Value | LR updates | KL input | When |
