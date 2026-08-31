@@ -375,7 +375,13 @@ def test_microduck_config_parses_and_matches_recipe():
     assert config['lr_schedule'] == 'adaptive'
     assert config['kl_threshold'] == 0.01
     assert config['e_clip'] == 0.2
-    assert config['entropy_coef'] == 0.01
+    # entropy MUST be 0 on the free per-dim logstd head: a positive bonus
+    # puts a constant gradient on logstd and Adam grows sigma to collapse
+    assert config['entropy_coef'] == 0.0
+    # explicit adaptive-LR band; no [-1, 1] action pre-clamp (env clamps)
+    assert config['min_lr'] == 1e-6
+    assert config['max_lr'] == 1e-3
+    assert config['clip_actions'] is False
     assert config['grad_norm'] == 1.0
     assert config['truncate_grads'] is True
     assert config['max_epochs'] == 4000
