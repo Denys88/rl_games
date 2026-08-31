@@ -601,10 +601,13 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
 
 
 class OldGymWrapper(gym.Env):
-    """Wrapper to convert gymnasium env to old gym-style 4-tuple API.
+    """Adapt an old-gym OR gymnasium env to the gymnasium API.
 
-    This is useful for environments that use the new gymnasium API
-    but need to interface with code expecting the old gym API.
+    Accepts an inner env speaking either API (4-tuple step / bare reset, or
+    5-tuple step / (obs, info) reset) and always emits gymnasium-style
+    results, flattening structured observation/action spaces on the way.
+    No in-tree instance consumer since MyoSuite proved gymnasium-native with
+    flat spaces; kept one release for downstream users of the old contract.
     """
     def __init__(self, env):
         self.env = env
@@ -639,19 +642,25 @@ class OldGymWrapper(gym.Env):
             # Return space as-is if unknown type
             return space
 
-    def reset(self):
-        observation = _parse_reset_result(self.env.reset())
-        # Flatten the observation if needed
+    def reset(self, **kwargs):
+        result = self.env.reset(**kwargs)
+        if isinstance(result, tuple):
+            observation, info = result
+        else:
+            observation, info = result, {}
         observation = spaces.flatten(self.observation_space, observation)
-        return observation
+        return observation, info
 
     def step(self, action):
-        # Unflatten the action
         action = spaces.unflatten(self.action_space, action)
-        observation, reward, done, info = _parse_step_result(self.env.step(action))
-        # Flatten the observation
+        result = self.env.step(action)
+        if len(result) == 5:
+            observation, reward, terminated, truncated, info = result
+        else:
+            observation, reward, done, info = result
+            terminated, truncated = done, False
         observation = spaces.flatten(self.observation_space, observation)
-        return observation, reward, done, info
+        return observation, reward, terminated, truncated, info
 
     def render(self):
         return self.env.render()
