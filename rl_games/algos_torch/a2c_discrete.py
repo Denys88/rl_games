@@ -36,6 +36,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'value_size': self.env_info.get('value_size', 1),
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
+            'normalize_input_init_count': self.normalize_input_init_count,
         }
 
         self.model = self.network.build(config)
@@ -65,7 +66,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
-                'zero_rnn_on_done': self.zero_rnn_on_done
+                'zero_rnn_on_done': self.zero_rnn_on_done,
+                'normalize_input_init_count': self.normalize_input_init_count
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 

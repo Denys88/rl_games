@@ -16,7 +16,7 @@ class CentralValueTrain(nn.Module):
     def __init__(
         self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors,
         num_actions, seq_length, normalize_value, network, config, writter, max_epochs,
-        multi_gpu, zero_rnn_on_done
+        multi_gpu, zero_rnn_on_done, normalize_input_init_count=1
     ):
         nn.Module.__init__(self)
 
@@ -49,6 +49,7 @@ class CentralValueTrain(nn.Module):
             'num_agents': num_agents,
             'num_seqs': num_actors,
             'normalize_input': self.normalize_input,
+            'normalize_input_init_count': normalize_input_init_count,
             'normalize_value': self.normalize_value,
         }
 

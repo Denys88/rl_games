@@ -178,3 +178,59 @@ config:
 
 On restore, a manifest already declared in the config takes precedence over
 the checkpoint's (a warning is printed if they differ).
+
+## Observation Normalization (under `config:`)
+
+### `normalize_input`
+
+Enables online observation normalization: a `RunningMeanStd` tracks per-dimension
+mean/variance of the observations and the model normalizes every input with the
+current stats. Stats update on each training minibatch forward (train mode) and
+are frozen during rollouts and evaluation; they are part of the checkpoint.
+
+```yaml
+config:
+  normalize_input: True
+```
+
+**Default:** `False`. Applies to the PPO agents (`a2c_continuous`,
+`a2c_discrete`) and, when configured in `central_value_config`, to the central
+value network. SAC has its own `normalize_input` handling and is not affected by
+the warm-start parameter below.
+
+### `normalize_input_init_count`
+
+Seeds the sample count of the obs normalizer's zero-mean/unit-variance prior.
+With the legacy count of 1, the first training minibatch outweighs the prior
+thousands to one and the running stats jump straight to the batch stats; the
+policy recomputed under the shifted stats diverges from the rollout policy that
+collected the data (a large first-epoch KL — with `lr_schedule: adaptive` this
+can floor the LR at `min_lr` in epoch 1 before learning starts). A larger count
+turns that jump into a damped update.
+
+```yaml
+config:
+  normalize_input: True
+  normalize_input_init_count: 81920   # explicit prior weight (int or 8.2e4)
+  # normalize_input_init_count: 1     # legacy cold start
+  # omit or null                      # auto: one PPO epoch of samples (default)
+```
+
+**Default (`null`/absent):** `mini_epochs * horizon_length * num_actors *
+num_agents` — one PPO epoch of *counted* samples (the normalizer updates on
+every training minibatch, so its count accrues `mini_epochs`× the rollout size
+per epoch; the derivation matches that accounting). The prior then fades after
+roughly one epoch. Values below 1 are rejected (a 0 or negative count poisons
+the running stats).
+
+**Multi-GPU:** with pooled stats sync, the first merge sums every rank's seeded
+prior, so the effective prior weight is exactly one *global* epoch — consistent
+with the single-GPU behavior.
+
+**Scope and follow-ups:** this seeds the *input* normalizer of the PPO agents
+and the central value network. `value_mean_std` (`normalize_value`) has the
+same cold start and is a planned follow-up; SAC is unaffected. Note the warm
+start damps the first-epoch stat jump but does not change the update scheme
+itself — stats still drift within each epoch (updated per minibatch over the
+same rollout data); collection-time freezing à la VecNormalize would remove
+that drift entirely and remains a possible future change.
