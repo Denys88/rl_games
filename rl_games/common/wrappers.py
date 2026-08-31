@@ -639,19 +639,25 @@ class OldGymWrapper(gym.Env):
             # Return space as-is if unknown type
             return space
 
-    def reset(self):
-        observation = _parse_reset_result(self.env.reset())
-        # Flatten the observation if needed
+    def reset(self, **kwargs):
+        result = self.env.reset(**kwargs)
+        if isinstance(result, tuple):
+            observation, info = result
+        else:
+            observation, info = result, {}
         observation = spaces.flatten(self.observation_space, observation)
-        return observation
+        return observation, info
 
     def step(self, action):
-        # Unflatten the action
         action = spaces.unflatten(self.action_space, action)
-        observation, reward, done, info = _parse_step_result(self.env.step(action))
-        # Flatten the observation
+        result = self.env.step(action)
+        if len(result) == 5:
+            observation, reward, terminated, truncated, info = result
+        else:
+            observation, reward, done, info = result
+            terminated, truncated = done, False
         observation = spaces.flatten(self.observation_space, observation)
-        return observation, reward, done, info
+        return observation, reward, terminated, truncated, info
 
     def render(self):
         return self.env.render()
