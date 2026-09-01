@@ -2,9 +2,11 @@
 
 Uses envpool's native gymnasium API. Requires envpool >= 1.2.6 on Python
 3.12+ (randomized MyoSuite resets; wheels start at cp312) with an envpool
-1.2.5 fallback on Python 3.11 — both verified against numpy 2.x (CartPole,
-HalfCheetah and the rl_games MuJoCo training path confirmed working on
-envpool 1.2.6 + numpy 2.4.4). See docs/ENVPOOL.md for the install matrix.
+1.2.5 fallback on Python 3.11 — both verified against numpy 2.x: 1.2.6 +
+numpy 2.4.4 (CartPole, HalfCheetah and the rl_games MuJoCo training path),
+1.2.5 + numpy 2.4.6 (Linux, Python 3.11, HalfCheetah training path) and
+1.2.5 on Apple Silicon (the MPS results in docs/ENVPOOL.md). See
+docs/ENVPOOL.md for the install matrix.
 
 Supported features that can be passed via env_config:
     env_name (str): Required. envpool task ID (e.g. "Ant-v4", "Pong-v5",

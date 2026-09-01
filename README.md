@@ -1,6 +1,6 @@
 # RL Games: High performance RL library
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored: envpool >= 1.2.6 on Python 3.12+, with an envpool 1.2.5 fallback on Python 3.11 (NumPy 2.x, MuJoCo 3.x compatible; MyoSuite target randomization requires 1.2.6 and therefore Python >= 3.12).
+**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium` and requires Python >= 3.11 (CI runs 3.11 and 3.12). EnvPool support has been restored: envpool >= 1.2.6 on Python 3.12+, with an envpool 1.2.5 fallback on Python 3.11 (NumPy 2.x, MuJoCo 3.x compatible; MyoSuite target randomization requires 1.2.6 and therefore Python >= 3.12).
 
 ## Discord Channel Link 
 * https://discord.gg/hnYRq7DsQh
@@ -115,9 +115,10 @@ With optional extras (e.g. Atari, Mujoco, EnvPool):
 pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `envpool`. (`pufferlib` is not an extra
-yet: its current releases pin numpy<2 / old gymnasium, conflicting with this
-project's floors — install it separately; the extra returns with pufferlib 4.0.)
+Available extras: `atari`, `mujoco`, `envpool`. (`pufferlib` is no longer an
+extra: its current releases pin numpy<2 / old gymnasium, conflicting with this
+project's floors — `pip install pufferlib --no-deps`; the extra returns with
+pufferlib 4.0.)
 
 For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
@@ -152,7 +153,7 @@ howpublished = {\url{https://github.com/Denys88/rl_games}},
 ## Development setup
 
 ```bash
-uv venv --python 3.11
+uv venv --python 3.11  # project floor (Isaac Lab); .[envpool] resolves envpool 1.2.5 here
 source .venv/bin/activate
 uv pip install -e ".[atari,mujoco]"
 ```

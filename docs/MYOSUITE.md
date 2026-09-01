@@ -7,12 +7,17 @@ through [envpool](ENVPOOL.md); all 398 task ids are available as
 
 ## Setup
 
-Requires Python >= 3.12: envpool 1.2.6 ships no Python 3.11 wheels, and
-1.2.5 has the deterministic-resets bug described below.
+Python 3.12 or 3.13: envpool 1.2.6 ships no Python 3.11 wheels (1.2.5 has
+the deterministic-resets bug described below) and myosuite 2.12.2 declares
+`<3.14`. myosuite also pins `gymnasium<1.3` and `mujoco<3.7`: installing it
+into the training venv downgrades gymnasium 1.3.0 → 1.2.3 and mujoco
+3.9.0 → 3.6.0 (dev-lock versions → highest allowed; the rl_games floors
+`gymnasium>=1.0`, `mujoco>=3.0` are still met). To keep the lock versions,
+install myosuite in a separate venv for evaluation.
 
 ```bash
 pip install "envpool>=1.2.6"      # vectorized training (1.2.5 has deterministic resets, see below)
-pip install myosuite              # native envs: evaluation + video rendering
+pip install myosuite              # native envs: evaluation + video rendering; downgrades gymnasium/mujoco, see above
 ```
 
 ## Configs

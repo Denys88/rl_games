@@ -8,7 +8,9 @@
 pip install -e ".[envpool]"
 ```
 
-Requires envpool >= 1.2.6 on Python 3.12+ (1.2.6 ships cp312+ wheels only); Python 3.11 resolves the envpool 1.2.5 fallback, which is fine for Atari/MuJoCo/dm_control but has deterministic MyoSuite resets — MyoSuite training needs 1.2.6, see docs/MYOSUITE.md. On macOS, install envpool from a local Bazel build of [sail-sg/envpool](https://github.com/sail-sg/envpool) — wheels are not published for Apple Silicon yet.
+Requires envpool >= 1.2.6 on Python 3.12+ (1.2.6 ships cp312+ wheels only); Python 3.11 resolves the envpool 1.2.5 fallback, which is fine for Atari/MuJoCo/dm_control but has deterministic MyoSuite resets — MyoSuite training needs 1.2.6, see docs/MYOSUITE.md.
+
+macOS: Apple Silicon wheels are published (`macosx_11_0_arm64` since envpool 1.0.0). envpool 1.2.6 needs macOS 13+ (`macosx_13_0_arm64`, Python 3.12+); 1.2.5 needs macOS 11+ (Python 3.11–3.14). On macOS 11/12 with Python 3.12+ install `envpool==1.2.5` instead of the extra, which requires >= 1.2.6 there. No Intel (x86_64) macOS wheels at any envpool version — torch >= 2.7 ships none either.
 
 ## Quick start
 

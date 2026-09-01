@@ -24,6 +24,15 @@ jobs:
         # exit-zero treats all errors as warnings
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
 
+  lock:
+    # uv.lock must match pyproject.toml; interpreter-independent, so a single job
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v10
+    - name: Check uv.lock against pyproject.toml
+      run: uv lock --check
+
   test:
     needs: lint
     runs-on: ubuntu-latest
@@ -44,8 +53,22 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest pytest-cov
         pip install torch --index-url https://download.pytorch.org/whl/cpu
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install -e .
+    - name: Resolve the envpool extra (dry run)
+      # Resolution only, nothing is installed: fails if .[envpool] is
+      # unsatisfiable on this Python. 3.11 must pick envpool 1.2.5 (the
+      # <1.2.6 fork), 3.12 envpool >= 1.2.6.
+      run: |
+        pip install --dry-run --report envpool-resolve.json ".[envpool]"
+        python - <<'EOF'
+        import json, sys
+        versions = {i["metadata"]["name"]: i["metadata"]["version"]
+                    for i in json.load(open("envpool-resolve.json"))["install"]}
+        envpool = tuple(int(x) for x in versions["envpool"].split("."))
+        ok = envpool == (1, 2, 5) if sys.version_info < (3, 12) else envpool >= (1, 2, 6)
+        print("envpool resolves to", versions["envpool"])
+        assert ok, versions["envpool"]
+        EOF
     - name: Import smoke test
       run: |
         python -c "import rl_games.torch_runner; print('torch_runner import ok')"
