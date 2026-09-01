@@ -21,7 +21,9 @@ import sys
 import numpy as np
 
 from rl_games.envs.dmc_soccer_opponents import FrozenPolicy, chaser, keeper
-from rl_games.envs.dmc_soccer_selfplay import _OBS_KEYS
+# flatten_obs is the adapter's: eval sees the training features (incl. the
+# +/-1e3 clip), so checkpoints play here what they trained on
+from rl_games.envs.dmc_soccer_selfplay import FORK_ENV_ID, flatten_obs
 
 # checkpoint dir of the shipped config (rl_games/configs/dm_control/
 # boxhead_soccer_2v2_selfplay.yaml): <train_dir>/<full_experiment_name>/nn,
@@ -34,20 +36,8 @@ def make_soccer_env(num_envs, seed, max_episode_steps, **kwargs):
     level, so the module imports without it (as with cv2)."""
     import envpool.mujoco.dmc.registration  # noqa: F401
     from envpool.registration import make_gymnasium
-    return make_gymnasium("BoxheadSoccer2v2-v1", num_envs=num_envs, seed=seed,
+    return make_gymnasium(FORK_ENV_ID, num_envs=num_envs, seed=seed,
                           max_episode_steps=max_episode_steps, **kwargs)
-
-
-def flatten_obs(obs, num_matches, players):
-    """envpool dict obs -> (M, P, obs_dim) float32, matching training obs."""
-    parts = [obs[k].reshape(num_matches, players, -1) for k in _OBS_KEYS]
-    team_size = players // 2
-    slot = np.tile(np.arange(team_size), 2)
-    onehot = np.broadcast_to(
-        np.eye(team_size, dtype=np.float32)[slot][None],
-        (num_matches, players, team_size))
-    flat = np.concatenate(parts + [onehot], axis=-1).astype(np.float32)
-    return np.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 class TeamController:
@@ -83,8 +73,6 @@ def team_obs_dict(obs, num_matches, players, team):
         k: obs[k].reshape(num_matches, players, -1)[:, sl]
         for k in ("ball_ego_position", "team_goal_mid")
     }
-
-
 
 
 def latest_checkpoint(run_dir=DEFAULT_RUN_DIR):
@@ -154,6 +142,7 @@ def video_main(argv=None):
     writer.release()
     print(f"wrote {args.out}: {frames} frames ({frames/40:.0f}s), "
           f"score home {goals[0]} : {goals[1]} away")
+
 
 def pick_checkpoints(run_dir, count=3):
     """early / mid / final periodic checkpoints by epoch number."""
@@ -247,7 +236,6 @@ def main():
         sys.exit(1)
     sub, argv = sys.argv[1], sys.argv[2:]
     if sub == "video":
-        import cv2  # noqa: F401  (lazy: only the video path needs it)
         video_main(argv)
     else:
         tournament_main(argv)

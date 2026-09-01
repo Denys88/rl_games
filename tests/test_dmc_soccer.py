@@ -17,8 +17,9 @@ import pytest
 import torch
 import yaml
 
+from rl_games.common import env_configurations
 from rl_games.envs.dmc_soccer_opponents import OpponentLeague
-from rl_games.envs.dmc_soccer_selfplay import SoccerSelfPlay, _OBS_KEYS
+from rl_games.envs.dmc_soccer_selfplay import SoccerSelfPlay, _OBS_KEYS, flatten_obs
 from rl_games.envs import dmc_soccer_tools as tools
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -152,6 +153,39 @@ def test_done_rows_align_with_player_rows(fake_envpool):
     assert obs[2:4, 1].tolist() == [0, 0]  # new episode's first obs
     assert obs[[0, 1, 4, 5], 1].tolist() == [3, 3, 3, 3]
     assert info["scores"][2:4].tolist() == [0, 0]
+
+
+def test_players_assert_names_the_fork_env_id(fake_envpool):
+    # the stub has 4 players; a mismatch must point at the required build
+    with pytest.raises(AssertionError, match="Denys88/envpool#1.*BoxheadSoccer2v2-v1"):
+        make_env(num_actors=6, opponent="self", players_per_match=6)
+
+
+# --- feature layout ------------------------------------------------------------
+
+def test_eval_tools_flatten_is_the_training_flatten(fake_envpool):
+    assert tools.flatten_obs is flatten_obs
+    env = make_env(num_actors=4, opponent="self")
+    obs, _ = env.env.reset()
+    obs["joints_vel"] = obs["joints_vel"].copy()
+    obs["joints_vel"][0, 0, 0] = np.nan
+    obs["joints_vel"][0, 1, 0] = 5e3
+    obs["joints_vel"][0, 2, 0] = -np.inf
+    shared = flatten_obs(obs, env.num_matches, env.players)
+    assert shared.shape == (1, PLAYERS, env.obs_dim) and shared.dtype == np.float32
+    np.testing.assert_array_equal(env._flatten_obs(obs), shared.reshape(4, -1))
+    assert shared[0, :3, 1].tolist() == [0.0, 1e3, 0.0]  # NaN/inf zeroed, clipped
+    # within-team one-hot slot: home_i and away_i share an id
+    assert shared[0, :, -TEAM:].tolist() == [[1, 0], [0, 1], [1, 0], [0, 1]]
+
+
+def test_config_player_uses_the_vecenv_registry():
+    # no env_creator in the registry entry: BasePlayer's default path
+    # (create_env) raises KeyError; player.use_vecenv is what it reads
+    assert "env_creator" not in env_configurations.configurations["dmc_soccer_selfplay"]
+    with open(YAML) as f:
+        cfg = yaml.safe_load(f)["params"]["config"]
+    assert cfg["player"]["use_vecenv"] is True
 
 
 # --- resume state ------------------------------------------------------------

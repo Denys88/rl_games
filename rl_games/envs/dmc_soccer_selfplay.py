@@ -17,10 +17,16 @@ come straight from the env's stats observations. See docs/DMC_SOCCER_SELFPLAY.md
 for the failure modes each piece of this prevents.
 """
 
+import functools
+
 import gymnasium
 import numpy as np
 
 from rl_games.common.ivecenv import IVecEnv
+
+# the Denys88/envpool#1 fork id: obs batched (num_envs, players, ...); no
+# released envpool registers it
+FORK_ENV_ID = "BoxheadSoccer2v2-v1"
 
 # per-player observation keys to feed the policy, in fixed order
 _OBS_KEYS = [
@@ -38,11 +44,39 @@ _OBS_KEYS = [
 ]
 
 
+@functools.lru_cache(maxsize=None)
+def _player_onehot(num_matches, players):
+    # within-team player slot: home_i and away_i share an id, so home/away
+    # symmetry -- and with it shared-policy self-play -- is preserved while
+    # players can specialize into roles
+    team_size = players // 2
+    slot = np.tile(np.arange(team_size), 2)  # [0..ts-1, 0..ts-1]
+    onehot = np.eye(team_size, dtype=np.float32)[slot]
+    return np.broadcast_to(onehot[None], (num_matches, players, team_size))
+
+
+def flatten_obs(obs, num_matches, players):
+    """envpool dict obs -> (M, P, obs_dim) float32 policy input.
+
+    The one feature layout for training and the eval tools: _OBS_KEYS in
+    order plus the within-team one-hot slot, NaN/inf zeroed and values
+    clipped to +/-1e3 so diverged physics cannot leak into the obs
+    normalizer (the fork env also terminates such episodes; the clip is a
+    normalizer guard, not a termination).
+    """
+    parts = [obs[k].reshape(num_matches, players, -1) for k in _OBS_KEYS]
+    parts.append(_player_onehot(num_matches, players))
+    flat = np.concatenate(parts, axis=-1).astype(np.float32)
+    flat = np.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
+    np.clip(flat, -1e3, 1e3, out=flat)
+    return flat
+
+
 class SoccerSelfPlay(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import envpool
 
-        env_name = kwargs.pop("env_name", "BoxheadSoccer2v2-v1")
+        env_name = kwargs.pop("env_name", FORK_ENV_ID)
         # Asymmetric goal reward: punishing concedes teaches ball-avoidance
         # ("cowardice") in self-play — the policy can avoid -goal_w by never
         # touching the ball. Reward scoring, don't punish conceding.
@@ -92,23 +126,17 @@ class SoccerSelfPlay(IVecEnv):
         # players per match from any per-player obs key
         self.players = obs_space["ball_ego_position"].shape[0]
         assert self.players == players, (
-            f"env has {self.players} players, config says {players}")
+            f"env has {self.players} players, config says {players}: the "
+            f"adapter needs the Denys88/envpool#1 fork build of {FORK_ENV_ID} "
+            f"(obs batched (num_envs, players, ...)); upstream envpool's "
+            f"per-player soccer layout is not supported")
         self.batch = self.num_matches * self.controlled
 
         self.obs_dim = 0
         for k in _OBS_KEYS:
             shape = obs_space[k].shape  # (players, ...)
             self.obs_dim += int(np.prod(shape[1:]))
-        # one-hot within-team player slot (home_i and away_i share an id, so
-        # home/away symmetry — and thus shared-policy self-play — is preserved
-        # while letting players specialize into roles).
-        team_size = self.players // 2
-        slot = np.tile(np.arange(team_size), 2)  # [0..ts-1, 0..ts-1]
-        self._player_onehot = np.eye(team_size, dtype=np.float32)[slot]
-        self._player_onehot = np.broadcast_to(
-            self._player_onehot[None],
-            (self.num_matches, self.players, team_size))
-        self.obs_dim += team_size
+        self.obs_dim += self.players // 2  # one-hot slot, see flatten_obs
         act_shape = self.env.action_space.shape  # (players, act_dim)
         self.act_dim = act_shape[-1]
 
@@ -131,20 +159,8 @@ class SoccerSelfPlay(IVecEnv):
         self._away_rng = np.random.RandomState(seed + 54321)
         self._last_obs_dict = None
 
-    def _flatten_all(self, obs):
-        parts = [
-            obs[k].reshape(self.num_matches, self.players, -1)
-            for k in _OBS_KEYS
-        ]
-        parts.append(self._player_onehot)
-        return np.concatenate(parts, axis=-1).astype(np.float32)  # (M, P, D)
-
     def _flatten_obs(self, obs):
-        flat = self._flatten_all(obs)
-        # guard against physics divergence leaking NaN/huge values into the
-        # obs normalizer (the env also terminates such episodes itself)
-        flat = np.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
-        np.clip(flat, -1e3, 1e3, out=flat)
+        flat = flatten_obs(obs, self.num_matches, self.players)
         self._flat_away = flat[:, self.controlled:]  # for league opponents
         # home players come first; only they are controlled outside "self"
         flat = flat[:, :self.controlled]
@@ -162,9 +178,10 @@ class SoccerSelfPlay(IVecEnv):
             self.num_matches, self.players)
         vel_ball = obs["stats_vel_ball_to_goal"].reshape(
             self.num_matches, self.players)
+        # copied: the team-chase broadcast below writes into it, and the
+        # reshape is a view of the env's obs dict
         vel_player = obs["stats_closest_vel_to_ball"].reshape(
-            self.num_matches, self.players).copy()   # team-chase writes below
-        #   -- never mutate the env's obs dict through the reshape view
+            self.num_matches, self.players).copy()
         # one-sided ball progress: reward pushing the ball toward the opponent
         # goal, but DON'T punish when the opponent pushes it toward ours —
         # uncontrollable negatives teach avoidance.
