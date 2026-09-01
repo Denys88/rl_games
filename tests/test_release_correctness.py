@@ -76,3 +76,38 @@ def test_player_defaults_to_vecenv_without_env_creator():
 
     # unknown names fall through to vecenv, whose own error is actionable
     assert BasePlayer._default_use_vecenv('no-such-env') is True
+
+
+def test_cv_init_count_explicit_fallback_order():
+    """Explicit counts: central_value_config key > top-level key > None."""
+    from rl_games.algos_torch.central_value import resolve_cv_init_count
+
+    # top-level explicit value still reaches the CV (backward compat)
+    assert resolve_cv_init_count({'normalize_input_init_count': 81920}, {}) == 81920
+    # the CV-scoped key wins over the top-level one
+    assert resolve_cv_init_count(
+        {'normalize_input_init_count': 81920},
+        {'normalize_input_init_count': 123}) == 123
+    # nothing explicit -> None -> CentralValueTrain derives its own default
+    assert resolve_cv_init_count({}, {}) is None
+
+
+def test_discrete_scheduler_kl_respects_local_mode():
+    """multi_gpu_scheduler_kl='local' must skip the collective: the shared
+    _kl_for_lr_schedule returns the local estimate untouched (no dist calls),
+    which the discrete train_epoch now consumes."""
+    import types
+    import torch
+    from rl_games.common.a2c_common import A2CBase
+
+    stub = types.SimpleNamespace(multi_gpu=True, multi_gpu_scheduler_kl='local',
+                                 world_size=2)
+    kl = torch.tensor(0.017)
+    out = A2CBase._kl_for_lr_schedule(stub, kl)
+    assert out is kl and float(out) == pytest.approx(0.017)
+
+    # single-GPU: 'global' must be a no-op too (no dist initialized here --
+    # a collective would raise)
+    stub = types.SimpleNamespace(multi_gpu=False, multi_gpu_scheduler_kl='global',
+                                 world_size=1)
+    assert float(A2CBase._kl_for_lr_schedule(stub, torch.tensor(0.03))) == pytest.approx(0.03)

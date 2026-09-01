@@ -1367,10 +1367,11 @@ class DiscreteA2CBase(A2CBase):
                 ep_kls.append(kl)
                 entropies.append(entropy)
 
-            av_kls = torch_ext.mean_list(ep_kls)
-            if self.multi_gpu:
-                dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
-                av_kls /= self.world_size
+            # honors multi_gpu_scheduler_kl: 'global' (default) all-reduces the
+            # mean KL exactly as before; 'local' steps on rank 0's estimate and
+            # skips the collective (lr is broadcast from rank 0 either way, so
+            # ranks stay consistent; the logged KL is then rank 0's local mean)
+            av_kls = self._kl_for_lr_schedule(torch_ext.mean_list(ep_kls))
 
             self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
             self.update_lr(self.last_lr)

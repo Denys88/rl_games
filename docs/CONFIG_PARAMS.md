@@ -61,6 +61,11 @@ rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
 size, not the schedule); `standard` on tasks with fast on-policy KL swings
 adapts too slowly and can leave measurable reward on the table.
 
+**Scope:** `schedule_type` applies to continuous PPO only. Discrete PPO always
+steps its adaptive scheduler once per mini-epoch on the mean KL (i.e.
+`standard`-like) and ignores this key; `per_minibatch` stepping for discrete is
+a possible future addition.
+
 Multi-GPU note: `per_minibatch` performs a KL all-reduce and an LR broadcast
 per split per mini-epoch; `standard` does one per mini-epoch. On a single
 node the difference is small; at multi-node latencies the extra collectives
@@ -130,7 +135,8 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
 
 - `'ddp'`: gradients are averaged by `DistributedDataParallel` during
   backward (bucketed, overlapped with compute). The training forward runs
-  through a lazily created DDP wrapper (`train_model()`); rollout inference,
+  through the DDP wrapper built once by `setup_multi_gpu()` at the start of
+  `train()` and exposed via `train_model()`; rollout inference,
   checkpoints and attribute access keep using the raw model, so state_dict
   keys are unchanged. The default.
 - `'flat_allreduce'`: the pre-2.x manual path — one flat all-reduce of all
@@ -139,12 +145,11 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
   through `self.model` directly; scheduled for removal.
 
 2-GPU A/B (Isaac Humanoid, 16k envs/rank): bit-identical gradients between
-modes. Throughput depends on model size: on the default small policy net
-`'flat_allreduce'` is faster (~4% eager, ~2.5% compiled — `DDP(compiled)`
-forfeits Dynamo's DDPOptimizer overlap), while at ~11M params `'ddp'` is
-ahead ~1% (97.4% scaling) and its advantage grows with model size and rank
-count. Pairing `'ddp'` with `multi_gpu_scheduler_kl: 'local'` recovers the
-small-net gap (+1.6% net over flat). A multi-GPU run that never routes its training forward through
+modes. Throughput (measured with working GPU peer-to-peer): `'ddp'` ties or
+wins at every tested model size — +1-3% on GPU-pipeline sims, parity on
+CPU-bound ones — and its advantage grows with model size and rank count. Only
+on host-staged links without P2P can `'flat_allreduce'` come out ~4% ahead on
+small nets. A multi-GPU run that never routes its training forward through
 `train_model()` under `'ddp'` raises at the optimizer step instead of
 silently training rank-divergent.
 
@@ -160,15 +165,16 @@ walk every iteration.
 
 ### `multi_gpu_scheduler_kl`
 
-**Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU runs with `schedule_type: per_minibatch`
+**Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU PPO runs (continuous: `schedule_type: per_minibatch`; discrete: its per-mini-epoch stepping)
 
 - `'global'`: the adaptive-LR scheduler sees the cross-rank mean KL (one
-  all-reduce per minibatch). The default and historical behavior.
-- `'local'`: the scheduler uses rank 0's local KL estimate, dropping one of
-  the per-minibatch collectives. The KL sample size the scheduler sees drops
+  all-reduce per scheduler step). The default and historical behavior.
+- `'local'`: the scheduler uses rank 0's local KL estimate, dropping one
+  collective per scheduler step. The KL sample size the scheduler sees drops
   by `world_size`; lr is broadcast from rank 0 either way, so ranks never
   diverge. Worth trying when per-rank minibatches are large and profiling
-  shows the update phase rendezvous-bound.
+  shows the update phase rendezvous-bound. For discrete PPO under `'local'`
+  the logged per-mini-epoch KL is rank 0's local mean as well.
 
 ### `capability_manifest`
 
@@ -240,10 +246,11 @@ the running stats).
 prior, so the effective prior weight is exactly one *global* epoch — consistent
 with the single-GPU behavior.
 
-**Scope and follow-ups:** the top-level key seeds the *input* normalizer of the
-PPO agents only; the central value network reads an explicit count from
-`normalize_input_init_count` inside `central_value_config` (and otherwise uses
-its own default above). `value_mean_std` (`normalize_value`) has the
+**Scope and follow-ups:** an explicit top-level value seeds the *input*
+normalizer of the PPO agents **and** the central value network (as before);
+`normalize_input_init_count` inside `central_value_config` overrides it for the
+central value net alone. Only the *defaults* are derived per-network (agent and
+CV geometry respectively, see above). `value_mean_std` (`normalize_value`) has the
 same cold start and is a planned follow-up; SAC is unaffected. Note the warm
 start damps the first-epoch stat jump but does not change the update scheme
 itself — stats still drift within each epoch (updated per minibatch over the

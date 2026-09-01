@@ -11,6 +11,20 @@ from rl_games.common import datasets
 from rl_games.common import schedulers
 
 
+def resolve_cv_init_count(agent_config, central_value_config):
+    """Explicit normalize_input_init_count for the central value net.
+
+    Order: central_value_config key, else the agent's top-level key (an
+    explicit user value keeps seeding BOTH normalizers, as documented), else
+    None -- CentralValueTrain then derives its default from its own geometry
+    (cv_mini_epochs * horizon_length * num_actors). Only the broken *default*
+    forwarding was removed; explicit user intent still propagates.
+    """
+    return central_value_config.get(
+        'normalize_input_init_count',
+        agent_config.get('normalize_input_init_count', None))
+
+
 class CentralValueTrain(nn.Module):
 
     def __init__(
