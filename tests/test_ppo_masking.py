@@ -263,6 +263,35 @@ class TestScheduleTypeAlias:
         assert agent.schedule_type == 'standard'
 
 
+class TestYamlSchedulerBounds:
+    # YAML 1.1 reads a bare exponent without a dot as a string: the agent
+    # must cast every scheduler bound, or the first out-of-band KL raises
+    # TypeError inside the scheduler's max()/min()
+
+    def test_adaptive_bounds_from_yaml_exponent_strings(self):
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5\nmax_lr: 1e-3\nkl_threshold: 8e-3\n'
+                             'lr_multiplier: 15e-1')
+        assert all(isinstance(v, str) for v in raw.values()), raw
+        agent, _ = make_ppo_agent(lr_schedule='adaptive', **raw)
+        assert agent.kl_threshold == pytest.approx(8e-3)
+        # kl above the band: halve towards min_lr; below: raise up to max_lr
+        lr, _ = agent.scheduler.update(1e-4, 0.0, 0, 0, kl_dist=0.05)
+        assert lr == pytest.approx(1e-4 / 1.5)
+        lr, _ = agent.scheduler.update(9e-4, 0.0, 0, 0, kl_dist=1e-4)
+        assert lr == pytest.approx(1e-3)
+        lr, _ = agent.scheduler.update(1.2e-5, 0.0, 0, 0, kl_dist=0.05)
+        assert lr == pytest.approx(1e-5)
+
+    def test_linear_min_lr_from_yaml_exponent_string(self):
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5')
+        assert isinstance(raw['min_lr'], str)
+        agent, _ = make_ppo_agent(lr_schedule='linear', max_epochs=10, **raw)
+        lr, _ = agent.scheduler.update(1e-4, 0.0, 10, 0, kl_dist=0.0)
+        assert lr == pytest.approx(1e-5)
+
+
 def test_running_stats_moment_merge_math():
     # the cross-rank merge must equal stats computed on the concatenated data
     torch.manual_seed(3)

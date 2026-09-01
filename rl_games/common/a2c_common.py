@@ -343,14 +343,16 @@ class A2CBase(BaseAlgorithm):
         if self.schedule_type == 'legacy':
             self.schedule_type = 'per_minibatch'
 
-        # Setting learning rate scheduler
+        # scheduler bounds are cast: YAML 1.1 reads a bare exponent without a
+        # dot ('1e-5') as a string, and the first out-of-band KL would raise
+        # TypeError in the scheduler's max()/min() (in-band KL passes through)
         if self.is_adaptive_lr:
-            self.kl_threshold = config['kl_threshold']
+            self.kl_threshold = float(config['kl_threshold'])
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
-                min_lr=config.get('min_lr', 1e-6),
-                max_lr=config.get('max_lr', 1e-3),
-                lr_multiplier=config.get('lr_multiplier', 1.5))
+                min_lr=float(config.get('min_lr', 1e-6)),
+                max_lr=float(config.get('max_lr', 1e-3)),
+                lr_multiplier=float(config.get('lr_multiplier', 1.5)))
 
         elif self.linear_lr:
 
@@ -366,7 +368,7 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
-                    min_lr=config.get('min_lr', 1e-6),
+                    min_lr=float(config.get('min_lr', 1e-6)),
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),
