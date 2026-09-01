@@ -88,16 +88,27 @@ sliders derive their bounds from `cfg.ranges`).
 
 | Key | Action |
 |-----|--------|
-| `W` / `↑`, `S` / `↓` | forward velocity +/- 0.1 m/s |
-| `A` / `←`, `D` / `→` | yaw rate +/- 0.1 rad/s |
-| `Q`, `E` | lateral velocity +/- 0.1 m/s |
-| `X` | zero the command |
-| `SPACE`, `ENTER` | pause / reset (viewer built-ins) |
+| `KP 8` / `KP 2` | forward velocity +/- 0.1 m/s |
+| `KP 4` / `KP 6` | yaw rate +/- 0.1 rad/s (left / right) |
+| `KP 7` / `KP 9` | lateral velocity +/- 0.1 m/s (left / right) |
+| `KP 0` | zero the command |
+| `Space`, `Enter` | pause / reset (viewer built-ins) |
+
+The commands sit on the numeric keypad because both layers underneath bind
+the letters. mjlab's native viewer reserves `Space` (pause), `Enter`
+(reset), `-`/`=` (speed), `,`/`.` (previous / next env), `A` (show all
+envs), `P` (plots), `R` (debug visualization) and `→` (single step while
+paused), and forwards every key to the command hook *after* its own
+binding; the MuJoCo window toggles a visualization or render flag on every
+letter (`W` wireframe, `S` shadows, `D` static bodies, ...). The keypad is
+free in both layers.
 
 The keyboard override is attached only to the native window (the viser viewer
-ships its own play UI). Known v1 limitation: the viewer's ENTER reset exposes
-no post-reset hook, so RNN policy hidden states are not zeroed on reset -- an
-RNN policy recovers over a few steps instead of instantly.
+ships its own play UI). `Enter` resets the env and the policy together
+(`PolicyAdapter.reset` zeroes RNN hidden states). Env-internal per-env
+resets (a fall; MicroDuck's 20 s truncation) and viser's per-env GUI reset
+hand the policy observations only, so an RNN policy carries stale hidden
+state across those and recovers over a few steps.
 
 The MJLAB vecenv also accepts a `play: true` key under `env_config` (loads the
 play cfg through the normal wrapper) -- useful under `player.env_config` for
