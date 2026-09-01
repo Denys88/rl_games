@@ -88,3 +88,8 @@ params:
     save_best_after: 200
     save_frequency: 200
     score_to_win: 1000000
+
+    player:
+      # --play must build the env through the vecenv registry: the
+      # dmc_soccer_selfplay entry has no single-env creator
+      use_vecenv: True

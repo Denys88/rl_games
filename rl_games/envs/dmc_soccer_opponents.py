@@ -50,7 +50,16 @@ def keeper(obs_away):
 
 
 class FrozenPolicy:
-    """Minimal torch replica of the rl_games actor (mlp + mu) for inference."""
+    """Minimal torch replica of the rl_games actor (mlp + mu) for inference.
+
+    Hardcodes the shipped config's network and checks none of it:
+    `activation: elu` (a checkpoint trained with another activation loads
+    without error and plays wrong actions), `fixed_sigma: True` with
+    `mu_activation: None` (only the mu head is read and the mean is played,
+    clamped to [-1, 1]), `normalize_input: True` (the running_mean_std.*
+    keys must exist), Linear layers at even actor_mlp indices (no layernorm
+    or dropout between them).
+    """
 
     def __init__(self, checkpoint_path):
         import torch
