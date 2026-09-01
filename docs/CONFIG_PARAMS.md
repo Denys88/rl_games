@@ -54,7 +54,6 @@ config:
 |-------|------------|----------|------|
 | `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | rl_games' original adaptive stepping (the old name marks its seniority; rsl-rl adopted the same mechanism) — tracks on-policy KL swings within a rollout. Requires reliable per-minibatch KL estimates: use large minibatches (16k+ on vectorized continuous control). |
 | `standard` | once per mini-epoch | epoch-mean KL | Smoother; consider when minibatches are small (noisy KL estimates make per-minibatch stepping oscillate between the band edges). |
-| `standard_epoch` | once per full epoch | epoch-mean KL | Coarsest. |
 
 The practical failure modes to know: `per_minibatch` with *small* minibatches
 rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
@@ -145,11 +144,12 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
   through `self.model` directly; scheduled for removal.
 
 2-GPU A/B (Isaac Humanoid, 16k envs/rank): bit-identical gradients between
-modes. Throughput (measured with working GPU peer-to-peer): `'ddp'` ties or
-wins at every tested model size — +1-3% on GPU-pipeline sims, parity on
-CPU-bound ones — and its advantage grows with model size and rank count. Only
-on host-staged links without P2P can `'flat_allreduce'` come out ~4% ahead on
-small nets. A multi-GPU run that never routes its training forward through
+modes. Throughput with working GPU peer-to-peer: `'ddp'` is +1-3% step and
+total fps at the default `[512, 256, 128]` net on GPU-pipeline sims, within
+noise on CPU-bound sims and on the ~44 MB-gradient net, and never
+meaningfully worse; not measured beyond 2 GPUs. Only on host-staged links
+without P2P can `'flat_allreduce'` come out ~4% ahead on small nets. A
+multi-GPU run that never routes its training forward through
 `train_model()` under `'ddp'` raises at the optimizer step instead of
 silently training rank-divergent.
 

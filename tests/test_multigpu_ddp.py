@@ -156,15 +156,19 @@ def _bypass_guard_worker(rank, world_size, port, results):
     agent = _GuardAgent(net, ddp_net)
     x = _rank_data(rank)
 
-    # forward through the RAW model: DDP hooks never fired, step must raise
-    pi, v = net(x)
-    (pi.sum() + v.sum()).backward()
-    raised = False
-    try:
-        A2CBase.trancate_gradients_and_step(agent)
-    except RuntimeError as e:
-        raised = 'bypassed the DDP wrapper' in str(e)
-    net.zero_grad(set_to_none=True)
+    def raw_step_raises():
+        # forward through the RAW model: DDP hooks never fire, step must raise
+        pi, v = net(x)
+        (pi.sum() + v.sum()).backward()
+        try:
+            A2CBase.trancate_gradients_and_step(agent)
+            return False
+        except RuntimeError as e:
+            return 'bypassed the DDP wrapper' in str(e)
+        finally:
+            net.zero_grad(set_to_none=True)
+
+    raised = raw_step_raises()
 
     # forward through the wrapper: step passes and the flag clears after it
     pi, v = ddp_net(x)
@@ -178,16 +182,15 @@ def _bypass_guard_worker(rank, world_size, port, results):
     with torch.no_grad():
         ddp_net(x)
     armed_by_nograd = ddp_net.forward_seen
-    pi, v = net(x)
-    (pi.sum() + v.sum()).backward()
-    raised_after_nograd = False
-    try:
-        A2CBase.trancate_gradients_and_step(agent)
-    except RuntimeError as e:
-        raised_after_nograd = 'bypassed the DDP wrapper' in str(e)
-    net.zero_grad(set_to_none=True)
+    nograd_guarded = not armed_by_nograd and raw_step_raises()
 
-    results[rank] = (raised, cleared, not armed_by_nograd and raised_after_nograd)
+    # same for a no_sync() forward: DDP skips the reduction hooks there too
+    with ddp_net.no_sync():
+        ddp_net(x)
+    armed_by_nosync = ddp_net.forward_seen
+    nosync_guarded = not armed_by_nosync and raw_step_raises()
+
+    results[rank] = (raised, cleared, nograd_guarded, nosync_guarded)
     dist.destroy_process_group()
 
 
@@ -197,10 +200,11 @@ def test_bypassed_training_forward_raises_and_flag_clears():
     with mp.Manager() as mgr:
         results = mgr.dict()
         mp.spawn(_bypass_guard_worker, args=(1, port, results), nprocs=1, join=True)
-        raised, cleared, nograd_guarded = results[0]
+        raised, cleared, nograd_guarded, nosync_guarded = results[0]
     assert raised, 'bypassed forward must raise an actionable RuntimeError'
     assert cleared, 'forward_seen must clear after the optimizer step'
     assert nograd_guarded, 'a no-grad wrapper forward must not arm the guard'
+    assert nosync_guarded, 'a no_sync() wrapper forward must not arm the guard'
 
 
 def _cv_dead_head_worker(rank, world_size, port, results):

@@ -1,6 +1,8 @@
-"""Regression tests for the release-preparation correctness fixes:
-central-value normalizer prior geometry and the player's vecenv fallback
-for creator-less registrations."""
+"""Regression tests for the release-preparation correctness fixes: the
+central value normalizer prior (default from the CV's own geometry; explicit
+count from central_value_config, else the top-level key), the player's vecenv
+fallback for creator-less registrations, and discrete PPO honoring
+multi_gpu_scheduler_kl: 'local' through _kl_for_lr_schedule."""
 
 import pytest
 
@@ -36,7 +38,6 @@ def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None):
         'grad_norm': 1.0,
         'truncate_grads': False,
         'minibatch_size': horizon * num_actors,
-        'multi_gpu_grad_sync': 'allreduce',
     }
     with pytest.raises(_Captured):
         CentralValueTrain(

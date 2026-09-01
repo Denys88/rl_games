@@ -171,13 +171,13 @@ def resolve_obs_norm_init_count(value, mini_epochs, batch_size):
 
     None (the default) derives one PPO epoch of *counted* samples: the obs
     normalizer updates on every training minibatch (set_train() re-enables
-    updates before each epoch), so its count accrues mini_epochs * batch_size
-    per epoch — the derivation matches that accounting, not the number of
-    unique frames. If stat updates ever move to collection time (one update
-    per rollout), drop the mini_epochs factor here or the prior becomes
-    mini_epochs times too heavy. Under multi-GPU pooled stats sync the first
-    merge sums every rank's seeded prior, so the effective prior weight is
-    exactly one *global* epoch.
+    updates before each minibatch), so its count accrues
+    mini_epochs * batch_size per epoch — the derivation matches that
+    accounting, not the number of unique frames. If stat updates ever move
+    to collection time (one update per rollout), drop the mini_epochs factor
+    here or the prior becomes mini_epochs times too heavy. Under multi-GPU
+    pooled stats sync the first merge sums every rank's seeded prior, so the
+    effective prior weight is exactly one *global* epoch.
 
     Explicit values are validated: YAML scientific notation may arrive as a
     float or a string (`8.2e4`), so cast via float; anything below 1 is an
@@ -338,10 +338,14 @@ class A2CBase(BaseAlgorithm):
         #       KL; needs reliable KL estimates (large minibatches)
         #   'standard': once per mini-epoch on the epoch-mean KL — smoother,
         #       slower to react to on-policy KL swings
-        #   'standard_epoch': once per full epoch
         self.schedule_type = config.get('schedule_type', 'per_minibatch')
         if self.schedule_type == 'legacy':
             self.schedule_type = 'per_minibatch'
+        # train_epoch branches on the exact value: an unknown one would silently
+        # skip every scheduler step (adaptive and linear LR, entropy annealing)
+        if self.schedule_type not in ('per_minibatch', 'standard'):
+            raise ValueError(
+                f"schedule_type must be 'per_minibatch' (alias 'legacy') or 'standard', got '{self.schedule_type}'")
 
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
@@ -643,9 +647,10 @@ class A2CBase(BaseAlgorithm):
             self.advantage_mean_std.train()
 
     def _kl_for_lr_schedule(self, kl):
-        """KL fed to the per-minibatch LR scheduler: the cross-rank mean ('global'),
-        or rank 0's local estimate ('local', skips one collective per minibatch;
-        lr is broadcast from rank 0 either way)."""
+        """KL fed to the LR scheduler at each scheduler step (per minibatch for
+        continuous 'per_minibatch', per mini-epoch for discrete): the cross-rank
+        mean ('global'), or rank 0's local estimate ('local', skips one
+        collective per step; lr is broadcast from rank 0 either way)."""
         if self.multi_gpu and self.multi_gpu_scheduler_kl == 'global':
             dist.all_reduce(kl, op=dist.ReduceOp.SUM)
             kl /= self.world_size

@@ -271,6 +271,13 @@ class TestScheduleTypeAlias:
         agent, _ = make_ppo_agent(schedule_type='standard')
         assert agent.schedule_type == 'standard'
 
+    def test_unknown_value_rejected(self):
+        # train_epoch branches on the exact value; an unknown one used to
+        # silently skip every scheduler step (standard_epoch was documented
+        # without an implementation)
+        with pytest.raises(ValueError, match="schedule_type"):
+            make_ppo_agent(schedule_type='standard_epoch')
+
 
 def test_running_stats_moment_merge_math():
     # the cross-rank merge must equal stats computed on the concatenated data
