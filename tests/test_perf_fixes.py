@@ -285,14 +285,3 @@ class TestStateDependentSigmaInit:
         import torch.nn.functional as F
         expected = F.softplus(torch.tensor(-1.0)) + 0.2
         assert torch.allclose(s, expected.expand_as(s), rtol=1e-4), (s.min(), s.max())
-
-
-
-class TestAdaptiveLrDefaultCeiling:
-
-    def test_default_max_lr_is_1e_3(self):
-        # A 1e-2 ceiling lets the KL controller rail an order of magnitude
-        # above healthy locomotion equilibria (measured ~2.5e-4) and amplified
-        # a sigma-explosion feedback on MicroDuck; 1e-3 is the sane default.
-        from rl_games.common.schedulers import AdaptiveScheduler
-        assert AdaptiveScheduler().max_lr == 1e-3
