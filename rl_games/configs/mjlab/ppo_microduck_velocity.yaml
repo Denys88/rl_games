@@ -30,7 +30,6 @@ params:
     env_name: mjlab_microduck_velocity
     normalize_input: true
     # default is no value normalization -- A/B normalize_value: true later
-    # match it first, A/B normalize_value: true later
     normalize_value: false
     # 20 s episodes end in truncation, not failure: bootstrap is essential
     value_bootstrap: true
@@ -70,11 +69,10 @@ params:
     max_epochs: 4000
     save_best_after: 100
     env_config:
-      # Requires the MicroDuck task registered under mjlab >= 1.6:
-      # pollen-robotics/microduck_rl upstream targets an older mjlab -- install
-      # its mjlab-1.6 port branch as an editable task plugin so
-      # Mjlab-Velocity-Flat-MicroDuck resolves in the registry
-      # (see docs/MJLAB.md, "MicroDuck").
+      # Requires the MicroDuck task plugin ported to mjlab 1.6: upstream
+      # pollen-robotics/microduck_rl pins mjlab 1.3.0 and the port is not
+      # published yet, so Mjlab-Velocity-Flat-MicroDuck does not resolve in
+      # the registry until it is (see docs/MJLAB.md, "MicroDuck").
       # Task: 50 Hz control, 20 s episodes, actor obs 61 / privileged critic
       # obs 76.
       task_name: Mjlab-Velocity-Flat-MicroDuck

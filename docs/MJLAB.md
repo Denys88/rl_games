@@ -6,8 +6,11 @@
 
 ```bash
 pip install -e ".[mujoco]"
-pip install mjlab
+pip install "mjlab>=1.5.3"   # resolves its own warp / mujoco-warp pair; 1.5.0's pair crashed env resets
 ```
+
+MicroDuck additionally needs the mjlab 1.6 port of its task plugin (see
+[MicroDuck](#microduck)).
 
 ## How to run
 
@@ -50,7 +53,7 @@ group + value normalization + adaptive LR; see the config for the full recipe).
 ## Live viewer play
 
 Watch a trained checkpoint drive any mjlab task in real time, using mjlab's
-own viewers (mjlab >= 1.5):
+own viewers:
 
 ```bash
 # Go1
@@ -68,8 +71,9 @@ The task's registered play variant is loaded (`load_env_cfg(task,
 play=True)`). What that changes is up to the task: mjlab's built-in velocity
 tasks make episodes infinite and switch observation corruption off, while
 task plugins define their own (MicroDuck's play cfg keeps the 20 s episodes
-and noisy actor observations, and shortens the push interval instead). `--viewer auto` (the default) opens the
-native MuJoCo window when a display is present (`DISPLAY`/`WAYLAND_DISPLAY`),
+and noisy actor observations, and shortens the push interval instead).
+`--viewer auto` (the default) opens the native MuJoCo window when a display
+is present (`DISPLAY`/`WAYLAND_DISPLAY`),
 otherwise it starts `ViserPlayViewer` -- a browser UI that works on headless
 boxes and prints a local URL (force it with `--viewer viser`). Other flags:
 `--task` (override the config's task id), `--num-envs` (default 4),
@@ -110,12 +114,24 @@ resets (a fall; MicroDuck's 20 s truncation) and viser's per-env GUI reset
 hand the policy observations only, so an RNN policy carries stale hidden
 state across those and recovers over a few steps.
 
-The MJLAB vecenv also accepts a `play: true` key under `env_config` (loads the
-play cfg through the normal wrapper) -- useful under `player.env_config` for
-`runner.py --play` evaluation runs. Set `player.use_vecenv: true` alongside it:
-MJLAB env registrations carry no single-env creator, so the player must build
-the env through the vecenv path (without it, `BasePlayer.create_env` raises a
-`KeyError`).
+The MJLAB vecenv also accepts `play: true` under `env_config`, which loads
+the play cfg through the normal wrapper -- the way to run `runner.py --play`
+evaluation on the play variant. `BasePlayer` replaces `env_config` with
+`player.env_config` wholesale (no merge), so the block must repeat
+`task_name` and `device`:
+
+```yaml
+config:
+  player:
+    env_config:
+      task_name: Mjlab-Velocity-Flat-MicroDuck
+      device: cuda
+      play: true
+```
+
+Play runs are unseeded on the env side: the block above replaces the
+runner-seeded `env_config`, and `BasePlayer` pops `seed` without forwarding
+it (torch / numpy seeding still applies).
 
 ## MicroDuck
 
@@ -126,15 +142,12 @@ velocity config: asymmetric actor-critic (actor obs 61, privileged critic
 obs 76 on the `critic` obs group), 4096 envs, 50 Hz control. Episodes are
 20 s and end in truncation, so `value_bootstrap: true` is essential.
 
-**Port status:** the upstream
-[microduck_rl](https://github.com/pollen-robotics/microduck_rl) task targets
-an older [mjlab](https://github.com/NVlabs/mjlab) API -- running
-`Mjlab-Velocity-Flat-MicroDuck` under mjlab 1.6 requires the `mjlab-1.6` port
-branch of microduck_rl, installed as an editable task plugin (its tasks
-register via mjlab entry points, like wuji-mjlab above).
-
-**Tuning target:** the project's simulated forward-velocity record of
-1.6 m/s.
+**Port status (2026-09-01):** upstream microduck_rl pins mjlab 1.3.0; the
+port of its task plugin to mjlab 1.6 that this config was validated on is
+local and not yet published, so `Mjlab-Velocity-Flat-MicroDuck` does not
+resolve in the registry and the config ships for the recipe. Once the port
+is published, install it as an editable task plugin (its tasks register via
+mjlab entry points, like wuji-mjlab above).
 
 ## Results
 
