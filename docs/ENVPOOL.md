@@ -8,7 +8,7 @@
 pip install -e ".[envpool]"
 ```
 
-Requires envpool >= 1.2.5 (first release verified against numpy 2.x). On macOS, install envpool from a local Bazel build of [sail-sg/envpool](https://github.com/sail-sg/envpool) — wheels are not published for Apple Silicon yet.
+Requires envpool >= 1.2.6 on Python 3.12+ (1.2.6 ships cp312+ wheels only); Python 3.11 resolves the envpool 1.2.5 fallback, which is fine for Atari/MuJoCo/dm_control but has deterministic MyoSuite resets — MyoSuite training needs 1.2.6, see docs/MYOSUITE.md. On macOS, install envpool from a local Bazel build of [sail-sg/envpool](https://github.com/sail-sg/envpool) — wheels are not published for Apple Silicon yet.
 
 ## Quick start
 

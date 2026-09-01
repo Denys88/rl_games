@@ -1,8 +1,10 @@
 """EnvPool vectorized environment wrapper for rl_games.
 
-Uses envpool's native gymnasium API. Requires envpool >= 1.2.6 — the first
-release verified against numpy 2.x (CartPole, HalfCheetah and the rl_games
-MuJoCo training path all confirmed working on envpool 1.2.6 + numpy 2.4.4).
+Uses envpool's native gymnasium API. Requires envpool >= 1.2.6 on Python
+3.12+ (randomized MyoSuite resets; wheels start at cp312) with an envpool
+1.2.5 fallback on Python 3.11 — both verified against numpy 2.x (CartPole,
+HalfCheetah and the rl_games MuJoCo training path confirmed working on
+envpool 1.2.6 + numpy 2.4.4). See docs/ENVPOOL.md for the install matrix.
 
 Supported features that can be passed via env_config:
     env_name (str): Required. envpool task ID (e.g. "Ant-v4", "Pong-v5",

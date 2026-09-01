@@ -7,8 +7,11 @@ through [envpool](ENVPOOL.md); all 398 task ids are available as
 
 ## Setup
 
+Requires Python >= 3.12: envpool 1.2.6 ships no Python 3.11 wheels, and
+1.2.5 has the deterministic-resets bug described below.
+
 ```bash
-pip install envpool>=1.2.6        # vectorized training (1.2.5 has deterministic resets, see below)
+pip install "envpool>=1.2.6"      # vectorized training (1.2.5 has deterministic resets, see below)
 pip install myosuite              # native envs: evaluation + video rendering
 ```
 
@@ -18,7 +21,7 @@ pip install myosuite              # native envs: evaluation + video rendering
 |---|---|---|---|---|
 | `ppo_myo_elbow.yaml` | myoElbowPose1D6MRandom-v0 | 128 | 200 | solves in ~100 |
 | `ppo_myo_finger_pose.yaml` | myoFingerPoseRandom-v0 | 128 | 300 | |
-| `ppo_myo_hand_reach.yaml` | myoHandReachRandom-v0 | 128 | 500 | |
+| `ppo_myo_hand_reach.yaml` | myoHandReachRandom-v0 | 128 | 2000 | |
 | `ppo_myo_hand_pose.yaml` | myoHandPoseRandom-v0 | 128 | 4000 | LSTM policy |
 | `ppo_myo_walk.yaml` | myoLegWalk-v0 | 128 | 1000 | reward plateaus early |
 | `ppo_myo_die_reorient.yaml` | myoChallengeDieReorientP1-v0 | 128 | 10000 | hard; unsolved at 5000 |
