@@ -6,16 +6,19 @@ Watch a checkpoint drive any registered mjlab task in real time::
         --file rl_games/configs/mjlab/ppo_go1_velocity.yaml \
         --checkpoint runs/MJLab_Go1_Velocity/nn/MJLab_Go1_Velocity.pth
 
-Uses mjlab's own viewers (mjlab >= 1.5):
+Uses mjlab's own viewers (mjlab >= 1.5.3):
 
 - ``NativeMujocoViewer``: local window; SPACE = pause, ENTER = reset
-  (built-ins), plus keyboard velocity-command control on velocity tasks
+  (built-ins), plus keypad velocity-command control on velocity tasks
   (see :class:`CommandController`).
 - ``ViserPlayViewer``: browser UI, works headless (prints a local URL).
 
-Known v1 limitation: the viewer's ENTER reset offers no post-reset hook, so
-RNN policy hidden states are not zeroed on reset -- an RNN policy recovers
-over a few steps after a reset instead of instantly.
+ENTER reaches :meth:`PolicyAdapter.reset` (the viewer calls
+``policy.reset()`` after ``env.reset()``), so RNN hidden states are zeroed
+with the env. Env-internal per-env resets (a fall, MicroDuck's 20 s
+truncation) and viser's per-env GUI reset hand the policy observations
+only: an RNN policy carries stale hidden state across those and recovers
+over a few steps.
 """
 
 import argparse
@@ -36,10 +39,31 @@ def _key(name, default):
     return getattr(_keys, name, default) if _keys is not None else default
 
 
-KEY_UP = _key('KEY_UP', 265)
-KEY_DOWN = _key('KEY_DOWN', 264)
-KEY_LEFT = _key('KEY_LEFT', 263)
-KEY_RIGHT = _key('KEY_RIGHT', 262)
+
+# command keys live on the keypad on purpose: the native viewer binds A
+# (show all envs) and RIGHT (single-step while paused) itself and forwards
+# the key afterwards, and the MuJoCo window underneath toggles a render or
+# visualization flag on EVERY letter (W wireframe, S shadows, D static
+# bodies, ...); the keypad is free in both layers
+KEY_KP_0 = _key('KEY_KP_0', 320)
+KEY_KP_2 = _key('KEY_KP_2', 322)
+KEY_KP_4 = _key('KEY_KP_4', 324)
+KEY_KP_6 = _key('KEY_KP_6', 326)
+KEY_KP_7 = _key('KEY_KP_7', 327)
+KEY_KP_8 = _key('KEY_KP_8', 328)
+KEY_KP_9 = _key('KEY_KP_9', 329)
+
+# per-press command delta (vx, vy, wz) in units of
+# CommandController.SPEED_STEP; None zeroes the command
+COMMAND_KEYS = {
+    KEY_KP_8: (1, 0, 0),    # forward
+    KEY_KP_2: (-1, 0, 0),   # back
+    KEY_KP_4: (0, 0, 1),    # yaw left (+wz)
+    KEY_KP_6: (0, 0, -1),   # yaw right
+    KEY_KP_7: (0, 1, 0),    # strafe left (+vy)
+    KEY_KP_9: (0, -1, 0),   # strafe right
+    KEY_KP_0: None,         # zero
+}
 
 
 def pick_policy_group(obs_dict):
@@ -99,7 +123,10 @@ class CommandController:
                 raise ValueError(
                     f'no velocity command term found (command terms: {names})')
         self.term = term
-        self.command = [0.0, 0.0, 0.0]  # vx, vy, wz -- body frame
+        # (vx, vy, wz) body frame; an immutable tuple rebound whole, so the
+        # viewer thread's key_callback and the main thread's apply() never
+        # see a half-written command
+        self.command = (0.0, 0.0, 0.0)
         self._saved_distribution = self._snapshot_distribution()
         # establish the (zero) override immediately: pins the distribution AND
         # overwrites the live commands drawn by the initial reset -- without
@@ -114,7 +141,8 @@ class CommandController:
         'rel_forward_envs', 'rel_turn_in_place_envs')
 
     def set_velocity(self, vx, vy, wz):
-        self.command = [float(vx), float(vy), float(wz)]
+        """Main-thread setter: rebind the command and re-assert it now."""
+        self.command = (float(vx), float(vy), float(wz))
         self.apply()
 
     def _snapshot_distribution(self):
@@ -153,7 +181,7 @@ class CommandController:
         for attr, val in snap['fractions'].items():
             setattr(cfg, attr, val)
 
-    def _pin_resample_distribution(self):
+    def _pin_resample_distribution(self, vx, vy, wz):
         """Collapse the term's sampling distribution onto the override.
 
         A mid-episode reset resamples that env's command inside ``env.step``
@@ -168,7 +196,6 @@ class CommandController:
             return
         ranges = getattr(cfg, 'ranges', None)
         if ranges is not None:
-            vx, vy, wz = self.command
             for attr, val in (('lin_vel_x', vx), ('lin_vel_y', vy),
                               ('ang_vel_z', wz)):
                 if getattr(ranges, attr, None) is not None:
@@ -179,14 +206,18 @@ class CommandController:
                 setattr(cfg, attr, 0.0)
 
     def apply(self):
-        """Re-assert the override on ALL envs; call after/around every step."""
+        """Re-assert the override on ALL envs; main-loop thread, every step."""
+        # one snapshot per call: key_callback rebinds self.command from the
+        # viewer thread at any time, and the pinned ranges must agree with
+        # the tensor written below
+        vx, vy, wz = self.command
         # re-pin every call: curricula rewrite the fractions at runtime
-        self._pin_resample_distribution()
+        self._pin_resample_distribution(vx, vy, wz)
         term = self.term
         cmd = term.vel_command_b  # (num_envs, 3) = [vx, vy, wz]
-        cmd[:, 0] = self.command[0]
-        cmd[:, 1] = self.command[1]
-        cmd[:, 2] = self.command[2]
+        cmd[:, 0] = vx
+        cmd[:, 1] = vy
+        cmd[:, 2] = wz
         # world-frame envs recompute vel_command_b from vel_command_w every
         # step: keep the reference copy in sync (and clear the flag below)
         if hasattr(term, 'vel_command_w'):
@@ -200,26 +231,22 @@ class CommandController:
             term.time_left[:] = 1e9
 
     def key_callback(self, keycode):
-        """NativeMujocoViewer key hook (runs after the built-in ENTER/SPACE)."""
-        vx, vy, wz = self.command
-        step = self.SPEED_STEP
-        if keycode in (KEY_UP, ord('W')):
-            vx += step
-        elif keycode in (KEY_DOWN, ord('S')):
-            vx -= step
-        elif keycode in (KEY_LEFT, ord('A')):
-            wz += step
-        elif keycode in (KEY_RIGHT, ord('D')):
-            wz -= step
-        elif keycode == ord('Q'):
-            vy += step
-        elif keycode == ord('E'):
-            vy -= step
-        elif keycode == ord('X'):
+        """NativeMujocoViewer key hook, called after the viewer's own binding.
+
+        Runs on the viewer thread while the main loop may be inside
+        ``env.step``: only rebinds ``self.command``. The tensor and cfg
+        writes happen in :meth:`apply`, which :class:`PolicyAdapter` runs on
+        the main thread before the next step.
+        """
+        if keycode not in COMMAND_KEYS:
+            return
+        delta = COMMAND_KEYS[keycode]
+        if delta is None:
             vx, vy, wz = 0.0, 0.0, 0.0
         else:
-            return
-        self.set_velocity(vx, vy, wz)
+            vx, vy, wz = (c + d * self.SPEED_STEP
+                          for c, d in zip(self.command, delta))
+        self.command = (vx, vy, wz)
         print(f'command: vx={vx:+.2f} m/s  vy={vy:+.2f} m/s  wz={wz:+.2f} rad/s')
 
 
@@ -245,6 +272,11 @@ class PolicyAdapter:
         if self.controller is not None:
             self.controller.apply()
         return actions
+
+    def reset(self):
+        """Viewer reset hook: ``BaseViewer.reset_environment`` calls it after
+        ``env.reset()`` -- zero the player's RNN state with the env."""
+        self.player.reset()
 
 
 def _build_player(params, obs_dim, num_actions, num_envs, device):

@@ -2,10 +2,13 @@
 
 rl_games.envs.mjlab_play keeps all mjlab imports function-local or guarded,
 so its pure logic (obs-group pick, command re-assert pattern, policy adapter)
-is testable against stubs whether or not mjlab is installed.
+is testable against stubs whether or not mjlab is installed. The two tests
+that read the installed viewer (reserved keys, reset hook) importorskip it.
 """
 
+import inspect
 import os
+import re
 import subprocess
 import sys
 import types
@@ -64,10 +67,14 @@ def make_env(terms):
 class FakePlayer:
     def __init__(self):
         self.calls = []
+        self.resets = 0
 
     def get_action(self, obs, is_deterministic=False):
         self.calls.append((obs, is_deterministic))
         return obs * 2.0
+
+    def reset(self):
+        self.resets += 1
 
 
 class FakeController:
@@ -253,36 +260,114 @@ def test_restore_distribution_guards_missing_cfg():
     ctrl.restore_distribution()  # must not raise
 
 
-def test_key_callback_steps_command():
+def test_key_callback_steps_command_without_touching_env_state():
+    # the hook runs on the viewer thread while the main loop may be inside
+    # env.step: it may only rebind the command; apply() (main thread, from
+    # PolicyAdapter) is what writes the tensor and the pinned ranges
     term = FakeVelocityTerm()
     ctrl = CommandController(make_env({'twist': term}))
+    ranges = term.cfg.ranges
+    pinned_zero = (ranges.lin_vel_x, ranges.lin_vel_y, ranges.ang_vel_z)
 
-    ctrl.key_callback(ord('W'))
-    ctrl.key_callback(ord('W'))
-    ctrl.key_callback(mjlab_play.KEY_UP)      # arrow == WASD
-    assert ctrl.command == pytest.approx([0.3, 0.0, 0.0])
+    for _ in range(3):
+        ctrl.key_callback(mjlab_play.KEY_KP_8)   # forward
+    assert ctrl.command == pytest.approx((0.3, 0.0, 0.0))
 
-    ctrl.key_callback(ord('S'))
-    ctrl.key_callback(mjlab_play.KEY_LEFT)    # yaw left
-    ctrl.key_callback(ord('D'))               # yaw right
-    ctrl.key_callback(ord('Q'))               # strafe left
-    assert ctrl.command == pytest.approx([0.2, 0.1, 0.0])
-    # every key press applies immediately
+    ctrl.key_callback(mjlab_play.KEY_KP_2)       # back
+    ctrl.key_callback(mjlab_play.KEY_KP_4)       # yaw left
+    ctrl.key_callback(mjlab_play.KEY_KP_6)       # yaw right
+    ctrl.key_callback(mjlab_play.KEY_KP_7)       # strafe left
+    assert ctrl.command == pytest.approx((0.2, 0.1, 0.0))
+    assert isinstance(ctrl.command, tuple)
+    # nothing env-side moved yet
+    assert torch.equal(term.vel_command_b, torch.zeros(4, 3))
+    assert (ranges.lin_vel_x, ranges.lin_vel_y, ranges.ang_vel_z) == pinned_zero
+
+    ctrl.apply()
     assert torch.allclose(term.vel_command_b,
                           torch.tensor([0.2, 0.1, 0.0]).expand(4, 3))
+    assert ranges.lin_vel_x == pytest.approx((0.2, 0.2))
+    assert ranges.lin_vel_y == pytest.approx((0.1, 0.1))
+    assert ranges.ang_vel_z == pytest.approx((0.0, 0.0))
 
-    ctrl.key_callback(ord('X'))               # zero
-    assert ctrl.command == pytest.approx([0.0, 0.0, 0.0])
+    ctrl.key_callback(mjlab_play.KEY_KP_0)       # zero
+    assert ctrl.command == (0.0, 0.0, 0.0)
 
 
 def test_key_callback_ignores_unknown_keys():
+    # letters are the MuJoCo window's render-flag toggles (W wireframe, ...)
+    # and must not double as command keys
     term = FakeVelocityTerm()
     ctrl = CommandController(make_env({'twist': term}))
     ctrl.set_velocity(0.5, 0.0, 0.0)
     before = term.vel_command_b.clone()
-    ctrl.key_callback(ord('Z'))
-    assert ctrl.command == pytest.approx([0.5, 0.0, 0.0])
+    for key in (ord('W'), ord('A'), ord('X'), ord('Z')):
+        ctrl.key_callback(key)
+    assert ctrl.command == pytest.approx((0.5, 0.0, 0.0))
     assert torch.equal(term.vel_command_b, before)
+
+
+def test_apply_snapshots_command_once():
+    # a viewer-thread rebind landing between the range pinning and the
+    # tensor write must not tear: apply() reads self.command exactly once
+    term = FakeVelocityTerm()
+    ctrl = CommandController(make_env({'twist': term}))
+    ctrl.command = (0.5, 0.0, 0.0)
+    original_pin = ctrl._pin_resample_distribution
+
+    def racing_pin(vx, vy, wz):
+        original_pin(vx, vy, wz)
+        ctrl.command = (0.9, 0.0, 0.0)  # key press lands mid-apply
+
+    ctrl._pin_resample_distribution = racing_pin
+    ctrl.apply()
+    assert term.cfg.ranges.lin_vel_x == (0.5, 0.5)
+    assert torch.allclose(term.vel_command_b,
+                          torch.tensor([0.5, 0.0, 0.0]).expand(4, 3))
+
+
+# ------------------------------------------------------ reserved keys
+
+def _mjlab_reserved_keys():
+    """Key codes the native viewer binds itself, read from its handler."""
+    viewer_mod = pytest.importorskip('mjlab.viewer.native.viewer')
+    from mjlab.viewer.native import keys
+    src = inspect.getsource(viewer_mod.NativeMujocoViewer._safe_key_callback)
+    names = set(re.findall(r'\bKEY_[A-Z0-9_]+\b', src))
+    assert names, 'no KEY_ constants found in _safe_key_callback'
+    return {getattr(keys, name) for name in names}
+
+
+def test_command_keys_disjoint_from_mjlab_builtins():
+    # the viewer runs its own binding and THEN forwards the key: a shared
+    # key would also pause / step / toggle show-all-envs on every press
+    reserved = _mjlab_reserved_keys()
+    assert reserved.isdisjoint(mjlab_play.COMMAND_KEYS), reserved
+    from mjlab.viewer.native import keys
+    for name in ('KEY_KP_0', 'KEY_KP_2', 'KEY_KP_4', 'KEY_KP_6',
+                 'KEY_KP_7', 'KEY_KP_8', 'KEY_KP_9'):
+        assert getattr(mjlab_play, name) == getattr(keys, name)
+
+
+# MuJoCo 3.10.0 mjVISSTRING / mjRNDSTRING shortcuts: the passive viewer
+# toggles a visualization or render flag on every one of these -- all 26
+# letters plus , ' ; ` \ /
+MUJOCO_SHORTCUT_KEYS = (set(map(ord, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+                        | set(map(ord, ",';`\\/")))
+
+
+def test_command_keys_disjoint_from_mujoco_shortcuts():
+    assert MUJOCO_SHORTCUT_KEYS.isdisjoint(mjlab_play.COMMAND_KEYS)
+    try:
+        import mujoco
+    except ImportError:
+        return
+    live = {ord(row[2][0])
+            for table in (mujoco.mjVISSTRING, mujoco.mjRNDSTRING)
+            for row in table if row[2]}
+    assert live.isdisjoint(mjlab_play.COMMAND_KEYS), sorted(map(chr, live))
+    # the hardcoded list above must not fall behind the installed tables
+    assert live <= MUJOCO_SHORTCUT_KEYS, sorted(map(chr, live - MUJOCO_SHORTCUT_KEYS))
 
 
 # ------------------------------------------------------- PolicyAdapter
@@ -321,6 +406,51 @@ def test_adapter_without_controller():
     adapter({'actor': torch.zeros(1, 2)})  # must not raise
 
 
+def test_adapter_reset_calls_player_reset():
+    # PpoPlayerContinuous.reset is init_rnn: zero hidden states on reset
+    player = FakePlayer()
+    PolicyAdapter(player, 'actor').reset()
+    assert player.resets == 1
+
+
+def test_viewer_reset_reaches_player():
+    # mjlab's BaseViewer.reset_environment calls policy.reset() when the
+    # policy defines it: ENTER (native) and the Reset button (viser) must
+    # zero the player's RNN state, not only the env
+    base = pytest.importorskip('mjlab.viewer.base')
+
+    class Viewer(base.BaseViewer):
+        def setup(self):
+            pass
+
+        def sync_env_to_viewer(self):
+            pass
+
+        def sync_viewer_to_env(self):
+            pass
+
+        def close(self):
+            pass
+
+        def is_running(self):
+            return False
+
+    class FakeEnv:
+        cfg = types.SimpleNamespace(viewer=None)
+        num_envs = 2
+
+        def __init__(self):
+            self.resets = 0
+
+        def reset(self):
+            self.resets += 1
+
+    env, player = FakeEnv(), FakePlayer()
+    Viewer(env, PolicyAdapter(player, 'actor')).reset_environment()
+    assert env.resets == 1
+    assert player.resets == 1
+
+
 # ------------------------------------------------------ import hygiene
 
 def test_module_imports_without_mjlab():
@@ -331,7 +461,9 @@ def test_module_imports_without_mjlab():
     code = (
         "import sys; sys.modules['mjlab'] = None\n"
         "import rl_games.envs.mjlab_play as m\n"
-        "assert (m.KEY_UP, m.KEY_DOWN, m.KEY_LEFT, m.KEY_RIGHT) == (265, 264, 263, 262)\n"
+        "assert (m.KEY_KP_0, m.KEY_KP_2, m.KEY_KP_4, m.KEY_KP_6, m.KEY_KP_7,"
+        " m.KEY_KP_8, m.KEY_KP_9) == (320, 322, 324, 326, 327, 328, 329)\n"
+        "assert set(m.COMMAND_KEYS) == set(range(320, 330)) - {321, 323, 325}\n"
         "print('ok')\n"
     )
     env = dict(os.environ)
