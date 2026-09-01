@@ -20,11 +20,22 @@ import sys
 
 import numpy as np
 
-import envpool.mujoco.dmc.registration  # noqa: F401
-from envpool.registration import make_gymnasium
-
 from rl_games.envs.dmc_soccer_opponents import FrozenPolicy, chaser, keeper
 from rl_games.envs.dmc_soccer_selfplay import _OBS_KEYS
+
+# checkpoint dir of the shipped config (rl_games/configs/dm_control/
+# boxhead_soccer_2v2_selfplay.yaml): <train_dir>/<full_experiment_name>/nn,
+# the same path its league_ckpt_dir names
+DEFAULT_RUN_DIR = "runs/boxhead_soccer_2v2_selfplay/nn"
+
+
+def make_soccer_env(num_envs, seed, max_episode_steps, **kwargs):
+    """Fork BoxheadSoccer2v2-v1 env; envpool is imported here, not at module
+    level, so the module imports without it (as with cv2)."""
+    import envpool.mujoco.dmc.registration  # noqa: F401
+    from envpool.registration import make_gymnasium
+    return make_gymnasium("BoxheadSoccer2v2-v1", num_envs=num_envs, seed=seed,
+                          max_episode_steps=max_episode_steps, **kwargs)
 
 
 def flatten_obs(obs, num_matches, players):
@@ -76,7 +87,7 @@ def team_obs_dict(obs, num_matches, players, team):
 
 
 
-def latest_checkpoint(run_dir="runs/boxhead_2v2_league_long/nn"):
+def latest_checkpoint(run_dir=DEFAULT_RUN_DIR):
     paths = sorted(glob.glob(os.path.join(run_dir, "*.pth")),
                    key=os.path.getmtime)
     if not paths:
@@ -100,8 +111,8 @@ def video_main(argv=None):
     ckpt = args.checkpoint or latest_checkpoint()
     print(f"home team checkpoint: {ckpt}")
 
-    env = make_gymnasium(
-        "BoxheadSoccer2v2-v1", num_envs=1, seed=123, max_episode_steps=900,
+    env = make_soccer_env(
+        num_envs=1, seed=123, max_episode_steps=900,
         render_mode="rgb_array", render_width=args.width,
         render_height=args.height)
     players = env.observation_space["ball_ego_position"].shape[0]
@@ -153,7 +164,11 @@ def pick_checkpoints(run_dir, count=3):
         if m:
             by_ep[int(m.group(1))] = p
     if not by_ep:
-        return []
+        # an empty list would silently round-robin the scripted anchors only
+        # and still print a plausible table
+        raise FileNotFoundError(
+            f"no last_*_ep_*_rew_*.pth checkpoints in {run_dir}; pass "
+            f"--run-dir <train_dir>/<full_experiment_name>/nn of the run")
     eps = sorted(by_ep)
     idx = [0, len(eps) // 2, len(eps) - 1][:count]
     return [(f"ckpt_ep{eps[i]}", by_ep[eps[i]]) for i in dict.fromkeys(idx)]
@@ -179,7 +194,7 @@ def play(env, players, home_ctrl, away_ctrl, num_matches, steps):
 
 def tournament_main(argv=None):
     parser = argparse.ArgumentParser(prog="dmc_soccer_tools tournament")
-    parser.add_argument("--run-dir", default="runs/boxhead_2v2_league_long/nn")
+    parser.add_argument("--run-dir", default=DEFAULT_RUN_DIR)
     parser.add_argument("--matches", type=int, default=64)
     parser.add_argument("--steps", type=int, default=1200)
     parser.add_argument("--out", default="tournament.md")
@@ -189,8 +204,8 @@ def tournament_main(argv=None):
     contenders += [("chaser", None), ("keeper", None), ("random", None)]
     print("contenders:", [n for n, _ in contenders])
 
-    env = make_gymnasium("BoxheadSoccer2v2-v1", num_envs=args.matches,
-                         seed=999, max_episode_steps=600)
+    env = make_soccer_env(num_envs=args.matches, seed=999,
+                          max_episode_steps=600)
     players = env.observation_space["ball_ego_position"].shape[0]
 
     def ctrl(name, path):
