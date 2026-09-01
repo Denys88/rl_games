@@ -229,12 +229,18 @@ class SoccerSelfPlay(IVecEnv):
         self._ret_goal_diff[:] = self._goal_diff
         self._goal_diff *= 1 - done
 
+        # rows are match-major, player-minor (row = match * controlled +
+        # player), so repeating each match's done per player keeps the
+        # trainer's per-row autoreset mask aligned with the obs rows
         done_p = np.repeat(done, self.controlled)
         info_out = {
             "time_outs": np.repeat(truncated, self.controlled),
             "scores": np.repeat(self._ret_goal_diff, self.controlled),
         }
-        # envpool auto-resets; obs after done is the new episode's first obs
+        # envpool resets on the NEXT step: the obs returned with done=True is
+        # the terminal obs; the following step() ignores its action and
+        # returns the new episode's first obs with a zero reward. That row is
+        # not a transition -- the trainer drops it via the next_step mask.
         return flat_obs, rew, done_p, info_out
 
     def get_number_of_agents(self):
@@ -245,4 +251,29 @@ class SoccerSelfPlay(IVecEnv):
             "observation_space": self.observation_space,
             "action_space": self.action_space,
             "agents": 1,
+            "autoreset_mode": "next_step",  # see step(): reset-step rows are masked
         }
+
+    def get_env_state(self):
+        # resume state: the dense anneal and the opponent RNGs live in this
+        # process, not in the model -- without them a resumed run restarts
+        # dense(t) at 1.0 (6.7x the floor on the shipped config)
+        state = {
+            "anneal_step": self._anneal_step,
+            "away_rng": self._away_rng.get_state(),
+        }
+        if self.league is not None:
+            state["league_rng"] = self.league.rng.get_state()
+        return state
+
+    def set_env_state(self, env_state):
+        # older checkpoints carry env_state None or lack keys: keep defaults
+        if not env_state:
+            return
+        self._anneal_step = int(env_state.get("anneal_step", self._anneal_step))
+        away_rng = env_state.get("away_rng")
+        if away_rng is not None:
+            self._away_rng.set_state(away_rng)
+        league_rng = env_state.get("league_rng")
+        if league_rng is not None and self.league is not None:
+            self.league.rng.set_state(league_rng)
