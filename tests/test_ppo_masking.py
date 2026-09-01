@@ -99,6 +99,9 @@ def make_ppo_agent(env_cls=StaggeredFakeNextStepVecEnv, num_envs=NUM_ENVS,
     params = _ppo_params(num_envs=num_envs,
                          env_info=env_info if env_info is not None else fake.get_env_info(),
                          rnn=rnn, **config_overrides)
+    # top-level seed: without it Runner.load reseeds torch from time.time(),
+    # so two agents built across a second boundary start from different weights
+    params['seed'] = seed
     runner = Runner()
     runner.load({'params': params})
     runner.params['config']['vec_env'] = env
@@ -154,8 +157,10 @@ def test_masked_rows_contribute_zero_gradient():
     # poison the garbage rows' returns/values: if masking works, one training
     # epoch from identical weights must produce identical parameters
     results = []
+    initial = []
     for poison in (False, True):
         agent, fake = make_ppo_agent(seed=123)
+        initial.append(copy.deepcopy(agent.model.state_dict()))
         batch = _rollout_batch(agent)
         if poison:
             garbage = batch['rnn_masks'] == 0.0
@@ -169,6 +174,10 @@ def test_masked_rows_contribute_zero_gradient():
             for i in range(len(agent.dataset)):
                 agent.train_actor_critic(agent.dataset[i])
         results.append(copy.deepcopy(agent.model.state_dict()))
+    # same starting weights, or the comparison below measures the seed, not the mask
+    for k in initial[0]:
+        assert torch.equal(initial[0][k], initial[1][k]), (
+            f"initial parameter {k} differs between the two agents: seed not pinned")
     clean, poisoned = results
     for k in clean:
         assert torch.allclose(clean[k], poisoned[k], atol=0, rtol=0), (
