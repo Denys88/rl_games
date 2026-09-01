@@ -52,8 +52,8 @@ class ManiskillEnv(IVecEnv):
         
         print(f"ManiSkill env: {env_name} with {num_actors} actors")
         print(f"Original observation space: {self.env.observation_space}")
-        self.action_space = wrappers.OldGymWrapper.convert_space(remove_batch_dim(self.env.action_space))
-        self.observation_space = wrappers.OldGymWrapper.convert_space(remove_batch_dim(self.env.observation_space))
+        self.action_space = wrappers.convert_space(remove_batch_dim(self.env.action_space))
+        self.observation_space = wrappers.convert_space(remove_batch_dim(self.env.observation_space))
         print(f"Converted action space: {self.action_space}")
         print(f"Converted observation space: {self.observation_space}")
 

@@ -148,6 +148,16 @@ small-net gap (+1.6% net over flat). A multi-GPU run that never routes its train
 `train_model()` under `'ddp'` raises at the optimizer step instead of
 silently training rank-divergent.
 
+### `ddp_find_unused_parameters`
+
+`central_value_config` key (default `False`), passed through to
+`DistributedDataParallel(find_unused_parameters=...)` for the central value
+wrapper. Set it to `True` when a custom central-value network contains heads
+whose outputs its forward discards — with the default, DDP's reducer errors at
+the start of the second iteration because those parameters never receive
+gradients. Leave it off otherwise: unused-parameter discovery costs a graph
+walk every iteration.
+
 ### `multi_gpu_scheduler_kl`
 
 **Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU runs with `schedule_type: per_minibatch`
@@ -216,19 +226,24 @@ config:
   # omit or null                      # auto: one PPO epoch of samples (default)
 ```
 
-**Default (`null`/absent):** `mini_epochs * horizon_length * num_actors *
-num_agents` — one PPO epoch of *counted* samples (the normalizer updates on
-every training minibatch, so its count accrues `mini_epochs`× the rollout size
-per epoch; the derivation matches that accounting). The prior then fades after
-roughly one epoch. Values below 1 are rejected (a 0 or negative count poisons
+**Default (`null`/absent):** for the agents' input normalizer,
+`mini_epochs * horizon_length * num_actors * num_agents` — one PPO epoch of
+*counted* samples (the normalizer updates on every training minibatch, so its
+count accrues `mini_epochs`× the rollout size per epoch; the derivation matches
+that accounting). The central value network derives its default from its **own**
+geometry instead: `central_value_config.mini_epochs * horizon_length *
+num_actors` (its state batch is per-env, not per-agent). The prior then fades
+after roughly one epoch. Values below 1 are rejected (a 0 or negative count poisons
 the running stats).
 
 **Multi-GPU:** with pooled stats sync, the first merge sums every rank's seeded
 prior, so the effective prior weight is exactly one *global* epoch — consistent
 with the single-GPU behavior.
 
-**Scope and follow-ups:** this seeds the *input* normalizer of the PPO agents
-and the central value network. `value_mean_std` (`normalize_value`) has the
+**Scope and follow-ups:** the top-level key seeds the *input* normalizer of the
+PPO agents only; the central value network reads an explicit count from
+`normalize_input_init_count` inside `central_value_config` (and otherwise uses
+its own default above). `value_mean_std` (`normalize_value`) has the
 same cold start and is a planned follow-up; SAC is unaffected. Note the warm
 start damps the first-epoch stat jump but does not change the update scheme
 itself — stats still drift within each epoch (updated per minibatch over the

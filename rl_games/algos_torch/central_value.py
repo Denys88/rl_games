@@ -16,9 +16,18 @@ class CentralValueTrain(nn.Module):
     def __init__(
         self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors,
         num_actions, seq_length, normalize_value, network, config, writter, max_epochs,
-        multi_gpu, zero_rnn_on_done, normalize_input_init_count=1
+        multi_gpu, zero_rnn_on_done, normalize_input_init_count=None
     ):
         nn.Module.__init__(self)
+        # Resolve the obs-normalizer prior from the CENTRAL VALUE geometry
+        # (its own mini_epochs and env batch), not the actor's: forwarding the
+        # actor count overweighted the prior by actor_mini_epochs * num_agents
+        # / cv_mini_epochs -- exactly 27x on the stock 27-agent SMAC config.
+        # Explicit central_value_config values pass through unchanged.
+        from rl_games.common.a2c_common import resolve_obs_norm_init_count
+        normalize_input_init_count = resolve_obs_norm_init_count(
+            normalize_input_init_count, config['mini_epochs'],
+            horizon_length * num_actors)
 
         self.ppo_device = ppo_device
         self.mixed_precision = config.get('mixed_precision', torch_ext.default_mixed_precision())
@@ -40,6 +49,7 @@ class CentralValueTrain(nn.Module):
         self.__dict__['_ddp_model'] = None
         self.config = config
         self.normalize_input = config['normalize_input']
+        self.ddp_find_unused_parameters = config.get('ddp_find_unused_parameters', False)
         self.zero_rnn_on_done = zero_rnn_on_done
 
         state_config = {
@@ -253,7 +263,9 @@ class CentralValueTrain(nn.Module):
         setup_multi_gpu(). Plain-attribute assignment on purpose: nn.Module
         registration would duplicate the wrapper's params in state_dict()."""
         if self.multi_gpu and self.multi_gpu_grad_sync == 'ddp' and self._ddp_model is None:
-            self.__dict__['_ddp_model'] = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
+            self.__dict__['_ddp_model'] = torch_ext.wrap_model_ddp(
+                self.model, self.ppo_device,
+                find_unused_parameters=self.ddp_find_unused_parameters)
             print('Using DistributedDataParallel for central value gradient sync')
 
     def train_model(self):
@@ -275,7 +287,13 @@ class CentralValueTrain(nn.Module):
                     loss += self.train_critic(self.dataset[i])
 
             if self.normalize_input:
-                # don't need to update statistics more than one miniepoch
+                # Intended: freeze stats after one mini-epoch. Currently a
+                # no-op — train_critic() calls self.train() per minibatch,
+                # which re-enables updates — so stats accrue over EVERY
+                # mini-epoch. The default normalize_input_init_count in
+                # __init__ deliberately matches that actual accounting
+                # (cv mini_epochs * horizon * num_actors); if this freeze is
+                # ever fixed, drop the mini_epochs factor there too.
                 self.model.running_mean_std.eval()
 
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)

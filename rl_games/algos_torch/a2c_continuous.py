@@ -65,7 +65,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
                 'zero_rnn_on_done': self.zero_rnn_on_done,
-                'normalize_input_init_count': self.normalize_input_init_count
+                # raw config value (or None): CentralValueTrain resolves the
+                # default from its OWN mini_epochs x horizon x num_actors
+                'normalize_input_init_count':
+                    self.central_value_config.get('normalize_input_init_count', None)
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 

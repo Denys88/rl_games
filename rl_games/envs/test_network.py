@@ -20,7 +20,11 @@ class TestNet(NetworkBuilder.BaseNetwork):
         self.linear1 = nn.Linear(num_inputs, 256)
         self.linear2 = nn.Linear(256, 128)
         self.linear3 = nn.Linear(128, 64)
-        self.mean_linear = nn.Linear(64, actions_num)
+        # No actor head in central-value mode: a head whose output is
+        # discarded gets no gradients, and DDP with the default
+        # find_unused_parameters=False fails on the next iteration.
+        if not self.central_value:
+            self.mean_linear = nn.Linear(64, actions_num)
         self.value_linear = nn.Linear(64, 1)
 
     def is_rnn(self):
@@ -32,10 +36,10 @@ class TestNet(NetworkBuilder.BaseNetwork):
         x = F.relu(self.linear1(obs))
         x = F.relu(self.linear2(x))
         x = F.relu(self.linear3(x))
-        action = self.mean_linear(x)
         value = self.value_linear(x)
         if self.central_value:
             return value, None
+        action = self.mean_linear(x)
         return action, value, None
 
 

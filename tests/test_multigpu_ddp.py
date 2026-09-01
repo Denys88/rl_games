@@ -172,7 +172,22 @@ def _bypass_guard_worker(rank, world_size, port, results):
     A2CBase.trancate_gradients_and_step(agent)
     cleared = ddp_net.forward_seen is False
 
-    results[rank] = (raised, cleared)
+    # a no-grad forward through the wrapper must NOT arm the guard: it
+    # installs no reduction hooks, so a subsequent raw-model training
+    # forward/backward would step with unsynchronized gradients
+    with torch.no_grad():
+        ddp_net(x)
+    armed_by_nograd = ddp_net.forward_seen
+    pi, v = net(x)
+    (pi.sum() + v.sum()).backward()
+    raised_after_nograd = False
+    try:
+        A2CBase.trancate_gradients_and_step(agent)
+    except RuntimeError as e:
+        raised_after_nograd = 'bypassed the DDP wrapper' in str(e)
+    net.zero_grad(set_to_none=True)
+
+    results[rank] = (raised, cleared, not armed_by_nograd and raised_after_nograd)
     dist.destroy_process_group()
 
 
@@ -182,6 +197,63 @@ def test_bypassed_training_forward_raises_and_flag_clears():
     with mp.Manager() as mgr:
         results = mgr.dict()
         mp.spawn(_bypass_guard_worker, args=(1, port, results), nprocs=1, join=True)
-        raised, cleared = results[0]
+        raised, cleared, nograd_guarded = results[0]
     assert raised, 'bypassed forward must raise an actionable RuntimeError'
     assert cleared, 'forward_seen must clear after the optimizer step'
+    assert nograd_guarded, 'a no-grad wrapper forward must not arm the guard'
+
+
+def _cv_dead_head_worker(rank, world_size, port, results):
+    import torch.distributed as dist
+    dist.init_process_group(
+        'gloo', rank=rank, world_size=world_size,
+        init_method=f'tcp://127.0.0.1:{port}')
+    from rl_games.envs.test_network import TestNet
+
+    def two_iters(module, sample):
+        ddp = wrap_model_ddp(module, 'cpu')
+        opt = torch.optim.SGD(module.parameters(), lr=0.01)
+        for _ in range(2):
+            out = ddp(sample())
+            out = out[0] if isinstance(out, tuple) else out
+            out.sum().backward()
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+
+    # the shipped central-value TestNet must train under DEFAULT DDP
+    # (find_unused_parameters=False): no dead actor head anymore
+    net = TestNet({'central_value': True},
+                  actions_num=3, input_shape={'pos': (2,), 'info': (2,)})
+    sample = lambda: {'obs': {'pos': torch.randn(5, 2), 'info': torch.randn(5, 2)}}
+    two_iters(net, sample)
+
+    # a genuinely dead head trains only with the plumbed knob
+    class DeadHead(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.value = torch.nn.Linear(4, 1)
+            self.dead = torch.nn.Linear(4, 3)
+
+        def forward(self, x):
+            self.dead(x)  # computed, discarded: no grads for self.dead
+            return self.value(x)
+
+    dead = DeadHead()
+    ddp = wrap_model_ddp(dead, 'cpu', find_unused_parameters=True)
+    opt = torch.optim.SGD(dead.parameters(), lr=0.01)
+    for _ in range(2):
+        ddp(torch.randn(5, 4)).sum().backward()
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+
+    results[rank] = True
+    dist.destroy_process_group()
+
+
+def test_central_value_network_trains_under_default_ddp():
+    import torch.multiprocessing as mp
+    port = 32017 + os.getpid() % 1000
+    with mp.Manager() as mgr:
+        results = mgr.dict()
+        mp.spawn(_cv_dead_head_worker, args=(1, port, results), nprocs=1, join=True)
+        assert results[0] is True

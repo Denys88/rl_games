@@ -27,7 +27,8 @@ class BasePlayer(object):
         self.balance_env_rewards = self.player_config.get('balance_env_rewards', False)
 
         if self.env_info is None:
-            use_vecenv = self.player_config.get('use_vecenv', False)
+            use_vecenv = self.player_config.get(
+                'use_vecenv', self._default_use_vecenv(self.env_name))
             if use_vecenv:
                 print('[BasePlayer] Creating vecenv: ', self.env_name)
                 self.env = vecenv.create_vec_env(
@@ -263,6 +264,17 @@ class BasePlayer(object):
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(
                 weights['running_mean_std'])
+
+    @staticmethod
+    def _default_use_vecenv(env_name):
+        """Play through vecenv when the registration ships no env_creator.
+
+        Vecenv-only registrations (envpool, pufferlib, the plain GYMNASIUM
+        entries) used to crash --play with KeyError: 'env_creator' -- a
+        regression from the UV migration, which re-registered 'envpool'
+        without the creator the original integration had.
+        """
+        return 'env_creator' not in env_configurations.configurations.get(env_name, {})
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)
