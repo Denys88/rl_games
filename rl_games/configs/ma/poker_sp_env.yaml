@@ -1,0 +1,60 @@
+params:  
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+  
+  network:
+    name: actor_critic
+    separate: False
+    space: 
+      discrete:
+    mlp:
+      units: [256, 128]
+      activation: relu
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  config:
+    reward_shaper:
+      scale_value: 0.1
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    gamma: 0.99
+    tau: 0.9
+    learning_rate: 3e-4
+    name: exploitability
+    score_to_win: 100080
+    grad_norm: 1.0
+    entropy_coef: 0.02
+    truncate_grads: True
+    env_name: openai_gym
+    e_clip: 0.2
+    clip_value: True
+    num_actors: 16
+    horizon_length: 128
+    minibatch_size: 1024
+    mini_epochs: 4
+    critic_coef: 2
+    lr_schedule: None
+    kl_threshold: 0.008
+    bounds_loss_coef: 0.0001
+    max_epochs: 1000
+
+    player:
+      games_num: 200000
+      deterministic: False
+      print_stats: False
+      use_vecenv: False
+
+    self_play_config:
+      update_score: 5
+      games_to_check: 100
+      check_scores : False
+    env_config:
+      name: HeadsUpPokerRLGamesSelfplay-v0
