@@ -57,8 +57,10 @@ params:
       vel_player_w: 0.25
       time_w: 0.05
       team_chase: true
-      # anneal dense terms 1.0 -> 0.15 over 1M env steps so the goal reward
-      # dominates once chase/dribble are bootstrapped
+      # anneal dense terms 1.0 -> 0.15 over 1M vectorized step() calls, NOT
+      # agent frames (1M steps = epoch 15625 at horizon 64), so the goal
+      # reward dominates once chase/dribble are bootstrapped; the counter is
+      # saved with the env state and survives a resume
       dense_anneal_steps: 1000000
       dense_floor: 0.15
       seed: 7
