@@ -55,6 +55,9 @@ class FrozenPolicy:
     def __init__(self, checkpoint_path):
         import torch
 
+        # mtime read BEFORE the load: a file rewritten during the load then
+        # reads as stale at the next refresh instead of being kept
+        self.mtime = os.path.getmtime(checkpoint_path)
         ckpt = torch.load(checkpoint_path, map_location="cpu",
                           weights_only=False)
         # torch.compile'd models save keys with an "_orig_mod." prefix
@@ -94,6 +97,8 @@ class OpponentLeague:
         "chaser", "keeper", "league_latest", "league_old",
     )
 
+    LEAGUE_TYPES = ("league_latest", "league_old")
+
     def __init__(self, num_matches, types=None, ckpt_dir=None,
                  refresh_every=500, rng=None):
         self.types = list(types or self.DEFAULT_TYPES)
@@ -102,41 +107,76 @@ class OpponentLeague:
         self.refresh_every = refresh_every
         self.rng = rng or np.random.RandomState(0)
         self._step = 0
-        self._warned_refresh = False
+        # load failures already reported, keyed (path, exception type); a
+        # path's keys clear when it loads, so a failure that returns after a
+        # transient one is reported again instead of silenced for the run
+        self._warned = set()
+        self._warned_missing_dir = False
         self._latest = None  # FrozenPolicy
         self._old = None
+        if not ckpt_dir and any(t in self.LEAGUE_TYPES for t in self.types):
+            print('WARNING: league_latest/league_old configured without '
+                  'league_ckpt_dir; they play weak-random for the whole run. '
+                  'Set league_ckpt_dir to <train_dir>/<full_experiment_name>/nn')
+
+    def _load(self, path):
+        """FrozenPolicy for `path`, or None when the load fails (mid-write
+        checkpoint, key mismatch), reported once per (path, exception type)."""
+        try:
+            net = FrozenPolicy(path)
+        except Exception as e:
+            # keep the previous nets but say so: a persistent load failure
+            # silently degrades the league to weak-random opponents, which
+            # invalidates a self-play run while looking like healthy training
+            key = (path, type(e))
+            if key not in self._warned:
+                print(f'WARNING: opponent league checkpoint {path} failed to '
+                      f'load ({type(e).__name__}: {e}); keeping previous '
+                      f'opponents. Reported once per checkpoint and error.')
+                self._warned.add(key)
+            return None
+        self._warned = {k for k in self._warned if k[0] != path}
+        return net
+
+    @staticmethod
+    def _stale(net, path):
+        # <name>.pth (the best checkpoint) is overwritten in place, so a path
+        # match alone would keep its first-loaded weights for the whole run
+        return (net is None
+                or (net.path, net.mtime) != (path, os.path.getmtime(path)))
 
     def _refresh_league(self):
         if not self.ckpt_dir:
             return
+        if not os.path.isdir(self.ckpt_dir):
+            # a train_dir override or experiment rename: the glob below stays
+            # empty for the whole run and league_* silently play weak-random
+            if not self._warned_missing_dir:
+                print(f'WARNING: league_ckpt_dir {self.ckpt_dir} does not '
+                      f'exist; league_latest/league_old play weak-random until '
+                      f'it does. Expected <train_dir>/<full_experiment_name>/nn '
+                      f'of this run.')
+                self._warned_missing_dir = True
+            return
         paths = sorted(glob.glob(os.path.join(self.ckpt_dir, "*.pth")),
                        key=os.path.getmtime)
         if not paths:
-            return
-        try:
-            if self._latest is None or self._latest.path != paths[-1]:
-                self._latest = FrozenPolicy(paths[-1])
-            if len(paths) > 1:
-                pick = paths[self.rng.randint(0, len(paths) - 1)]
-                if self._old is None or self._old.path != pick:
-                    self._old = FrozenPolicy(pick)
-        except Exception as e:
-            # mid-write checkpoint etc.: keep previous nets, but say so ONCE --
-            # a persistent load failure silently degrades the league to
-            # weak-random opponents, which invalidates a self-play run while
-            # looking like healthy training
-            if not self._warned_refresh:
-                print(f'WARNING: opponent league checkpoint refresh failed '
-                      f'({type(e).__name__}: {e}); keeping previous opponents. '
-                      f'Further failures will be silent.')
-                self._warned_refresh = True
+            return  # present but empty before the first save: the warmup
+        if self._stale(self._latest, paths[-1]):
+            self._latest = self._load(paths[-1]) or self._latest
+        if len(paths) > 1:
+            pick = paths[self.rng.randint(0, len(paths) - 1)]
+            if self._stale(self._old, pick):
+                self._old = self._load(pick) or self._old
 
     def actions(self, obs_away_dict, flat_obs_away):
         """obs_away_dict: per-key arrays sliced to away players (M, P_away, ...)
         flat_obs_away: policy-format obs for away players (M, P_away, obs_dim).
         Returns (M, P_away, act_dim) actions."""
         self._step += 1
-        if self._step % self.refresh_every == 1:
+        # refresh on the first call and every refresh_every calls after it
+        # (`_step % refresh_every == 1` never fires for league_refresh: 1)
+        if (self._step - 1) % self.refresh_every == 0:
             self._refresh_league()
 
         m, pa = flat_obs_away.shape[:2]

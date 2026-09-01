@@ -7,14 +7,22 @@ info['players_reward'], next-step autoreset (terminal obs with done=True,
 the following step ignores its action, returns the new episode's first obs
 and a zero reward). Physics values are not reproduced.
 """
+import os
 import sys
 import types
 
 import gymnasium
 import numpy as np
 import pytest
+import torch
+import yaml
 
+from rl_games.envs.dmc_soccer_opponents import OpponentLeague
 from rl_games.envs.dmc_soccer_selfplay import SoccerSelfPlay, _OBS_KEYS
+from rl_games.envs import dmc_soccer_tools as tools
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+YAML = os.path.join(REPO, "rl_games/configs/dm_control/boxhead_soccer_2v2_selfplay.yaml")
 
 PLAYERS = 4
 TEAM = PLAYERS // 2
@@ -202,3 +210,133 @@ def test_set_env_state_tolerates_older_checkpoints(fake_envpool, state):
     env.reset()
     env.set_env_state(state)
     assert env.get_env_state()["anneal_step"] == (state or {}).get("anneal_step", 0)
+
+
+# --- opponent league ---------------------------------------------------------
+
+OBS_DIM = 2
+
+
+def write_ckpt(path, scale, mtime):
+    """Minimal rl_games actor checkpoint FrozenPolicy accepts: one hidden
+    Linear of 3 units, all weights = scale, pinned to a distinct mtime (same-
+    second rewrites are indistinguishable on coarse filesystems)."""
+    model = {
+        "running_mean_std.running_mean": torch.zeros(OBS_DIM),
+        "running_mean_std.running_var": torch.ones(OBS_DIM),
+        "a2c_network.actor_mlp.0.weight": torch.full((3, OBS_DIM), scale),
+        "a2c_network.actor_mlp.0.bias": torch.zeros(3),
+        "a2c_network.mu.weight": torch.full((3, 3), scale),
+        "a2c_network.mu.bias": torch.zeros(3),
+    }
+    torch.save({"model": model}, path)
+    os.utime(path, (mtime, mtime))
+
+
+def write_garbage(path, mtime):
+    with open(path, "wb") as f:
+        f.write(b"not a checkpoint")
+    os.utime(path, (mtime, mtime))
+
+
+def away_actions(league):
+    obs = {"ball_ego_position": np.ones((1, TEAM, 3)),
+           "team_goal_mid": np.ones((1, TEAM, 3))}
+    return league.actions(obs, np.ones((1, TEAM, OBS_DIM), dtype=np.float32))
+
+
+def test_league_reloads_best_checkpoint_overwritten_in_place(tmp_path):
+    # <name>.pth (the best checkpoint) keeps its path when the trainer
+    # overwrites it; the league must follow the new weights
+    best = str(tmp_path / "best.pth")
+    write_ckpt(best, scale=0.1, mtime=1000)
+    league = OpponentLeague(1, types=["league_latest"], ckpt_dir=str(tmp_path),
+                            refresh_every=1)
+    a_first = away_actions(league)
+    write_ckpt(best, scale=0.2, mtime=1010)
+    a_second = away_actions(league)
+    assert league._latest.mtime == 1010
+    assert not np.allclose(a_first, a_second)
+    assert np.allclose(away_actions(league), a_second)  # unchanged file: kept
+
+
+def test_league_load_failure_warns_once_per_path_and_error(tmp_path, capsys):
+    bad = str(tmp_path / "bad.pth")
+    write_garbage(bad, mtime=1000)
+    league = OpponentLeague(1, types=["league_latest"], ckpt_dir=str(tmp_path))
+    league._refresh_league()
+    league._refresh_league()
+    out = capsys.readouterr().out
+    assert out.count("WARNING") == 1 and "bad.pth" in out
+    assert league._latest is None
+
+    other = str(tmp_path / "other.pth")  # a second failing path warns itself
+    write_garbage(other, mtime=1010)
+    league._refresh_league()
+    out = capsys.readouterr().out
+    assert out.count("WARNING") == 1 and "other.pth" in out
+
+    write_ckpt(other, scale=0.1, mtime=1020)  # loads: its record clears
+    league._refresh_league()
+    assert capsys.readouterr().out == ""
+    assert league._latest.path == other
+
+    write_garbage(other, mtime=1030)  # the same failure again: reported again
+    league._refresh_league()
+    out = capsys.readouterr().out
+    assert out.count("WARNING") == 1 and "other.pth" in out
+    assert league._latest.path == other  # previous weights kept
+
+
+def test_league_warns_at_construction_without_ckpt_dir(capsys):
+    OpponentLeague(2, types=["chaser", "league_old"], ckpt_dir=None)
+    assert "league_ckpt_dir" in capsys.readouterr().out
+    OpponentLeague(2, types=["chaser", "random"], ckpt_dir=None)
+    assert capsys.readouterr().out == ""
+
+
+def test_league_warns_once_when_ckpt_dir_missing(tmp_path, capsys):
+    missing = str(tmp_path / "nope")
+    league = OpponentLeague(1, types=["league_latest"], ckpt_dir=missing)
+    league._refresh_league()
+    league._refresh_league()
+    out = capsys.readouterr().out
+    assert out.count("WARNING") == 1 and "nope" in out
+    # present but empty is the documented warmup before the first save
+    OpponentLeague(1, types=["league_latest"],
+                   ckpt_dir=str(tmp_path))._refresh_league()
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("every, calls, expected", [
+    (1, 3, [1, 2, 3]),
+    (500, 502, [1, 501]),
+])
+def test_league_refresh_schedule(monkeypatch, every, calls, expected):
+    league = OpponentLeague(1, types=["random"], refresh_every=every)
+    seen = []
+    monkeypatch.setattr(league, "_refresh_league",
+                        lambda: seen.append(league._step))
+    for _ in range(calls):
+        away_actions(league)
+    assert seen == expected
+
+
+# --- tools -------------------------------------------------------------------
+
+def test_tools_default_run_dir_is_the_shipped_config_checkpoint_dir():
+    with open(YAML) as f:
+        cfg = yaml.safe_load(f)["params"]["config"]
+    assert tools.DEFAULT_RUN_DIR == cfg["env_config"]["league_ckpt_dir"]
+    assert tools.DEFAULT_RUN_DIR == f"runs/{cfg['full_experiment_name']}/nn"
+
+
+def test_pick_checkpoints_raises_on_missing_or_empty_run_dir(tmp_path):
+    with pytest.raises(FileNotFoundError, match="--run-dir"):
+        tools.pick_checkpoints(str(tmp_path / "missing"))
+    with pytest.raises(FileNotFoundError, match="--run-dir"):
+        tools.pick_checkpoints(str(tmp_path))
+    for ep in (200, 400, 600, 800):
+        (tmp_path / f"last_x_ep_{ep}_rew_1.0.pth").touch()
+    names = [n for n, _ in tools.pick_checkpoints(str(tmp_path))]
+    assert names == ["ckpt_ep200", "ckpt_ep600", "ckpt_ep800"]
