@@ -1,0 +1,506 @@
+<title>Hoshi 9×9 (local)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ground: #E9E5DC;
+  --panel: #F2EFE8;
+  --panel-edge: #D8D2C4;
+  --ink: #262119;
+  --ink-soft: #6E675A;
+  --accent: #A63B29;
+  --accent-ink: #FFF6EF;
+  --wood-hi: #E2B569;
+  --wood: #D9A85C;
+  --wood-lo: #C1913F;
+  --line: #4A3413;
+  --ghost: rgba(38,33,25,.28);
+  --focus: #2E5AAC;
+}
+:root:not([data-theme="light"]) { }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #18150F;
+    --panel: #221E16;
+    --panel-edge: #3A3426;
+    --ink: #E7E0D2;
+    --ink-soft: #9A9180;
+    --accent: #C4593F;
+    --accent-ink: #FFF6EF;
+    --wood-hi: #C69A52;
+    --wood: #B98D4F;
+    --wood-lo: #9E7638;
+    --line: #33240D;
+    --ghost: rgba(231,224,210,.30);
+    --focus: #7FA3E8;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #18150F;
+  --panel: #221E16;
+  --panel-edge: #3A3426;
+  --ink: #E7E0D2;
+  --ink-soft: #9A9180;
+  --accent: #C4593F;
+  --accent-ink: #FFF6EF;
+  --wood-hi: #C69A52;
+  --wood: #B98D4F;
+  --wood-lo: #9E7638;
+  --line: #33240D;
+  --ghost: rgba(231,224,210,.30);
+  --focus: #7FA3E8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+header { text-align: center; margin: 28px 16px 10px; }
+h1 {
+  font-family: "Shippori Mincho", Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(1.7rem, 4.5vw, 2.3rem);
+  letter-spacing: .04em;
+  margin: 0;
+  text-wrap: balance;
+}
+.sub {
+  color: var(--ink-soft);
+  font-size: .86rem;
+  margin-top: 6px;
+  letter-spacing: .02em;
+}
+main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12px 16px 28px;
+  width: 100%;
+  max-width: 900px;
+}
+#boardwrap { position: relative; flex: 0 1 520px; min-width: 280px; }
+canvas#board {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.18);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#banner {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(3px);
+  border-top: 1px solid var(--panel-edge);
+  padding: 12px 16px;
+  font-family: "Shippori Mincho", Georgia, serif;
+  font-size: 1.05rem;
+  text-align: center;
+  border-radius: 0 0 6px 6px;
+  display: none;
+}
+aside {
+  flex: 0 1 280px;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.label {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+#turnline { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.stone-ico {
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-block; flex: none;
+  border: 1px solid rgba(0,0,0,.35);
+}
+.stone-ico.black { background: radial-gradient(circle at 34% 30%, #555, #0a0a0a 70%); }
+.stone-ico.white { background: radial-gradient(circle at 34% 30%, #fff, #cfcabd 75%); }
+#thinking { color: var(--ink-soft); font-size: .84rem; display: none; }
+.ponderinfo { color: var(--ink-soft); font-size: .76rem; margin-top: 6px; min-height: 1em; }
+.hintlist { font-size: .82rem; margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+.hintlist span b { color: var(--accent); margin-right: 3px; }
+#evalbar {
+  height: 14px; border-radius: 7px; overflow: hidden;
+  background: radial-gradient(circle at 40% 35%, #fdfdfb, #cfcabd);
+  border: 1px solid var(--panel-edge);
+  position: relative;
+}
+#evalfill {
+  height: 100%;
+  background: linear-gradient(180deg, #3a3a3a, #0c0c0c);
+  width: 50%;
+  transition: width .5s ease;
+}
+.evalnums {
+  display: flex; justify-content: space-between;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .74rem; color: var(--ink-soft); margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.statrow {
+  display: flex; justify-content: space-between;
+  font-size: .86rem; padding: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+.statrow b { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: inherit; font-size: .86rem; font-weight: 500;
+  padding: 8px 14px; border-radius: 6px;
+  border: 1px solid var(--panel-edge);
+  background: var(--panel); color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--ink-soft); }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button.primary {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+button.primary:hover { filter: brightness(1.08); }
+button:disabled { opacity: .45; cursor: default; }
+select {
+  font: inherit; font-size: .86rem; padding: 7px 10px;
+  border-radius: 6px; border: 1px solid var(--panel-edge);
+  background: var(--panel); color: var(--ink); width: 100%;
+}
+.optrow { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.optrow label { font-size: .82rem; color: var(--ink-soft); flex: none; width: 72px; }
+input#pname {
+  font: inherit; font-size: .88rem; width: 100%;
+  padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--panel-edge);
+  background: var(--ground); color: var(--ink);
+}
+input#pname:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.optcheck {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .82rem; color: var(--ink-soft);
+  margin-top: 8px; cursor: pointer; user-select: none;
+}
+.optcheck input { accent-color: var(--accent); }
+.loglist { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.logrow {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: .8rem; padding: 4px 6px; border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.logrow:nth-child(odd) { background: color-mix(in srgb, var(--panel-edge) 35%, transparent); }
+.logrow .who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logrow .res { font-family: "IBM Plex Mono", monospace; flex: none; }
+.logrow .res.win { color: var(--accent); }
+.logempty { color: var(--ink-soft); font-size: .8rem; }
+.logstatus { color: var(--ink-soft); font-size: .72rem; margin-top: 8px; line-height: 1.4; }
+footer {
+  color: var(--ink-soft);
+  font-size: .78rem;
+  max-width: 560px;
+  text-align: center;
+  line-height: 1.55;
+  margin: 0 16px 30px;
+}
+footer .ok { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  #evalfill { transition: none; }
+}
+</style>
+<header>
+  <h1>Hoshi 9×9</h1>
+  <div class="sub">Local edition — pgx rules engine, PyTorch on <span id="dev">…</span></div>
+</header>
+
+<main>
+  <div id="boardwrap">
+    <canvas id="board" width="1040" height="1040" aria-label="Go board"></canvas>
+    <div id="banner"></div>
+  </div>
+  <aside>
+    <div class="card">
+      <div class="label">To move</div>
+      <div id="turnline"><span class="stone-ico black" id="turnstone"></span><span id="turntext">—</span></div>
+      <div id="thinking">network is thinking…</div>
+    </div>
+    <div class="card">
+      <div class="label">Network's read</div>
+      <div id="evalbar"><div id="evalfill"></div></div>
+      <div class="evalnums"><span id="evalb">Black 50%</span><span id="evalw">White 50%</span></div>
+      <div class="statrow" style="margin-top:8px"><span>Score read</span><b id="scoreread">—</b></div>
+      <label class="optcheck"><input type="checkbox" id="chk-own" checked> Territory overlay</label>
+      <label class="optcheck"><input type="checkbox" id="chk-ponder" checked> Think on my turn</label>
+      <label class="optcheck"><input type="checkbox" id="chk-hints"> Show top-3 hints</label>
+      <div id="hintlist" class="hintlist"></div>
+      <div id="ponderinfo" class="ponderinfo"></div>
+    </div>
+    <div class="card">
+      <div class="label">Game</div>
+      <div class="statrow"><span>Move</span><b id="movenum">0</b></div>
+      <div class="statrow"><span>Captures B/W</span><b id="caps">0 / 0</b></div>
+      <div class="statrow"><span>Komi (White)</span><b>7</b></div>
+    </div>
+    <div class="card">
+      <div class="label">Controls</div>
+      <div class="btnrow">
+        <button id="btn-pass">Pass</button>
+        <button id="btn-undo">Undo</button>
+        <button id="btn-resign">Resign</button>
+      </div>
+      <div class="optrow"><label for="sel-color">You play</label>
+        <select id="sel-color"><option value="1">Black</option><option value="-1">White</option></select></div>
+      <div class="optrow"><label for="sel-net">Engine</label>
+        <select id="sel-net">
+          <option value="deep_az" selected>Deep AZ — newest, strongest</option>
+          <option value="deep_ppo">Deep PPO — league champion</option>
+          <option value="swift">Swift — small &amp; fast</option>
+        </select></div>
+      <div class="optrow"><label for="sel-sims">Search</label>
+        <select id="sel-sims">
+          <option value="0">Off — instant</option>
+          <option value="32">32 sims</option>
+          <option value="128">128 sims</option>
+          <option value="512" selected>512 sims — max</option>
+        </select></div>
+      <div class="optrow"><label for="sel-temp">Variety</label>
+        <select id="sel-temp">
+          <option value="0" selected>None</option>
+          <option value="0.25">Low</option>
+          <option value="0.5">Balanced</option>
+          <option value="1">Wild</option>
+        </select></div>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="primary" id="btn-new">New game</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  Rules and scoring by <b>pgx</b> (the training environment itself); moves computed by
+  PyTorch on your machine. Area scoring, komi 7, superko forbidden; the network resigns
+  when it judges itself over 99% lost. Nets: Deep AZ (27.5M, AlphaZero-style self-play),
+  Deep PPO (27.5M, league), Swift (0.5M).
+</footer>
+
+<script>
+"use strict";
+const N = 9, PTS = 81, PASSA = 81;
+let S = null, busy = false, hoverPt = -1, H = null;
+
+const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
+const CS = canvas.width, M = CS * 0.06, GRID = (CS - 2*M) / (N - 1);
+
+function opts() {
+  return { engine: document.getElementById('sel-net').value,
+           sims: +document.getElementById('sel-sims').value,
+           temp: +document.getElementById('sel-temp').value,
+           ponder: document.getElementById('chk-ponder').checked,
+           hints: document.getElementById('chk-hints').checked };
+}
+async function api(path, extra) {
+  const r = await fetch(path, { method: 'POST', body: JSON.stringify({ ...opts(), ...(extra||{}) }) });
+  return r.json();
+}
+function humanTurn() {
+  if (!S || S.over) return false;
+  return (S.toMove === 'b') === S.humanBlack;
+}
+
+function drawStone(x, y, color, last) {
+  const R = GRID * 0.47;
+  ctx.beginPath(); ctx.arc(x + R*0.06, y + R*0.10, R, 0, 7);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fill();
+  const gr = ctx.createRadialGradient(x - R*0.35, y - R*0.4, R*0.1, x, y, R);
+  if (color === 1) { gr.addColorStop(0, '#5a5a5a'); gr.addColorStop(1, '#070707'); }
+  else { gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, '#cbc6b8'); }
+  ctx.beginPath(); ctx.arc(x, y, R, 0, 7);
+  ctx.fillStyle = gr; ctx.fill();
+  if (last) {
+    const css = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = css.getPropertyValue('--accent').trim();
+    ctx.lineWidth = CS / 260;
+    ctx.beginPath(); ctx.arc(x, y, R*0.45, 0, 7); ctx.stroke();
+  }
+}
+function drawBoard() {
+  const css = getComputedStyle(document.documentElement);
+  const woodHi = css.getPropertyValue('--wood-hi').trim(), wood = css.getPropertyValue('--wood').trim(),
+        woodLo = css.getPropertyValue('--wood-lo').trim(), line = css.getPropertyValue('--line').trim();
+  const g = ctx.createLinearGradient(0, 0, CS, CS);
+  g.addColorStop(0, woodHi); g.addColorStop(.55, wood); g.addColorStop(1, woodLo);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, CS, CS);
+  ctx.globalAlpha = 0.05; ctx.strokeStyle = line;
+  for (let i = 0; i < 28; i++) {
+    ctx.beginPath();
+    const y = (i / 28) * CS + Math.sin(i * 2.3) * 8;
+    ctx.moveTo(0, y);
+    ctx.bezierCurveTo(CS*0.3, y + Math.sin(i)*14, CS*0.7, y - Math.cos(i)*12, CS, y + Math.sin(i*1.7)*9);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.strokeStyle = line; ctx.lineWidth = CS / 420;
+  for (let i = 0; i < N; i++) {
+    ctx.beginPath(); ctx.moveTo(M + i*GRID, M); ctx.lineTo(M + i*GRID, CS - M); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(M, M + i*GRID); ctx.lineTo(CS - M, M + i*GRID); ctx.stroke();
+  }
+  ctx.fillStyle = line;
+  for (const [r, c] of [[2,2],[2,6],[6,2],[6,6],[4,4]]) {
+    ctx.beginPath(); ctx.arc(M + c*GRID, M + r*GRID, CS/160, 0, 7); ctx.fill();
+  }
+  if (!S) return;
+  for (let p = 0; p < PTS; p++) {
+    const r = (p / N) | 0, c = p % N, x = M + c*GRID, y = M + r*GRID;
+    if (S.board[p] !== 0) drawStone(x, y, S.board[p], p === S.lastMove);
+  }
+  const chk = document.getElementById('chk-own');
+  if (chk.checked && S.ownBlack && !S.over) {
+    // ownBlack arrives mover-centric->black already from server
+    for (let p = 0; p < PTS; p++) {
+      const v = S.ownBlack[p];
+      if (Math.abs(v) < 0.12) continue;
+      const r = (p / N) | 0, c = p % N;
+      ctx.globalAlpha = 0.18 + 0.32 * Math.min(1, Math.abs(v));
+      ctx.fillStyle = v > 0 ? '#111' : '#f6f4ee';
+      const s = GRID * 0.22;
+      ctx.fillRect(M + c*GRID - s/2, M + r*GRID - s/2, s, s);
+      ctx.globalAlpha = 1;
+    }
+  }
+  // top-3 hint markers from the ponder tree
+  if (humanTurn() && document.getElementById('chk-hints').checked &&
+      H && H.plies === S.plies) {
+    const css2 = getComputedStyle(document.documentElement);
+    const accent = css2.getPropertyValue('--accent').trim();
+    H.hints.forEach((h, i) => {
+      if (h.a === PASSA) return;
+      const r = (h.a / N) | 0, c = h.a % N, x = M + c*GRID, y = M + r*GRID, R = GRID * 0.36;
+      ctx.globalAlpha = i === 0 ? 0.95 : 0.7;
+      ctx.beginPath(); ctx.arc(x, y, R, 0, 7);
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fill();
+      ctx.lineWidth = CS / 220; ctx.strokeStyle = accent; ctx.stroke();
+      ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + (GRID * 0.36) + 'px sans-serif';
+      ctx.fillText(String(i + 1), x, y - GRID * 0.09);
+      ctx.font = (GRID * 0.22) + 'px sans-serif';
+      ctx.fillText(Math.round(h.win * 100) + '%', x, y + GRID * 0.19);
+      ctx.globalAlpha = 1;
+    });
+  }
+  if (humanTurn() && hoverPt >= 0 && S.board[hoverPt] === 0 && S.legal[hoverPt]) {
+    const r = (hoverPt / N) | 0, c = hoverPt % N;
+    ctx.globalAlpha = 0.45;
+    drawStone(M + c*GRID, M + r*GRID, S.humanBlack ? 1 : -1, false);
+    ctx.globalAlpha = 1;
+  }
+}
+function render() {
+  if (!S) return;
+  document.getElementById('dev').textContent = ({cuda:'NVIDIA GPU',mps:'Apple GPU',cpu:'CPU'})[S.device] || S.device;
+  document.getElementById('movenum').textContent = S.plies;
+  document.getElementById('caps').textContent = S.caps[0] + ' / ' + S.caps[1];
+  const ts = document.getElementById('turnstone'), tt = document.getElementById('turntext');
+  ts.className = 'stone-ico ' + (S.toMove === 'b' ? 'black' : 'white');
+  tt.textContent = (S.toMove === 'b' ? 'Black' : 'White') + (humanTurn() ? ' — you' : (S.over ? '' : ' — network'));
+  const share = Math.min(1, Math.max(0, (S.valueBlack / 1.5 + 1) / 2));
+  document.getElementById('evalfill').style.width = (share*100).toFixed(1) + '%';
+  document.getElementById('evalb').textContent = 'Black ' + Math.round(share*100) + '%';
+  document.getElementById('evalw').textContent = 'White ' + Math.round(100 - share*100) + '%';
+  const sb = S.scoreBlack;
+  document.getElementById('scoreread').textContent = (sb >= 0 ? 'B +' : 'W +') + Math.abs(sb).toFixed(1);
+  const banner = document.getElementById('banner');
+  if (S.over) {
+    const win = S.result[0];
+    const youWon = (win === 'B') === S.humanBlack;
+    banner.textContent = S.result + (youWon ? ' — you win!' : ' — the network wins.');
+    banner.style.display = 'block';
+  } else banner.style.display = 'none';
+  drawBoard();
+}
+async function act(path, extra) {
+  if (busy) return;
+  busy = true;
+  const think = document.getElementById('thinking');
+  think.style.display = 'block';
+  try { S = await api(path, extra); render(); }
+  catch (e) { console.error(e); }
+  finally { busy = false; think.style.display = 'none'; }
+}
+canvas.addEventListener('click', (ev) => {
+  if (!humanTurn() || busy) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left) / rect.width * CS, y = (ev.clientY - rect.top) / rect.height * CS;
+  const c = Math.round((x - M) / GRID), r = Math.round((y - M) / GRID);
+  if (r < 0 || r >= N || c < 0 || c >= N) return;
+  const p = r*N + c;
+  if (S.legal[p]) act('/api/move', { action: p });
+});
+canvas.addEventListener('mousemove', (ev) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left) / rect.width * CS, y = (ev.clientY - rect.top) / rect.height * CS;
+  const c = Math.round((x - M) / GRID), r = Math.round((y - M) / GRID);
+  const p = (r >= 0 && r < N && c >= 0 && c < N) ? r*N + c : -1;
+  if (p !== hoverPt) { hoverPt = p; drawBoard(); }
+});
+canvas.addEventListener('mouseleave', () => { hoverPt = -1; drawBoard(); });
+document.getElementById('btn-pass').addEventListener('click', () => humanTurn() && act('/api/move', { action: PASSA }));
+document.getElementById('btn-undo').addEventListener('click', () => act('/api/undo'));
+document.getElementById('btn-resign').addEventListener('click', () => act('/api/resign'));
+document.getElementById('btn-new').addEventListener('click', () =>
+  act('/api/new', { color: +document.getElementById('sel-color').value }));
+document.getElementById('sel-color').addEventListener('change', () =>
+  act('/api/new', { color: +document.getElementById('sel-color').value }));
+document.getElementById('chk-own').addEventListener('change', drawBoard);
+
+/* ---- ponder polling: the server searches on the human's turn; we fetch its
+   top-3 reads for the hint overlay / status line ---- */
+function coordName(a) { return a === PASSA ? 'pass' : 'ABCDEFGHJ'[a % N] + (N - ((a / N) | 0)); }
+function updateHintPanel() {
+  const hl = document.getElementById('hintlist'), pi = document.getElementById('ponderinfo');
+  const hintsOn = document.getElementById('chk-hints').checked;
+  const fresh = humanTurn() && H && S && H.plies === S.plies;
+  const hints = fresh && hintsOn ? H.hints : [];
+  hl.innerHTML = hints.map((h, i) =>
+    '<span><b>' + (i + 1) + '</b>' + coordName(h.a) + ' ' + Math.round(h.win * 100) + '%</span>').join('');
+  pi.textContent = fresh && H.sims > 0
+    ? 'thinking on your turn… ' + H.sims + ' sims (until you move)' : '';
+}
+let polling = false;
+setInterval(async () => {
+  const want = document.getElementById('chk-ponder').checked ||
+               document.getElementById('chk-hints').checked;
+  if (!S || S.over || !humanTurn() || !want) {
+    if (H) { H = null; updateHintPanel(); drawBoard(); }
+    return;
+  }
+  if (busy || polling) return;
+  polling = true;
+  try {
+    const r = await fetch('/api/hints', { method: 'POST', body: JSON.stringify(opts()) });
+    H = await r.json();
+    updateHintPanel();
+    if (document.getElementById('chk-hints').checked) drawBoard();
+  } catch (e) {}
+  finally { polling = false; }
+}, 400);
+document.getElementById('chk-hints').addEventListener('change', () => { updateHintPanel(); drawBoard(); });
+document.getElementById('chk-ponder').addEventListener('change', updateHintPanel);
+act('/api/state');
+</script>

@@ -50,6 +50,9 @@ params:
     e_clip: 0.2
     clip_value: False
     critic_coef: 1
+    # NOTE: 4096 actors and/or minibatch >=4096 with this 27.5M net either
+    # OOM (torch activations + XLA peaks collide) or stall 40+ min in
+    # jit/cudnn autotune at ~30GB. 2048/2048 is measured-good: 15s/epoch.
     num_actors: 2048
     horizon_length: 16
     minibatch_size: 2048
