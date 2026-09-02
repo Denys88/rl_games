@@ -23,9 +23,18 @@ dependencies = [
 [project.optional-dependencies]
 atari = ["ale-py>=0.8", "AutoROM[accept-rom-license]>=0.4.2"]
 mujoco = ["mujoco>=3.0.0", "imageio"]
-# envpool 1.2.5 is the first release verified against numpy 2.x (declares
-# numpy>=1.19 with no upper pin); releases <=1.1.x predate numpy 2.0.
-envpool = ["envpool>=1.2.6"]
+# envpool 1.2.6 (randomized MyoSuite resets, envpool#432) ships wheels for
+# Python >= 3.12 only; Python 3.11 falls back to 1.2.5 (first release
+# verified against numpy 2.x), whose MyoSuite resets are deterministic --
+# see docs/MYOSUITE.md. The <1.2.6 cap on the 3.11 fork is explicit, not
+# required: 1.2.6 is Requires-Python >= 3.12 with no sdist, so 3.11 can
+# never resolve it; the cap also keeps 3.11 on 1.2.5 should a later 1.2.x
+# ship cp311 wheels (revisit then). Drop the fallback once the project
+# floor moves to 3.12 (currently held at 3.11 for Isaac Lab / Isaac Sim 5.1).
+envpool = [
+    "envpool>=1.2.6; python_version >= '3.12'",
+    "envpool>=1.2.5,<1.2.6; python_version < '3.12'",
+]
 # pufferlib releases up to 3.0.0 pin numpy<2.0 and gymnasium<=0.29.1, which
 # conflicts with this project's floors, so it cannot be a resolvable extra yet.
 # pufferlib 4.0 drops those pins (core deps: torch>=2.9, unpinned numpy) --

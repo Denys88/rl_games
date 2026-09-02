@@ -1,8 +1,12 @@
 """EnvPool vectorized environment wrapper for rl_games.
 
-Uses envpool's native gymnasium API. Requires envpool >= 1.2.6 — the first
-release verified against numpy 2.x (CartPole, HalfCheetah and the rl_games
-MuJoCo training path all confirmed working on envpool 1.2.6 + numpy 2.4.4).
+Uses envpool's native gymnasium API. Requires envpool >= 1.2.6 on Python
+3.12+ (randomized MyoSuite resets; wheels start at cp312) with an envpool
+1.2.5 fallback on Python 3.11 — both verified against numpy 2.x: 1.2.6 +
+numpy 2.4.4 (CartPole, HalfCheetah and the rl_games MuJoCo training path),
+1.2.5 + numpy 2.4.6 (Linux, Python 3.11, HalfCheetah training path) and
+1.2.5 on Apple Silicon (the MPS results in docs/ENVPOOL.md). See
+docs/ENVPOOL.md for the install matrix.
 
 Supported features that can be passed via env_config:
     env_name (str): Required. envpool task ID (e.g. "Ant-v4", "Pong-v5",
@@ -18,17 +22,54 @@ Supported features that can be passed via env_config:
         and Atari envs (envpool >= 1.1.1).
     from_pixels (bool): MuJoCo only. Use rendered pixel observations instead
         of state. Available in envpool >= 1.1.1.
+    allow_deterministic_resets (bool): MyoSuite only. envpool < 1.2.6 resets
+        MyoSuite tasks without target randomization (envpool#432), so the
+        wrapper refuses them; True proceeds with a warning (evaluation and
+        debugging on 1.2.5, not training).
     Any other kwargs are passed through to envpool.make_gymnasium().
 """
 from rl_games.common.ivecenv import IVecEnv
 import gymnasium
 import numpy as np
+import re
+import warnings
 
 
 def _flatten_dict_obs(obs):
     """Flatten a dict of batched arrays to a single (batch, total_dim) array."""
     parts = [v.reshape(v.shape[0], -1) for v in obs.values()]
     return np.column_stack(parts)
+
+
+def _version_tuple(version):
+    """Leading numeric fields of a version string, suffix-tolerant: '1.2.6rc1' -> (1, 2, 6)."""
+    return tuple(int(p) for p in re.findall(r'\d+', version)[:3])
+
+
+def _is_myosuite(env_name):
+    """True for envpool MyoSuite ids: 'MyoSuite/<task>' and the bare '<task>' alias (myo*/Myo*)."""
+    return env_name.startswith('MyoSuite/') or env_name.lower().startswith('myo')
+
+
+def _check_myosuite_resets(envpool_version, env_name, allow_deterministic_resets=False):
+    """Refuse MyoSuite tasks on envpool < 1.2.6, whose resets are deterministic.
+
+    envpool <= 1.2.5 resets MyoSuite tasks without state/target randomization
+    (envpool#432): a policy trained on it silently fits one fixed target and
+    the training reward overstates real-task performance. Refuse rather than
+    mistrain; `allow_deterministic_resets` (env_config) downgrades the error
+    to a warning for evaluation and debugging on 1.2.5. No-op for other ids.
+    """
+    if not _is_myosuite(env_name) or _version_tuple(envpool_version) >= (1, 2, 6):
+        return
+    fact = (f"envpool {envpool_version} resets MyoSuite tasks deterministically (no target "
+            f"randomization, envpool#432): training fits one fixed target and overstates "
+            f"real-task reward")
+    if not allow_deterministic_resets:
+        raise RuntimeError(f"{fact}; install envpool >= 1.2.6 (Python >= 3.12) or set "
+                           f"env_config allow_deterministic_resets: true to proceed anyway")
+    warnings.warn(f"{fact}; allow_deterministic_resets is set, proceeding (evaluation and "
+                  f"debugging only)", RuntimeWarning, stacklevel=2)
 
 
 class Envpool(IVecEnv):
@@ -40,6 +81,8 @@ class Envpool(IVecEnv):
         self.has_lives = kwargs.pop('has_lives', False)
         self.use_dict_obs_space = kwargs.pop('use_dict_obs_space', False)
         self.flatten_obs = kwargs.pop('flatten_obs', False)
+        _check_myosuite_resets(envpool.__version__, env_name,
+                               kwargs.pop('allow_deterministic_resets', False))
 
         self.env = envpool.make_gymnasium(
             env_name,
