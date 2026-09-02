@@ -267,3 +267,15 @@ def test_discrete_scheduler_kl_respects_local_mode():
     stub = types.SimpleNamespace(multi_gpu=False, multi_gpu_scheduler_kl='global',
                                  world_size=1)
     assert float(A2CBase._kl_for_lr_schedule(stub, torch.tensor(0.03))) == pytest.approx(0.03)
+
+
+def test_old_gym_wrapper_is_a_stub_with_a_migration_pointer():
+    """The name imports; constructing it raises with the env-side contract (no alias keeps
+    the removed, never-working wrapper alive)."""
+    import pytest
+    from rl_games.common.wrappers import OldGymWrapper
+
+    with pytest.raises(RuntimeError, match="removed in rl_games 2.0.0") as excinfo:
+        OldGymWrapper(object())
+    assert "MIGRATING_TO_2.0.md" in str(excinfo.value)
+    assert "terminated, truncated" in str(excinfo.value)

@@ -720,3 +720,18 @@ class DiscretizeActions(gym.ActionWrapper):
         idx = np.asarray(action, dtype=np.int64)
         return np.array([g[i] for g, i in zip(self._grids, idx)],
                         dtype=self._dtype)
+
+
+class OldGymWrapper:
+    """Removed in 2.0.0; the name stays so upgraders get the migration pointer.
+
+    The wrapper could not wrap a real old-gym env (gym.spaces fell through
+    unconverted, time-limit endings were reported as terminations), so no
+    alias keeps it working. Constructing it raises with the env-side contract.
+    """
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError(
+            "OldGymWrapper was removed in rl_games 2.0.0. Implement the gymnasium API on the "
+            "env side -- reset() -> (obs, info), step() -> (obs, reward, terminated, truncated, "
+            "info) -- see the 2.0.0 release notes and docs/MIGRATING_TO_2.0.md.")
