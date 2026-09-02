@@ -9,20 +9,7 @@ from rl_games.algos_torch.running_mean_std import RunningMeanStd, RunningMeanStd
 from rl_games.common import common_losses
 from rl_games.common import datasets
 from rl_games.common import schedulers
-
-
-def resolve_cv_init_count(agent_config, central_value_config):
-    """Explicit normalize_input_init_count for the central value net.
-
-    Order: central_value_config key, else the agent's top-level key (an
-    explicit user value keeps seeding BOTH normalizers, as documented), else
-    None -- CentralValueTrain then derives its default from its own geometry
-    (cv_mini_epochs * horizon_length * num_actors). Only the broken *default*
-    forwarding was removed; explicit user intent still propagates.
-    """
-    return central_value_config.get(
-        'normalize_input_init_count',
-        agent_config.get('normalize_input_init_count', None))
+from rl_games.common.a2c_common import resolve_obs_norm_init_count
 
 
 class CentralValueTrain(nn.Module):
@@ -34,15 +21,14 @@ class CentralValueTrain(nn.Module):
         ddp_find_unused_parameters=False
     ):
         nn.Module.__init__(self)
-        # Resolve the obs-normalizer prior from the CENTRAL VALUE geometry
-        # (its own mini_epochs and env batch), not the actor's: forwarding the
-        # actor count overweighted the prior by actor_mini_epochs * num_agents
-        # / cv_mini_epochs -- exactly 27x on the stock 27-agent SMAC config.
-        # Explicit central_value_config values pass through unchanged.
-        from rl_games.common.a2c_common import resolve_obs_norm_init_count
+        # normalize_input_init_count: the central_value_config key, else the
+        # agent's RAW top-level key (passed in; never its resolved count, which
+        # overweighted the prior by actor_mini_epochs * num_agents /
+        # cv_mini_epochs -- 27x on the stock 27-agent SMAC config), else one
+        # central value epoch: cv mini_epochs * horizon * num_actors
         normalize_input_init_count = resolve_obs_norm_init_count(
-            normalize_input_init_count, config['mini_epochs'],
-            horizon_length * num_actors)
+            config.get('normalize_input_init_count', normalize_input_init_count),
+            config['mini_epochs'], horizon_length * num_actors)
 
         self.ppo_device = ppo_device
         self.mixed_precision = config.get('mixed_precision', torch_ext.default_mixed_precision())

@@ -155,6 +155,8 @@ silently training rank-divergent.
 
 ### `ddp_find_unused_parameters`
 
+**Type:** bool | **Default:** `False` | **Applies:** multi-GPU PPO runs under `multi_gpu_grad_sync: 'ddp'` (agent and central value net)
+
 Passed through to `DistributedDataParallel(find_unused_parameters=...)` for
 both DDP wrappers under `multi_gpu_grad_sync: 'ddp'`: the top-level key
 (default `False`) applies to the PPO agent's model and is the fallback for the

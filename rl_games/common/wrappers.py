@@ -606,8 +606,8 @@ def convert_space(space):
     Recreates each space as a proper gymnasium instance; unknown types pass
     through unchanged. Extracted from the removed OldGymWrapper -- the old-gym
     adapter itself is gone (it could not actually wrap a genuine old-gym env:
-    real gym.spaces instances fell through unconverted), but this utility is
-    still used by the ManiSkill adapter.
+    real gym.spaces instances fell through unconverted). No in-tree callers
+    remain.
     """
     if isinstance(space, spaces.Box):
         return spaces.Box(

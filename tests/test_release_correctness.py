@@ -49,11 +49,18 @@ def _make_cv_train(network, horizon=8, num_actors=4, cv_mini_epochs=2,
         normalize_input_init_count=explicit_count)
 
 
-def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None):
+_ABSENT = object()
+
+
+def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None,
+                           cv_key=_ABSENT):
+    """`explicit` plays the agent's raw top-level key; `cv_key` the
+    central_value_config key."""
     net = _CaptureNetwork()
+    extra = {} if cv_key is _ABSENT else {'normalize_input_init_count': cv_key}
     with pytest.raises(_Captured):
         _make_cv_train(net, horizon, num_actors, cv_mini_epochs,
-                       explicit_count=explicit)
+                       explicit_count=explicit, **extra)
     return net.state_config['normalize_input_init_count']
 
 
@@ -214,17 +221,31 @@ def test_cv_test_network_strict_loads_pre_2_0_checkpoint():
 
 
 def test_cv_init_count_explicit_fallback_order():
-    """Explicit counts: central_value_config key > top-level key > None."""
-    from rl_games.algos_torch.central_value import resolve_cv_init_count
-
+    """Explicit counts: central_value_config key > top-level key > the CV's
+    own geometry default; resolved inside CentralValueTrain."""
     # top-level explicit value still reaches the CV (backward compat)
-    assert resolve_cv_init_count({'normalize_input_init_count': 81920}, {}) == 81920
+    assert _capture_cv_init_count(4, 128, 8, explicit=81920) == 81920
     # the CV-scoped key wins over the top-level one
-    assert resolve_cv_init_count(
-        {'normalize_input_init_count': 81920},
-        {'normalize_input_init_count': 123}) == 123
-    # nothing explicit -> None -> CentralValueTrain derives its own default
-    assert resolve_cv_init_count({}, {}) is None
+    assert _capture_cv_init_count(4, 128, 8, explicit=81920, cv_key=123) == 123
+    # nothing explicit -> the CV derives its own default
+    assert _capture_cv_init_count(4, 128, 8) == 4 * 128 * 8
+
+
+def test_remove_batch_dim_rebuilds_maniskill_spaces():
+    """ManiSkill vector envs expose batched Box / Dict-of-Box spaces;
+    remove_batch_dim rebuilds them per-env (shape, bounds, dtype) on its own,
+    so ManiskillEnv needs no second rebuild through convert_space."""
+    import numpy as np
+    from gymnasium import spaces
+    from rl_games.envs.maniskill import remove_batch_dim
+
+    box = spaces.Box(low=-np.ones((16, 7), np.float32), high=np.ones((16, 7), np.float32))
+    rgb = spaces.Box(low=0, high=255, shape=(16, 64, 64, 3), dtype=np.uint8)
+    out = remove_batch_dim(spaces.Dict({'state': box, 'rgb': rgb}))
+    assert isinstance(out, spaces.Dict)
+    assert out['state'] == spaces.Box(low=-np.ones(7, np.float32), high=np.ones(7, np.float32))
+    assert out['rgb'] == spaces.Box(low=0, high=255, shape=(64, 64, 3), dtype=np.uint8)
+    assert remove_batch_dim(box).dtype == np.float32
 
 
 def test_discrete_scheduler_kl_respects_local_mode():
