@@ -23,9 +23,10 @@ class CentralValueTrain(nn.Module):
         nn.Module.__init__(self)
         # normalize_input_init_count: the central_value_config key, else the
         # agent's RAW top-level key (passed in; never its resolved count, which
-        # overweighted the prior by actor_mini_epochs * num_agents /
-        # cv_mini_epochs -- 27x on the stock 27-agent SMAC config), else one
-        # central value epoch: cv mini_epochs * horizon * num_actors
+        # overweights the prior by actor_mini_epochs * num_agents /
+        # cv_mini_epochs), else one central value epoch: cv mini_epochs *
+        # horizon * num_actors -- stats accrue over EVERY mini-epoch (no
+        # freeze), hence the mini_epochs factor
         normalize_input_init_count = resolve_obs_norm_init_count(
             config.get('normalize_input_init_count', normalize_input_init_count),
             config['mini_epochs'], horizon_length * num_actors)
@@ -288,16 +289,6 @@ class CentralValueTrain(nn.Module):
                 # Use mixed precision for training
                 with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
                     loss += self.train_critic(self.dataset[i])
-
-            if self.normalize_input:
-                # Intended: freeze stats after one mini-epoch. Currently a
-                # no-op — train_critic() calls self.train() per minibatch,
-                # which re-enables updates — so stats accrue over EVERY
-                # mini-epoch. The default normalize_input_init_count in
-                # __init__ deliberately matches that actual accounting
-                # (cv mini_epochs * horizon * num_actors); if this freeze is
-                # ever fixed, drop the mini_epochs factor there too.
-                self.model.running_mean_std.eval()
 
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
