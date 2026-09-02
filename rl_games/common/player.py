@@ -27,7 +27,8 @@ class BasePlayer(object):
         self.balance_env_rewards = self.player_config.get('balance_env_rewards', False)
 
         if self.env_info is None:
-            use_vecenv = self.player_config.get('use_vecenv', False)
+            use_vecenv = self.player_config.get(
+                'use_vecenv', self._default_use_vecenv(self.env_name))
             if use_vecenv:
                 print('[BasePlayer] Creating vecenv: ', self.env_name)
                 self.env = vecenv.create_vec_env(
@@ -263,6 +264,16 @@ class BasePlayer(object):
         if self.normalize_input and 'running_mean_std' in weights:
             self.model.running_mean_std.load_state_dict(
                 weights['running_mean_std'])
+
+    @staticmethod
+    def _default_use_vecenv(env_name):
+        """Play through vecenv when the env is registered without an env_creator
+        (envpool, pufferlib, the plain GYMNASIUM entries, config-registered
+        vecenv_type envs). Creator-based and unregistered names take the classic
+        create_env() path, so a subclass override runs; explicit
+        player.use_vecenv wins."""
+        registration = env_configurations.configurations.get(env_name)
+        return registration is not None and 'env_creator' not in registration
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)

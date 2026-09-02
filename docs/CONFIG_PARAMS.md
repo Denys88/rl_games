@@ -54,12 +54,16 @@ config:
 |-------|------------|----------|------|
 | `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | rl_games' original adaptive stepping (the old name marks its seniority; rsl-rl adopted the same mechanism) — tracks on-policy KL swings within a rollout. Requires reliable per-minibatch KL estimates: use large minibatches (16k+ on vectorized continuous control). |
 | `standard` | once per mini-epoch | epoch-mean KL | Smoother; consider when minibatches are small (noisy KL estimates make per-minibatch stepping oscillate between the band edges). |
-| `standard_epoch` | once per full epoch | epoch-mean KL | Coarsest. |
 
 The practical failure modes to know: `per_minibatch` with *small* minibatches
 rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
 size, not the schedule); `standard` on tasks with fast on-policy KL swings
 adapts too slowly and can leave measurable reward on the table.
+
+**Scope:** `schedule_type` applies to continuous PPO only. Discrete PPO always
+steps its adaptive scheduler once per mini-epoch on the mean KL (i.e.
+`standard`-like) and ignores this key; `per_minibatch` stepping for discrete is
+a possible future addition.
 
 Multi-GPU note: `per_minibatch` performs a KL all-reduce and an LR broadcast
 per split per mini-epoch; `standard` does one per mini-epoch. On a single
@@ -130,7 +134,8 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
 
 - `'ddp'`: gradients are averaged by `DistributedDataParallel` during
   backward (bucketed, overlapped with compute). The training forward runs
-  through a lazily created DDP wrapper (`train_model()`); rollout inference,
+  through the DDP wrapper built once by `setup_multi_gpu()` at the start of
+  `train()` and exposed via `train_model()`; rollout inference,
   checkpoints and attribute access keep using the raw model, so state_dict
   keys are unchanged. The default.
 - `'flat_allreduce'`: the pre-2.x manual path — one flat all-reduce of all
@@ -139,26 +144,52 @@ parity — pooled 19.46 ± 0.38 vs broadcast 18.96 ± 0.28, paired p = 0.398.
   through `self.model` directly; scheduled for removal.
 
 2-GPU A/B (Isaac Humanoid, 16k envs/rank): bit-identical gradients between
-modes. Throughput depends on model size: on the default small policy net
-`'flat_allreduce'` is faster (~4% eager, ~2.5% compiled — `DDP(compiled)`
-forfeits Dynamo's DDPOptimizer overlap), while at ~11M params `'ddp'` is
-ahead ~1% (97.4% scaling) and its advantage grows with model size and rank
-count. Pairing `'ddp'` with `multi_gpu_scheduler_kl: 'local'` recovers the
-small-net gap (+1.6% net over flat). A multi-GPU run that never routes its training forward through
+modes. Throughput with working GPU peer-to-peer: `'ddp'` is +1-3% step and
+total fps at the default `[512, 256, 128]` net on GPU-pipeline sims, within
+noise on CPU-bound sims and on the ~44 MB-gradient net, and never
+meaningfully worse; not measured beyond 2 GPUs. Only on host-staged links
+without P2P can `'flat_allreduce'` come out ~4% ahead on small nets. A
+multi-GPU run that never routes its training forward through
 `train_model()` under `'ddp'` raises at the optimizer step instead of
 silently training rank-divergent.
 
+### `ddp_find_unused_parameters`
+
+**Type:** bool | **Default:** `False` | **Applies:** multi-GPU PPO runs under `multi_gpu_grad_sync: 'ddp'` (agent and central value net)
+
+Passed through to `DistributedDataParallel(find_unused_parameters=...)` for
+both DDP wrappers under `multi_gpu_grad_sync: 'ddp'`: the top-level key
+(default `False`) applies to the PPO agent's model and is the fallback for the
+central value net; `central_value_config.ddp_find_unused_parameters` overrides
+it for the central value net alone. Set it to `True` when a network contains
+heads whose outputs its forward discards — with the default, DDP's reducer
+errors at the start of the second iteration because those parameters never
+receive gradients. Leave it off otherwise: unused-parameter discovery costs a
+graph walk every iteration.
+
+```yaml
+config:
+  ddp_find_unused_parameters: True      # agent model; the central value net inherits it
+  central_value_config:
+    ddp_find_unused_parameters: False   # central value net only; overrides the top-level key
+```
+
+**Scope:** PPO agent and central value net under `multi_gpu_grad_sync: 'ddp'`;
+the `central_value_config` key overrides the top-level one. No effect under
+`'flat_allreduce'`.
+
 ### `multi_gpu_scheduler_kl`
 
-**Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU runs with `schedule_type: per_minibatch`
+**Type:** str | **Default:** `'global'` | **Options:** `'global'`, `'local'` | **Applies:** multi-GPU PPO runs (continuous: `schedule_type: per_minibatch`; discrete: its per-mini-epoch stepping)
 
 - `'global'`: the adaptive-LR scheduler sees the cross-rank mean KL (one
-  all-reduce per minibatch). The default and historical behavior.
-- `'local'`: the scheduler uses rank 0's local KL estimate, dropping one of
-  the per-minibatch collectives. The KL sample size the scheduler sees drops
+  all-reduce per scheduler step). The default and historical behavior.
+- `'local'`: the scheduler uses rank 0's local KL estimate, dropping one
+  collective per scheduler step. The KL sample size the scheduler sees drops
   by `world_size`; lr is broadcast from rank 0 either way, so ranks never
   diverge. Worth trying when per-rank minibatches are large and profiling
-  shows the update phase rendezvous-bound.
+  shows the update phase rendezvous-bound. For discrete PPO under `'local'`
+  the logged per-mini-epoch KL is rank 0's local mean as well.
 
 ### `capability_manifest`
 
@@ -216,19 +247,25 @@ config:
   # omit or null                      # auto: one PPO epoch of samples (default)
 ```
 
-**Default (`null`/absent):** `mini_epochs * horizon_length * num_actors *
-num_agents` — one PPO epoch of *counted* samples (the normalizer updates on
-every training minibatch, so its count accrues `mini_epochs`× the rollout size
-per epoch; the derivation matches that accounting). The prior then fades after
-roughly one epoch. Values below 1 are rejected (a 0 or negative count poisons
+**Default (`null`/absent):** for the agents' input normalizer,
+`mini_epochs * horizon_length * num_actors * num_agents` — one PPO epoch of
+*counted* samples (the normalizer updates on every training minibatch, so its
+count accrues `mini_epochs`× the rollout size per epoch; the derivation matches
+that accounting). The central value network derives its default from its **own**
+geometry instead: `central_value_config.mini_epochs * horizon_length *
+num_actors` (its state batch is per-env, not per-agent). The prior then fades
+after roughly one epoch. Values below 1 are rejected (a 0 or negative count poisons
 the running stats).
 
 **Multi-GPU:** with pooled stats sync, the first merge sums every rank's seeded
 prior, so the effective prior weight is exactly one *global* epoch — consistent
 with the single-GPU behavior.
 
-**Scope and follow-ups:** this seeds the *input* normalizer of the PPO agents
-and the central value network. `value_mean_std` (`normalize_value`) has the
+**Scope and follow-ups:** an explicit top-level value seeds the *input*
+normalizer of the PPO agents **and** the central value network (as before);
+`normalize_input_init_count` inside `central_value_config` overrides it for the
+central value net alone. Only the *defaults* are derived per-network (agent and
+CV geometry respectively, see above). `value_mean_std` (`normalize_value`) has the
 same cold start and is a planned follow-up; SAC is unaffected. Note the warm
 start damps the first-epoch stat jump but does not change the update scheme
 itself — stats still drift within each epoch (updated per minibatch over the

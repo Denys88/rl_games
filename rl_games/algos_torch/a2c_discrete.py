@@ -67,7 +67,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
                 'zero_rnn_on_done': self.zero_rnn_on_done,
-                'normalize_input_init_count': self.normalize_input_init_count
+                'ddp_find_unused_parameters': self.ddp_find_unused_parameters,
+                'normalize_input_init_count': self.config.get('normalize_input_init_count'),
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 

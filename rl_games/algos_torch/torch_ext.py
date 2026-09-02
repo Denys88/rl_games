@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 
-def wrap_model_ddp(model, device):
+def wrap_model_ddp(model, device, find_unused_parameters=False):
     """DDP wrapper for the training forward pass only: gradients are bucket-averaged
     across ranks during backward; running-stat buffers stay under the trainer's own
     sync policy (broadcast_buffers=False)."""
@@ -19,8 +19,14 @@ def wrap_model_ddp(model, device):
         # model): DDP hooks never fire on such a forward and ranks would
         # silently diverge. Set here, checked and cleared per optimizer step.
         def forward(self, *args, **kwargs):
-            self.forward_seen = True
-            return super().forward(*args, **kwargs)
+            out = super().forward(*args, **kwargs)
+            # Mark only a COMPLETED, grad-enabled, sync-enabled training
+            # forward: a no-grad or no_sync() forward installs no reduction
+            # hooks, so counting it would let a later raw-model backward slip
+            # past the guard and step with unsynchronized gradients.
+            if torch.is_grad_enabled() and getattr(self, 'require_backward_grad_sync', True):
+                self.forward_seen = True
+            return out
 
     dev = torch.device(device)
     ddp = _TrackedDDP(
@@ -28,6 +34,7 @@ def wrap_model_ddp(model, device):
         device_ids=[dev.index] if dev.type == 'cuda' else None,
         broadcast_buffers=False,
         gradient_as_bucket_view=True,
+        find_unused_parameters=find_unused_parameters,
     )
     ddp.forward_seen = False
     return ddp

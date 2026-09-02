@@ -600,73 +600,34 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
         return observation * self.mask
 
 
-class OldGymWrapper(gym.Env):
-    """Adapt an old-gym OR gymnasium env to the gymnasium API.
+def convert_space(space):
+    """Recursively rebuild a (possibly structured) gymnasium space.
 
-    Accepts an inner env speaking either API (4-tuple step / bare reset, or
-    5-tuple step / (obs, info) reset) and always emits gymnasium-style
-    results, flattening structured observation/action spaces on the way.
-    No in-tree instance consumer since MyoSuite proved gymnasium-native with
-    flat spaces; kept one release for downstream users of the old contract.
+    Recreates each space as a proper gymnasium instance; unknown types pass
+    through unchanged. Extracted from the removed OldGymWrapper -- the old-gym
+    adapter itself is gone (it could not actually wrap a genuine old-gym env:
+    real gym.spaces instances fell through unconverted). No in-tree callers
+    remain.
     """
-    def __init__(self, env):
-        self.env = env
-        self.observation_space = self.convert_space(env.observation_space)
-        self.action_space = self.convert_space(env.action_space)
-
-    @staticmethod
-    def convert_space(space):
-        """Recursively convert/copy gymnasium spaces.
-
-        Since we now use gymnasium as gym, this mostly just recreates
-        the spaces to ensure they're proper gymnasium spaces.
-        """
-        if isinstance(space, spaces.Box):
-            return spaces.Box(
-                low=space.low,
-                high=space.high,
-                shape=space.shape,
-                dtype=space.dtype
-            )
-        elif isinstance(space, spaces.Discrete):
-            return spaces.Discrete(n=space.n)
-        elif isinstance(space, spaces.MultiDiscrete):
-            return spaces.MultiDiscrete(nvec=space.nvec)
-        elif isinstance(space, spaces.MultiBinary):
-            return spaces.MultiBinary(n=space.n)
-        elif isinstance(space, spaces.Tuple):
-            return spaces.Tuple([OldGymWrapper.convert_space(s) for s in space.spaces])
-        elif isinstance(space, spaces.Dict):
-            return spaces.Dict({k: OldGymWrapper.convert_space(s) for k, s in space.spaces.items()})
-        else:
-            # Return space as-is if unknown type
-            return space
-
-    def reset(self, **kwargs):
-        result = self.env.reset(**kwargs)
-        if isinstance(result, tuple):
-            observation, info = result
-        else:
-            observation, info = result, {}
-        observation = spaces.flatten(self.observation_space, observation)
-        return observation, info
-
-    def step(self, action):
-        action = spaces.unflatten(self.action_space, action)
-        result = self.env.step(action)
-        if len(result) == 5:
-            observation, reward, terminated, truncated, info = result
-        else:
-            observation, reward, done, info = result
-            terminated, truncated = done, False
-        observation = spaces.flatten(self.observation_space, observation)
-        return observation, reward, terminated, truncated, info
-
-    def render(self):
-        return self.env.render()
-
-    def close(self):
-        return self.env.close()
+    if isinstance(space, spaces.Box):
+        return spaces.Box(
+            low=space.low,
+            high=space.high,
+            shape=space.shape,
+            dtype=space.dtype
+        )
+    elif isinstance(space, spaces.Discrete):
+        return spaces.Discrete(n=space.n)
+    elif isinstance(space, spaces.MultiDiscrete):
+        return spaces.MultiDiscrete(nvec=space.nvec)
+    elif isinstance(space, spaces.MultiBinary):
+        return spaces.MultiBinary(n=space.n)
+    elif isinstance(space, spaces.Tuple):
+        return spaces.Tuple([convert_space(s) for s in space.spaces])
+    elif isinstance(space, spaces.Dict):
+        return spaces.Dict({k: convert_space(s) for k, s in space.spaces.items()})
+    else:
+        return space
 
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None, **kwargs):
@@ -759,3 +720,18 @@ class DiscretizeActions(gym.ActionWrapper):
         idx = np.asarray(action, dtype=np.int64)
         return np.array([g[i] for g, i in zip(self._grids, idx)],
                         dtype=self._dtype)
+
+
+class OldGymWrapper:
+    """Removed in 2.0.0; the name stays so upgraders get the migration pointer.
+
+    The wrapper could not wrap a real old-gym env (gym.spaces fell through
+    unconverted, time-limit endings were reported as terminations), so no
+    alias keeps it working. Constructing it raises with the env-side contract.
+    """
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError(
+            "OldGymWrapper was removed in rl_games 2.0.0. Implement the gymnasium API on the "
+            "env side -- reset() -> (obs, info), step() -> (obs, reward, terminated, truncated, "
+            "info) -- see the 2.0.0 release notes and docs/MIGRATING_TO_2.0.md.")
