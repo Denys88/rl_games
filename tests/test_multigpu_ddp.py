@@ -261,3 +261,89 @@ def test_central_value_network_trains_under_default_ddp():
         results = mgr.dict()
         mp.spawn(_cv_dead_head_worker, args=(1, port, results), nprocs=1, join=True)
         assert results[0] is True
+
+
+# ---- ddp_find_unused_parameters plumbing ----
+
+class _CvNet(_TwoHeadNet):
+    def is_rnn(self):
+        return False
+
+
+class _StubNetwork:
+    """CentralValueTrain network stand-in: build() returns a plain module."""
+
+    def build(self, cfg):
+        return _CvNet()
+
+
+def _make_cv(top_level, cv_key=None, multi_gpu=False):
+    """CentralValueTrain given the agent's top-level ddp_find_unused_parameters
+    and, when cv_key is not None, the central_value_config key."""
+    from rl_games.algos_torch.central_value import CentralValueTrain
+
+    config = {
+        'mini_epochs': 1, 'normalize_input': False, 'learning_rate': 1e-3,
+        'clip_value': False, 'mixed_precision': False, 'lr_schedule': None,
+        'minibatch_size': 4,
+    }
+    if cv_key is not None:
+        config['ddp_find_unused_parameters'] = cv_key
+    return CentralValueTrain(
+        state_shape=(4,), value_size=1, ppo_device='cpu', num_agents=1,
+        horizon_length=2, num_actors=2, num_actions=2, seq_length=2,
+        normalize_value=False, network=_StubNetwork(), config=config,
+        writter=None, max_epochs=1, multi_gpu=multi_gpu, zero_rnn_on_done=True,
+        ddp_find_unused_parameters=top_level)
+
+
+def test_ddp_find_unused_parameters_resolution():
+    """central_value_config key > top-level key > False; A2CBase reads the
+    top-level key from its config."""
+    assert _make_cv(top_level=False).ddp_find_unused_parameters is False
+    assert _make_cv(top_level=True).ddp_find_unused_parameters is True
+    assert _make_cv(top_level=True, cv_key=False).ddp_find_unused_parameters is False
+    assert _make_cv(top_level=False, cv_key=True).ddp_find_unused_parameters is True
+
+    from tests.test_ppo_masking import make_ppo_agent
+    agent, _ = make_ppo_agent(ddp_find_unused_parameters=True)
+    assert agent.ddp_find_unused_parameters is True
+    agent, _ = make_ppo_agent()
+    assert agent.ddp_find_unused_parameters is False
+
+
+def _setup_multi_gpu_worker(rank, world_size, port, results):
+    import types
+    import torch.distributed as dist
+    from rl_games.common.a2c_common import A2CBase
+    dist.init_process_group(
+        'gloo', rank=rank, world_size=world_size,
+        init_method=f'tcp://127.0.0.1:{port}')
+    # CPU-only: setup_multi_gpu pins the rank's GPU before anything else
+    torch.cuda.set_device = lambda *_: None
+    out = {}
+    for top_level in (False, True):
+        agent = types.SimpleNamespace(
+            multi_gpu=True, local_rank=0, ppo_device='cpu',
+            multi_gpu_grad_sync='ddp', model=_TwoHeadNet(),
+            has_central_value=True, ddp_find_unused_parameters=top_level,
+            # the CV key carries the opposite value and must win there
+            central_value_net=_make_cv(top_level, cv_key=not top_level,
+                                       multi_gpu=True))
+        A2CBase.setup_multi_gpu(agent)
+        out[top_level] = (agent._ddp_model.find_unused_parameters,
+                          agent.central_value_net._ddp_model.find_unused_parameters)
+    results[rank] = out
+    dist.destroy_process_group()
+
+
+def test_setup_multi_gpu_plumbs_find_unused_parameters_to_both_wraps():
+    import torch.multiprocessing as mp
+    port = 33017 + os.getpid() % 1000
+    with mp.Manager() as mgr:
+        results = mgr.dict()
+        mp.spawn(_setup_multi_gpu_worker, args=(1, port, results), nprocs=1, join=True)
+        out = results[0]
+    # (agent-side DDP, central-value DDP)
+    assert out[True] == (True, False)
+    assert out[False] == (False, True)

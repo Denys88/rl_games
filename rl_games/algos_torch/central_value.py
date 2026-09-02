@@ -30,7 +30,8 @@ class CentralValueTrain(nn.Module):
     def __init__(
         self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors,
         num_actions, seq_length, normalize_value, network, config, writter, max_epochs,
-        multi_gpu, zero_rnn_on_done, normalize_input_init_count=None
+        multi_gpu, zero_rnn_on_done, normalize_input_init_count=None,
+        ddp_find_unused_parameters=False
     ):
         nn.Module.__init__(self)
         # Resolve the obs-normalizer prior from the CENTRAL VALUE geometry
@@ -63,7 +64,9 @@ class CentralValueTrain(nn.Module):
         self.__dict__['_ddp_model'] = None
         self.config = config
         self.normalize_input = config['normalize_input']
-        self.ddp_find_unused_parameters = config.get('ddp_find_unused_parameters', False)
+        # central_value_config key wins over the agent's top-level value
+        self.ddp_find_unused_parameters = config.get(
+            'ddp_find_unused_parameters', ddp_find_unused_parameters)
         self.zero_rnn_on_done = zero_rnn_on_done
 
         state_config = {

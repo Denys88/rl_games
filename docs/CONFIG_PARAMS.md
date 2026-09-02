@@ -155,13 +155,26 @@ silently training rank-divergent.
 
 ### `ddp_find_unused_parameters`
 
-`central_value_config` key (default `False`), passed through to
-`DistributedDataParallel(find_unused_parameters=...)` for the central value
-wrapper. Set it to `True` when a custom central-value network contains heads
-whose outputs its forward discards — with the default, DDP's reducer errors at
-the start of the second iteration because those parameters never receive
-gradients. Leave it off otherwise: unused-parameter discovery costs a graph
-walk every iteration.
+Passed through to `DistributedDataParallel(find_unused_parameters=...)` for
+both DDP wrappers under `multi_gpu_grad_sync: 'ddp'`: the top-level key
+(default `False`) applies to the PPO agent's model and is the fallback for the
+central value net; `central_value_config.ddp_find_unused_parameters` overrides
+it for the central value net alone. Set it to `True` when a network contains
+heads whose outputs its forward discards — with the default, DDP's reducer
+errors at the start of the second iteration because those parameters never
+receive gradients. Leave it off otherwise: unused-parameter discovery costs a
+graph walk every iteration.
+
+```yaml
+config:
+  ddp_find_unused_parameters: True      # agent model; the central value net inherits it
+  central_value_config:
+    ddp_find_unused_parameters: False   # central value net only; overrides the top-level key
+```
+
+**Scope:** PPO agent and central value net under `multi_gpu_grad_sync: 'ddp'`;
+the `central_value_config` key overrides the top-level one. No effect under
+`'flat_allreduce'`.
 
 ### `multi_gpu_scheduler_kl`
 

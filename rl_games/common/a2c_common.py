@@ -231,6 +231,7 @@ class A2CBase(BaseAlgorithm):
         if self.multi_gpu_scheduler_kl not in ('global', 'local'):
             raise ValueError(
                 f"multi_gpu_scheduler_kl must be 'global' or 'local', got '{self.multi_gpu_scheduler_kl}'")
+        self.ddp_find_unused_parameters = config.get('ddp_find_unused_parameters', False)
         self._ddp_model = None
         # cross-rank normalizer sync (see sync_running_stats); opt-out knob
         self.multi_gpu_sync_stats = config.get('multi_gpu_sync_stats', True)
@@ -593,7 +594,9 @@ class A2CBase(BaseAlgorithm):
             self.central_value_net.load_state_dict(model_params[1])
 
         if self.multi_gpu_grad_sync == 'ddp':
-            self._ddp_model = torch_ext.wrap_model_ddp(self.model, self.ppo_device)
+            self._ddp_model = torch_ext.wrap_model_ddp(
+                self.model, self.ppo_device,
+                find_unused_parameters=self.ddp_find_unused_parameters)
             print('Using DistributedDataParallel for gradient sync')
             if self.has_central_value:
                 self.central_value_net.setup_train_model()
