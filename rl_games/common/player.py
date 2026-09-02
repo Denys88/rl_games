@@ -267,14 +267,13 @@ class BasePlayer(object):
 
     @staticmethod
     def _default_use_vecenv(env_name):
-        """Play through vecenv when the registration ships no env_creator.
-
-        Vecenv-only registrations (envpool, pufferlib, the plain GYMNASIUM
-        entries) used to crash --play with KeyError: 'env_creator' -- a
-        regression from the UV migration, which re-registered 'envpool'
-        without the creator the original integration had.
-        """
-        return 'env_creator' not in env_configurations.configurations.get(env_name, {})
+        """Play through vecenv when the env is registered without an env_creator
+        (envpool, pufferlib, the plain GYMNASIUM entries, config-registered
+        vecenv_type envs). Creator-based and unregistered names take the classic
+        create_env() path, so a subclass override runs; explicit
+        player.use_vecenv wins."""
+        registration = env_configurations.configurations.get(env_name)
+        return registration is not None and 'env_creator' not in registration
 
     def create_env(self):
         return env_configurations.configurations[self.env_name]['env_creator'](**self.env_config)

@@ -96,8 +96,89 @@ def test_player_defaults_to_vecenv_without_env_creator():
     assert with_creator, 'expected at least one creator-based registration'
     assert BasePlayer._default_use_vecenv(with_creator[0]) is False
 
-    # unknown names fall through to vecenv, whose own error is actionable
-    assert BasePlayer._default_use_vecenv('no-such-env') is True
+    # unregistered names keep the classic path: a downstream subclass
+    # overriding create_env() under its own name must get its override
+    # consulted, not a KeyError from vecenv.create_vec_env
+    assert 'no-such-env' not in env_configurations.configurations
+    assert BasePlayer._default_use_vecenv('no-such-env') is False
+
+
+def test_player_config_registered_vecenv_type_env_defaults_to_vecenv():
+    """Configs that carry a top-level vecenv_type (the mjlab ones) register
+    their env_name at Runner.load time, before the player is built, so the
+    default still routes them through vecenv."""
+    from rl_games.common.player import BasePlayer
+    from rl_games.common import env_configurations
+    from rl_games.torch_runner import Runner
+
+    name = 'pytest-vecenv-only-env'
+    assert name not in env_configurations.configurations
+    try:
+        Runner().load({'params': {
+            'seed': 0, 'algo': {'name': 'a2c_continuous'},
+            'config': {'env_name': name, 'vecenv_type': 'MJLAB',
+                       'reward_shaper': {'scale_value': 1.0}}}})
+        assert env_configurations.configurations[name] == {'vecenv_type': 'MJLAB'}
+        assert BasePlayer._default_use_vecenv(name) is True
+    finally:
+        env_configurations.configurations.pop(name, None)
+
+
+def _downstream_player_params(env_name, **player):
+    return {
+        'model': {'name': 'continuous_a2c_logstd'},
+        'network': {
+            'name': 'actor_critic', 'separate': False,
+            'space': {'continuous': {
+                'mu_activation': 'None', 'sigma_activation': 'None',
+                'mu_init': {'name': 'default'},
+                'sigma_init': {'name': 'const_initializer', 'val': 0.0},
+                'fixed_sigma': True}},
+            'mlp': {'units': [8], 'activation': 'elu',
+                    'initializer': {'name': 'default'}},
+        },
+        'config': {'env_name': env_name, 'num_actors': 1,
+                   'device_name': 'cpu', 'player': player},
+    }
+
+
+def test_player_unregistered_env_reaches_create_env_override():
+    """Denys88's downstream case: a BasePlayer subclass overriding
+    create_env() under a name absent from env_configurations. The default
+    must take the classic path (override consulted); an explicit
+    player.use_vecenv still wins in both directions."""
+    import numpy as np
+    import gymnasium as gym
+    from rl_games.common.player import BasePlayer
+    from rl_games.common import env_configurations
+
+    class _Env:
+        observation_space = gym.spaces.Box(-1.0, 1.0, (3,), np.float32)
+        action_space = gym.spaces.Box(-1.0, 1.0, (2,), np.float32)
+
+    class _Player(BasePlayer):
+        def __init__(self, params):
+            self.create_env_calls = 0
+            super().__init__(params)
+
+        def create_env(self):
+            self.create_env_calls += 1
+            return _Env()
+
+    name = 'pytest-downstream-env'
+    assert name not in env_configurations.configurations
+    player = _Player(_downstream_player_params(name))
+    assert player.create_env_calls == 1
+    assert player.env_info['observation_space'].shape == (3,)
+
+    # explicit use_vecenv: True wins: vecenv path, whose registry lookup
+    # raises on the unregistered name
+    with pytest.raises(KeyError, match=name):
+        _Player(_downstream_player_params(name, use_vecenv=True))
+
+    # explicit use_vecenv: False wins for a creator-less registration too
+    player = _Player(_downstream_player_params('envpool', use_vecenv=False))
+    assert player.create_env_calls == 1
 
 
 def test_cv_test_network_strict_loads_pre_2_0_checkpoint():
