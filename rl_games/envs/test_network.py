@@ -30,6 +30,14 @@ class TestNet(NetworkBuilder.BaseNetwork):
     def is_rnn(self):
         return False
 
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # pre-2.0 checkpoints of the asymmetric test config carry the dead
+        # actor head; drop mean_linear.* or the strict restore rejects them
+        if self.central_value:
+            for key in [k for k in state_dict if k.startswith(prefix + 'mean_linear.')]:
+                del state_dict[key]
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     def forward(self, obs):
         obs = obs['obs']
         obs = torch.cat([obs['pos'], obs['info']], axis=-1)

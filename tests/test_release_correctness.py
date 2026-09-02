@@ -22,10 +22,11 @@ class _CaptureNetwork:
         raise _Captured
 
 
-def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None):
+def _make_cv_train(network, horizon=8, num_actors=4, cv_mini_epochs=2,
+                   state_shape=(4,), explicit_count=None, **config_extra):
+    """CentralValueTrain on CPU around `network`, minimal config."""
     from rl_games.algos_torch.central_value import CentralValueTrain
 
-    net = _CaptureNetwork()
     config = {
         'mini_epochs': cv_mini_epochs,
         'normalize_input': True,
@@ -38,15 +39,35 @@ def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None):
         'grad_norm': 1.0,
         'truncate_grads': False,
         'minibatch_size': horizon * num_actors,
+        **config_extra,
     }
+    return CentralValueTrain(
+        state_shape=state_shape, value_size=1, ppo_device='cpu', num_agents=1,
+        horizon_length=horizon, num_actors=num_actors, num_actions=3,
+        seq_length=4, normalize_value=False, network=network, config=config,
+        writter=None, max_epochs=1, multi_gpu=False, zero_rnn_on_done=True,
+        normalize_input_init_count=explicit_count)
+
+
+def _capture_cv_init_count(cv_mini_epochs, horizon, num_actors, explicit=None):
+    net = _CaptureNetwork()
     with pytest.raises(_Captured):
-        CentralValueTrain(
-            state_shape=(4,), value_size=1, ppo_device='cpu', num_agents=1,
-            horizon_length=horizon, num_actors=num_actors, num_actions=2,
-            seq_length=4, normalize_value=False, network=net, config=config,
-            writter=None, max_epochs=1, multi_gpu=False, zero_rnn_on_done=True,
-            normalize_input_init_count=explicit)
+        _make_cv_train(net, horizon, num_actors, cv_mini_epochs,
+                       explicit_count=explicit)
     return net.state_config['normalize_input_init_count']
+
+
+def _test_network_cv_stack():
+    """The shipped central-value TestNet inside the real ModelCentralValue
+    wrapper and CentralValueTrain, as A2CBase.load_networks builds it."""
+    import rl_games.envs  # noqa: F401  (registers 'testnet')
+    from rl_games.algos_torch import model_builder
+
+    network = model_builder.ModelBuilder().load(
+        {'model': {'name': 'central_value'},
+         'network': {'name': 'testnet', 'central_value': True}})
+    return _make_cv_train(network, state_shape={'pos': (2,), 'info': (2,)},
+                          normalize_input=False)
 
 
 def test_cv_normalizer_prior_uses_cv_geometry():
@@ -77,6 +98,38 @@ def test_player_defaults_to_vecenv_without_env_creator():
 
     # unknown names fall through to vecenv, whose own error is actionable
     assert BasePlayer._default_use_vecenv('no-such-env') is True
+
+
+def test_cv_test_network_strict_loads_pre_2_0_checkpoint():
+    """Pre-2.0 TestNet always built the actor head, so checkpoints of the
+    asymmetric test config carry model.a2c_network.mean_linear.* under
+    assymetric_vf_nets; the central-value TestNet no longer has that head and
+    set_full_state_weights restores the CV strictly."""
+    import torch
+
+    cv = _test_network_cv_stack()
+    keys = set(cv.state_dict().keys())
+    assert not any('mean_linear' in k for k in keys)
+
+    legacy = {k: torch.full_like(v, 0.5) for k, v in cv.state_dict().items()}
+    legacy['model.a2c_network.mean_linear.weight'] = torch.zeros(3, 64)
+    legacy['model.a2c_network.mean_linear.bias'] = torch.zeros(3)
+    cv.load_state_dict(legacy)
+    assert set(cv.state_dict().keys()) == keys
+    assert all(torch.all(v == 0.5) for v in cv.state_dict().values())
+
+    # the filter is scoped to the dead head: any other stray key still raises
+    legacy['model.a2c_network.bogus.weight'] = torch.zeros(1)
+    with pytest.raises(RuntimeError, match='bogus'):
+        cv.load_state_dict(legacy)
+
+    # actor-mode TestNet keeps its head and loads it as before
+    from rl_games.envs.test_network import TestNet
+    actor = TestNet({}, actions_num=3, input_shape={'pos': (2,), 'info': (2,)})
+    sd = {k: torch.full_like(v, 0.25) for k, v in actor.state_dict().items()}
+    assert 'mean_linear.weight' in sd
+    actor.load_state_dict(sd)
+    assert torch.all(actor.mean_linear.weight == 0.25)
 
 
 def test_cv_init_count_explicit_fallback_order():
