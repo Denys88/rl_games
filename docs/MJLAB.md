@@ -237,8 +237,8 @@ iterations, one seed).
 | final reward (last 200 / 500 iterations) | **128** (121 to 133) | 120.3 |
 | peak reward | **147.7** (147 to 149) | 131.7 |
 | reaches the rsl-rl plateau (120.3) | **iterations 273 to 297, 3.5 to 3.6 min** | iteration 1,333, 16.3 min |
-| wall-clock for the full run | 48 to 51 min for 4,000 iterations | 59.5 min for 5,000 |
-| seconds per iteration | 0.72 to 0.76 | 0.71 |
+| wall-clock for the full run | 47.6 min alone, 48 to 51 min sharing the box, for 4,000 iterations | 59.5 min for 5,000 |
+| seconds per iteration | 0.71 alone, 0.72 to 0.76 shared | 0.71 |
 
 ![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
 
@@ -251,9 +251,11 @@ is 0.25–0.27 m/s, yaw 0.84–0.90 rad/s at a 1.0 rad/s command, lateral
 0.06 m/s at the 0.3 m/s command: forward and yaw track at roughly two
 thirds of the command, lateral is the weak axis. Zero falls in the take.
 
-Every rl_games run shared the workstation with another training job (the
-reference ran alone), and per-iteration cost still matches the reference, so
-the wall-clock gain is sample efficiency, not simulator throughput. The task
+The three tabulated rl_games runs shared the workstation with another
+training job; a fourth run on an idle box (seed 27: 47.6 min, final 126.8,
+peak 148.3, the 120.3 plateau at iteration 207) shows sharing cost nothing
+measurable. Per-iteration cost matches the reference, so the wall-clock gain
+is sample efficiency, not simulator throughput. The task
 curriculum ramps penalty weights with iteration on both sides, so both
 curves peak early and settle lower as the penalties come in; the final-window
 numbers are the steady state, and one of the three runs settled at 121 with
