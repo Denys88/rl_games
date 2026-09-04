@@ -473,6 +473,7 @@ def test_population_mode_rows_and_slot_onehot():
     env = _make(3, population=4, player_id_obs=True)
     try:
         assert env.population == 4 and env.get_number_of_agents() == 4
+        assert env.get_env_info()['agents'] == 4
         assert env.obs_dim == base_dim + 2 + 4
         pairs = np.array([[0, 1], [2, 2], [3, 0]])
         env.set_pair_assignment(pairs)
@@ -575,3 +576,19 @@ def test_population_observer_payoff_and_pairs(tmp_path):
     assert wr.shape == (4,) and wr[0] > wr[1]
     obs.after_print_stats(frame=1, epoch_num=1, total_time=0.0)
     assert len(algo.vec_env.pairs) == 2                                   # remapped
+
+
+def test_population_config_builds_model():
+    import yaml
+    from rl_games.algos_torch.model_builder import ModelBuilder
+    from scripts.soccer_train import register_networks
+    register_networks()
+    cfg = yaml.safe_load(open('rl_games/configs/envpool/ppo_soccer_boxhead_population_v1.yaml'))['params']
+    N = cfg['network']['population_size']
+    assert cfg['config']['env_config']['population'] == N
+    assert cfg['config'].get('torch_compile', True) is False
+    model = ModelBuilder().load(cfg).build({'actions_num': 3, 'input_shape': (113 + N,), 'num_seqs': 1,
+                                            'value_size': 1, 'normalize_value': True, 'normalize_input': True})
+    obs = torch.cat([torch.randn(5, 113), torch.nn.functional.one_hot(torch.tensor([0, 1, 1, 7, 3]), N).float()], 1)
+    out = model({'obs': obs, 'is_train': False})
+    assert out['mus'].shape == (5, 3) and out['values'].shape == (5, 1)

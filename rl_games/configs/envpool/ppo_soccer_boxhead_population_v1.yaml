@@ -1,0 +1,121 @@
+# EnvPool DeepMind 2v2 BOXHEAD soccer — POPULATION league v1.
+#
+# 8 independent MLP policies in one population_actor_critic network; every
+# match pairs two of them (home slot, away slot) and BOTH teams learn from it.
+# Rows per match = 4 (home0, home1, away0, away1). Recipe otherwise = v9:
+# terminate_on_goal, 45 s, no reward clamp, entropy 0.002, shaping anneal to a
+# 0.25 floor. Per-slot standalone checkpoints land in nn/slots/ every 500
+# epochs; evaluate them with soccer_eval.py against the v9 (standalone) config.
+#
+# Launch:
+#   python scripts/soccer_train.py -f rl_games/configs/envpool/ppo_soccer_boxhead_population_v1.yaml
+params:
+  seed: 42
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: population_actor_critic
+    population_size: 8
+    seed: 0
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: soccer_boxhead_population_v1
+    env_name: envpool_soccer
+    device: cuda
+    torch_compile: False          # data-dependent group sizes in the population forward
+
+    reward_shaper:
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.002
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 256 matches x 4 robots = 1024 streams; horizon 64 -> 65536 samples/epoch
+    num_actors: 256
+    horizon_length: 64
+    minibatch_size: 16384
+    mini_epochs: 4
+
+    max_epochs: 6500
+    save_best_after: 100
+    save_frequency: 500
+    score_to_win: 100000
+    games_to_track: 512
+
+    shaping_anneal:
+      start_epoch: 1000
+      end_epoch: 5000
+      floor: 0.25
+
+    population:
+      remap_every: 5
+      p_self: 0.1
+      mode: uniform          # or 'even': PFSP toward 50/50 pairings
+      payoff_ema: 0.02
+      log_matrix_every: 50
+      slot_save_every: 500
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 45.0
+      disable_walker_contacts: True
+      enable_field_box: False
+      terminate_on_goal: True       # first goal ends the match (paper); 0-0 at 45 s = draw
+      pitch_size_min: [14.0, 10.5]  # half-extents -> 28 x 21 m
+      pitch_size_max: [20.0, 15.0]  # half-extents -> 40 x 30 m
+      keep_aspect_ratio: True
+      clip_vel_to_ball: True
+      population: 8
+      player_id_obs: True
+      num_threads: 28
+      seed: 42
+      stuck_steps: 40
+      stuck_speed: 0.1
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.0
+        goal: 100.0
+        spread_out: 0.02
+        stuck_penalty: 0.2
+
+    player:
+      games_num: 20
+      deterministic: True

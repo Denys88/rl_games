@@ -7,7 +7,9 @@ Usage:
     python scripts/soccer_train.py -f ... --max-epochs 2000 --name probe
 
 The league observer is used whenever env_config.opponent == 'pool' (or
---league); otherwise plain match statistics are logged (opponent: random).
+--league); the population observer whenever env_config.population is set
+(population_actor_critic network); otherwise plain match statistics are
+logged (opponent: random).
 """
 
 import argparse
@@ -17,6 +19,12 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import yaml
+
+
+def register_networks():
+    from rl_games.algos_torch import model_builder
+    from rl_games.algos_torch.population_network import PopulationBuilder
+    model_builder.register_network('population_actor_critic', PopulationBuilder)
 
 
 def main():
@@ -44,9 +52,15 @@ def main():
         conf['num_actors'] = args.num_actors
 
     from rl_games.torch_runner import Runner
-    from rl_games.common.soccer_observer import SoccerObserver, SoccerLeagueObserver
+    from rl_games.common.soccer_observer import (SoccerObserver, SoccerLeagueObserver,
+                                                 SoccerPopulationObserver)
 
-    if args.league or conf.get('env_config', {}).get('opponent') == 'pool':
+    register_networks()
+    env_cfg = conf.get('env_config', {})
+    if env_cfg.get('population', 0):
+        observer = SoccerPopulationObserver(population_config=conf.get('population', {}),
+                                            anneal_config=conf.get('shaping_anneal'))
+    elif args.league or env_cfg.get('opponent') == 'pool':
         observer = SoccerLeagueObserver(league_config=conf.get('league', {}),
                                         seed_pool=args.seed_pool,
                                         anneal_config=conf.get('shaping_anneal'))

@@ -547,7 +547,7 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         return {
             'action_space': self.action_space,
             'observation_space': self.observation_space,
-            'agents': self.team_size,
+            'agents': self.get_number_of_agents(),
         }
 
     def render(self, env_ids=None, **kwargs):

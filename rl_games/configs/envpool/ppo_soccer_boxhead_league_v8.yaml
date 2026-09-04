@@ -1,0 +1,159 @@
+# EnvPool DeepMind 2v2 BOXHEAD soccer — league PPO self-play, v8.
+#
+# v8 = v7 on rl_games master (autoreset row masking, sigma fixes) with three
+# changes aimed at the sparse-reward phase that collapsed in v7:
+#   * reward clamp removed: v1..v7 carried reward_shaper min_val -10, so a
+#     conceded goal arrived as -10 vs +100 for scoring -> nobody defended.
+#   * terminate_on_goal + 45 s (Liu et al.): the return is one terminal +-100,
+#     the critic learns a win probability instead of a sum of goal events.
+#   * entropy_coef 0.003 -> 0.002.
+#
+# v7 = v6 + entropy fix. v5/v6 had entropy_coef 0 and the policy sigma decayed
+# monotonically (0.55 -> 0.12 by ep 2000 -> 0.04 by ep 10000): the plateau at
+# ep ~2500 coincides with sigma < 0.1, and "stochastic" pool opponents at
+# sigma * [1, 2] were only 0.05-0.1 of action noise. v7 adds entropy_coef
+# 0.003 and widens the opponent sigma scale to [1, 4].
+#
+# v6 = v5 + shaping anneal: every shaping term except the goal reward is
+# multiplied by a scale that falls linearly from 1 (epoch 1000) to 0 (epoch
+# 5000); the second half of the run trains on the sparse goal reward only.
+# Motivation: the shared vel-to-ball term keeps both robots chasing the ball
+# (v5 showed no role split despite player_id_obs); with only goals paid,
+# positioning and roles are free to emerge.
+#
+# v5 = v4 with the pitch scaled up ~40% (28x21 .. 40x30 m instead of the paper's
+# 20x15 .. 28x21): on the small pitch a goal fell every ~7 s and play looked
+# like ping-pong, leaving no room for positioning or roles.
+#
+# v4 = v3 (paper physics) + strategy-diversity knobs:
+#   * player_id_obs: one-hot robot index within the team appended to every
+#     observation row, so the parameter-shared policy can split into roles
+#     (striker / defender) instead of two identical ball chasers.
+#   * stochastic opponents: the away team samples mu + sigma * scale * N(0,1)
+#     with scale drawn per match from opponent_sigma_scale, so every pool
+#     snapshot yields a range of opponents instead of one deterministic clone.
+#   * batched pool inference: all pool members are stacked and evaluated in a
+#     single torch.func.vmap call per step (v3 fell from 31k to ~11k fps as the
+#     pool filled up with 16 separate forwards per step).
+#
+# Observation is 111 + 2 dims, so v3 checkpoints cannot seed the pool.
+#
+# Launch:
+#   python scripts/soccer_train.py -f rl_games/configs/envpool/ppo_soccer_boxhead_league_v8.yaml
+params:
+  seed: 42
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: soccer_boxhead_league_v8
+    env_name: envpool_soccer
+    device: cuda
+
+    reward_shaper:
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.002
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 256 matches x 2 robots = 512 streams; horizon 64 -> 32768 samples/epoch
+    num_actors: 256
+    horizon_length: 64
+    minibatch_size: 8192
+    mini_epochs: 4
+
+    max_epochs: 10000
+    save_best_after: 100
+    save_frequency: 500
+    score_to_win: 100000
+    games_to_track: 512
+
+    shaping_anneal:
+      start_epoch: 1000
+      end_epoch: 5000
+
+    league:
+      max_pool: 16
+      snapshot_every: 100
+      snapshot_if_winrate: 0.55
+      snapshot_dominance: 0.70
+      remap_every: 5
+      push_main_every: 1
+      payoff_ema: 0.02
+      variance_warmup_games: 200
+      matchmaking: {p_self: 0.30, p_pfsp: 0.40, p_uniform: 0.10, p_random: 0.20}
+      pfsp: {mode: hard, floor: 0.02}
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 45.0
+      # Liu et al. 2019 physics: no player-player contacts, no walls (ball
+      # leaving the pitch is thrown back in toward the centre), field
+      # randomised 20x15 .. 28x21 m with fixed aspect ratio, default goal size.
+      disable_walker_contacts: True
+      enable_field_box: False
+      terminate_on_goal: True       # first goal ends the match (paper); 0-0 at 45 s = draw
+      pitch_size_min: [14.0, 10.5]  # half-extents -> 28 x 21 m
+      pitch_size_max: [20.0, 15.0]  # half-extents -> 40 x 30 m
+      keep_aspect_ratio: True
+      clip_vel_to_ball: True        # paper: vel-to-ball thresholded at zero
+      opponent: pool
+      player_id_obs: True
+      opponent_deterministic: False
+      opponent_sigma_scale: [1.0, 4.0]   # per-match multiplier on the away policy's sigma
+      num_threads: 28
+      seed: 42
+      stuck_steps: 40        # 1 s at 40 Hz
+      stuck_speed: 0.1
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.0
+        goal: 100.0
+        spread_out: 0.02     # team bonus while teammates > 5 m apart (stats_teammate_spread_out)
+        stuck_penalty: 0.2   # team penalty per step once robots + ball stationary for stuck_steps
+
+    player:
+      games_num: 20
+      deterministic: True

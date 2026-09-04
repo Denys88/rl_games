@@ -132,6 +132,20 @@ Parked (tests in the session scratchpad): a per-match unit "style" vector z
 in the obs whose components rescale shaping terms (reward-randomised PG), so
 that every snapshot is a family of play styles and z is a play-time knob.
 
+### Population league (`ppo_soccer_boxhead_population_v1.yaml`)
+
+`env_config.population: N` turns every robot of every match into a learner row
+(`num_agents` = 4, rows home0, home1, away0, away1) and tags each row with a
+slot one-hot (last N obs dims). The `population_actor_critic` network keeps N
+MLPs as stacked `(N, ...)` parameters and routes rows by slot with padded
+batched matmuls, so the normal PPO update trains all N policies at once.
+`SoccerPopulationObserver` keeps the N x N payoff matrix
+(`population/winrate_slot{k}`, matrix printed every 50 epochs), pairs slots
+per match (uniform, or `mode: even` = PFSP toward 50/50), and writes
+standalone per-slot checkpoints to `nn/slots/slot{k}_ep{E}.pth`. Evaluate
+those with `soccer_eval.py -f ppo_soccer_boxhead_league_v9.yaml` (same
+observation layout without the slot one-hot).
+
 Tensorboard: `soccer/*` (goal_diff, winrate, drawrate, goals_for/against,
 `*_vs_random|self|pool`) and `league/*` (pool_size, min/mean winrate vs pool).
 `soccer/goal_diff_vs_random` is the free stand-in for the old 30-episode
@@ -143,4 +157,13 @@ Tensorboard: `soccer/*` (goal_diff, winrate, drawrate, goals_for/against,
 source venv312/bin/activate
 python scripts/soccer_train.py -f rl_games/configs/envpool/ppo_soccer_boxhead_league.yaml
 python -m pytest tests/test_envpool_soccer.py -q
+# round-robin eval of checkpoints (+ vs random); best copied to best_agents/, table in RESULTS.md
+python scripts/soccer_eval.py -f rl_games/configs/envpool/ppo_soccer_boxhead_league_v8.yaml \
+    --checkpoints runs/<run>/nn/last_*ep_*000_*.pth --matches 16 --tag v8
 ```
+
+**Reward clamp gotcha.** v1..v7 configs carried `reward_shaper: min_val: -10`
+(inherited from the ant configs); rl_games clamps rewards from below, so a
+conceded goal arrived as -10 against +100 for scoring and nobody learned to
+defend. v8 drops it. v8 also ends the episode on the first goal with a 45 s
+limit (Liu et al.), so the return is a single terminal ±100.
