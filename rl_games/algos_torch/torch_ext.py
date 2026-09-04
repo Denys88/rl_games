@@ -5,6 +5,57 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+
+def wrap_model_ddp(model, device, find_unused_parameters=False):
+    """DDP wrapper for the training forward pass only: gradients are bucket-averaged
+    across ranks during backward; running-stat buffers stay under the trainer's own
+    sync policy (broadcast_buffers=False)."""
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    class _TrackedDDP(DDP):
+        # forward_seen lets the trainer detect a training forward that
+        # bypassed the wrapper (e.g. a custom calc_gradients using the raw
+        # model): DDP hooks never fire on such a forward and ranks would
+        # silently diverge. Set here, checked and cleared per optimizer step.
+        def forward(self, *args, **kwargs):
+            out = super().forward(*args, **kwargs)
+            # Mark only a COMPLETED, grad-enabled, sync-enabled training
+            # forward: a no-grad or no_sync() forward installs no reduction
+            # hooks, so counting it would let a later raw-model backward slip
+            # past the guard and step with unsynchronized gradients.
+            if torch.is_grad_enabled() and getattr(self, 'require_backward_grad_sync', True):
+                self.forward_seen = True
+            return out
+
+    dev = torch.device(device)
+    ddp = _TrackedDDP(
+        model,
+        device_ids=[dev.index] if dev.type == 'cuda' else None,
+        broadcast_buffers=False,
+        gradient_as_bucket_view=True,
+        find_unused_parameters=find_unused_parameters,
+    )
+    ddp.forward_seen = False
+    return ddp
+
+
+def flat_allreduce_grads(model, world_size):
+    """Average gradients across ranks with a single flat all-reduce
+    (legacy multi_gpu_grad_sync: 'flat_allreduce' mode)."""
+    import torch.distributed as dist
+    grads = [p.grad.view(-1) for p in model.parameters() if p.grad is not None]
+    if not grads:
+        return
+    all_grads = torch.cat(grads)
+    dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+    offset = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad.data.copy_(
+                all_grads[offset:offset + p.numel()].view_as(p.grad.data) / world_size
+            )
+            offset += p.numel()
 from torch.optim.optimizer import Optimizer
 
 
@@ -91,25 +142,25 @@ def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
     safe_save(state, filename + '.pth')
 
+def _strip_compile_prefix(obj):
+    """Remove torch.compile's '_orig_mod.' from state-dict keys at any nesting depth.
+
+    Compiled modules (OptimizedModule) save parameters under '_orig_mod.*';
+    nested holders (central value nets, self-play snapshots) embed it mid-key
+    as 'model._orig_mod.*'. Substring removal handles both; non-string keys
+    (optimizer state ints) and non-dict values pass through untouched.
+    """
+    if isinstance(obj, dict):
+        return {(k.replace('_orig_mod.', '') if isinstance(k, str) else k): _strip_compile_prefix(v)
+                for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_compile_prefix(v) for v in obj]
+    return obj
+
+
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
-    state = safe_load(filename)
-
-    # ----------------------------
-    # Fix for missing/unexpected keys:
-    # Remove the '_orig_mod.' prefix so model keys match your uncompiled model
-    if "model" in state:
-        new_model = {}
-        for k, v in state["model"].items():
-            if k.startswith("_orig_mod."):
-                new_key = k[len("_orig_mod."):]
-            else:
-                new_key = k
-            new_model[new_key] = v
-        state["model"] = new_model
-    # ----------------------------
-
-    return state
+    return _strip_compile_prefix(safe_load(filename))
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     normal = torch.distributions.normal.Normal(0, 1, validate_args=False)
@@ -158,7 +209,11 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.numel()
+        # mean over VALID rows. This used to divide by numel(), which scaled
+        # every loss down by the invalid fraction — equivalent to silently
+        # lowering the LR for masked (RNN / autoreset) training. 2.0.0
+        # behavior change; see release notes.
+        sum_mask = mask.sum().clamp(min=1.0)
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
@@ -176,11 +231,14 @@ def normalization_with_masks(values, masks):
     return normalized_values
 
 def get_mean_var_with_masks(values, masks):
-    sum_mask = masks.sum()
+    # clamp the denominators so degenerate masks (0 or 1 valid rows) yield
+    # finite (mean, 0) instead of NaN poisoning the whole batch -- same
+    # guard style as apply_masks
+    sum_mask = masks.sum().clamp(min=1.0)
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_var = min_sqr * sum_mask / (sum_mask-1)
+    values_var = min_sqr * sum_mask / (sum_mask - 1).clamp(min=1.0)
     return values_mean, values_var
 
 def get_mean_std_with_masks(values, masks):
@@ -309,6 +367,11 @@ def get_mean(v):
     else:
         mean = 0
     return mean
+
+
+def default_mixed_precision():
+    """bf16 autocast default: on for CUDA GPUs with native bf16 support."""
+    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
 
 class AverageMeter(nn.Module):

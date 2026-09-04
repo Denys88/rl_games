@@ -1,0 +1,70 @@
+params:
+  seed: 8
+  algo:
+    name: a2c_continuous
+  model:
+    name: continuous_a2c_logstd
+  network:
+    name: actor_critic
+    separate: false
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: true
+    mlp:
+      units:
+      - 512
+      - 256
+      - 128
+      d2rl: false
+      activation: elu
+      initializer:
+        name: default
+        scale: 2
+  config:
+    env_name: envpool
+    name: MyoHandReachRandom
+    reward_shaper:
+      scale_value: 1.0
+      log_val: false
+    mixed_precision: true
+    normalize_input: true
+    normalize_value: true
+    value_bootstrap: true
+    normalize_advantage: true
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    save_best_after: 20
+    save_frequency: 500
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: true
+    e_clip: 0.2
+    clip_value: false
+    num_actors: 128
+    horizon_length: 256
+    minibatch_size: 4096
+    mini_epochs: 5
+    critic_coef: 2
+    bounds_loss_coef: 0.001
+    max_epochs: 2000
+    use_diagnostics: true
+    weight_decay: 0.0
+    use_smooth_clamp: true
+    env_config:
+      env_name: MyoSuite/myoHandReachRandom-v0
+      seed: 5
+    player:
+      deterministic: true
+      games_num: 200
+    min_lr: 1.0e-05
+    max_lr: 0.001

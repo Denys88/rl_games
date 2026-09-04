@@ -14,4 +14,4 @@ try:
 except ImportError:
     TRITON_AVAILABLE = False
 
-USE_TRITON = TRITON_AVAILABLE and not bool(int(os.environ.get('RLG_NO_TRITON', '0')))
+USE_TRITON = TRITON_AVAILABLE and os.environ.get('RLG_NO_TRITON', '0').strip().lower() not in ('1', 'true', 'yes', 'on')

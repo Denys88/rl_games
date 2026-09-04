@@ -1,6 +1,6 @@
 # RL Games: High performance RL library
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored with envpool >= 1.2.5 (Python 3.11–3.14, NumPy 2.x, MuJoCo 3.x compatible).
+**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium` and requires Python >= 3.11 (CI runs 3.11 and 3.12). EnvPool support has been restored: envpool >= 1.2.6 on Python 3.12+, with an envpool 1.2.5 fallback on Python 3.11 (NumPy 2.x, MuJoCo 3.x compatible; MyoSuite target randomization requires 1.2.6 and therefore Python >= 3.12).
 
 ## Discord Channel Link 
 * https://discord.gg/hnYRq7DsQh
@@ -15,11 +15,12 @@
 * OSCAR: Data-Driven Operational Space Control for Adaptive and Robust Robot Manipulation: https://cremebrule.github.io/oscar-web/ https://arxiv.org/abs/2110.00704
 * EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine: https://arxiv.org/abs/2206.10558 and https://github.com/sail-sg/envpool
 * TimeChamber: A Massively Parallel Large Scale Self-Play Framework: https://github.com/inspirai/TimeChamber
+* DextrAH-RGB: Visuomotor Policies to Grasp Anything with Dexterous Hands: https://dextrah-rgb.github.io/ https://arxiv.org/abs/2412.01791
 
 
 ## Some results on the different environments  
 
-* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
+* [NVIDIA Isaac Gym (legacy — use rl_games <= 1.6.5)](docs/ISAAC_GYM.md)
 
 ![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
 ![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
@@ -35,23 +36,46 @@
 
 ![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
 
-* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion, dexterous manipulation
 
 ![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
 ![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
 ![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
 
+**WujiHand in-hand cube reorientation** ([wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab)):
+on the unmodified task, rl_games trains to **17.1 goal reaches per episode vs 16.4** for the
+reference rsl-rl fork at the same training budget, and the exported ONNX policy matches the
+officially released policy on the project's sim2sim deployment protocol (success rate 1.00).
+Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
+
+![WujiHand Reorient](docs/pictures/mjlab/wujihand_reorient.gif)
+
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
-* [BRAX](docs/BRAX.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
 * [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
+* [MyoSuite](docs/MYOSUITE.md) — musculoskeletal control, envpool-vectorized
 * [Random Envs](docs/OTHER.md)
 
+### SAC
 
-Implemented in Pytorch:
+SAC matches or exceeds published reference scores on MuJoCo continuous control (envpool, 1M frames, 3 seeds). Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
+
+| Task | rl_games SAC | Reference SAC (1M) |
+|------|--------------|--------------------|
+| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
+| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
+| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
+
+Humanoid keeps improving well past the standard 1M-frame budget — a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean.
+
+![Humanoid SAC extended training](docs/pictures/sac/humanoid_v5_5M.png)
+![Humanoid-v5 policy trained with SAC](docs/pictures/sac/humanoid_v5_5M.gif)
+
+## Implemented in PyTorch
 
 * PPO with the support of asymmetric actor-critic variant
-* Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
+* SAC
+* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab. Legacy Isaac Gym: rl_games <= 1.6.5
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
@@ -67,7 +91,8 @@ Implemented in Pytorch:
 Explore RL Games quick and easily in colab notebooks:
 
 * [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [MJLab training](notebooks/mjlab_training.ipynb) GPU-parallel robot locomotion with MJLab (MuJoCo Warp): trains a Unitree Go1 walking policy in minutes, renders it to video, probes command tracking. Local GPU required.
+* [MJLab training on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_training_colab.ipynb) Same pipeline for Colab GPUs — L4/A100 recommended (T4 untested).
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
 * [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
@@ -90,7 +115,10 @@ With optional extras (e.g. Atari, Mujoco, EnvPool):
 pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `envpool`, `brax`, `pufferlib`.
+Available extras: `atari`, `mujoco`, `envpool`. (`pufferlib` is no longer an
+extra: its current releases pin numpy<2 / old gymnasium, conflicting with this
+project's floors — `pip install pufferlib --no-deps`; the extra returns with
+pufferlib 4.0.)
 
 For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
@@ -99,7 +127,8 @@ For high-throughput vectorized MuJoCo / Atari / DM Control training, install the
 [uv](https://docs.astral.sh/uv/) is a fast Python package manager. To create a virtual environment and install rl_games:
 
 ```bash
-uv venv --python 3.11
+# 3.12+ resolves envpool 1.2.6; a 3.11 venv falls back to envpool 1.2.5
+uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e ".[mujoco,envpool]"
 ```
@@ -124,35 +153,20 @@ howpublished = {\url{https://github.com/Denys88/rl_games}},
 ## Development setup
 
 ```bash
-uv venv --python 3.11
+uv venv --python 3.11  # project floor (Isaac Lab); .[envpool] resolves envpool 1.2.5 here
 source .venv/bin/activate
 uv pip install -e ".[atari,mujoco]"
 ```
 
 ## Training
-**NVIDIA Isaac Gym**
+**NVIDIA Isaac Gym (legacy)**
 
-Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
-And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
-
-*Ant*
-
-```bash
-python train.py task=Ant headless=True
-python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100
-```
-
-*Humanoid*
-
-```bash
-python train.py task=Humanoid headless=True
-python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
-```
-
-*Shadow Hand block orientation task*
-
-```python train.py task=ShadowHand headless=True```
-```python train.py task=ShadowHand test=True checkpoint=nn/ShadowHand.pth num_envs=100```
+Isaac Gym Preview is end-of-life and not supported by current rl_games
+(it requires Python <= 3.8). To run legacy Isaac Gym / IsaacGymEnvs
+projects use the last supporting release, `rl-games==1.6.5`, and its
+documentation: https://github.com/Denys88/rl_games/tree/v1.6.5 — see
+[docs/ISAAC_GYM.md](docs/ISAAC_GYM.md). For current GPU-accelerated
+training see [MJLab (MuJoCo Warp)](docs/MJLAB.md) and Isaac Lab.
 
 **Other**
 
@@ -161,15 +175,6 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 ```bash
 python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
 python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
-```
-
-*Brax Ant*
-
-```bash
-pip install -U "jax[cuda12]"
-pip install brax
-python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
-python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
 ## Experiment tracking
@@ -183,6 +188,11 @@ python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml -
 python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
 ```
 
+## Population Based Training
+
+rl_games includes the [DexPBT](https://arxiv.org/abs/2305.12127)-lineage PBT observers
+(previously maintained downstream in IsaacGymEnvs and Isaac Lab), usable with any backend
+via `rl_games.common.pbt` — see [docs/PBT.md](docs/PBT.md).
 
 ## Multi GPU
 
@@ -190,6 +200,22 @@ We use `torchrun` to orchestrate any multi-gpu runs.
 
 ```bash
 torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
+```
+
+## Triton Kernels
+
+When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations like GAE (Generalized Advantage Estimation). This replaces the Python for-loop with a single fused GPU kernel.
+
+Triton is enabled by default. To disable:
+
+```bash
+RLG_NO_TRITON=1 python runner.py --train --file rl_games/configs/mujoco/ant.yaml
+```
+
+Run the benchmark to see speedups on your hardware:
+
+```bash
+python benchmarks/bench_triton_gae.py
 ```
 
 ## Config Parameters
@@ -283,7 +309,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | player                 |                           |         | Player configuration block.                                                                                                                                  |
 | render                 | True                      | False   | Render environment                                                                                                                                           |
 | deterministic          | True                      | True    | Use deterministic policy ( argmax or mu) or stochastic.                                                                                                      |
-| use_vecenv             | True                      | False   | Use vecenv to create environment for player                                                                                                                  |
+| use_vecenv             | True                      | auto    | Use vecenv to create environment for player. Auto: True when the env is registered without an env_creator (envpool, pufferlib, plain gymnasium entries, config-registered `vecenv_type` envs); False for creator-based and unregistered names, so a subclass `create_env()` override runs |
 | games_num              | 200                       |         | Number of games to run in the player mode.                                                                                                                   |
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |

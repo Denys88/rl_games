@@ -34,6 +34,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'value_size': self.env_info.get('value_size', 1),
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
+            'normalize_input_init_count': self.normalize_input_init_count,
         }
 
         self.model = self.network.build(build_config)
@@ -60,11 +61,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': self.central_value_config,
+                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
-                'zero_rnn_on_done': self.zero_rnn_on_done
+                'zero_rnn_on_done': self.zero_rnn_on_done,
+                'ddp_find_unused_parameters': self.ddp_find_unused_parameters,
+                'normalize_input_init_count': self.config.get('normalize_input_init_count'),
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -132,6 +135,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 return_batch,
                 self.clip_value
             )
+        elif self._ddp_model is not None:
+            # 0-coef term keeps the value head in the autograd graph so DDP's
+            # static bucket accounting sees every parameter (exact-zero grads).
+            # Only under DDP: it turns the value head's None grads into zeros,
+            # which lets optimizer weight_decay act on an otherwise dead head.
+            c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
         else:
             c_loss = torch.zeros(1, device=self.ppo_device)
         if self.bound_loss_type == 'regularisation':
@@ -143,7 +152,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
         a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+        bounds_coef = self.bounds_loss_coef if self.bounds_loss_coef is not None else 0.0
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * bounds_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
     def calc_losses_fused(
@@ -201,17 +211,18 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs': obs_batch,
         }
 
-        rnn_masks = None
+        # masks may exist without an RNN: next_step-autoreset garbage rows
+        rnn_masks = input_dict.get('rnn_masks', None)
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_length
 
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
+        train_model = self.train_model()
         with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            res_dict = self.model(batch_dict)
+            res_dict = train_model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
@@ -265,7 +276,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        self.scaler.scale(loss).backward()
+        loss.backward()
         #TODO: Refactor this ugliest code of they year
         self.trancate_gradients_and_step()
 
@@ -276,7 +287,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 reduce_kl = rnn_masks is None
                 kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
                 if rnn_masks is not None:
-                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+                    # mean over VALID rows only: dividing by numel() understates
+                    # KL by the invalid fraction and biases adaptive LR upward
+                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
 
         self.diagnostics.mini_batch(self,
         {
@@ -294,10 +307,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
     def train_actor_critic(self, input_dict):
         self.set_train()
         self.calc_gradients(input_dict)
-
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-
         return self.train_result
 
     def reg_loss(self, mu):
@@ -314,5 +323,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
-            b_loss = 0
+            # zero TENSOR, not int: the masked-loss path calls .unsqueeze on it
+            b_loss = torch.zeros(mu.shape[0], device=mu.device)
         return b_loss

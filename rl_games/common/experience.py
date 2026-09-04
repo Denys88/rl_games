@@ -117,7 +117,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._max_priority = 1.0
 
     def add(self, *args, **kwargs):
-        """See ReplayBuffer.store_effect"""
+        """See ReplayBuffer.add"""
         idx = self._next_idx
         super().add(*args, **kwargs)
         self._it_sum[idx] = self._max_priority ** self._alpha
@@ -212,18 +212,12 @@ class VectorizedReplayBuffer:
         """Create Vectorized Replay buffer.
         Parameters
         ----------
-        size: int
-            Max number of transitions to store in the buffer. When the buffer
-            overflows the old memories are dropped.
-        See Also
-        --------
-        ReplayBuffer.__init__
+        capacity: int
+            Max number of transitions to store. Oldest entries are overwritten
+            once the buffer is full.
         """
 
         self.device = device
-        self._on_cpu = torch.device(self.device).type == 'cpu'
-
-        self.use_pinned_memory = self._on_cpu and torch.cuda.is_available()
 
         # Always use float32 for storage - autocast will handle precision during training
         dtype = torch.float32
@@ -233,21 +227,16 @@ class VectorizedReplayBuffer:
         self.actions = torch.zeros((capacity, *action_shape), dtype=dtype, device=self.device)
         self.rewards = torch.zeros((capacity, 1), dtype=dtype, device=self.device)
         self.dones = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
+        self.truncated = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
 
         self.capacity = capacity
         self.idx = 0
         self.full = False
 
-        # Pin memory after creation for faster CPU->GPU transfers
-        if self._on_cpu and self.use_pinned_memory:
-            self.obses = self.obses.pin_memory()
-            self.next_obses = self.next_obses.pin_memory()
-            self.actions = self.actions.pin_memory()
-            self.rewards = self.rewards.pin_memory()
-            self.dones = self.dones.pin_memory()
-
     @torch.no_grad()
-    def add(self, obs, action, reward, next_obs, done):
+    def add(self, obs, action, reward, next_obs, done, truncated=None):
+        if truncated is None:
+            truncated = torch.zeros_like(done)
         num_observations = obs.shape[0]
         remaining_capacity = min(self.capacity - self.idx, num_observations)
         overflow = num_observations - remaining_capacity
@@ -257,6 +246,7 @@ class VectorizedReplayBuffer:
             self.rewards[0:overflow].copy_(reward[-overflow:])
             self.next_obses[0:overflow].copy_(next_obs[-overflow:])
             self.dones[0:overflow].copy_(done[-overflow:])
+            self.truncated[0:overflow].copy_(truncated[-overflow:])
             self.full = True
 
         self.obses[self.idx:self.idx + remaining_capacity].copy_(obs[:remaining_capacity])
@@ -264,9 +254,12 @@ class VectorizedReplayBuffer:
         self.rewards[self.idx:self.idx + remaining_capacity].copy_(reward[:remaining_capacity])
         self.next_obses[self.idx:self.idx + remaining_capacity].copy_(next_obs[:remaining_capacity])
         self.dones[self.idx:self.idx + remaining_capacity].copy_(done[:remaining_capacity])
+        self.truncated[self.idx:self.idx + remaining_capacity].copy_(truncated[:remaining_capacity])
 
         self.idx = (self.idx + num_observations) % self.capacity
-        self.full = self.full or self.idx == 0
+        # num_observations > 0 guard: a zero-row add on a fresh buffer leaves
+        # idx == 0 and must NOT mark the (empty) buffer as full.
+        self.full = self.full or (num_observations > 0 and self.idx == 0)
 
     def sample(self, batch_size):
         """Sample a batch of experiences.
@@ -284,10 +277,10 @@ class VectorizedReplayBuffer:
             rewards received as results of executing act_batch
         next_obses: torch tensor
             next set of observations seen after executing act_batch
-        not_dones: torch tensor
-            inverse of whether the episode ended at this tuple of (observation, action) or not
-        not_dones_no_max: torch tensor
-            inverse of whether the episode ended at this tuple of (observation, action) or not, specifically exlcuding maximum episode steps
+        dones: torch tensor
+            whether the episode terminated at this tuple of (observation, action) or not
+        truncated: torch tensor
+            whether the episode was truncated (e.g. time limit) at this tuple of (observation, action) or not
         """
 
         idxs = torch.randint(0,
@@ -298,8 +291,9 @@ class VectorizedReplayBuffer:
         rewards = self.rewards[idxs]
         next_obses = self.next_obses[idxs]
         dones = self.dones[idxs]
+        truncated = self.truncated[idxs]
 
-        return obses, actions, rewards, next_obses, dones
+        return obses, actions, rewards, next_obses, dones, truncated
 
     def state_dict(self):
         """Return the replay buffer state for checkpointing."""
@@ -309,6 +303,7 @@ class VectorizedReplayBuffer:
             'actions': self.actions.cpu(),
             'rewards': self.rewards.cpu(),
             'dones': self.dones.cpu(),
+            'truncated': self.truncated.cpu(),
             'idx': self.idx,
             'full': self.full,
         }
@@ -320,6 +315,10 @@ class VectorizedReplayBuffer:
         self.actions.copy_(state['actions'].to(self.device))
         self.rewards.copy_(state['rewards'].to(self.device))
         self.dones.copy_(state['dones'].to(self.device))
+        if 'truncated' in state:
+            self.truncated.copy_(state['truncated'].to(self.device))
+        else:
+            self.truncated.zero_()
         self.idx = state['idx']
         self.full = state['full']
 
@@ -332,7 +331,6 @@ class ExperienceBuffer:
         self.env_info = env_info
         self.algo_info = algo_info
         self.device = device
-        self._on_cpu = torch.device(self.device).type == 'cpu'
 
         self.num_agents = env_info.get('agents', 1)
         self.action_space = env_info['action_space']
@@ -364,9 +362,6 @@ class ExperienceBuffer:
             self.actions_num = self.action_space.shape[0]
             self.is_continuous = True
         self.tensor_dict = {}
-
-        # Add pinned-memory support for faster CPU→GPU copies
-        self.use_pinned_memory = torch.cuda.is_available() and algo_info.get('use_pinned_memory', True)
 
         self._init_from_env_info(self.env_info)
 
@@ -417,24 +412,15 @@ class ExperienceBuffer:
 
         if space_type == 'Box':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape + space.shape, dtype=dtype, device=self.device)
         elif space_type == 'Discrete':
             dtype = numpy_to_torch_dtype_dict[space.dtype]
-            tensor = torch.zeros(base_shape, dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape, dtype=dtype, device=self.device)
         elif space_type == 'Tuple':
             # Assuming that tuple is only Discrete tuple
             dtype = numpy_to_torch_dtype_dict[space.dtype]
             tuple_len = len(space)
-            tensor = torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
-            if self.use_pinned_memory and self._on_cpu:
-                tensor = tensor.pin_memory()
-            return tensor
+            return torch.zeros(base_shape + (tuple_len,), dtype=dtype, device=self.device)
         elif space_type == 'Dict':
             t_dict = {}
             for k, v in space.spaces.items():

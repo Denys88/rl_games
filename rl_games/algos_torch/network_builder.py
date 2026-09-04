@@ -11,6 +11,20 @@ from rl_games.common.layers.value import TwoHotEncodedValue, DefaultValue
 from rl_games.algos_torch.spatial_softmax import SpatialSoftArgmax
 
 
+def init_state_dependent_sigma_head(sigma_layer, space_config, sigma_init):
+    """Initialize a state-dependent (fixed_sigma: False) sigma head.
+
+    A const initializer must write the BIAS (uniform initial log-std /
+    raw std) with zeroed weights; writing the weight matrix instead makes
+    the raw output val * sum(trunk activations) -- state-dependent garbage.
+    """
+    if space_config['sigma_init'].get('name') == 'const_initializer':
+        torch.nn.init.zeros_(sigma_layer.weight)
+        torch.nn.init.constant_(sigma_layer.bias, space_config['sigma_init'].get('val', 0.0))
+    else:
+        sigma_init(sigma_layer.weight)
+
+
 def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
@@ -294,6 +308,18 @@ class A2CBuilder(NetworkBuilder):
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
+                # optional hard floor on the action std (see ModelA2CContinuousLogStd)
+                self.min_sigma = float(self.space_config.get('min_sigma', 0.0))
+                # optional clamp on the raw logstd head: with fixed_sigma False the
+                # exp parametrization is unbounded above and can explode; [-5, 2]
+                # mirrors the SAC convention
+                self.logstd_bounds = self.space_config.get('logstd_bounds', None)
+                # 'exp' (default) or 'softplus' (Brax/rsl-rl style: raw head grows
+                # the std linearly, not exponentially — robust when fixed_sigma False)
+                self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
+                if self.sigma_parametrization == 'scalar':
+                    # reference-compat alias (rsl-rl lineage std-space naming)
+                    self.sigma_parametrization = 'linear'
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
@@ -319,7 +345,7 @@ class A2CBuilder(NetworkBuilder):
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
-                    sigma_init(self.sigma.weight)
+                    init_state_dependent_sigma_head(self.sigma, self.space_config, sigma_init)
 
         def forward(self, obs_dict):
             obs = obs_dict['obs']
@@ -756,7 +782,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 if self.fixed_sigma:
                     sigma_init(self.sigma)
                 else:
-                    sigma_init(self.sigma.weight)
+                    init_state_dependent_sigma_head(self.sigma, self.space_config, sigma_init)
 
             mlp_init(self.value.weight)     
 
@@ -894,7 +920,7 @@ class A2CResnetBuilder(NetworkBuilder):
 
 
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
-    """torch.distributions implementation of an diagonal Gaussian policy."""
+    """torch.distributions implementation of a diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
         super().__init__()
 
@@ -909,7 +935,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     def forward(self, obs):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
-        # Constrain log_std using tanh + linear scaling (CleanRL approach)
+        # Constrain log_std using tanh + linear scaling
         # This provides smooth gradients at boundaries unlike hard clamp
         log_std_min, log_std_max = self.log_std_bounds
         log_std = torch.tanh(log_std)
@@ -922,7 +948,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
 
 
 class DoubleQCritic(NetworkBuilder.BaseNetwork):
-    """Critic network, employes double Q-learning."""
+    """Critic network, employs double Q-learning."""
     def __init__(self, output_dim, **mlp_args):
         super().__init__()
 

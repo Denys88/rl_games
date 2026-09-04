@@ -2,7 +2,7 @@ from rl_games.algos_torch import torch_ext
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 def _running_stats_dtype():
@@ -18,7 +18,7 @@ def _running_stats_dtype():
 
 class RunningMeanStd(nn.Module):
     """Tracks the running mean and variance of input data."""
-    def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False, init_count=1):
         super(RunningMeanStd, self).__init__()
         print('RunningMeanStd: ', insize)
         self.insize = insize
@@ -50,7 +50,13 @@ class RunningMeanStd(nn.Module):
         # long training run can hit and silently freezes the running stats.
         # Module._apply skips non-floating buffers, so .half()/.float() leave
         # this one alone too.
-        self.register_buffer("count", torch.ones((), dtype=torch.int64))
+        # init_count seeds the sample count of the zero-mean/unit-var prior.
+        # With the historical value of 1 the very first update batch outweighs
+        # the prior thousands to one and the stats jump straight to the batch
+        # stats, which recomputes early train-time policies far away from the
+        # rollout policy that collected the data (a large first-epoch KL). A
+        # larger init_count turns that jump into a damped update.
+        self.register_buffer("count", torch.full((), int(init_count), dtype=torch.int64))
 
     def _update_mean_var_count_from_moments(self, mean, var, count, batch_mean, batch_var, batch_count:int):
         # count is int64; cast to the float dtype for arithmetic only.
@@ -116,13 +122,20 @@ class RunningMeanStd(nn.Module):
 
 class RunningMeanStdObs(nn.Module):
     """Maintains running statistics for each observation key provided as a dictionary."""
-    def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False):
+    def __init__(self, insize, epsilon=1e-05, per_channel=False, norm_only=False, init_count=1):
         assert(isinstance(insize, dict))
         super(RunningMeanStdObs, self).__init__()
         self.running_mean_std = nn.ModuleDict({
-            k: RunningMeanStd(v, epsilon, per_channel, norm_only) for k, v in insize.items()
+            k: RunningMeanStd(v, epsilon, per_channel, norm_only, init_count) for k, v in insize.items()
         })
 
-    def forward(self, input, denorm:bool=False):
-        res = {k: self.running_mean_std[k](v, denorm) for k, v in input.items()}
+    def forward(self, input: Dict[str, torch.Tensor], denorm: bool = False) -> Dict[str, torch.Tensor]:
+        # loud key-mismatch guard: extra input keys would otherwise be
+        # silently dropped, masking an env/config mismatch (missing keys
+        # already fail loudly on the dict access below)
+        assert len(input) == len(self.running_mean_std), \
+            'observation dict keys do not match the normalizer keys'
+        res: Dict[str, torch.Tensor] = {}
+        for k, m in self.running_mean_std.items():
+            res[k] = m(input[k], denorm)
         return res

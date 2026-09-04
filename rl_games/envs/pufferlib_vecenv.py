@@ -1,21 +1,12 @@
 """PufferLib vectorized environment integration for rl_games.
 
-PufferLib is an optional dependency. Install it with:
-
-    pip install rl_games[pufferlib]
-
-Or standalone:
-
-    pip install pufferlib
-
-Note: PufferLib 3.x pins numpy<2.0 and gymnasium<=0.29.1.
-To keep newer versions, install with --no-deps and manage dependencies manually:
+pufferlib is optional and not a declared extra: releases up to 3.0.0 pin
+numpy<2.0 and gymnasium<=0.29.1, which conflict with this project's floors
+(the extra returns with pufferlib 4.0). Install it without its pins -- the
+core vectorization API works on current numpy/gymnasium:
 
     pip install pufferlib --no-deps
-    pip install numpy>=2.0 gymnasium>=1.0
-
-PufferLib's core vectorization API works fine with newer numpy/gymnasium
-despite the conservative version pins.
+    pip install "numpy>=2.0" "gymnasium>=1.0"
 """
 
 from rl_games.common.ivecenv import IVecEnv

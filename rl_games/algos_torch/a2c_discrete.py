@@ -37,6 +37,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'value_size': self.env_info.get('value_size', 1),
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
+            'normalize_input_init_count': self.normalize_input_init_count,
         }
 
         self.model = self.network.build(config)
@@ -62,11 +63,13 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': self.central_value_config,
+                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
-                'zero_rnn_on_done': self.zero_rnn_on_done
+                'zero_rnn_on_done': self.zero_rnn_on_done,
+                'ddp_find_unused_parameters': self.ddp_find_unused_parameters,
+                'normalize_input_init_count': self.config.get('normalize_input_init_count'),
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -112,7 +115,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         }
 
         with torch.no_grad():
-            res_dict = self.model(input_dict)
+            res_dict = self.inference_model()(input_dict)
             if self.has_central_value:
                 input_dict = {
                     'is_train': False,
@@ -127,10 +130,6 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
     def train_actor_critic(self, input_dict):
         self.set_train()
         self.calc_gradients(input_dict)
-
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-
         return self.train_result
 
     def calc_gradients(self, input_dict):
@@ -163,9 +162,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         for k in self.rollout_target_keys:
             batch_dict[k] = input_dict[k]
 
-        rnn_masks = None
+        # masks may exist without an RNN: next_step-autoreset garbage rows
+        rnn_masks = input_dict.get('rnn_masks', None)
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_length
             batch_dict['bptt_len'] = self.bptt_len
@@ -173,7 +172,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 batch_dict['dones'] = input_dict['dones']
 
         with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            res_dict = self.model(batch_dict)
+            res_dict = self.train_model()(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
@@ -191,6 +190,10 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
                 if self.has_value_loss:
                     c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
+                elif self._ddp_model is not None:
+                    # 0-coef term keeps the value head in the autograd graph so DDP's
+                    # static bucket accounting sees every parameter (exact-zero grads).
+                    c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
                 else:
                     c_loss = torch.zeros(1, device=self.ppo_device)
 
@@ -213,7 +216,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        self.scaler.scale(loss).backward()
+        loss.backward()
         self.trancate_gradients_and_step()
 
         if fused_kl_dist is not None:
@@ -222,7 +225,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             with torch.no_grad():
                 kl_dist = 0.5 * ((old_action_log_probs_batch - action_log_probs)**2)
                 if rnn_masks is not None:
-                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel() # / sum_mask
+                    # mean over VALID rows only: dividing by numel() understates
+                    # KL by the invalid fraction and biases adaptive LR upward
+                    kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
                 else:
                     kl_dist = kl_dist.mean()
 
