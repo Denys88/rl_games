@@ -29,6 +29,16 @@ entry per match). The AWAY team is driven inside the wrapper by
 to every observation row (home and away) so the parameter-shared policy can
 break the symmetry between teammates (striker / defender roles).
 
+``population: N`` (population league) makes EVERY robot of every match a
+learner row (``get_number_of_agents()`` = 2 * team_size, rows env-major
+``[home0, home1, away0, away1]``). Each match carries a (home_slot, away_slot)
+pair set via ``set_pair_assignment`` (applied at the match's next reset) and
+every row gets a slot one-hot as its LAST N obs dims; the
+``population_actor_critic`` network routes rows to their slot's parameters.
+Both teams receive the shaped reward from their own players' stats (envpool
+computes ``stats_*`` relative to each player's own goal). No opponent
+inference runs in this mode; infos carry ``home_slot`` / ``away_slot``.
+
 Rewards: the native ±1 goal reward (scaled by ``goal``) plus the lean
 shaping that unlocked scoring in the dm_control experiments — closest
 teammate's velocity to ball (team shared), ball velocity to goal, forward
@@ -132,6 +142,9 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         lo, hi = kwargs.pop('opponent_sigma_scale', (1.0, 1.0))
         self.opponent_sigma_range = (float(lo), float(hi))
         self.player_id_obs = bool(kwargs.pop('player_id_obs', False))
+        # population mode: all players are learner rows; each match pairs two
+        # slots (home, away); a slot one-hot (last N dims) tags every row
+        self.population = int(kwargs.pop('population', 0))
         self.shaping = dict(DEFAULT_SHAPING)
         self.shaping.update(kwargs.pop('shaping_weights', None) or {})
         # multiplier on every shaping term except 'goal' (annealed by the observer)
@@ -165,7 +178,8 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         # one-hot index within the team, same layout for home and away rows
         self._pid_onehot = (np.eye(self.team_size, dtype=np.float32)[np.arange(self.players) % self.team_size]
                             if self.player_id_obs else None)
-        self.obs_dim = self.base_obs_dim + (self.team_size if self.player_id_obs else 0)
+        self.obs_dim = (self.base_obs_dim + (self.team_size if self.player_id_obs else 0)
+                        + self.population)
         self.observation_space = gym.spaces.Box(
             -np.inf, np.inf, shape=(self.obs_dim,), dtype=np.float32)
         act_dim = int(self.env.action_space.shape[-1])
@@ -180,6 +194,8 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         self._stuck_steps_total = np.zeros(self.num_envs, dtype=np.int64)
         self._match_opp = np.full(self.num_envs, RANDOM_ID, dtype=np.int64)
         self._opp_sigma_scale = np.ones(self.num_envs, dtype=np.float32)
+        self._pairs = np.zeros((self.num_envs, 2), dtype=np.int64)
+        self._pending_pairs = None
         self._pending_assignment = None
         self._need_reset = np.zeros(self.num_envs, dtype=bool)
         self._perm = None        # player-row permutation to env-major order
@@ -272,6 +288,19 @@ class EnvpoolSoccerVecEnv(IVecEnv):
     def current_opponent_sigma_scale(self):
         return self._opp_sigma_scale.copy()
 
+    def set_pair_assignment(self, pairs):
+        """Population mode: desired (home_slot, away_slot) per match; applied
+        when each match next resets."""
+        if self.population <= 0:
+            raise RuntimeError('set_pair_assignment needs population mode')
+        pairs = np.asarray(pairs, dtype=np.int64).reshape(self.num_envs, 2)
+        if pairs.min() < 0 or pairs.max() >= self.population:
+            raise ValueError('slot out of range')
+        self._pending_pairs = pairs.copy()
+
+    def current_pairs(self):
+        return self._pairs.copy()
+
     def set_shaping_scale(self, scale):
         """Scale all shaping terms except the goal reward (curriculum -> sparse)."""
         self.shaping_scale = float(scale)
@@ -292,6 +321,8 @@ class EnvpoolSoccerVecEnv(IVecEnv):
             return
         lo, hi = self.opponent_sigma_range
         self._opp_sigma_scale[mask] = self._rng.uniform(lo, hi, size=int(mask.sum()))
+        if self._pending_pairs is not None:
+            self._pairs[mask] = self._pending_pairs[mask]
         if self._pending_assignment is None:
             return
         self._match_opp[mask] = self._pending_assignment[mask]
@@ -319,6 +350,10 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         if self._pid_onehot is not None:
             pid = np.broadcast_to(self._pid_onehot, (self.num_envs,) + self._pid_onehot.shape)
             flat = np.concatenate([flat, pid], axis=2)
+        if self.population > 0:
+            row_slot = np.repeat(self._pairs, self.team_size, axis=1)          # (E, players)
+            onehot = np.eye(self.population, dtype=np.float32)[row_slot]        # (E, players, N)
+            flat = np.concatenate([flat, onehot], axis=2)
         return flat
 
     def _stat(self, obs, info, key):
@@ -327,6 +362,9 @@ class EnvpoolSoccerVecEnv(IVecEnv):
     def _process_obs(self, obs, info):
         self.last_raw_obs, self.last_raw_info = obs, info   # for eval/diagnostics
         flat = torch.from_numpy(self._flatten_obs(obs, info)).to(self.device)
+        if self.population > 0:
+            self._away_obs = None
+            return flat.reshape(self.total_players, self.obs_dim)
         home = flat[:, :self.team_size].reshape(self.num_home, self.obs_dim)
         self._away_obs = flat[:, self.team_size:]
         return home
@@ -371,16 +409,22 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         out[idx[mask]] = act[mask]
         return out
 
-    def _home_rewards(self, obs, info, reward):
-        reward = self._ordered(np.asarray(reward, dtype=np.float32), info).reshape(self.num_envs, self.players)
-        goal = reward[:, :self.team_size]
-        closest = self._stat(obs, info, 'stats_closest_vel_to_ball')[:, :self.team_size]
+    def _all_rewards(self, obs, info, reward):
+        """Shaped reward for every player row (E, players); each team uses its
+        own players' stats (envpool computes stats_* relative to each player's
+        goal). Returns (rewards, home goal signal)."""
+        T, P = self.team_size, self.players
+        reward = self._ordered(np.asarray(reward, dtype=np.float32), info).reshape(self.num_envs, P)
+        goal = reward
+        closest = self._stat(obs, info, 'stats_closest_vel_to_ball')
         # only the closest teammate reports a non-zero value; share it across the team
-        closest = np.repeat(closest.sum(axis=1, keepdims=True), self.team_size, axis=1)
+        closest = np.concatenate(
+            [np.repeat(closest[:, t * T:(t + 1) * T].sum(axis=1, keepdims=True), T, axis=1)
+             for t in range(P // T)], axis=1)
         if self.clip_vel_to_ball:
             closest = np.maximum(closest, 0.0)
-        vbg = self._stat(obs, info, 'stats_vel_ball_to_goal')[:, :self.team_size]
-        fwd = self._stat(obs, info, 'stats_veloc_forward')[:, :self.team_size]
+        vbg = self._stat(obs, info, 'stats_vel_ball_to_goal')
+        fwd = self._stat(obs, info, 'stats_veloc_forward')
         k = self.shaping_scale
         r = (self.shaping['goal'] * goal
              + k * self.shaping['vel_to_ball'] * closest
@@ -388,12 +432,14 @@ class EnvpoolSoccerVecEnv(IVecEnv):
              + k * self.shaping['veloc_forward'] * fwd)
         if self.shaping['spread_out'] != 0.0:
             spread = self._ordered(np.asarray(obs['stats_teammate_spread_out'])).reshape(
-                self.num_envs, self.players)[:, :1].astype(np.float32)
+                self.num_envs, P).astype(np.float32)
             r = r + k * self.shaping['spread_out'] * spread
-        # stuck detector: every home robot (ego velocimeter) and the ball
-        # (velocity relative to home player 0's body) below stuck_speed
+        # stuck detector: the learner's robots (home team, or everyone in
+        # population mode) and the ball (velocity relative to home player 0's
+        # body) below stuck_speed for stuck_steps control steps
+        n_robots = P if self.population > 0 else T
         vel = self._ordered(np.asarray(obs['sensors_velocimeter'])).reshape(
-            self.num_envs, self.players, -1)[:, :self.team_size, :2]
+            self.num_envs, P, -1)[:, :n_robots, :2]
         robots_still = (np.linalg.norm(vel, axis=-1) < self.stuck_speed).all(axis=1)
         ball_rel = self._ordered(np.asarray(obs['ball_ego_linear_velocity'])).reshape(
             self.num_envs, self.players, -1)[:, 0, :2]
@@ -404,6 +450,10 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         if self.shaping['stuck_penalty'] != 0.0:
             r = r - k * self.shaping['stuck_penalty'] * stuck[:, None].astype(np.float32)
         return r.astype(np.float32), goal[:, 0]
+
+    def _home_rewards(self, obs, info, reward):
+        r, goal = self._all_rewards(obs, info, reward)
+        return r[:, :self.team_size], goal
 
     # --------------------------------------------------------------- IVecEnv
 
@@ -422,10 +472,14 @@ class EnvpoolSoccerVecEnv(IVecEnv):
     def step(self, actions):
         if torch.is_tensor(actions):
             actions = actions.detach().float().cpu().numpy()
-        home = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
-        home = home.reshape(self.num_envs, self.team_size, self.act_dim)
-        away = self._opponent_actions()
-        full = np.concatenate([home, away], axis=1).reshape(self.total_players, self.act_dim)
+        rows = self.players if self.population > 0 else self.team_size
+        if self.population > 0:
+            full = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0).reshape(self.total_players, self.act_dim)
+        else:
+            home = np.clip(np.asarray(actions, dtype=np.float32), -1.0, 1.0)
+            home = home.reshape(self.num_envs, self.team_size, self.act_dim)
+            away = self._opponent_actions()
+            full = np.concatenate([home, away], axis=1).reshape(self.total_players, self.act_dim)
         obs, reward, terminated, truncated, info = self.env.step(full.astype(np.float64))
         self._update_perm(info)
         # match rows come back in completion order too
@@ -440,7 +494,10 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         fresh = self._need_reset.copy()
         self._apply_pending(fresh)
 
-        rewards, goal_signal = self._home_rewards(obs, info, reward)
+        if self.population > 0:
+            rewards, goal_signal = self._all_rewards(obs, info, reward)
+        else:
+            rewards, goal_signal = self._home_rewards(obs, info, reward)
         rewards[fresh] = 0.0
         done = terminated | truncated
         done &= ~fresh
@@ -453,7 +510,7 @@ class EnvpoolSoccerVecEnv(IVecEnv):
         self._stuck_steps_total[fresh] = 0
 
         infos = {
-            'time_outs': torch.from_numpy(np.repeat(truncated & ~fresh, self.team_size)).to(self.device),
+            'time_outs': torch.from_numpy(np.repeat(truncated & ~fresh, rows)).to(self.device),
         }
         if done.any():
             diff = self._goals_home - self._goals_away
@@ -466,18 +523,22 @@ class EnvpoolSoccerVecEnv(IVecEnv):
             infos['stuck_frac'] = torch.from_numpy(
                 (self._stuck_steps_total / np.maximum(self._match_steps, 1)).astype(np.float32)).to(self.device)
             infos['scores'] = infos['goal_diff']
+            if self.population > 0:
+                infos['home_slot'] = torch.from_numpy(self._pairs[:, 0].copy()).to(self.device)
+                infos['away_slot'] = torch.from_numpy(self._pairs[:, 1].copy()).to(self.device)
+                infos['opp_id'] = infos['away_slot']
             self._goals_home[done] = 0
             self._goals_away[done] = 0
             self._match_steps[done] = 0
         self._need_reset = done
 
         home_obs = self._process_obs(obs, info)
-        rewards_t = torch.from_numpy(rewards.reshape(self.num_home)).to(self.device)
-        dones_t = torch.from_numpy(np.repeat(done, self.team_size)).to(self.device)
+        rewards_t = torch.from_numpy(rewards.reshape(self.num_envs * rows)).to(self.device)
+        dones_t = torch.from_numpy(np.repeat(done, rows)).to(self.device)
         return home_obs, rewards_t, dones_t, infos
 
     def get_number_of_agents(self):
-        return self.team_size
+        return self.players if self.population > 0 else self.team_size
 
     def has_action_mask(self):
         return False

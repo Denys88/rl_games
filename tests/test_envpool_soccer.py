@@ -457,3 +457,83 @@ def test_shaping_anneal_schedule():
     plain.after_init(algo)
     plain.after_print_stats(frame=1, epoch_num=1, total_time=0.0)   # no anneal: never touches the env
     assert len(algo.vec_env.scales) == 6
+    floored = SoccerObserver(anneal_config={'start_epoch': 10, 'end_epoch': 20, 'floor': 0.25})
+    assert np.allclose([floored.shaping_scale(e) for e in (0, 10, 15, 20, 30)], [1.0, 1.0, 0.625, 0.25, 0.25])
+
+
+# ----------------------------------------------------------- population mode
+
+@needs_soccer
+def test_population_mode_rows_and_slot_onehot():
+    base = _make(2)
+    try:
+        base_dim = base.obs_dim
+    finally:
+        base.close()
+    env = _make(3, population=4, player_id_obs=True)
+    try:
+        assert env.population == 4 and env.get_number_of_agents() == 4
+        assert env.obs_dim == base_dim + 2 + 4
+        pairs = np.array([[0, 1], [2, 2], [3, 0]])
+        env.set_pair_assignment(pairs)
+        obs = env.reset()
+        assert obs.shape == (12, env.obs_dim)
+        assert np.array_equal(env.current_pairs(), pairs)
+        slot = obs[:, -4:].argmax(dim=1).view(3, 4)
+        assert torch.equal(slot, torch.tensor([[0, 0, 1, 1], [2, 2, 2, 2], [3, 3, 0, 0]]))
+        pid = obs[:, base_dim:base_dim + 2].view(3, 4, 2)
+        assert torch.equal(pid[0], torch.tensor([[1., 0.], [0., 1.], [1., 0.], [0., 1.]]))
+        obs, rew, done, info = env.step(torch.zeros(12, 3))
+        assert rew.shape == (12,) and done.shape == (12,) and info['time_outs'].shape == (12,)
+    finally:
+        env.close()
+
+
+@needs_soccer
+def test_population_rewards_are_per_team():
+    env = _make(2, population=2, shaping_weights={'vel_to_ball': 0.5, 'vel_ball_to_goal': 2.0,
+                                                  'veloc_forward': 0, 'goal': 100})
+    try:
+        env.set_pair_assignment(np.array([[0, 1], [1, 0]]))
+        env.reset()
+        raw_obs, raw_info = env.env.reset()
+        env._update_perm(raw_info)
+        native = np.array([1, 1, -1, -1, 0, 0, 0, 0], dtype=np.float32)    # match 0: home scored
+        native = native[np.argsort(env._perm)] if env._perm is not None else native
+        r, goal = env._all_rewards(raw_obs, raw_info, native)
+        assert r.shape == (2, 4) and np.array_equal(goal, [1, 0])
+        closest = env._stat(raw_obs, raw_info, 'stats_closest_vel_to_ball')
+        vbg = env._stat(raw_obs, raw_info, 'stats_vel_ball_to_goal')
+        home_c = closest[:, :2].sum(1, keepdims=True)
+        away_c = closest[:, 2:].sum(1, keepdims=True)
+        exp = np.concatenate([0.5 * np.repeat(home_c, 2, 1), 0.5 * np.repeat(away_c, 2, 1)], 1) + 2.0 * vbg
+        exp[0, :2] += 100
+        exp[0, 2:] -= 100
+        assert np.allclose(r, exp.astype(np.float32), atol=1e-4)
+    finally:
+        env.close()
+
+
+@needs_soccer
+def test_population_pairs_applied_at_reset_and_reported():
+    env = _make(3, population=3)
+    try:
+        env.set_pair_assignment(np.array([[0, 1], [1, 2], [2, 0]]))
+        env.reset()
+        env.set_pair_assignment(np.array([[2, 2], [0, 0], [1, 1]]))      # deferred
+        for _ in range(60):
+            _, _, done, info = env.step(torch.zeros(12, 3))
+            if done.any():
+                assert torch.equal(info['home_slot'].cpu(), torch.tensor([0, 1, 2]))
+                assert torch.equal(info['away_slot'].cpu(), torch.tensor([1, 2, 0]))
+                assert torch.equal(info['opp_id'].cpu(), info['away_slot'].cpu())
+                assert info['goal_diff'].shape == (3,)
+                d = done.view(3, 4)
+                assert torch.equal(d[:, 0], d[:, 3])
+                break
+        else:
+            raise AssertionError('no match finished')
+        env.step(torch.zeros(12, 3))                                        # auto-reset applies pending
+        assert np.array_equal(env.current_pairs(), [[2, 2], [0, 0], [1, 1]])
+    finally:
+        env.close()
