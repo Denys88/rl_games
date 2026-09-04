@@ -12,9 +12,14 @@ SoccerObserver logs (all under soccer/), computed from finished matches:
 
 Shaping anneal (both observers, config key ``shaping_anneal``): every shaping
 term except the goal reward is multiplied by a scale that goes linearly from 1
-at ``start_epoch`` to 0 at ``end_epoch`` (env.set_shaping_scale), logged as
+at ``start_epoch`` to ``floor`` (default 0) at ``end_epoch`` (env.set_shaping_scale), logged as
 soccer/shaping_scale. Dense shaping bootstraps play, the sparse goal reward
 takes over.
+
+SoccerPopulationObserver drives the population league (env_config.population:
+N + population_actor_critic): N x N payoff matrix from finished matches,
+(home_slot, away_slot) matchmaking every remap_every epochs, per-slot
+standalone checkpoints in nn/slots/.
 
 SoccerLeagueObserver (AlphaStar-lite, mirrors GoLeagueObserver) additionally
   - records finished matches into the League payoff row (win=1, draw=0.5),
@@ -24,6 +29,8 @@ SoccerLeagueObserver (AlphaStar-lite, mirrors GoLeagueObserver) additionally
   - refreshes the latest-main weights in the self-play slots every
     push_main_every epochs.
 """
+
+import os
 
 import numpy as np
 import torch
@@ -51,17 +58,19 @@ class SoccerObserver(AlgoObserver):
         self.anneal = None
         if anneal_config:
             self.anneal = (int(anneal_config.get('start_epoch', 0)),
-                           int(anneal_config['end_epoch']))
+                           int(anneal_config['end_epoch']),
+                           float(anneal_config.get('floor', 0.0)))
 
     def shaping_scale(self, epoch_num):
+        """1 until start_epoch, linear to `floor` (default 0) at end_epoch."""
         if self.anneal is None:
             return 1.0
-        start, end = self.anneal
+        start, end, floor = self.anneal
         if epoch_num <= start:
             return 1.0
         if epoch_num >= end:
-            return 0.0
-        return 1.0 - (epoch_num - start) / float(end - start)
+            return floor
+        return floor + (1.0 - floor) * (1.0 - (epoch_num - start) / float(end - start))
 
     def _meter(self):
         return torch_ext.AverageMeter(1, self.algo.games_to_track).to(self.algo.ppo_device)
@@ -106,8 +115,12 @@ class SoccerObserver(AlgoObserver):
                     self.kind_meters[kind]['win'].update(win[sel_t])
                     self.kind_meters[kind]['goal_diff'].update(diff[sel_t])
             self._record_league(opp, diff.squeeze(1).cpu().numpy())
+        self._record_match(infos, idx, diff.squeeze(1).cpu().numpy())
 
     def _record_league(self, opp_ids, goal_diffs):
+        pass
+
+    def _record_match(self, infos, idx, goal_diffs):
         pass
 
     def after_clear_stats(self):
@@ -256,3 +269,106 @@ class SoccerLeagueObserver(SoccerObserver):
             if stats['payoff']:
                 self.writer.add_scalar('league/mean_winrate_vs_pool',
                                        float(np.mean(list(stats['payoff'].values()))), frame)
+
+
+class SoccerPopulationObserver(SoccerObserver):
+    """Population league: N learners in one population_actor_critic network,
+    every match pairs two slots (both teams learn). Keeps the N x N payoff
+    matrix (EMA of P(row beats column), draw = 0.5), resamples pairings every
+    remap_every epochs and writes per-slot standalone checkpoints."""
+
+    def __init__(self, population_config=None, anneal_config=None):
+        super().__init__(anneal_config=anneal_config)
+        cfg = population_config or {}
+        self.remap_every = int(cfg.get('remap_every', 5))
+        self.p_self = float(cfg.get('p_self', 0.1))
+        self.mode = cfg.get('mode', 'uniform')           # 'uniform' | 'even' (PFSP toward 50/50)
+        self.pfsp_floor = float(cfg.get('pfsp_floor', 0.02))
+        self.payoff_ema = float(cfg.get('payoff_ema', 0.02))
+        self.log_matrix_every = int(cfg.get('log_matrix_every', 50))
+        self.slot_save_every = int(cfg.get('slot_save_every', 500))
+        self._rng = np.random.RandomState(int(cfg.get('seed', 0)))
+        self.N = None
+        self.payoff = None
+        self.counts = None
+
+    def after_init(self, algo):
+        super().after_init(algo)
+        self.N = int(algo.vec_env.population)
+        self.payoff = np.full((self.N, self.N), 0.5)
+        self.counts = np.zeros((self.N, self.N), dtype=np.int64)
+        self._remap()
+
+    # ------------------------------------------------------------- results
+
+    def _record_match(self, infos, idx, goal_diffs):
+        if 'home_slot' not in infos:
+            return
+        home = infos['home_slot'][idx].cpu().numpy()
+        away = infos['away_slot'][idx].cpu().numpy()
+        score = np.where(goal_diffs > 0, 1.0, np.where(goal_diffs < 0, 0.0, 0.5))
+        a = self.payoff_ema
+        for i, j, s in zip(home, away, score):
+            if i == j:
+                continue
+            self.payoff[i, j] = (1 - a) * self.payoff[i, j] + a * s
+            self.payoff[j, i] = (1 - a) * self.payoff[j, i] + a * (1 - s)
+            self.counts[i, j] += 1
+            self.counts[j, i] += 1
+
+    def slot_winrates(self):
+        off = ~np.eye(self.N, dtype=bool)
+        return np.array([self.payoff[i][off[i]].mean() for i in range(self.N)])
+
+    # --------------------------------------------------------- matchmaking
+
+    def sample_pairs(self):
+        n = self.algo.vec_env.num_envs
+        n_self = int(round(n * self.p_self))
+        pairs = np.zeros((n, 2), dtype=np.int64)
+        s = self._rng.randint(0, self.N, size=n_self)
+        pairs[:n_self] = np.stack([s, s], axis=1)
+        m = n - n_self
+        if self.mode == 'even' and self.N > 1:
+            w = np.maximum(self.payoff * (1 - self.payoff), self.pfsp_floor)
+            np.fill_diagonal(w, 0.0)
+            flat = self._rng.choice(self.N * self.N, size=m, p=(w / w.sum()).ravel())
+            pairs[n_self:, 0], pairs[n_self:, 1] = flat // self.N, flat % self.N
+        else:
+            i = self._rng.randint(0, self.N, size=m)
+            j = (i + self._rng.randint(1, max(self.N, 2), size=m)) % self.N
+            pairs[n_self:] = np.stack([i, j], axis=1)
+        self._rng.shuffle(pairs)
+        return pairs
+
+    def _remap(self):
+        self.algo.vec_env.set_pair_assignment(self.sample_pairs())
+
+    # ------------------------------------------------------------- logging
+
+    def _save_slots(self, epoch_num):
+        from rl_games.algos_torch.population_network import extract_slot
+        env = self.algo.vec_env
+        base_dim = env.obs_dim - self.N
+        out_dir = os.path.join(self.algo.nn_dir, 'slots')
+        os.makedirs(out_dir, exist_ok=True)
+        sd = self.algo.model.state_dict()
+        for k in range(self.N):
+            torch.save({'model': extract_slot(sd, k, base_dim), 'epoch': epoch_num, 'slot': k},
+                       os.path.join(out_dir, f'slot{k}_ep{epoch_num}.pth'))
+        print(f'[Population] epoch {epoch_num}: wrote {self.N} slot checkpoints to {out_dir}')
+
+    def after_print_stats(self, frame, epoch_num, total_time):
+        super().after_print_stats(frame, epoch_num, total_time)
+        if epoch_num % self.remap_every == 0:
+            self._remap()
+        wr = self.slot_winrates()
+        if self.writer is not None:
+            for k in range(self.N):
+                self.writer.add_scalar(f'population/winrate_slot{k}', float(wr[k]), frame)
+            self.writer.add_scalar('population/winrate_spread', float(wr.max() - wr.min()), frame)
+        if epoch_num % self.log_matrix_every == 0:
+            with np.printoptions(precision=2, suppress=True, linewidth=200):
+                print(f'[Population] epoch {epoch_num} payoff (row beats col):\n{self.payoff}')
+        if self.slot_save_every > 0 and epoch_num % self.slot_save_every == 0:
+            self._save_slots(epoch_num)

@@ -537,3 +537,41 @@ def test_population_pairs_applied_at_reset_and_reported():
         assert np.array_equal(env.current_pairs(), [[2, 2], [0, 0], [1, 1]])
     finally:
         env.close()
+
+
+def test_population_observer_payoff_and_pairs(tmp_path):
+    from rl_games.common.soccer_observer import SoccerPopulationObserver
+
+    class _Env:
+        num_envs = 20
+        population = 4
+
+        def __init__(self):
+            self.pairs = []
+
+        def set_pair_assignment(self, pairs):
+            self.pairs.append(np.array(pairs))
+
+        def set_shaping_scale(self, s):
+            pass
+
+    algo = _FakeAlgo(num_agents=4)
+    algo.vec_env = _Env()
+    algo.nn_dir = str(tmp_path)
+    obs = SoccerPopulationObserver(population_config={'remap_every': 1, 'p_self': 0.2, 'payoff_ema': 0.5,
+                                                      'slot_save_every': 1000})
+    obs.after_init(algo)
+    pairs = algo.vec_env.pairs[-1]
+    assert pairs.shape == (20, 2) and pairs.min() >= 0 and pairs.max() < 4
+    assert (pairs[:, 0] == pairs[:, 1]).sum() == 4                      # 20% self matches
+    # done rows are every 4th row; matches 0,1,2 finished: slot0 beat slot1 twice, drew with slot2
+    infos = {'goal_diff': torch.tensor([1., 1., 0.]), 'home_goals': torch.zeros(3), 'away_goals': torch.zeros(3),
+             'home_slot': torch.tensor([0, 0, 0]), 'away_slot': torch.tensor([1, 1, 2]),
+             'opp_id': torch.tensor([1, 1, 2]), 'match_len': torch.full((3,), 300.)}
+    obs.process_infos(infos, torch.tensor([[0], [4], [8]]))
+    assert obs.counts[0, 1] == 2 and obs.counts[1, 0] == 2 and obs.counts[0, 2] == 1
+    assert obs.payoff[0, 1] > 0.8 and obs.payoff[1, 0] < 0.2 and abs(obs.payoff[0, 2] - 0.5) < 1e-6
+    wr = obs.slot_winrates()
+    assert wr.shape == (4,) and wr[0] > wr[1]
+    obs.after_print_stats(frame=1, epoch_num=1, total_time=0.0)
+    assert len(algo.vec_env.pairs) == 2                                   # remapped
