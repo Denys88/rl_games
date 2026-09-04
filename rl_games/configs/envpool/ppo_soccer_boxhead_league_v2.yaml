@@ -1,0 +1,132 @@
+# EnvPool DeepMind 2v2 BOXHEAD soccer — league PPO self-play, v2 (anti-stall).
+#
+# v1 (ppo_soccer_boxhead_league.yaml) learned to run and score but ~half the
+# matches ended with the ball pinned against a goal post and both robots
+# parked on it. v2 adds: stuck_penalty (team penalty after 1 s of nobody and
+# the ball moving), spread_out bonus (stats_teammate_spread_out, > 5 m apart)
+# so the second robot stops stacking on the first, and gamma 0.998 so a late
+# goal is still worth chasing.
+#
+# Env: envpool's native C++ port of dm_control.locomotion.soccer
+# (DmcSoccerBoxhead-v1, envpool main >= 2026-08-30, built from source with the
+# pitch/goal-size patch — see docs/ENVPOOL_SOCCER.md). One process, 256
+# matches, no Ray. The learner controls the home team (parameter sharing over
+# both robots); the away team is drawn per match from the league pool.
+#
+# Reward: the lean 3-term recipe that unlocked scoring for boxhead on the old
+# dm_control wrapper (vel_to_ball 0.2 closest-teammate shared, vel_ball_to_goal
+# 1.0, goal 100), 15x10 pitch, 6 m goal, multi-turn (ball respawns after goals).
+#
+# League (driven by SoccerLeagueObserver, scripts/soccer_train.py):
+#   matches split 20% random anchor / 30% latest main / 40% PFSP pool /
+#   10% uniform pool; snapshot main every 100 epochs (or earlier on
+#   dominance); assignment resampled every 5 epochs, applied at match reset.
+#
+# Launch:
+#   python scripts/soccer_train.py -f rl_games/configs/envpool/ppo_soccer_boxhead_league.yaml
+params:
+  seed: 42
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: soccer_boxhead_league_v2
+    env_name: envpool_soccer
+    device: cuda
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 256 matches x 2 robots = 512 streams; horizon 64 -> 32768 samples/epoch
+    num_actors: 256
+    horizon_length: 64
+    minibatch_size: 8192
+    mini_epochs: 4
+
+    max_epochs: 10000
+    save_best_after: 100
+    save_frequency: 500
+    score_to_win: 100000
+    games_to_track: 512
+
+    league:
+      max_pool: 16
+      snapshot_every: 100
+      snapshot_if_winrate: 0.55
+      snapshot_dominance: 0.70
+      remap_every: 5
+      push_main_every: 1
+      payoff_ema: 0.02
+      variance_warmup_games: 200
+      matchmaking: {p_self: 0.30, p_pfsp: 0.40, p_uniform: 0.10, p_random: 0.20}
+      pfsp: {mode: hard, floor: 0.02}
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      enable_field_box: True
+      terminate_on_goal: False      # multi-turn: ball respawns, play continues
+      pitch_size_min: [15.0, 10.0]  # RandomizedPitch min==max -> fixed 15x10 pitch
+      goal_size: [1.0, 6.0, 0.6]    # (depth, width, height), dm_control convention
+      opponent: pool
+      opponent_deterministic: True
+      num_threads: 28
+      seed: 42
+      stuck_steps: 40        # 1 s at 40 Hz
+      stuck_speed: 0.1
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.0
+        goal: 100.0
+        spread_out: 0.02     # team bonus while teammates > 5 m apart (stats_teammate_spread_out)
+        stuck_penalty: 0.2   # team penalty per step once robots + ball stationary for stuck_steps
+
+    player:
+      games_num: 20
+      deterministic: True

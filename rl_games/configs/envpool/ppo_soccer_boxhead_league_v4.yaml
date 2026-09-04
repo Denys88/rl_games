@@ -1,0 +1,131 @@
+# EnvPool DeepMind 2v2 BOXHEAD soccer — league PPO self-play, v4.
+#
+# v4 = v3 (paper physics) + strategy-diversity knobs:
+#   * player_id_obs: one-hot robot index within the team appended to every
+#     observation row, so the parameter-shared policy can split into roles
+#     (striker / defender) instead of two identical ball chasers.
+#   * stochastic opponents: the away team samples mu + sigma * scale * N(0,1)
+#     with scale drawn per match from opponent_sigma_scale, so every pool
+#     snapshot yields a range of opponents instead of one deterministic clone.
+#   * batched pool inference: all pool members are stacked and evaluated in a
+#     single torch.func.vmap call per step (v3 fell from 31k to ~11k fps as the
+#     pool filled up with 16 separate forwards per step).
+#
+# Observation is 111 + 2 dims, so v3 checkpoints cannot seed the pool.
+#
+# Launch:
+#   python scripts/soccer_train.py -f rl_games/configs/envpool/ppo_soccer_boxhead_league_v4.yaml
+params:
+  seed: 42
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      d2rl: False
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: soccer_boxhead_league_v4
+    env_name: envpool_soccer
+    device: cuda
+
+    reward_shaper:
+      min_val: -10
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: True
+
+    gamma: 0.998
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.0
+    critic_coef: 1.0
+    bounds_loss_coef: 0.0001
+    clip_value: True
+
+    # 256 matches x 2 robots = 512 streams; horizon 64 -> 32768 samples/epoch
+    num_actors: 256
+    horizon_length: 64
+    minibatch_size: 8192
+    mini_epochs: 4
+
+    max_epochs: 10000
+    save_best_after: 100
+    save_frequency: 500
+    score_to_win: 100000
+    games_to_track: 512
+
+    league:
+      max_pool: 16
+      snapshot_every: 100
+      snapshot_if_winrate: 0.55
+      snapshot_dominance: 0.70
+      remap_every: 5
+      push_main_every: 1
+      payoff_ema: 0.02
+      variance_warmup_games: 200
+      matchmaking: {p_self: 0.30, p_pfsp: 0.40, p_uniform: 0.10, p_random: 0.20}
+      pfsp: {mode: hard, floor: 0.02}
+
+    env_config:
+      walker_type: boxhead
+      team_size: 2
+      time_limit: 30.0
+      # Liu et al. 2019 physics: no player-player contacts, no walls (ball
+      # leaving the pitch is thrown back in toward the centre), field
+      # randomised 20x15 .. 28x21 m with fixed aspect ratio, default goal size.
+      disable_walker_contacts: True
+      enable_field_box: False
+      terminate_on_goal: False      # multi-turn: ball respawns, play continues
+      pitch_size_min: [10.0, 7.5]   # half-extents -> 20 x 15 m
+      pitch_size_max: [14.0, 10.5]  # half-extents -> 28 x 21 m
+      keep_aspect_ratio: True
+      clip_vel_to_ball: True        # paper: vel-to-ball thresholded at zero
+      opponent: pool
+      player_id_obs: True
+      opponent_deterministic: False
+      opponent_sigma_scale: [1.0, 2.0]   # per-match multiplier on the away policy's sigma
+      num_threads: 28
+      seed: 42
+      stuck_steps: 40        # 1 s at 40 Hz
+      stuck_speed: 0.1
+      shaping_weights:
+        vel_to_ball: 0.2
+        vel_ball_to_goal: 1.0
+        veloc_forward: 0.0
+        goal: 100.0
+        spread_out: 0.02     # team bonus while teammates > 5 m apart (stats_teammate_spread_out)
+        stuck_penalty: 0.2   # team penalty per step once robots + ball stationary for stuck_steps
+
+    player:
+      games_num: 20
+      deterministic: True

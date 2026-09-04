@@ -16,10 +16,36 @@ Payoff convention: payoff[m] = EMA of P(main beats member m).
 """
 
 import numpy as np
-import jax
-import jax.numpy as jnp
 
 MAIN_ID = 0  # reserved: latest main (self-play)
+
+
+def _jax_device_get(params):
+    import jax
+    return jax.device_get(params)
+
+
+def _is_torch_tree(tree):
+    try:
+        import torch
+    except ImportError:
+        return False
+    leaves = tree.values() if isinstance(tree, dict) else [tree]
+    return any(torch.is_tensor(v) for v in leaves)
+
+
+def stack_trees(trees):
+    """Stack same-structured param trees along a new leading axis.
+
+    torch: flat state dicts {name: tensor} -> {name: tensor(n, ...)}.
+    jax:   arbitrary pytrees via jax.tree_util (Go path).
+    """
+    if _is_torch_tree(trees[0]):
+        import torch
+        return {k: torch.stack([t[k] for t in trees]) for k in trees[0]}
+    import jax
+    import jax.numpy as jnp
+    return jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *trees)
 
 
 class Member:
@@ -34,7 +60,11 @@ class Member:
 
 class League:
     def __init__(self, max_pool=32, pfsp_mode='hard', pfsp_floor=0.02,
-                 payoff_ema=0.005, variance_warmup_games=2000, seed=0):
+                 payoff_ema=0.005, variance_warmup_games=2000, seed=0,
+                 host_fn=None):
+        # host_fn moves a member's params to host memory on add(); defaults to
+        # jax.device_get (Go). Torch users pass e.g. state_dict_to_cpu.
+        self.host_fn = host_fn or _jax_device_get
         self.max_pool = max_pool
         self.pfsp_mode = pfsp_mode
         self.pfsp_floor = pfsp_floor
@@ -54,7 +84,7 @@ class League:
         Params are moved to host memory — a big-net pool (32 x 26M) would
         otherwise pin gigabytes of GPU; build_stacked re-uploads only the
         pool_groups slices actually assigned."""
-        params = jax.device_get(params)
+        params = self.host_fn(params)
         if len(self.members) >= self.max_pool:
             self._evict()
         mid = self._next_id
@@ -131,14 +161,15 @@ class League:
     # ------------------------------------------------------------ stacking
 
     def build_stacked(self, group_ids, main_params):
-        """Stack per-group params into one pytree with leading axis n_groups.
+        """Stack per-group params into one tree with leading axis n_groups
+        (jax pytrees or torch state dicts, see stack_trees).
 
         Ids of members evicted since the assignment was sampled fall back to
         main (the assignment may be reused across snapshots/evictions)."""
         trees = [main_params if (mid == MAIN_ID or mid not in self.members)
                  else self.members[mid].params
                  for mid in group_ids]
-        return jax.tree_util.tree_map(lambda *xs: jnp.stack(xs), *trees)
+        return stack_trees(trees)
 
     # ------------------------------------------------------------- metrics
 

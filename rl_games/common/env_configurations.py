@@ -334,6 +334,9 @@ configurations = {
     'pgx_go' : {
         'vecenv_type': 'PGX'
     },
+    'envpool_soccer' : {
+        'vecenv_type': 'ENVPOOL_SOCCER'
+    },
 }
 
 def get_env_info(env):

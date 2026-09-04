@@ -363,3 +363,8 @@ def _create_pgx(config_name, num_actors, **kwargs):
     from rl_games.envs.pgx_go import PgxGoVecEnv
     return PgxGoVecEnv(config_name, num_actors, **kwargs)
 register('PGX', _create_pgx)
+
+def _create_envpool_soccer(config_name, num_actors, **kwargs):
+    from rl_games.envs.envpool_soccer import EnvpoolSoccerVecEnv
+    return EnvpoolSoccerVecEnv(config_name, num_actors, **kwargs)
+register('ENVPOOL_SOCCER', _create_envpool_soccer)
