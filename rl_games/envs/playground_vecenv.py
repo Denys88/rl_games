@@ -77,6 +77,8 @@ class PlaygroundVecEnv(IVecEnv):
                                              action_repeat=int(cfg.action_repeat), full_reset=full_reset)
         self._jax, self._jnp = jax, jnp
         self.action_size = int(env.action_size)
+        self.raw_env = raw                          # unwrapped playground env (render, mj_model)
+        self.cfg = cfg
         self._jax_gpu = jax.default_backend() == 'gpu'
         get_state = getattr(raw, '_get_obs', None)
         if get_state is None and self.obs_mode != 'state':
@@ -176,6 +178,14 @@ class PlaygroundVecEnv(IVecEnv):
             infos['metrics'] = {k: self._to_torch(v).float() for k, v in metrics.items()}
             infos['done_mask'] = dones
         return self._pack(pix, state), rewards, dones, infos
+
+    def env_state(self, index):
+        """Unbatched playground State of world `index` (for raw_env.render)."""
+        n = self.num_envs
+
+        def pick(x):
+            return x[index] if getattr(x, 'ndim', 0) > 0 and x.shape[0] == n else x
+        return self._jax.tree_util.tree_map(pick, self._state)
 
     def get_number_of_agents(self):
         return 1
