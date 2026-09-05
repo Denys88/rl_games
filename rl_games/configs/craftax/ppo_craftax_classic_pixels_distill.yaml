@@ -103,7 +103,7 @@ params:
 
     distillation:
       teacher_config: rl_games/configs/craftax/ppo_craftax_classic_symbolic.yaml
-      teacher_checkpoint: runs/craftax_teacher/nn/craftax_classic_symbolic.pth
+      teacher_checkpoint: runs/craftax_classic_symbolic_05-11-32-19/nn/craftax_classic_symbolic.pth
       loss: kl
       coef: [[0, 1.0], [300, 1.0], [600, 0.0]]
       ppo_coef: [[0, 0.0], [300, 0.0], [301, 1.0]]
