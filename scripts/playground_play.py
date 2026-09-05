@@ -52,6 +52,8 @@ def main():
     mj = env.raw_env.mj_model
     cams = [mj.camera(i).name for i in range(mj.ncam)]
     camera = args.camera if args.camera is not None else (cams[0] if cams else None)
+    if camera == 'free':
+        camera = None                       # mujoco's default free camera
     print('cameras:', cams, '-> using', camera)
 
     def policy_obs(o):
