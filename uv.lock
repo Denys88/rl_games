@@ -1883,6 +1883,7 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "gymnasium" },
+    { name = "numpy" },
     { name = "opencv-python" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -1921,6 +1922,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=1.0.0" },
     { name = "imageio", marker = "extra == 'mujoco'" },
     { name = "mujoco", marker = "extra == 'mujoco'", specifier = ">=3.0.0" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "opencv-python", specifier = ">=4.5.5" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "pyyaml", specifier = ">=6.0" },

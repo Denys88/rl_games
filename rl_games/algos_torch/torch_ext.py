@@ -257,7 +257,7 @@ def explained_variance(y_pred, y, masks=None):
 
     if masks is not None:
         masks = masks.unsqueeze(1)
-        _, var_y = get_mean_var_with_masks(y_pred, masks)
+        _, var_y = get_mean_var_with_masks(y, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
         # Use population variance to avoid DoF warnings when batch size is 1
@@ -272,7 +272,7 @@ def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
                 logratio > math.log(1.0 + clip_param),
             ).float()
     if masks is not None:
-        clip_frac = clip_frac * masks/masks.sum()
+        clip_frac = (clip_frac * masks).sum() / masks.sum()
     else:
         clip_frac = clip_frac.mean()
     return clip_frac

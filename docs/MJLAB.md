@@ -50,17 +50,27 @@ group + value normalization + adaptive LR; see the config for the full recipe).
 
 ### Go1 Flat Velocity
 
-Same-machine comparison against mjlab's own rsl-rl reference recipe, both at
-the reference batch geometry (4096 envs × 24 steps) and a 5000-epoch budget
-(the command curriculum's stage-1 range; mjlab's 10k default only adds the
-harder stage-2 commands after 5000):
+Same-machine comparison against mjlab's own rsl-rl reference recipe at the
+reference batch geometry (4096 envs × 24 steps), the reference curriculum
+schedule, and mjlab's own default budget (10k iterations — the full protocol,
+including the doubled stage-2 command ranges the curriculum enables after
+iteration 5000):
 
-| Trainer | Mean episode reward (last-100) |
-|---------|-------------------------------|
-| mjlab rsl-rl reference | 94.0 |
-| rl_games (`ppo_go1_velocity.yaml`) | **97.0** (peak 98.9) |
+| Trainer | Mean episode reward (last-100, full 10k protocol) |
+|---------|---------------------------------------------------|
+| mjlab rsl-rl reference | 83.2 |
+| rl_games (`ppo_go1_velocity.yaml`) | **86.8** |
+
+At the 5000-iteration mark (stage-1 command range only), the same runs read
+94.0 (reference) vs **97.0** (rl_games, peak 98.9).
 
 ![Go1 Flat Velocity](pictures/mjlab/go1_flat_comparison_5000.png)
+
+A compressed-curriculum variant (`velocity_stage_steps` moves the range
+expansions to iterations 2500/5000, giving the hardest 2–3 m/s range 5000
+training iterations that the default schedule never allocates) produces the
+fastest policy: measured 1.07 m/s sustained at a 2.0 m/s command, roughly
+double the stage-1 policies.
 
 ### Go1 Rough Velocity
 
@@ -70,12 +80,13 @@ Central value network significantly improves rough terrain performance (~60 vs ~
 
 ### G1 Humanoid Flat Velocity
 
-Same protocol as Go1 (5000-epoch budget, reference geometry):
-
-| Trainer | Mean episode reward (last-100) |
-|---------|-------------------------------|
-| mjlab rsl-rl reference | 69.6 |
-| rl_games (`ppo_g1_velocity.yaml`) | **72.1** (peak 76.5) |
+Humanoid locomotion is a substantially harder task — mjlab's own default
+budget for G1 is 30k iterations (3× Go1's), and short-budget reward
+comparisons are misleading here: at 5000 iterations both stacks produce
+policies that score reward without actually tracking velocity commands
+(measure deployable behavior, not reward meters). We do not currently claim
+a G1 comparison; the `ppo_g1_velocity.yaml` config is training-stable and
+under active tuning against the reference's full-budget result.
 
 ![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison_5000.png)
 

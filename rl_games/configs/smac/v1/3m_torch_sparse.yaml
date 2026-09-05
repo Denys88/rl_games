@@ -55,24 +55,3 @@ params:
       transpose: False
       random_invalid_step: False
 
-    rnd_config:
-        scale_value: 1
-        episodic: True
-        episode_length: 128
-        gamma: 0.99
-        mini_epochs: 2
-        minibatch_size: 1536
-        learning_rate: 5e-4
-        network:
-          name: rnd_curiosity
-          mlp:
-            rnd:
-              units: [512, 256,128,64]
-            net:
-              units: [128, 64, 64]
-            activation: elu
-            initializer:
-                name: default
-                scale: 2
-            regularizer:
-              name:  'None'

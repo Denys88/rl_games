@@ -4,7 +4,7 @@ params:
     name: a2c_continuous
 
   model:
-    name: continuous_a2c_lstm_logstd
+    name: continuous_a2c_logstd
 
   network:
     name: actor_critic
