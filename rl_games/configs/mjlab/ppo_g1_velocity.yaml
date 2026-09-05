@@ -39,6 +39,10 @@ params:
     learning_rate: 0.001
     lr_schedule: adaptive
     kl_threshold: 0.016
+    min_lr: 1.0e-6
+    # pre-2.0 default ceiling: the 72.1 in docs/MJLAB.md was measured under
+    # it, and learning_rate already sits at the new 1e-3 default cap
+    max_lr: 1.0e-2
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: true
