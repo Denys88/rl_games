@@ -17,7 +17,7 @@ import numpy as np, torch, yaml
 
 
 def epoch_of(path):
-    m = re.search(r'ep_(\d+)', os.path.basename(path))
+    m = re.search(r'ep_?(\d+)', os.path.basename(path))
     return int(m.group(1)) if m else -1
 
 
