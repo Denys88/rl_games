@@ -418,3 +418,8 @@ def _create_craftax(config_name, num_actors, **kwargs):
     from rl_games.envs.craftax_vecenv import CraftaxVecEnv
     return CraftaxVecEnv(config_name, num_actors, **kwargs)
 register('CRAFTAX', _create_craftax)
+
+def _create_playground(config_name, num_actors, **kwargs):
+    from rl_games.envs.playground_vecenv import PlaygroundVecEnv
+    return PlaygroundVecEnv(config_name, num_actors, **kwargs)
+register('PLAYGROUND', _create_playground)
