@@ -112,7 +112,7 @@ params:
 
     distillation:
       teacher_config: rl_games/configs/playground/ppo_panda_pick_state.yaml
-      teacher_checkpoint: runs/panda_teacher/nn/panda_pick_state.pth
+      teacher_checkpoint: runs/panda_pick_state_05-16-08-49/nn/panda_pick_state.pth
       loss: kl
       coef: [[0, 1.0], [60, 1.0], [150, 0.0]]
       ppo_coef: [[0, 0.0], [60, 0.0], [61, 1.0]]
