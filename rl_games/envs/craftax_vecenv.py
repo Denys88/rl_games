@@ -84,7 +84,8 @@ class CraftaxVecEnv(IVecEnv):
             keys = jax.random.split(key, self.num_envs)
             _, state, reward, done, info = jax.vmap(env.step, in_axes=(0, 0, 0, None))(keys, state, actions, params)
             pix, sym = jax.vmap(_outputs)(state)
-            ach = jnp.stack([info[k] for k in ach_keys], axis=1).astype(jnp.float32)
+            # craftax reports achievements as 0/100 percentages; keep 0/1
+            ach = jnp.stack([info[k] for k in ach_keys], axis=1).astype(jnp.float32) / 100.0
             return state, pix, sym, reward.astype(jnp.float32), done, ach
 
         self._reset_fn = jax.jit(_reset)

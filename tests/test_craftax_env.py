@@ -64,6 +64,8 @@ def test_autoreset_and_achievements_info():
             seen = True
             assert info['achievements'].shape == (4, 22)
             assert torch.equal(info['done_mask'], d)
+            vals = torch.unique(info['achievements'][d]).tolist()
+            assert set(vals) <= {0.0, 1.0}, vals              # craftax reports 0/100; env rescales to 0/1
     assert seen
 
 
