@@ -1757,6 +1757,8 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['rnn_masks'] = rnn_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
+        if self.distill is not None:
+            dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
 

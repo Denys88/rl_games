@@ -89,3 +89,35 @@ def test_metrics_reported_on_done_and_observer():
     assert len(obs.episodes) == int(d.sum())
     means = obs.means()
     assert set(means) == set(got['metrics'])
+
+
+@needs_playground
+def test_continuous_distillation_end_to_end_cartpole(tmp_path):
+    """Continuous-action distillation plumbing: untrained state teacher ->
+    pixel student on CartpoleBalance (fast vision env), two PPO epochs."""
+    import yaml
+    from rl_games.torch_runner import Runner
+    from rl_games.algos_torch.model_builder import ModelBuilder
+    tcfg = yaml.safe_load(open('rl_games/configs/playground/ppo_panda_pick_state.yaml'))
+    tcfg['params']['config']['env_config'].update(env_name='CartpoleBalance')
+    tpath = tmp_path / 'teacher_cfg.yaml'
+    yaml.safe_dump(tcfg, open(tpath, 'w'))
+    c = tcfg['params']['config']
+    teacher = ModelBuilder().load(tcfg['params']).build(
+        {'actions_num': 1, 'input_shape': (5,), 'num_seqs': 1, 'value_size': 1,
+         'normalize_value': c['normalize_value'], 'normalize_input': c['normalize_input']})
+    ck = tmp_path / 'teacher.pth'
+    torch.save({'model': teacher.state_dict(), 'epoch': 0}, ck)
+    scfg = yaml.safe_load(open('rl_games/configs/playground/ppo_panda_pick_pixels_distill.yaml'))
+    sc = scfg['params']['config']
+    sc.update(num_actors=16, horizon_length=8, minibatch_size=64, max_epochs=2, save_frequency=0,
+              train_dir=str(tmp_path), name='pg_distill_smoke')
+    sc['central_value_config']['minibatch_size'] = 64
+    sc['distillation'].update(teacher_config=str(tpath), teacher_checkpoint=str(ck), beta=0.5)
+    sc['env_config'].update(env_name='CartpoleBalance', cam_res=[32, 32], config_overrides={'episode_length': 20})
+    runner = Runner()
+    runner.load(scfg)
+    agent = runner.algo_factory.create(runner.algo_name, base_name='run', params=runner.params)
+    assert agent.distill is not None and not agent.distill.is_discrete
+    agent.train()
+    assert 'distill' in agent.aux_loss_dict
