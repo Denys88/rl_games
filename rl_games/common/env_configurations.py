@@ -323,6 +323,9 @@ configurations = {
     'pufferlib' : {
         'vecenv_type': 'PUFFERLIB'
     },
+    'craftax' : {
+        'vecenv_type': 'CRAFTAX'
+    },
 }
 
 def get_env_info(env):

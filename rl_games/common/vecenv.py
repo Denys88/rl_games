@@ -413,3 +413,8 @@ def _create_mjlab(config_name, num_actors, **kwargs):
     from rl_games.envs.mjlab_vecenv import MjlabVecEnv
     return MjlabVecEnv(config_name, num_actors, **kwargs)
 register('MJLAB', _create_mjlab)
+
+def _create_craftax(config_name, num_actors, **kwargs):
+    from rl_games.envs.craftax_vecenv import CraftaxVecEnv
+    return CraftaxVecEnv(config_name, num_actors, **kwargs)
+register('CRAFTAX', _create_craftax)
