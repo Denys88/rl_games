@@ -95,16 +95,28 @@ re-exec with it). 1024 worlds train at ~30k frames/s (state) / ~7k (pixels).
 
 Results (one seed each, 300 epochs = 9.8M frames):
 
+Success rate (fraction of episodes with the cube at the target):
+
 | frames (M) | 1 | 2 | 4 | 6 | 8 | 9.8 |
 |---|---|---|---|---|---|---|
-| teacher (state) success | 0.00 | 0.00 | 0.61 | 0.98 | 1.00 | 1.00 |
-| scratch (pixels) success | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| scratch + state-aux (pixels) success | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| distilled (pixels) success | 0.06 | 0.23 | 1.00 | 1.00 | 1.00 | 1.00 |
-| teacher reward | 2.7 | 4.6 | 8.5 | 10.5 | 10.8 | 10.6 |
-| scratch reward | 1.9 | 1.9 | 1.7 | 2.1 | 4.0 | 3.7 |
-| scratch + state-aux reward | 1.9 | 2.3 | 2.3 | 3.8 | 3.9 | 3.9 |
-| distilled reward | 3.0 | 4.4 | 10.5 | 10.6 | 10.5 | 10.6 |
+| scratch (pixels) | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| scratch + state-aux (pixels) | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| distilled (pixels) | 0.06 | 0.23 | 1.00 | 1.00 | 1.00 | 1.00 |
+| teacher (state) | 0.00 | 0.00 | 0.61 | 0.98 | 1.00 | 1.00 |
+
+Episode reward (shaped: gripper-to-box 4, box-to-target 8, lifted 0.5,
+success 2, collisions 0.3; the env pays out increases only, so this is the
+best progress reached in the episode):
+
+| frames (M) | 1 | 2 | 4 | 6 | 8 | 9.8 |
+|---|---|---|---|---|---|---|
+| scratch (pixels) | 1.9 | 1.9 | 1.7 | 2.1 | 4.0 | 3.7 |
+| scratch + state-aux (pixels) | 1.9 | 2.3 | 2.3 | 3.8 | 3.9 | 3.9 |
+| distilled (pixels) | 3.0 | 4.4 | 10.5 | 10.6 | 10.5 | 10.6 |
+| teacher (state) | 2.7 | 4.6 | 8.5 | 10.5 | 10.8 | 10.6 |
+
+A reward near 4 with success 0 means the gripper reaches the cube (the
+4-point term) but never carries it (the 8-point term).
 
 The pixel student from scratch never grasps the cube in 9.8M frames; the
 distilled pixel student reaches the teacher's 100% success by 4M frames,
