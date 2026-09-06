@@ -312,7 +312,10 @@ class A2CBase(BaseAlgorithm):
         # into minibatches even without a central value net.
         self.distill_config = self.config.get('distillation', None)
         self.distill = None                     # built by the agent once the model exists
-        self.store_states = self.has_central_value or self.distill_config is not None
+        # state_aux: {} -> the network regresses `states` as an auxiliary loss (actor_critic_state_aux)
+        self.state_aux_config = self.config.get('state_aux', None)
+        self.store_states = (self.has_central_value or self.distill_config is not None
+                             or self.state_aux_config is not None)
         if self.store_states and not hasattr(self, 'state_space'):
             self.state_space = self.env_info.get('state_space', None) or self.observation_space
         self.self_play_config = self.config.get('self_play_config', None)
@@ -1467,7 +1470,7 @@ class DiscreteA2CBase(A2CBase):
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
 
-        if self.distill is not None:
+        if self.distill is not None or self.state_aux_config is not None:
             dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
@@ -1757,7 +1760,7 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['rnn_masks'] = rnn_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
-        if self.distill is not None:
+        if self.distill is not None or self.state_aux_config is not None:
             dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)

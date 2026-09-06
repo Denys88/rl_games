@@ -38,6 +38,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'normalize_input': self.normalize_input,
             'normalize_input_init_count': self.normalize_input_init_count,
         }
+        if self.store_states and hasattr(self, 'state_space'):
+            build_config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
@@ -152,6 +154,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'prev_actions': actions_batch,
             'obs': obs_batch,
         }
+        if self.state_aux_config is not None:
+            batch_dict['states'] = input_dict['states']
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
 

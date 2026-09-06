@@ -35,6 +35,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_input': self.normalize_input,
             'normalize_input_init_count': self.normalize_input_init_count,
         }
+        if self.store_states and hasattr(self, 'state_space'):
+            build_config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
@@ -176,6 +178,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'prev_actions': actions_batch,
             'obs': obs_batch,
         }
+        if self.state_aux_config is not None:
+            batch_dict['states'] = input_dict['states']
 
         # masks may exist without an RNN: next_step-autoreset garbage rows
         rnn_masks = input_dict.get('rnn_masks', None)

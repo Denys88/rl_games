@@ -121,3 +121,21 @@ def test_continuous_distillation_end_to_end_cartpole(tmp_path):
     assert agent.distill is not None and not agent.distill.is_discrete
     agent.train()
     assert 'distill' in agent.aux_loss_dict
+
+
+@needs_playground
+def test_state_aux_end_to_end_cartpole(tmp_path):
+    """Pixel student + privileged-state auxiliary head (no teacher), two PPO epochs."""
+    import yaml
+    from rl_games.torch_runner import Runner
+    scfg = yaml.safe_load(open('rl_games/configs/playground/ppo_panda_pick_pixels_stateaux.yaml'))
+    sc = scfg['params']['config']
+    sc.update(num_actors=16, horizon_length=8, minibatch_size=64, max_epochs=2, save_frequency=0,
+              train_dir=str(tmp_path), name='pg_stateaux_smoke')
+    sc['env_config'].update(env_name='CartpoleBalance', cam_res=[32, 32], config_overrides={'episode_length': 20})
+    runner = Runner()
+    runner.load(scfg)
+    agent = runner.algo_factory.create(runner.algo_name, base_name='run', params=runner.params)
+    assert agent.store_states and agent.distill is None
+    agent.train()
+    assert 'state_aux' in agent.aux_loss_dict
