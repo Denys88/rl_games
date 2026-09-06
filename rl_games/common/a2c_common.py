@@ -307,6 +307,17 @@ class A2CBase(BaseAlgorithm):
             else:
                 self.state_shape = self.state_space.shape
 
+        # Frozen-teacher distillation (rl_games/common/distillation.py): the
+        # teacher consumes privileged `states`, so they are stored and passed
+        # into minibatches even without a central value net.
+        self.distill_config = self.config.get('distillation', None)
+        self.distill = None                     # built by the agent once the model exists
+        # state_aux: {} -> the network regresses `states` as an auxiliary loss (actor_critic_state_aux)
+        self.state_aux_config = self.config.get('state_aux', None)
+        self.store_states = (self.has_central_value or self.distill_config is not None
+                             or self.state_aux_config is not None)
+        if self.store_states and not hasattr(self, 'state_space'):
+            self.state_space = self.env_info.get('state_space', None) or self.observation_space
         self.self_play_config = self.config.get('self_play_config', None)
         self.has_self_play_config = self.self_play_config is not None
 
@@ -628,6 +639,8 @@ class A2CBase(BaseAlgorithm):
         for k, v in self.aux_loss_dict.items():
             self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+        if self.distill is not None:
+            self.distill.log(self.writer, self.epoch_num, frame)
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
@@ -688,6 +701,8 @@ class A2CBase(BaseAlgorithm):
 
         with torch.no_grad():
             res_dict = self.inference_model()(input_dict)
+            if self.distill is not None:
+                res_dict = self.distill.mix_actions(res_dict, obs['states'], self.epoch_num)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -739,6 +754,7 @@ class A2CBase(BaseAlgorithm):
             'num_actors': self.num_actors,
             'horizon_length': self.horizon_length,
             'has_central_value': self.has_central_value,
+            'store_states': self.store_states,
             'use_action_masks': self.use_action_masks
         }
         self.experience_buffer = ExperienceBuffer(self.env_info, algo_info, self.ppo_device)
@@ -1114,7 +1130,7 @@ class A2CBase(BaseAlgorithm):
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
+            if self.store_states:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
             step_time_start = time.perf_counter()
@@ -1222,7 +1238,7 @@ class A2CBase(BaseAlgorithm):
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
+            if self.store_states:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
             step_time_start = time.perf_counter()
@@ -1453,6 +1469,9 @@ class DiscreteA2CBase(A2CBase):
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
+
+        if self.distill is not None or self.state_aux_config is not None:
+            dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
         if self.has_central_value:
@@ -1741,6 +1760,8 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['rnn_masks'] = rnn_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
+        if self.distill is not None or self.state_aux_config is not None:
+            dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
 

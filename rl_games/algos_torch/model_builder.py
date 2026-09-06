@@ -6,6 +6,11 @@ from rl_games.algos_torch import models
 NETWORK_REGISTRY = {}
 MODEL_REGISTRY = {}
 
+def _build_state_aux():
+    from rl_games.algos_torch.state_aux_network import StateAuxBuilder
+    return StateAuxBuilder()
+
+
 def register_network(name, target_class):
     NETWORK_REGISTRY[name] = lambda **kwargs: target_class()
 
@@ -18,6 +23,7 @@ class NetworkBuilder:
         self.network_factory = object_factory.ObjectFactory()
         self.network_factory.set_builders(NETWORK_REGISTRY)
         self.network_factory.register_builder('actor_critic', lambda **kwargs: network_builder.A2CBuilder())
+        self.network_factory.register_builder('actor_critic_state_aux', lambda **kwargs: _build_state_aux())
         self.network_factory.register_builder('resnet_actor_critic',
                                               lambda **kwargs: network_builder.A2CResnetBuilder())
         self.network_factory.register_builder('rnd_curiosity', lambda **kwargs: network_builder.RNDCuriosityBuilder())

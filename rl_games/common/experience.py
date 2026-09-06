@@ -337,7 +337,8 @@ class ExperienceBuffer:
 
         self.num_actors = algo_info['num_actors']
         self.horizon_length = algo_info['horizon_length']
-        self.has_central_value = algo_info['has_central_value']
+        # 'states' are stored for a central value net OR for teacher distillation
+        self.has_central_value = algo_info.get('store_states', algo_info['has_central_value'])
         self.use_action_masks = algo_info.get('use_action_masks', False)
         batch_size = self.num_actors * self.num_agents
         self.is_discrete = False

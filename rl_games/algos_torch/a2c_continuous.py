@@ -35,6 +35,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_input': self.normalize_input,
             'normalize_input_init_count': self.normalize_input_init_count,
         }
+        if self.store_states and hasattr(self, 'state_space'):
+            build_config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
@@ -76,6 +78,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+
+        if self.distill_config is not None:
+            from rl_games.common.distillation import TeacherDistillation
+            self.distill = TeacherDistillation.from_config(
+                self.distill_config, self.state_space.shape, self.actions_num, self.ppo_device)
+            if self.has_central_value and self.distill.warm_start_value:
+                self.distill.warm_start_central_value(self.central_value_net.model)
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -169,6 +178,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'prev_actions': actions_batch,
             'obs': obs_batch,
         }
+        if self.state_aux_config is not None:
+            batch_dict['states'] = input_dict['states']
 
         # masks may exist without an RNN: next_step-autoreset garbage rows
         rnn_masks = input_dict.get('rnn_masks', None)
@@ -202,8 +213,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 rnn_masks
             )
 
+            if self.distill is not None:
+                d_loss = self.distill.loss(res_dict, input_dict['states'], rnn_masks)
+                loss = self.distill.ppo_coef(self.epoch_num) * loss + self.distill.coef(self.epoch_num) * d_loss
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
+            if self.distill is not None:
+                self.aux_loss_dict['distill'] = [d_loss.detach()]
             if aux_loss is not None:
                 for k, v in aux_loss.items():
                     loss += v

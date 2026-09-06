@@ -1,0 +1,116 @@
+# Craftax-Classic PIXELS student DISTILLED from the symbolic teacher
+# (ppo_craftax_classic_symbolic.yaml) — frozen-teacher distillation inside PPO
+# (rl_games/common/distillation.py). Env returns {'obs': pixels, 'states':
+# symbolic}; the teacher and the central value net consume states.
+#
+# Schedule (epochs): 0-300 pure DAgger (ppo_coef 0, KL to teacher, beta
+# 0.5 -> 0 by 150), 300-600 PPO fine-tune with the KL fading to 0, then PPO.
+# The central value net is the teacher's MLP, warm-started from the teacher.
+#
+#   python scripts/craftax_train.py -f rl_games/configs/craftax/ppo_craftax_classic_pixels_distill.yaml
+params:
+  seed: 7
+
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      discrete:
+    cnn:
+      permute_input: True        # obs arrives (B, H, W, C) uint8
+      type: conv2d
+      activation: elu
+      initializer:
+        name: default
+      regularizer:
+        name: None
+      convs:
+        - filters: 32
+          kernel_size: 8
+          strides: 4
+          padding: 0
+        - filters: 64
+          kernel_size: 4
+          strides: 2
+          padding: 0
+        - filters: 64
+          kernel_size: 3
+          strides: 1
+          padding: 0
+    mlp:
+      units: [512]
+      activation: elu
+      initializer:
+        name: default
+  config:
+    name: craftax_classic_pixels_distill
+    env_name: craftax
+    device: cuda
+
+    reward_shaper:
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: False     # uint8 pixels are scaled by 1/255 in _preproc_obs
+    normalize_value: True
+    value_bootstrap: False
+
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.01
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01
+    critic_coef: 1.0
+    clip_value: True
+
+    num_actors: 1024
+    horizon_length: 64
+    minibatch_size: 8192
+    mini_epochs: 4
+
+    max_epochs: 1500
+    save_best_after: 50
+    save_frequency: 250
+    score_to_win: 100000
+    games_to_track: 500
+
+    central_value_config:
+      minibatch_size: 16384
+      mini_epochs: 4
+      learning_rate: 3.0e-4
+      clip_value: True
+      normalize_input: True
+      truncate_grads: True
+      network:
+        name: actor_critic
+        central_value: True
+        mlp:
+          units: [512, 512, 256]
+          activation: elu
+          initializer:
+            name: default
+
+    distillation:
+      teacher_config: rl_games/configs/craftax/ppo_craftax_classic_symbolic.yaml
+      teacher_checkpoint: runs/craftax_classic_symbolic_05-11-32-19/nn/craftax_classic_symbolic.pth
+      loss: kl
+      coef: [[0, 1.0], [300, 1.0], [600, 0.0]]
+      ppo_coef: [[0, 0.0], [300, 0.0], [301, 1.0]]
+      beta: [[0, 0.5], [150, 0.0]]
+      warm_start_value: True
+
+    env_config:
+      game: Craftax-Classic-v1
+      obs: both
+      seed: 7
