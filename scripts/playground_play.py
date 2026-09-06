@@ -12,6 +12,7 @@ import sys
 WSL_LIB = '/usr/lib/wsl/lib'
 if os.path.isdir(WSL_LIB) and WSL_LIB not in os.environ.get('LD_LIBRARY_PATH', '').split(':'):
     os.environ['LD_LIBRARY_PATH'] = WSL_LIB + (':' + os.environ['LD_LIBRARY_PATH'] if os.environ.get('LD_LIBRARY_PATH') else '')
+    os.environ.setdefault('PYTHONUNBUFFERED', '1')     # keep logs live after the re-exec
     os.execv(sys.executable, [sys.executable] + sys.argv)
 os.environ.setdefault('MUJOCO_GL', 'egl')
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
