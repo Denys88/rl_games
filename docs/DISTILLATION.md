@@ -126,8 +126,10 @@ i.e. as fast as the state teacher itself learned.
 (`ppo_panda_pick_pixels_stateaux.yaml`, network `actor_critic_state_aux`:
 same CNN plus an MSE head regressing the running-normalised 66-d state from
 the actor trunk, `state_aux: {}` in the algo config) does not help: the head
-learns the state well (normalised MSE 0.78 -> 0.17) but success stays at 0
-and the reward curve is the scratch student's. On this task the bottleneck is
+learns part of the state (training MSE 0.78 -> 0.17; on fresh rollouts R^2
+0.85 for arm joints, 0.83 gripper position, 0.75 cube-to-gripper offset,
+0.49 target-to-cube offset, but ~0 for cube orientation and velocities) yet
+success stays at 0 and the reward curve is the scratch student's. On this task the bottleneck is
 not the representation but exploration / credit assignment for a grasp that
 random pixel policies never stumble on; the teacher's actions supply exactly
 that, a state-prediction target does not.
