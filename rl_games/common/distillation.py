@@ -19,6 +19,7 @@ Config (algo `config.distillation`):
       ppo_coef: [[0, 0.0], [400, 0.0], [401, 1.0]]
       beta: [[0, 0.5], [200, 0.0]]
       warm_start_value: True   # copy matching teacher tensors into the central value net
+      teacher_mu_clip: 1.0     # continuous only: clamp teacher means to the action range
 
 Because PPO's on-policy buffer is rebuilt from the student's own rollouts
 every epoch, the distillation term IS DAgger: supervised on the states the
@@ -68,6 +69,9 @@ class TeacherDistillation:
         self._ppo_coef = config.get('ppo_coef', 1.0)
         self._beta = config.get('beta', 0.0)
         self.warm_start_value = bool(config.get('warm_start_value', True))
+        # continuous: clamp the teacher's means to +-clip before the loss (the env
+        # clips actions anyway; unbounded teacher means are unreachable targets)
+        self.teacher_mu_clip = config.get('teacher_mu_clip', None)
         self.last_loss = None
 
     # ----------------------------------------------------------- schedules
@@ -118,6 +122,9 @@ class TeacherDistillation:
         else:
             mu_s, sig_s = res_dict['mus'].float(), res_dict['sigmas'].float()
             mu_t, sig_t = t['mus'].float(), t['sigmas'].float()
+            if self.teacher_mu_clip is not None:
+                c = float(self.teacher_mu_clip)
+                mu_t = mu_t.clamp(-c, c)
             if self.loss_type == 'mse':
                 per_row = ((mu_t - mu_s) ** 2).sum(dim=-1)
             else:

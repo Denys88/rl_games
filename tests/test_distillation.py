@@ -112,3 +112,20 @@ def test_warm_start_copies_matching_tensors_only():
     assert copied == 4 and skipped == 2                           # extra.* skipped
     assert torch.equal(cv['trunk'].weight, teacher['trunk'].weight)
     assert torch.equal(cv['value'].bias, teacher['value'].bias)
+
+
+def test_teacher_mu_clip_bounds_continuous_targets():
+    t = _Teacher(4, 3, discrete=False, seed=3)
+    with torch.no_grad():
+        t.lin.weight.mul_(10.0)                       # teacher means far outside [-1, 1]
+    states = torch.randn(8, 4)
+    mus = torch.zeros(8, 3)
+    sig = torch.full((8, 3), 0.5)
+    with torch.no_grad():
+        tm = t.lin(states)
+    assert tm.abs().max() > 1.5
+    clipped = _distill(t, False, loss='mse', teacher_mu_clip=1.0).loss({'mus': mus, 'sigmas': sig}, states)
+    expected = (tm.clamp(-1.0, 1.0) ** 2).sum(-1).mean()
+    assert torch.allclose(clipped, expected, atol=1e-6)
+    unclipped = _distill(t, False, loss='mse').loss({'mus': mus, 'sigmas': sig}, states)
+    assert unclipped > clipped
