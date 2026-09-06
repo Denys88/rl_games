@@ -77,7 +77,51 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=0.3 python scripts/craftax_train.py -f rl_games/c
 python -m pytest tests/test_distillation.py tests/test_craftax_env.py -q
 ```
 
-## Results (2026-09-05, one seed each, 1500 epochs = 98M frames)
+## Robotics vision: Panda pick-cube (mujoco_playground)
+
+`rl_games/envs/playground_vecenv.py` (env name `playground`, JAX + Warp
+physics, mujoco 3.12's built-in batch renderer) exposes any mujoco_playground
+env with `obs: state | pixels | both`; the state vector is the env's own
+`_get_obs(data, info)` from the same physics state the pixels are rendered
+from. `PandaPickCubeCartesian`: 66-d state, 64x64 gripper camera, 3-d
+Cartesian actions, episodes end on success. Configs in
+`rl_games/configs/playground/`, `scripts/playground_train.py`,
+`scripts/playground_play.py`.
+
+Setup notes: playground 0.2 needs mujoco 3.12 + mujoco-warp 3.12 +
+`warp-lang==1.16.0`; under WSL2 the CUDA toolkit's stub libcuda shadows the
+driver, so `LD_LIBRARY_PATH=/usr/lib/wsl/lib` is required (the scripts
+re-exec with it). 1024 worlds train at ~30k frames/s (state) / ~7k (pixels).
+
+Results (one seed each, 300 epochs = 9.8M frames):
+
+| frames (M) | 1 | 2 | 4 | 6 | 8 | 9.8 |
+|---|---|---|---|---|---|---|
+| teacher (state) success | 0.00 | 0.00 | 0.61 | 0.98 | 1.00 | 1.00 |
+| scratch (pixels) success | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| distilled (pixels) success | 0.06 | 0.23 | 1.00 | 1.00 | 1.00 | 1.00 |
+| teacher reward | 2.7 | 4.6 | 8.5 | 10.5 | 10.8 | 10.6 |
+| scratch reward | 1.9 | 1.9 | 1.7 | 2.1 | 4.0 | 3.7 |
+| distilled reward | 3.0 | 4.4 | 10.5 | 10.6 | 10.5 | 10.6 |
+
+The pixel student from scratch never grasps the cube in 9.8M frames; the
+distilled pixel student reaches the teacher's 100% success by 4M frames,
+i.e. as fast as the state teacher itself learned.
+
+What it took (the first attempt failed, `runs/panda_pick_pixels_distill_v1_failed_*`):
+
+- **Fixed learning rate.** The distillation term makes consecutive policies
+  differ by far more than `kl_threshold`, so rl_games' adaptive schedule sank
+  the lr to 5e-6 from epoch 1 and the student barely moved. Use
+  `lr_schedule: fixed` (or linear) with distillation.
+- **Clip the teacher's means.** A continuous teacher's `mu` is unbounded
+  (here ±3 with the env clipping actions at ±1); matching it is an unreachable
+  target that fights the student's bounds loss until the means blow up.
+  `teacher_mu_clip: 1.0` clamps the targets to the action range. With that,
+  `loss: mse` on the means (behaviour cloning of the mean, sigma left to PPO)
+  was the stable choice for continuous actions.
+
+## Results: Craftax-Classic (2026-09-05, one seed each, 1500 epochs = 98M frames)
 
 Teacher: symbolic MLP, 25 min at 106k fps. Students: same CNN, same frames,
 trained side by side on one GPU (scratch 44k fps, distilled 32k fps).
