@@ -1922,7 +1922,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=1.0.0" },
     { name = "imageio", marker = "extra == 'mujoco'" },
     { name = "mujoco", marker = "extra == 'mujoco'", specifier = ">=3.0.0" },
-    { name = "numpy", specifier = ">=2.0" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "opencv-python", specifier = ">=4.5.5" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "pyyaml", specifier = ">=6.0" },
