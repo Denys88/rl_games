@@ -256,7 +256,9 @@ def explained_variance(y_pred, y, masks=None):
     """
 
     if masks is not None:
-        masks = masks.unsqueeze(1)
+        # a per-row mask broadcast over value_size columns: expand it so the
+        # helper counts valid ELEMENTS, matching the pooled torch.var below
+        masks = masks.unsqueeze(1).expand_as(y)
         _, var_y = get_mean_var_with_masks(y, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
@@ -272,7 +274,7 @@ def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
                 logratio > math.log(1.0 + clip_param),
             ).float()
     if masks is not None:
-        clip_frac = (clip_frac * masks).sum() / masks.sum()
+        clip_frac = (clip_frac * masks).sum() / masks.sum().clamp(min=1.0)
     else:
         clip_frac = clip_frac.mean()
     return clip_frac
