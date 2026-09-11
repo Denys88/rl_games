@@ -195,8 +195,8 @@ configurations = {
             'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
         },
     },
-    'CarRacing-v2' : {
-        'env_creator' : lambda **kwargs :  wrappers.make_car_racing('CarRacing-v2', skip=4),
+    'CarRacing-v3' : {
+        'env_creator' : lambda **kwargs :  wrappers.make_car_racing('CarRacing-v3', skip=4),
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v3' : {

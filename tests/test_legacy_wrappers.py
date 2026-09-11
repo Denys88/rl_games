@@ -676,3 +676,16 @@ def test_no_legacy_reset_signature_left():
     source = inspect.getsource(wrappers)
     bad = re.findall(r'def reset\(self\)\s*:', source)
     assert not bad, f'old-API reset() signatures left in wrappers.py: {bad}'
+
+
+def test_car_racing_route_names_a_registered_gymnasium_id():
+    # gymnasium 1.x ships CarRacing-v3 only; the RAY route was registered as
+    # CarRacing-v2 and raised NameNotFound regardless of the wrapper fix, while
+    # the shipped carracing_ppo.yaml (env_name CarRacing-v3) fell through to the
+    # unwrapped classic path instead of the make_car_racing chain
+    import gymnasium
+    from rl_games.common import env_configurations as ec
+    assert 'CarRacing-v2' not in ec.configurations
+    assert 'CarRacing-v3' in ec.configurations
+    assert 'CarRacing-v3' in gymnasium.registry
+    assert ec.configurations['CarRacing-v3']['vecenv_type'] == 'RAY'
