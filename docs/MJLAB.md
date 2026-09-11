@@ -61,10 +61,12 @@ iteration 5000):
 | mjlab rsl-rl reference | 83.2 |
 | rl_games (`ppo_go1_velocity.yaml`) | **86.8** |
 
+The shipped config stops at `max_epochs: 5000`; the table above was measured
+with `max_epochs: 10000` (mjlab's default budget), which is the only override.
 At the 5000-iteration mark (stage-1 command range only), the same runs read
-94.0 (reference) vs **97.0** (rl_games, peak 98.9).
+94.0 (reference) vs **97.0** (rl_games, peak 98.9):
 
-![Go1 Flat Velocity](pictures/mjlab/go1_flat_comparison_5000.png)
+![Go1 Flat Velocity, first 5000 iterations of the 10k runs](pictures/mjlab/go1_flat_comparison_5000.png)
 
 A compressed-curriculum variant (`velocity_stage_steps` moves the range
 expansions to iterations 2500/5000, giving the hardest 2–3 m/s range 5000
@@ -87,8 +89,6 @@ policies that score reward without actually tracking velocity commands
 (measure deployable behavior, not reward meters). We do not currently claim
 a G1 comparison; the `ppo_g1_velocity.yaml` config is training-stable and
 under active tuning against the reference's full-budget result.
-
-![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison_5000.png)
 
 Recipe (both locomotion configs): asymmetric central value on the privileged
 `critic` obs group, same size as the actor net, trained at the full 5 mini-epochs —
