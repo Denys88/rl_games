@@ -4,7 +4,7 @@ params:
     name: a2c_discrete
 
   model:
-    name: discrete_a2c_lstm
+    name: discrete_a2c
 
   network:
     name: actor_critic
@@ -19,9 +19,10 @@ params:
         name: default 
       regularizer:
         name: 'None'
-    lstm:
+    rnn:
+      name: lstm
       units: 128
-      concated: False
+      layers: 1
   config:
     name: 2m_vs_1z
     reward_shaper:

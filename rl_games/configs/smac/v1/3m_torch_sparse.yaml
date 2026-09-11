@@ -9,7 +9,6 @@ params:
   network:
     name: actor_critic
     separate: True
-    value_shape: 2
     #normalization: layer_norm
     space: 
       discrete:
@@ -44,7 +43,6 @@ params:
     lr_schedule:  None
     kl_threshold: 0.05
     normalize_input: True
-    seq_length: 2
     use_action_masks: True
     ignore_dead_batches : False
 

@@ -14,8 +14,7 @@ params:
         mu_activation: None
         sigma_activation: None
         mu_init:
-          name: normc_initializer
-          std: 0.01
+          name: default
         sigma_init:
           name: const_initializer
           value: 0.0
@@ -25,13 +24,13 @@ params:
       units: [256, 256, 128]
       activation: relu
       initializer:
-        name: normc_initializer
-        std: 1
+        name: default
       regularizer:
         name: None
-    lstm:
+    rnn:
+      name: lstm
       units: 128
-      concated: False
+      layers: 1
 
   config:
     env_name:  BipedalWalkerHardcore-v3
