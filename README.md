@@ -1,11 +1,103 @@
-# RL Games: High performance RL library
+<h1 align="center">rl_games</h1>
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium` and requires Python >= 3.11 (CI runs 3.11 and 3.12). EnvPool support has been restored: envpool >= 1.2.6 on Python 3.12+, with an envpool 1.2.5 fallback on Python 3.11 (NumPy 2.x, MuJoCo 3.x compatible; MyoSuite target randomization requires 1.2.6 and therefore Python >= 3.12).
+<p align="center"><b>High-performance reinforcement learning for GPU-vectorized simulation.</b><br>
+PPO and SAC in PyTorch, thousands of environments per GPU, multi-GPU training, asymmetric actor-critic, ONNX export.<br>
+Trains directly on <a href="docs/MJLAB.md">MJLab</a>, <a href="https://github.com/isaac-sim/IsaacLab">Isaac Lab</a>, <a href="docs/ENVPOOL.md">EnvPool</a> and <a href="docs/MYOSUITE.md">MyoSuite</a>.</p>
 
-## Discord Channel Link 
-* https://discord.gg/hnYRq7DsQh
+<p align="center">
+<a href="https://pypi.org/project/rl-games/"><img src="https://img.shields.io/pypi/v/rl-games?label=PyPI" alt="PyPI"></a>
+<a href="https://github.com/Denys88/rl_games/actions/workflows/python-package.yml"><img src="https://github.com/Denys88/rl_games/actions/workflows/python-package.yml/badge.svg" alt="CI"></a>
+<img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python 3.11 | 3.12">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/Denys88/rl_games" alt="License"></a>
+<a href="https://discord.gg/hnYRq7DsQh"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
 
-## Papers and related links
+<table align="center" width="100%">
+<tr>
+<td width="33%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/g1_velocity.gif" width="100%" alt="Unitree G1 humanoid tracking velocity commands, trained with rl_games on MJLab"></td>
+<td width="33%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_velocity.gif" width="100%" alt="Unitree Go1 quadruped tracking velocity commands, trained with rl_games on MJLab"></td>
+<td width="33%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wujihand_reorient.gif" width="100%" alt="WujiHand in-hand cube reorientation, trained with rl_games on MJLab"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Unitree G1</b> humanoid, velocity tracking (MJLab)</sub></td>
+<td align="center"><sub><b>Unitree Go1</b>, velocity tracking (MJLab)</sub></td>
+<td align="center"><sub><b>WujiHand</b>, in-hand reorientation (MJLab)</sub></td>
+</tr>
+</table>
+
+> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (1.2.6 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
+
+## Why rl_games
+
+- **Beats the reference trainers on their own tasks.** On MJLab's Go1 flat-velocity task rl_games reaches **86.8 vs 83.2** for mjlab's rsl-rl reference on the full 10k-iteration protocol; on WujiHand in-hand reorientation **17.1 vs 16.4** goal reaches per episode at the same budget, and the exported ONNX policy passes the project's sim2sim deployment protocol. Details in [docs/MJLAB.md](docs/MJLAB.md).
+- **SAC that holds up.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past the standard budget. [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md)
+- **Built for GPU simulators.** Asymmetric actor-critic with a separate central-value network, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, next-step autoreset handling, population-based training, self-play, ONNX export.
+- **A track record.** DeXtreme, DexPBT, TriFinger, AMP, OSCAR, DextrAH-RGB and the Isaac Gym benchmark suite were trained with rl_games. See [papers and projects](#papers-and-projects-using-rl_games).
+
+## Results
+
+### MJLab: same machine, same task, same budget as the reference
+
+<table width="100%">
+<tr>
+<td width="50%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_flat_comparison_5000.png" width="100%" alt="Go1 flat velocity: rl_games 97.0 vs mjlab rsl-rl reference 94.0 over the first 5000 iterations"></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 17.1 vs rsl-rl fork 16.4 goal reaches per episode"></td>
+</tr>
+<tr>
+<td><sub><b>Go1 flat velocity</b>, first 5000 of 10k iterations: 97.0 vs 94.0; final 86.8 vs 83.2 after the stage-2 command range opens.</sub></td>
+<td><sub><b>WujiHand reorientation</b> (<a href="https://github.com/wuji-technology/wuji-mjlab">wuji-mjlab</a>), unmodified task: 17.1 vs 16.4 goal reaches per episode.</sub></td>
+</tr>
+</table>
+
+Recipes, the Go1 rough-terrain and G1 humanoid configs, and the live viewer are documented in [docs/MJLAB.md](docs/MJLAB.md).
+
+### SAC: MuJoCo via EnvPool
+
+<table width="100%">
+<tr>
+<td width="30%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.gif" width="240" alt="Humanoid-v5 running, trained with rl_games SAC"></td>
+<td width="70%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.png" width="100%" alt="Humanoid-v5 SAC training curve to 5M frames reaching 7,066 against the 1M reference band"></td>
+</tr>
+</table>
+
+| Task (1M frames, 3 seeds) | rl_games SAC | Reference SAC |
+|------|--------------|--------------------|
+| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
+| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
+| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
+
+Humanoid keeps improving past the 1M-frame budget: a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean. Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
+
+### Isaac Gym era (rl_games <= 1.6.5)
+
+<table width="100%">
+<tr>
+<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif" width="100%" alt="DeXtreme: Allegro hand cube reorientation on the real robot"></td>
+<td width="25%" align="center"><img src="https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288" width="100%" alt="DexPBT: Allegro hand on a Kuka arm"></td>
+<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif" width="100%" alt="Shadow Hand cube reorientation in Isaac Gym"></td>
+<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif" width="100%" alt="Humanoid running in Isaac Gym"></td>
+</tr>
+<tr>
+<td align="center"><sub><a href="https://dextreme.org/">DeXtreme</a>, sim-to-real</sub></td>
+<td align="center"><sub><a href="https://sites.google.com/view/dexpbt">DexPBT</a></sub></td>
+<td align="center"><sub>Shadow Hand</sub></td>
+<td align="center"><sub>Humanoid</sub></td>
+</tr>
+</table>
+
+Isaac Gym is end-of-life; these results and their configs are documented for rl_games <= 1.6.5 in [docs/ISAAC_GYM.md](docs/ISAAC_GYM.md).
+
+## Environments
+
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md): quadruped and humanoid locomotion, dexterous manipulation, live viewer play
+* [EnvPool](docs/ENVPOOL.md): high-throughput MuJoCo, Atari and DM Control
+* [MyoSuite](docs/MYOSUITE.md): musculoskeletal control, envpool-vectorized
+* [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
+* [StarCraft 2 Multi-Agent Challenge](docs/SMAC.md)
+* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md) (legacy, rl_games <= 1.6.5)
+* [Other environments](docs/OTHER.md)
+
+## Papers and projects using rl_games
 
 * Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
 * DeXtreme: Transfer of Agile In-Hand Manipulation from Simulation to Reality: https://dextreme.org/ https://arxiv.org/abs/2210.13702
@@ -16,60 +108,6 @@
 * EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine: https://arxiv.org/abs/2206.10558 and https://github.com/sail-sg/envpool
 * TimeChamber: A Massively Parallel Large Scale Self-Play Framework: https://github.com/inspirai/TimeChamber
 * DextrAH-RGB: Visuomotor Policies to Grasp Anything with Dexterous Hands: https://dextrah-rgb.github.io/ https://arxiv.org/abs/2412.01791
-
-
-## Some results on the different environments  
-
-* [NVIDIA Isaac Gym (legacy — use rl_games <= 1.6.5)](docs/ISAAC_GYM.md)
-
-![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
-![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
-
-![Allegro_Hand_400](https://user-images.githubusercontent.com/463063/125261559-38373700-e2b6-11eb-80eb-b250a0693f0b.gif)
-![Shadow_Hand_OpenAI](https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif)
-
-* [Dextreme](https://dextreme.org/)
-
-![Allegro_Hand_real_world](https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif)
-
-* [DexPBT](https://sites.google.com/view/dexpbt)
-
-![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
-
-* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion, dexterous manipulation
-
-![Go1 Flat Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_flat_training.png)
-![Go1 Rough Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_rough_training.png)
-![G1 Humanoid Flat Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/g1_flat_comparison.png)
-
-**WujiHand in-hand cube reorientation** ([wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab)):
-on the unmodified task, rl_games trains to **17.1 goal reaches per episode vs 16.4** for the
-reference rsl-rl fork at the same training budget, and the exported ONNX policy matches the
-officially released policy on the project's sim2sim deployment protocol (success rate 1.00).
-Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
-
-![WujiHand Reorient](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wujihand_reorient.gif)
-
-* [Starcraft 2 Multi Agents](docs/SMAC.md)
-* [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
-* [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
-* [MyoSuite](docs/MYOSUITE.md) — musculoskeletal control, envpool-vectorized
-* [Random Envs](docs/OTHER.md)
-
-### SAC
-
-SAC matches or exceeds published reference scores on MuJoCo continuous control (envpool, 1M frames, 3 seeds). Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
-
-| Task | rl_games SAC | Reference SAC (1M) |
-|------|--------------|--------------------|
-| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
-| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
-| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
-
-Humanoid keeps improving well past the standard 1M-frame budget — a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean.
-
-![Humanoid SAC extended training](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.png)
-![Humanoid-v5 policy trained with SAC](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.gif)
 
 ## Implemented in PyTorch
 
