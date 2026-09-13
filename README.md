@@ -38,9 +38,9 @@
 
 * [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion, dexterous manipulation
 
-![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
-![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
-![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
+![Go1 Flat Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_flat_training.png)
+![Go1 Rough Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_rough_training.png)
+![G1 Humanoid Flat Velocity](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/g1_flat_comparison.png)
 
 **WujiHand in-hand cube reorientation** ([wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab)):
 on the unmodified task, rl_games trains to **17.1 goal reaches per episode vs 16.4** for the
@@ -48,7 +48,7 @@ reference rsl-rl fork at the same training budget, and the exported ONNX policy 
 officially released policy on the project's sim2sim deployment protocol (success rate 1.00).
 Full comparison and the training recipe in [docs/MJLAB.md](docs/MJLAB.md).
 
-![WujiHand Reorient](docs/pictures/mjlab/wujihand_reorient.gif)
+![WujiHand Reorient](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wujihand_reorient.gif)
 
 * [Starcraft 2 Multi Agents](docs/SMAC.md)
 * [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
@@ -68,8 +68,8 @@ SAC matches or exceeds published reference scores on MuJoCo continuous control (
 
 Humanoid keeps improving well past the standard 1M-frame budget — a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean.
 
-![Humanoid SAC extended training](docs/pictures/sac/humanoid_v5_5M.png)
-![Humanoid-v5 policy trained with SAC](docs/pictures/sac/humanoid_v5_5M.gif)
+![Humanoid SAC extended training](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.png)
+![Humanoid-v5 policy trained with SAC](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.gif)
 
 ## Implemented in PyTorch
 
@@ -226,7 +226,7 @@ python benchmarks/bench_triton_gae.py
 | algo                   |                           |         | Algorithm block.                                                                                                                                             |
 | name                   | a2c_continuous            | None    | Algorithm name. Possible values are: sac, a2c_discrete, a2c_continuous                                                                                       |
 | model                  |                           |         | Model block.                                                                                                                                                 |
-| name                   | continuous_a2c_logstd     | None    | Possible values: continuous_a2c ( expects sigma to be (0, +inf), continuous_a2c_logstd  ( expects sigma to be (-inf, +inf), a2c_discrete, a2c_multi_discrete |
+| name                   | continuous_a2c_logstd     | None    | Possible values: continuous_a2c_logstd (Gaussian, log-std parametrization), continuous_a2c_tanh, discrete_a2c, multi_discrete_a2c, soft_actor_critic       |
 | network                |                           |         | Network description.                                                                                                                                         |
 | name                   | actor_critic              |         | Possible values: actor_critic or soft_actor_critic.                                                                                                          |
 | separate               | False                     |         | Whether use or not separate network with same same architecture for critic. In almost all cases if you normalize value it is better to have it False         |

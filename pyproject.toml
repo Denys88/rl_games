@@ -1,16 +1,29 @@
 [project]
 name = "rl_games"
 version = "2.0.0"
-description = ""
+description = "High-performance PyTorch reinforcement learning: PPO and SAC for GPU-vectorized simulators (MJLab, Isaac Lab), envpool and gymnasium"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Denys Makoviichuk", email = "trrrrr97@gmail.com"},
     {name = "Viktor Makoviichuk", email = "victor.makoviychuk@gmail.com"},
 ]
+# Python classifiers track the CI matrix (.github/workflows/python-package.yml)
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "torch>=2.7.0",  # floor matches Isaac Lab / Isaac Sim 5.1 (torch 2.7 pin); dev lock pins 2.12
     "gymnasium>=1.0.0",
+    "numpy>=1.26",  # direct dependency (31 imports); 1.26 = Isaac Sim 5.x / Isaac Lab (numpy<2), dev lock tests 2.x
     "tensorboard>=2.8.0",
     "tensorboardX>=2.5",
     "PyYAML>=6.0",
@@ -19,6 +32,12 @@ dependencies = [
     "opencv-python>=4.5.5",
     "wandb>=0.19.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Denys88/rl_games"
+Repository = "https://github.com/Denys88/rl_games"
+Documentation = "https://github.com/Denys88/rl_games/tree/master/docs"
+Issues = "https://github.com/Denys88/rl_games/issues"
 
 [project.optional-dependencies]
 atari = ["ale-py>=0.8", "AutoROM[accept-rom-license]>=0.4.2"]
@@ -45,5 +64,35 @@ envpool = [
 dev = ["pytest>=8"]
 
 [build-system]
-requires = ["hatchling"]
+# 1.27: PEP 639 license expression (License-Expression in METADATA); 1.30 and 1.32 emit
+# Metadata-Version 2.5, which twine 7.0 / packaging 26.3 still reject -- lift the cap once they accept it
+requires = ["hatchling>=1.27,<1.30"]
 build-backend = "hatchling.build"
+
+# The sdist is what PyPI serves for source installs: sources, configs, tests,
+# benchmarks and the docs text. Notebooks (25 MB) and docs/pictures (17 MB)
+# stay on GitHub -- with them the 2.0.0 sdist was 25 MB against 127 KB for 1.6.5.
+# allowlist: hatchling's default sdist is "everything not gitignored", which
+# would ship untracked developer directories (experiments/, logs/, docs/notes/)
+# when built from a working checkout
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "rl_games",
+    "tests",
+    "benchmarks",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "runner.py",
+]
+exclude = [
+    "docs/pictures/",
+    "docs/notes/",
+    "*.png",
+    "*.gif",
+    "*.jpg",
+    "*.mp4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
