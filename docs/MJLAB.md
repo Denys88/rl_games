@@ -61,6 +61,11 @@ iteration 5000):
 | mjlab rsl-rl reference | 83.2 |
 | rl_games (`ppo_go1_velocity.yaml`) | **86.8** |
 
+![Go1 velocity tracking: 1.0 m/s, a 0.7 rad/s turn, 1.5 m/s](pictures/mjlab/go1_velocity.gif)
+
+The Go1 clip plays the shipped config's policy at 1.0 m/s, a 0.7 rad/s turn
+and 1.5 m/s (measured 0.90, 0.90 with 0.75 rad/s, and 1.10 m/s).
+
 The shipped config stops at `max_epochs: 5000`; the table above was measured
 with `max_epochs: 10000` (mjlab's default budget), which is the only override.
 At the 5000-iteration mark (stage-1 command range only), the same runs read
@@ -89,6 +94,17 @@ policies that score reward without actually tracking velocity commands
 (measure deployable behavior, not reward meters). We do not currently claim
 a G1 comparison; the `ppo_g1_velocity.yaml` config is training-stable and
 under active tuning against the reference's full-budget result.
+
+The G1 clip in the README comes from an 8192-environment run trained with
+DistributedDataParallel on two GPUs (4959 epochs, 1.95B frames) with
+`sigma_parametrization: scalar`, played deterministically at commands of
+1.0 m/s forward, a 0.5 rad/s turn, and 0.8 m/s forward: measured body-frame
+speeds 1.05, 1.03 and 0.91 m/s, no falls. The shipped 4096-environment
+config at its 5000-iteration budget still converges to a standing policy
+that tracks no command (reward about 75 per episode from the upright and
+pose terms alone), which is the trap the paragraph above describes.
+
+![G1 humanoid velocity tracking](pictures/mjlab/g1_velocity.gif)
 
 Recipe (both locomotion configs): asymmetric central value on the privileged
 `critic` obs group, same size as the actor net, trained at the full 5 mini-epochs —
