@@ -269,14 +269,30 @@ iterations, one seed).
 
 ![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
 
-![MicroDuck demo](pictures/mjlab/microduck_demo.gif)
+![MicroDuck, shipped config](pictures/mjlab/microduck_velocity.gif)
 
-The demo is the seed-17 checkpoint replayed with pinned commands (stand,
-forward 0.2 and 0.4 m/s, turn in place both ways, sidestep, backward 0.2)
-from a fixed camera; achieved body velocity at the 0.4 m/s forward command
-is 0.25–0.27 m/s, yaw 0.84–0.90 rad/s at a 1.0 rad/s command, lateral
-0.06 m/s at the 0.3 m/s command: forward and yaw track at roughly two
-thirds of the command, lateral is the weak axis. Zero falls in the take.
+The clip is the seed-17 checkpoint of the shipped config under pinned
+commands (forward 0.4 m/s, a 1.0 rad/s turn while walking, a 0.3 m/s
+sidestep), rendered from a camera that follows the robot: measured
+body-frame speed 0.25 m/s at the 0.4 m/s command, 0.92 rad/s at the
+1.0 rad/s command, 0.07 m/s at the 0.3 m/s sidestep command. Forward and
+yaw track at roughly two thirds of the command, lateral is the weak axis.
+No falls in the take.
+
+**Speed lane (research preview).** Same robot, same 61-dimensional
+observation contract, trained on a variant of the task kept in our fork of
+`microduck_rl` (publication pending): an ADR-style curriculum that raises
+the forward-command cap by 0.1 m/s whenever the rolling median tracking
+error at the current cap drops below 0.15 m/s (coupled with the action-rate
+penalty ramp), a touchdown-stride gait term, and a bilateral
+mirror-consistency loss on the policy, at 16,384 environments for 2,000
+iterations (about 45 minutes). The policy reaches **0.39 m/s body-frame
+speed** at 0.8 and 1.0 m/s commands with no falls, against 0.25 m/s for the
+shipped recipe at its 0.4 m/s command and 0.23 m/s measured for Pollen's
+reference rsl-rl policy at the same 0.4 m/s command in the ported
+simulator. The same clip is the first hero tile of the README.
+
+![MicroDuck, speed lane](pictures/mjlab/microduck_speed.gif)
 
 The three tabulated rl_games runs shared the workstation with another
 training job; a fourth run on an idle box (seed 27: 47.6 min, final 126.8,
