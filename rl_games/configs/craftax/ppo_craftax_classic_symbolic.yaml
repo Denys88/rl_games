@@ -1,0 +1,66 @@
+# Craftax-Classic (Crafter in JAX), SYMBOLIC 1345-d observation — the TEACHER
+# for rl_games/common/distillation.py. Discrete PPO, MLP. 1024 envs on GPU,
+# ~90k env-steps/s; 1500 epochs = ~100M frames.
+#
+#   python scripts/craftax_train.py -f rl_games/configs/craftax/ppo_craftax_classic_symbolic.yaml
+params:
+  seed: 7
+
+  algo:
+    name: a2c_discrete
+
+  model:
+    name: discrete_a2c
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      discrete:
+    mlp:
+      units: [512, 512, 256]
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: craftax_classic_symbolic
+    env_name: craftax
+    device: cuda
+
+    reward_shaper:
+      scale_value: 1.0
+
+    normalize_advantage: True
+    normalize_input: True
+    normalize_value: True
+    value_bootstrap: False
+
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 3.0e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.01
+
+    grad_norm: 1.0
+    truncate_grads: True
+    e_clip: 0.2
+    entropy_coef: 0.01
+    critic_coef: 1.0
+    clip_value: True
+
+    num_actors: 1024
+    horizon_length: 64
+    minibatch_size: 16384
+    mini_epochs: 4
+
+    max_epochs: 1500
+    save_best_after: 50
+    save_frequency: 250
+    score_to_win: 100000
+    games_to_track: 500
+
+    env_config:
+      game: Craftax-Classic-v1
+      obs: symbolic
+      seed: 7
