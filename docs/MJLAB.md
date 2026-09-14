@@ -209,6 +209,8 @@ pose terms alone), which is the trap the paragraph above describes.
 
 ![G1 humanoid velocity tracking](pictures/mjlab/g1_velocity.gif)
 
+![G1 flat velocity training reward, 8192 envs on two GPUs](pictures/mjlab/g1_flat_training_8k.png)
+
 Recipe (both locomotion configs): asymmetric central value on the privileged
 `critic` obs group, same size as the actor net, trained at the full 5 mini-epochs —
 halving CV epochs was tested and rejected (Go1 drops from 97.0 to 92.6; the
@@ -269,15 +271,16 @@ iterations, one seed).
 
 ![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
 
-![MicroDuck, shipped config](pictures/mjlab/microduck_velocity.gif)
+![MicroDuck, forward 0.4 m/s](pictures/mjlab/microduck_forward.gif)
 
-The clip is the seed-17 checkpoint of the shipped config under pinned
-commands (forward 0.4 m/s, a 1.0 rad/s turn while walking, a 0.3 m/s
-sidestep), rendered from a camera that follows the robot: measured
-body-frame speed 0.25 m/s at the 0.4 m/s command, 0.92 rad/s at the
-1.0 rad/s command, 0.07 m/s at the 0.3 m/s sidestep command. Forward and
-yaw track at roughly two thirds of the command, lateral is the weak axis.
-No falls in the take.
+The clips (here and in the README) are the seed-17 checkpoint of the
+shipped config under one pinned command each, rendered from a camera that
+follows the robot, with the commanded and the measured body-frame velocity
+(0.5 s average) drawn on the frame. Measured: forward 0.4 m/s command,
+0.23 m/s; backward 0.4 m/s, 0.22 m/s; turn in place at 1.0 rad/s, 1.0 rad/s;
+sidestep 0.3 m/s, 0.05 m/s. Forward and backward track at just over half
+the command, yaw tracks exactly, lateral is the weak axis. No falls in any
+take.
 
 **Speed lane (research preview).** Same robot, same 61-dimensional
 observation contract, trained on a variant of the task kept in our fork of
@@ -286,11 +289,11 @@ the forward-command cap by 0.1 m/s whenever the rolling median tracking
 error at the current cap drops below 0.15 m/s (coupled with the action-rate
 penalty ramp), a touchdown-stride gait term, and a bilateral
 mirror-consistency loss on the policy, at 16,384 environments for 2,000
-iterations (about 45 minutes). The policy reaches **0.39 m/s body-frame
-speed** at 0.8 and 1.0 m/s commands with no falls, against 0.25 m/s for the
-shipped recipe at its 0.4 m/s command and 0.23 m/s measured for Pollen's
-reference rsl-rl policy at the same 0.4 m/s command in the ported
-simulator. The same clip is the first hero tile of the README.
+iterations (about 45 minutes). The policy reaches **0.40 m/s body-frame
+speed** at a 0.8 m/s command with no falls (0.39 m/s at 1.0 m/s, where an
+occasional fall appears), against 0.23 m/s for the shipped recipe at its
+0.4 m/s command and 0.23 m/s measured for Pollen's reference rsl-rl policy
+at the same 0.4 m/s command in the ported simulator.
 
 ![MicroDuck, speed lane](pictures/mjlab/microduck_speed.gif)
 

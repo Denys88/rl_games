@@ -2,7 +2,7 @@
 
 <p align="center"><b>High-performance reinforcement learning for GPU-vectorized simulation.</b><br>
 PPO and SAC in PyTorch, thousands of environments per GPU, multi-GPU training, asymmetric actor-critic, ONNX export.<br>
-Trains directly on <a href="docs/MJLAB.md">MJLab</a>, <a href="https://github.com/isaac-sim/IsaacLab">Isaac Lab</a>, <a href="docs/ENVPOOL.md">EnvPool</a> and <a href="docs/MYOSUITE.md">MyoSuite</a>.</p>
+Trains directly on <a href="https://github.com/isaac-sim/IsaacLab">Isaac Lab</a>, vsim, <a href="docs/MJLAB.md">MJLab</a>, <a href="docs/ENVPOOL.md">EnvPool</a> and <a href="docs/MYOSUITE.md">MyoSuite</a>.</p>
 
 <p align="center">
 <a href="https://pypi.org/project/rl-games/"><img src="https://img.shields.io/pypi/v/rl-games?label=PyPI" alt="PyPI"></a>
@@ -12,29 +12,37 @@ Trains directly on <a href="docs/MJLAB.md">MJLab</a>, <a href="https://github.co
 <a href="https://discord.gg/hnYRq7DsQh"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-<table align="center" width="100%">
+> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (1.2.6 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
+
+## Trained with rl_games
+
+<table width="100%">
 <tr>
-<td width="25%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/microduck_speed.gif" width="100%" alt="Pollen MicroDuck biped running at 0.4 m/s, trained with rl_games on MJLab"></td>
-<td width="25%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/g1_velocity.gif" width="100%" alt="Unitree G1 humanoid tracking velocity commands, trained with rl_games on MJLab"></td>
-<td width="25%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_velocity.gif" width="100%" alt="Unitree Go1 quadruped tracking velocity commands, trained with rl_games on MJLab"></td>
-<td width="25%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wujihand_reorient.gif" width="100%" alt="WujiHand in-hand cube reorientation, trained with rl_games on MJLab"></td>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif" width="100%" alt="DeXtreme: Allegro hand cube reorientation on the real robot"></td>
+<td width="50%" align="center"><img src="https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288" width="100%" alt="DexPBT: Allegro hand on a Kuka arm reorienting objects"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>MicroDuck</b> at 0.4 m/s, speed lane</sub></td>
-<td align="center"><sub><b>Unitree G1</b> humanoid</sub></td>
-<td align="center"><sub><b>Unitree Go1</b></sub></td>
-<td align="center"><sub><b>WujiHand</b> reorientation</sub></td>
+<td><b><a href="https://dextreme.org/">DeXtreme</a></b>: Transfer of Agile In-Hand Manipulation from Simulation to Reality (<a href="https://arxiv.org/abs/2210.13702">arXiv</a>). Trained in Isaac Gym with rl_games, deployed on the real Allegro hand.</td>
+<td><b><a href="https://sites.google.com/view/dexpbt">DexPBT</a></b>: Scaling up Dexterous Manipulation for Hand-Arm Systems with Population Based Training (<a href="https://arxiv.org/abs/2305.12127">arXiv</a>). rl_games' population-based training on an Allegro-Kuka system.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif" width="100%" alt="Shadow Hand cube reorientation in Isaac Gym"></td>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif" width="100%" alt="Humanoid running in Isaac Gym"></td>
+</tr>
+<tr>
+<td><b><a href="https://arxiv.org/abs/2108.10470">Isaac Gym</a></b>: High Performance GPU-Based Physics Simulation For Robot Learning. Shadow Hand cube reorientation, the OpenAI benchmark, trained in hours on a single GPU.</td>
+<td><b>Isaac Gym</b> Humanoid. The whole benchmark suite trains with rl_games; configs and results for rl_games <= 1.6.5 in <a href="docs/ISAAC_GYM.md">docs/ISAAC_GYM.md</a>.</td>
 </tr>
 </table>
 
-> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (1.2.6 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
+Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/), [DextrAH-RGB](https://dextrah-rgb.github.io/), [Play2Perfect](https://play2perfect.github.io/), [AMP](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs), [OSCAR](https://cremebrule.github.io/oscar-web/). Full list under [papers and projects](#papers-and-projects-using-rl_games).
 
 ## Why rl_games
 
-- **Beats the reference trainers on their own tasks.** Pollen's [MicroDuck](https://github.com/pollen-robotics/microduck_rl) at its own recipe: **128 vs 120** final return, and rl_games crosses the reference's final plateau after **3.6 minutes** where the reference needs 16. MJLab's Go1 flat-velocity task: **86.8 vs 83.2** on the full 10k-iteration protocol. WujiHand in-hand reorientation: **17.1 vs 16.4** goal reaches per episode, and the exported ONNX policy passes the project's sim2sim deployment protocol. Details in [docs/MJLAB.md](docs/MJLAB.md).
-- **SAC that holds up.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past the standard budget. [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md)
-- **Built for GPU simulators.** Asymmetric actor-critic with a separate central-value network, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, next-step autoreset handling, population-based training, self-play, ONNX export, a live viewer with keyboard command control for MJLab tasks.
-- **A track record.** DeXtreme, DexPBT, TriFinger, AMP, OSCAR, DextrAH-RGB, Play2Perfect and the Isaac Gym benchmark suite were trained with rl_games. See [papers and projects](#papers-and-projects-using-rl_games).
+- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 128 vs 120 final return, and their final plateau reached in 3.5 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 17.1 vs 16.4 goal reaches. Lift-Cube-Yam: success 0.85 vs 0.72.
+- **Built for GPU simulators.** One process drives thousands of environments. Asymmetric actor-critic with a separate central-value critic, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, population-based training, self-play, ONNX export, a live viewer with keyboard command control.
+- **Proven in sim-to-real.** DeXtreme, DexPBT, TriFinger, DextrAH-RGB and Play2Perfect trained their policies with rl_games.
+- **SAC too.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past that budget.
 
 ## Results
 
@@ -42,31 +50,62 @@ Trains directly on <a href="docs/MJLAB.md">MJLab</a>, <a href="https://github.co
 
 <table width="100%">
 <tr>
-<td width="55%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/microduck_comparison_wall.png" width="100%" alt="MicroDuck training reward vs wall-clock: rl_games crosses the rsl-rl plateau at 3.6 minutes and finishes at 128 vs 120"></td>
-<td width="45%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/microduck_velocity.gif" width="100%" alt="MicroDuck walking, turning and sidestepping under pinned velocity commands, shipped config"></td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_forward.gif" width="100%" alt="MicroDuck walking forward under a 0.4 m/s command with commanded and measured velocity shown"></td>
+<td width="50%"><img src="docs/pictures/mjlab/microduck_comparison_wall.png" width="100%" alt="MicroDuck training reward vs wall-clock: rl_games crosses the rsl-rl plateau at 3.5 minutes and finishes at 128 vs 120"></td>
 </tr>
 <tr>
-<td><sub>Same environment, reward terms and 4096 x 24 geometry as Pollen's rsl-rl reference. rl_games (3 runs, min-max band) finishes at 128 vs 120.3, and crosses the reference's final plateau at 3.6 min vs 16.3.</sub></td>
-<td align="center"><sub>The shipped config's policy under pinned commands: forward 0.4 m/s, a 1.0 rad/s turn, a 0.3 m/s sidestep.</sub></td>
+<td><b>Forward 0.4 m/s</b>, the shipped config's policy. The overlay shows the commanded and the measured body-frame velocity.</td>
+<td>Same environment, reward terms and 4096 x 24 geometry as Pollen's rsl-rl reference: rl_games (3 runs, min-max band) crosses the reference's final plateau at 3.5 min vs 16.3 and finishes higher.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_backward.gif" width="100%" alt="MicroDuck walking backward under a 0.4 m/s command"></td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_turn.gif" width="100%" alt="MicroDuck turning in place at 1.0 rad/s"></td>
+</tr>
+<tr>
+<td><b>Backward 0.4 m/s</b>, same policy.</td>
+<td><b>Turn in place at 1.0 rad/s</b>: measured 1.0 rad/s.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_speed.gif" width="100%" alt="MicroDuck speed-lane policy running at 0.4 m/s under a 0.8 m/s command"></td>
+<td><b>Speed lane.</b> A tracking-gated curriculum on the forward command plus a gait term takes the same robot to <b>0.40 m/s body-frame speed</b> with no falls, against 0.23 m/s for the shipped recipe and Pollen's reference policy at their 0.4 m/s command. Recipe and provenance in <a href="docs/MJLAB.md#microduck-flat-velocity">docs/MJLAB.md</a>.</td>
 </tr>
 </table>
 
-The speed lane pushes the same robot further: a tracking-gated curriculum on the forward command plus a gait term takes the duck to **0.39 m/s body-frame speed** at 0.8 to 1.0 m/s commands with no falls (hero clip above), against 0.25 m/s for the shipped recipe at its 0.4 m/s command and 0.23 m/s for Pollen's deployed policy. Config, recipe and the campaign notes are in [docs/MJLAB.md](docs/MJLAB.md#microduck-flat-velocity).
-
-### MJLab locomotion and manipulation
+### Unitree Go1 and WujiHand on MJLab
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_flat_comparison_5000.png" width="100%" alt="Go1 flat velocity: rl_games 97.0 vs mjlab rsl-rl reference 94.0 over the first 5000 iterations"></td>
-<td width="50%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 17.1 vs rsl-rl fork 16.4 goal reaches per episode"></td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/go1_velocity.gif" width="100%" alt="Unitree Go1 tracking velocity commands: 1.0 m/s, a 0.7 rad/s turn, 1.5 m/s"></td>
+<td width="50%"><img src="docs/pictures/mjlab/go1_flat_comparison_5000.png" width="100%" alt="Go1 flat velocity: rl_games 97.0 vs mjlab rsl-rl reference 94.0 over the first 5000 iterations"></td>
 </tr>
 <tr>
-<td><sub><b>Go1 flat velocity</b> vs mjlab's rsl-rl reference, first 5000 of 10k iterations: 97.0 vs 94.0; final 86.8 vs 83.2 after the stage-2 command range opens.</sub></td>
-<td><sub><b>WujiHand reorientation</b> (<a href="https://github.com/wuji-technology/wuji-mjlab">wuji-mjlab</a>), unmodified task: 17.1 vs 16.4 goal reaches per episode.</sub></td>
+<td><b>Go1 flat velocity</b>, the shipped config's policy: 1.0 m/s, a 0.7 rad/s turn, then 1.5 m/s (1.1 m/s achieved).</td>
+<td>Against mjlab's rsl-rl reference, first 5000 of 10k iterations: 97.0 vs 94.0; final 86.8 vs 83.2 after the stage-2 command range opens.</td>
 </tr>
 <tr>
-<td width="50%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/go1_rough_training.png" width="100%" alt="Go1 rough terrain: central value network reaches about 60 reward vs about 45 without it"></td>
-<td><sub><b>Go1 rough terrain</b>: the asymmetric central-value critic on the privileged observation group lifts the reward from about 45 to about 60. The same recipe trains the G1 humanoid (hero clip) and Lift-Cube-Yam manipulation (episode success 0.85 vs 0.72 for the reference). Recipes, configs and the live viewer are documented in <a href="docs/MJLAB.md">docs/MJLAB.md</a>.</sub></td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/wujihand_reorient.gif" width="100%" alt="WujiHand in-hand cube reorientation"></td>
+<td width="50%"><img src="docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 17.1 vs rsl-rl fork 16.4 goal reaches per episode"></td>
+</tr>
+<tr>
+<td><b>WujiHand in-hand reorientation</b> (<a href="https://github.com/wuji-technology/wuji-mjlab">wuji-mjlab</a>), unmodified task; the exported ONNX policy passes the project's sim2sim deployment protocol.</td>
+<td>17.1 vs 16.4 goal reaches per episode at the same training budget.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/pictures/mjlab/go1_rough_training.png" width="100%" alt="Go1 rough terrain: central value network reaches about 60 reward vs about 45 without it"></td>
+<td><b>Go1 rough terrain.</b> The asymmetric central-value critic on the privileged observation group lifts the reward from about 45 to about 60. The same recipe trains Lift-Cube-Yam manipulation to 0.85 episode success vs 0.72 for the reference. Recipes, configs and the live viewer: <a href="docs/MJLAB.md">docs/MJLAB.md</a>.</td>
+</tr>
+</table>
+
+### Unitree G1 humanoid on MJLab
+
+<table width="100%">
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/g1_velocity.gif" width="100%" alt="Unitree G1 humanoid walking toward the camera at 1.0 m/s and turning"></td>
+<td width="50%"><img src="docs/pictures/mjlab/g1_flat_training_8k.png" width="100%" alt="G1 flat velocity training reward over 10k iterations at 8192 envs on two GPUs"></td>
+</tr>
+<tr>
+<td><b>G1 flat velocity</b>: 1.0 m/s (1.05 achieved), a 0.5 rad/s turn, 0.8 m/s, no falls. 8192 environments on two GPUs with DistributedDataParallel.</td>
+<td>Training reward of that run; the clip is the iteration-4959 checkpoint. Humanoid reward is a poor proxy for walking, so the G1 config is documented by behaviour rather than by a reward comparison.</td>
 </tr>
 </table>
 
@@ -74,8 +113,8 @@ The speed lane pushes the same robot further: a tracking-gated curriculum on the
 
 <table width="100%">
 <tr>
-<td width="30%" align="center"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.gif" width="240" alt="Humanoid-v5 running, trained with rl_games SAC"></td>
-<td width="70%"><img src="https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/sac/humanoid_v5_5M.png" width="100%" alt="Humanoid-v5 SAC training curve to 5M frames reaching 7,066 against the 1M reference band"></td>
+<td width="30%" align="center"><img src="docs/pictures/sac/humanoid_v5_5M.gif" width="240" alt="Humanoid-v5 running, trained with rl_games SAC"></td>
+<td width="70%"><img src="docs/pictures/sac/humanoid_v5_5M.png" width="100%" alt="Humanoid-v5 SAC training curve to 5M frames reaching 7,066 against the 1M reference band"></td>
 </tr>
 </table>
 
@@ -86,25 +125,6 @@ The speed lane pushes the same robot further: a tracking-gated curriculum on the
 | Humanoid | 5,195 ± 198 | 5,044 ± 390 |
 
 Humanoid keeps improving past the 1M-frame budget: a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean. Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
-
-### Isaac Gym era (rl_games <= 1.6.5)
-
-<table width="100%">
-<tr>
-<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif" width="100%" alt="DeXtreme: Allegro hand cube reorientation on the real robot"></td>
-<td width="25%" align="center"><img src="https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288" width="100%" alt="DexPBT: Allegro hand on a Kuka arm"></td>
-<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif" width="100%" alt="Shadow Hand cube reorientation in Isaac Gym"></td>
-<td width="25%" align="center"><img src="https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif" width="100%" alt="Humanoid running in Isaac Gym"></td>
-</tr>
-<tr>
-<td align="center"><sub><a href="https://dextreme.org/">DeXtreme</a>, sim-to-real</sub></td>
-<td align="center"><sub><a href="https://sites.google.com/view/dexpbt">DexPBT</a></sub></td>
-<td align="center"><sub>Shadow Hand</sub></td>
-<td align="center"><sub>Humanoid</sub></td>
-</tr>
-</table>
-
-Isaac Gym is end-of-life; these results and their configs are documented for rl_games <= 1.6.5 in [docs/ISAAC_GYM.md](docs/ISAAC_GYM.md).
 
 ## Environments
 
