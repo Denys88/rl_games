@@ -46,9 +46,14 @@ config:
   lr_schedule: adaptive
   schedule_type: per_minibatch   # default; 'legacy' is a permanent alias
   kl_threshold: 0.008
-  min_lr: 1e-5                   # ALWAYS set both bounds explicitly:
-  max_lr: 1e-3                   # class defaults (1e-6 / 1e-2) are too wide
+  # set both bounds per task; keep the dot: YAML 1.1 reads a bare 1e-5 as a string
+  min_lr: 1.0e-5
+  max_lr: 1.0e-3
 ```
+
+Default `max_lr` changed 1e-2 → 1e-3 in 2.0.0: adaptive configs without an
+explicit `max_lr` now cap the KL-driven raise at 1e-3; set `max_lr: 1.0e-2`
+to restore the old ceiling.
 
 | Value | LR updates | KL input | When |
 |-------|------------|----------|------|

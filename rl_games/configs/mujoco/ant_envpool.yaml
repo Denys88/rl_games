@@ -40,6 +40,11 @@ params:
     learning_rate: 3e-4
     lr_schedule: adaptive
     kl_threshold: 0.008
+    min_lr: 1.0e-6
+    # the measured condition (pre-2.0 default ceiling): both seeds of the
+    # 128-actor measurement spent 121 / 135 epochs above 1e-3 (peaks 7.7e-3
+    # and 1.0e-2), all before epoch 255
+    max_lr: 1.0e-2
     grad_norm: 1.0
     entropy_coef: 0.0
     truncate_grads: True
@@ -49,9 +54,9 @@ params:
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     max_epochs: 2000
-    num_actors: 64
+    num_actors: 128
     horizon_length: 64
-    minibatch_size: 2048
+    minibatch_size: 4096
     mini_epochs: 4
     critic_coef: 2
 
