@@ -57,7 +57,8 @@ jobs:
     - name: Resolve the envpool extra (dry run)
       # Resolution only, nothing is installed: fails if .[envpool] is
       # unsatisfiable on this Python. 3.11 must pick envpool 1.2.5 (the
-      # <1.2.6 fork), 3.12+ envpool >= 1.2.6 (cp312-cp314 wheels).
+      # <1.2.6 fork), 3.12+ envpool >= 1.2.7 (cp312-cp314 wheels; 1.2.7 is
+      # the first with native dm_control soccer).
       run: |
         pip install --dry-run --report envpool-resolve.json ".[envpool]"
         python - <<'EOF'
@@ -65,7 +66,7 @@ jobs:
         versions = {i["metadata"]["name"]: i["metadata"]["version"]
                     for i in json.load(open("envpool-resolve.json"))["install"]}
         envpool = tuple(int(x) for x in versions["envpool"].split("."))
-        ok = envpool == (1, 2, 5) if sys.version_info < (3, 12) else envpool >= (1, 2, 6)
+        ok = envpool == (1, 2, 5) if sys.version_info < (3, 12) else envpool >= (1, 2, 7)
         print("envpool resolves to", versions["envpool"])
         assert ok, versions["envpool"]
         EOF

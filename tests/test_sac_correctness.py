@@ -449,7 +449,8 @@ def test_multi_agent_next_step_rejected():
 
 def test_wrappers_declare_next_step_mode():
     import pathlib
-    for f in ['rl_games/envs/envpool.py', 'rl_games/common/gymnasium_vecenv.py']:
+    for f in ['rl_games/envs/envpool.py', 'rl_games/common/gymnasium_vecenv.py',
+              'rl_games/envs/dmc_soccer_selfplay.py']:
         src = pathlib.Path(os.path.join(REPO, f)).read_text()
         assert 'autoreset_mode' in src and 'next_step' in src, f"{f} must declare autoreset_mode"
 

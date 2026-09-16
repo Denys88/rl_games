@@ -8,9 +8,9 @@
 pip install -e ".[envpool]"
 ```
 
-Requires envpool >= 1.2.6 on Python 3.12+ (1.2.6 ships cp312+ wheels only); Python 3.11 resolves the envpool 1.2.5 fallback, which is fine for Atari/MuJoCo/dm_control but has deterministic MyoSuite resets — MyoSuite training needs 1.2.6, see docs/MYOSUITE.md. The wrapper refuses MyoSuite tasks on envpool < 1.2.6 unless `env_config: allow_deterministic_resets: true` is set (warns instead).
+Requires envpool >= 1.2.7 on Python 3.12+ (1.2.6+ ship cp312+ wheels only); Python 3.11 resolves the envpool 1.2.5 fallback, which is fine for Atari/MuJoCo/dm_control but has deterministic MyoSuite resets and no soccer — MyoSuite training needs 1.2.6 and dm_control soccer 1.2.7, see docs/MYOSUITE.md and docs/DMC_SOCCER_SELFPLAY.md. The wrapper refuses MyoSuite tasks on envpool < 1.2.6 unless `env_config: allow_deterministic_resets: true` is set (warns instead).
 
-macOS: Apple Silicon wheels are published (`macosx_11_0_arm64` since envpool 1.0.0). envpool 1.2.6 needs macOS 13+ (`macosx_13_0_arm64`, Python 3.12+); 1.2.5 needs macOS 11+ (Python 3.11–3.14). On macOS 11/12 with Python 3.12+ install `envpool==1.2.5` instead of the extra, which requires >= 1.2.6 there. No Intel (x86_64) macOS wheels at any envpool version — torch >= 2.7 ships none either.
+macOS: Apple Silicon wheels are published (`macosx_11_0_arm64` since envpool 1.0.0). envpool 1.2.6+ need macOS 13+ (`macosx_13_0_arm64`, Python 3.12+); 1.2.5 needs macOS 11+ (Python 3.11–3.14). On macOS 11/12 with Python 3.12+ install `envpool==1.2.5` instead of the extra, which requires >= 1.2.7 there. No Intel (x86_64) macOS wheels at any envpool version — torch >= 2.7 ships none either.
 
 ## Quick start
 
@@ -25,7 +25,25 @@ python runner.py --train --file rl_games/configs/mujoco/halfcheetah_envpool.yaml
 python runner.py --train --file rl_games/configs/mujoco/hopper_envpool.yaml
 python runner.py --train --file rl_games/configs/mujoco/walker2d_envpool.yaml
 python runner.py --train --file rl_games/configs/mujoco/humanoid_envpool.yaml
+
+# dm_control soccer self-play (envpool >= 1.2.7)
+python runner.py --train --file rl_games/configs/dm_control/boxhead_soccer_2v2_selfplay.yaml
 ```
+
+### dm_control soccer (envpool >= 1.2.7)
+
+envpool 1.2.7 registers DeepMind Control locomotion soccer natively:
+`DmcSoccerBoxhead-v1`, `DmcSoccerAnt-v1`, `DmcSoccerHumanoid-v1` (aliases
+`dm_control/locomotion/soccer_boxhead` / `_ant` / `_humanoid`). These are
+multi-agent: obs *and reward* are batched per player
+(`num_envs * 2 * team_size` rows) while `terminated`/`truncated` stay
+per-match. rl_games drives them through the self-play adapter — see
+[docs/DMC_SOCCER_SELFPLAY.md](DMC_SOCCER_SELFPLAY.md) for the row contract and
+the config keys.
+
+envpool 1.2.7 also lists native `Mjlab-*` task ids (e.g.
+`Mjlab-Cartpole-Balance-v0`, `Mjlab-Lift-Cube-Yam-v0`). They are not wired
+into rl_games and are untested here.
 
 To target Apple Silicon, add `device: mps` and set `mixed_precision: False` in the YAML's `config` block (MPS does not implement the bf16 autocast path used by mixed precision).
 
