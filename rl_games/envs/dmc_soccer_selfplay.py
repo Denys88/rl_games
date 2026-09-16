@@ -1,13 +1,33 @@
-"""Symmetric self-play vecenv adapter: envpool BoxHead soccer -> rl_games.
+"""Symmetric self-play vecenv adapter: envpool dm_control soccer -> rl_games.
 
-One envpool env is a 2v2 match with 4 players. This adapter exposes every
-player as an independent actor sharing ONE policy (symmetric self-play):
-observations are egocentric and team-relative (team_goal_*, opponent_goal_*,
-others_is_teammate), so the same policy plays both home and away. rl_games
-sees num_actors = num_matches * players_per_match.
+Targets envpool's NATIVE soccer support (>= 1.2.7): `DmcSoccerBoxhead-v1`,
+`DmcSoccerAnt-v1`, `DmcSoccerHumanoid-v1`. No fork is needed any more.
+
+One envpool env is one match of `2 * team_size` players. This adapter exposes
+every controlled player as an independent actor sharing ONE policy (symmetric
+self-play): observations are egocentric and team-relative (team_goal_*,
+opponent_goal_*, teammate_i_*, opponent_i_*), so the same policy plays both
+home and away. rl_games sees num_actors = num_matches * controlled players.
+
+Native envpool row contract (verified against envpool 1.2.7, see
+docs/DMC_SOCCER_SELFPLAY.md):
+  * every per-player array -- obs values AND the reward -- is batched over
+    `num_envs * 2 * team_size` rows; `terminated`/`truncated` stay per-MATCH,
+    one entry per env.
+  * the rows come back grouped per env, `2 * team_size` contiguous rows per
+    env, home team first; `info["players"]["env_id"]` labels each row and
+    `info["env_id"]` labels each match row.
+  * BUT the env blocks are returned in thread-completion order, NOT sorted:
+    `info["env_id"]` is an arbitrary permutation that changes every step. The
+    adapter re-sorts every batch back to env-major order so an rl_games row
+    means the same match for the whole run (the trainer's per-row episode
+    bookkeeping and RNN states require that).
+  * actions, by contrast, are ALWAYS read in sorted env-major order when
+    `env_id` is left at None -- envpool fills it with `arange(num_envs)`. So
+    actions are written env-major and only the returned batch is permuted.
 
 Reward shaping (the speed lever vs the sparse DeepMind setup):
-    r = goal_w_score * max(players_reward, 0)         # scoring, concede unpunished
+    r = goal_w_score * max(player_reward, 0)         # scoring, concede unpunished
       + dense(t) * vel_ball_w   * max(vel_ball_to_goal, 0)   # one-sided ball progress
       + dense(t) * vel_player_w * team_chase                  # closest player, shared
       - time_w                                                # finish games
@@ -24,24 +44,47 @@ import numpy as np
 
 from rl_games.common.ivecenv import IVecEnv
 
-# the Denys88/envpool#1 fork id: obs batched (num_envs, players, ...); no
-# released envpool registers it
-FORK_ENV_ID = "BoxheadSoccer2v2-v1"
+# envpool >= 1.2.7 registers soccer natively; boxhead is the 3-action walker
+# the shipped config and the scripted opponents are written for.
+NATIVE_ENV_ID = "DmcSoccerBoxhead-v1"
 
-# per-player observation keys to feed the policy, in fixed order
-_OBS_KEYS = [
+# per-player observation keys, in the upstream env's own order (see the
+# `arena_keys` list and the walker/ball observables in envpool's soccer.cc).
+# `_OTHER_SUFFIXES` is instantiated per teammate and per opponent: upstream
+# names them teammate_{i}_* / opponent_{i}_*, so who is a teammate is carried
+# by the key layout itself and needs no is_teammate flag.
+_WALKER_KEYS = [
     "joints_pos", "joints_vel", "body_height", "end_effectors_pos",
     "world_zaxis", "sensors_velocimeter", "sensors_gyro",
     "sensors_accelerometer", "prev_action",
     "ball_ego_position", "ball_ego_linear_velocity",
     "ball_ego_angular_velocity",
-    "others_ego_position", "others_ego_linear_velocity",
-    "others_ego_end_effectors_pos", "others_ego_orientation",
-    "others_end_effectors_pos", "others_is_teammate",
+]
+_OTHER_SUFFIXES = (
+    "ego_position", "ego_linear_velocity", "ego_end_effectors_pos",
+    "ego_orientation", "end_effectors_pos",
+)
+_ARENA_KEYS = [
     "team_goal_back_right", "team_goal_mid", "team_goal_front_left",
     "field_front_left", "opponent_goal_back_left", "opponent_goal_mid",
     "opponent_goal_front_right", "field_back_right",
 ]
+
+
+@functools.lru_cache(maxsize=None)
+def obs_keys(players):
+    """Policy-input keys for a `players`-player match, in a fixed order.
+
+    A player sees `team_size - 1` teammates and `team_size` opponents, so the
+    key list -- and the flat obs width -- depends on team size.
+    """
+    team_size = players // 2
+    keys = list(_WALKER_KEYS)
+    for i in range(team_size - 1):
+        keys += [f"teammate_{i}_{s}" for s in _OTHER_SUFFIXES]
+    for i in range(team_size):
+        keys += [f"opponent_{i}_{s}" for s in _OTHER_SUFFIXES]
+    return tuple(keys + _ARENA_KEYS)
 
 
 @functools.lru_cache(maxsize=None)
@@ -55,16 +98,75 @@ def _player_onehot(num_matches, players):
     return np.broadcast_to(onehot[None], (num_matches, players, team_size))
 
 
+@functools.lru_cache(maxsize=None)
+def _slot_index(rows, players):
+    # within-match slot of each returned row; env blocks are contiguous and
+    # exactly `players` long, so the slot is just the row index modulo players
+    return np.arange(rows, dtype=np.intp) % players
+
+
+def sort_rows(env_id, num_matches, players):
+    """Destination row of every returned per-player row, or None if sorted.
+
+    envpool hands the match blocks back in completion order; `env_id[b]` is
+    the match in block `b`. Row `b * players + slot` therefore belongs at
+    `env_id[b] * players + slot`.
+    """
+    env_id = np.asarray(env_id)
+    if env_id.shape[0] != num_matches:
+        raise RuntimeError(
+            f"envpool returned {env_id.shape[0]} matches, expected "
+            f"{num_matches}: the adapter needs sync mode (batch_size == "
+            f"num_envs); do not set batch_size/num_threads to make it async")
+    if np.array_equal(env_id, np.arange(num_matches, dtype=env_id.dtype)):
+        return None  # already env-major: the common single-thread case
+    rows = num_matches * players
+    return (np.repeat(env_id.astype(np.intp), players) * players
+            + _slot_index(rows, players))
+
+
+def sort_batch(obs, info, num_matches, players, *arrays):
+    """Re-sort one envpool batch into env-major order.
+
+    Returns (obs, *arrays) with per-player rows and per-match entries moved
+    back to `env_id` order. An entry of `arrays` is treated as per-player
+    when its length is `num_matches * players`, per-match otherwise.
+    """
+    env_id = np.asarray(info["env_id"])
+    dest = sort_rows(env_id, num_matches, players)
+    if dest is None:
+        return (obs, *arrays)
+    rows = num_matches * players
+    env_dest = env_id.astype(np.intp)
+    obs = {k: _scatter(v, dest) for k, v in obs.items()}
+    out = [_scatter(a, dest if len(a) == rows else env_dest) for a in arrays]
+    return (obs, *out)
+
+
+def check_player_layout(info, num_matches, players):
+    """Assert every match contributes `players` contiguous rows in env order."""
+    players_env = np.asarray(info["players"]["env_id"])
+    expected = np.repeat(np.asarray(info["env_id"]), players)
+    assert players_env.shape[0] == num_matches * players and np.array_equal(
+        players_env, expected), (
+        "envpool returned an unexpected player layout: expected "
+        f"{players} contiguous rows per match in env_id order, got "
+        f"env_id={info['env_id']} players.env_id={players_env}")
+
+
 def flatten_obs(obs, num_matches, players):
     """envpool dict obs -> (M, P, obs_dim) float32 policy input.
 
-    The one feature layout for training and the eval tools: _OBS_KEYS in
+    Rows must already be env-major (see `sort_rows`); every value is
+    (M * P, 1, d) -- the middle axis is envpool's stack dim -- and is
+    reshaped to (M, P, d).
+
+    The one feature layout for training and the eval tools: `obs_keys` in
     order plus the within-team one-hot slot, NaN/inf zeroed and values
     clipped to +/-1e3 so diverged physics cannot leak into the obs
-    normalizer (the fork env also terminates such episodes; the clip is a
-    normalizer guard, not a termination).
+    normalizer (the clip is a normalizer guard, not a termination).
     """
-    parts = [obs[k].reshape(num_matches, players, -1) for k in _OBS_KEYS]
+    parts = [obs[k].reshape(num_matches, players, -1) for k in obs_keys(players)]
     parts.append(_player_onehot(num_matches, players))
     flat = np.concatenate(parts, axis=-1).astype(np.float32)
     flat = np.nan_to_num(flat, nan=0.0, posinf=0.0, neginf=0.0)
@@ -76,7 +178,9 @@ class SoccerSelfPlay(IVecEnv):
     def __init__(self, config_name, num_actors, **kwargs):
         import envpool
 
-        env_name = kwargs.pop("env_name", FORK_ENV_ID)
+        env_name = kwargs.pop("env_name", NATIVE_ENV_ID)
+        team_size = int(kwargs.pop("team_size", 2))
+        assert team_size >= 1, f"team_size must be >= 1, got {team_size}"
         # Asymmetric goal reward: punishing concedes teaches ball-avoidance
         # ("cowardice") in self-play — the policy can avoid -goal_w by never
         # touching the ball. Reward scoring, don't punish conceding.
@@ -98,7 +202,8 @@ class SoccerSelfPlay(IVecEnv):
         self.dense_floor = kwargs.pop("dense_floor", 0.15)
         self._anneal_step = 0
         seed = kwargs.pop("seed", 0)
-        # episode cap: shorter than dm_control's 1800 to recycle stale episodes
+        # episode cap: shorter than the env's own time_limit (45 s = 1800
+        # steps at the 0.025 s control timestep) to recycle stale episodes
         max_steps = kwargs.pop("max_episode_steps", 600)
         # opponent curriculum: "self" = symmetric self-play (policy controls
         # all players); "random" = policy controls the home team only, away
@@ -110,35 +215,38 @@ class SoccerSelfPlay(IVecEnv):
         league_refresh = kwargs.pop("league_refresh", 500)
         # rl_games' num_actors is the TOTAL policy batch; each match holds
         # `controlled` of them.
-        players = kwargs.pop("players_per_match", 4)
-        controlled = players if self.opponent == "self" else players // 2
+        self.team_size = team_size
+        self.players = 2 * team_size
+        controlled = self.players if self.opponent == "self" else team_size
         assert num_actors % controlled == 0, (
             f"num_actors={num_actors} must be a multiple of "
             f"controlled players per match={controlled}")
         self.controlled = controlled
         self.num_matches = num_actors // controlled
 
+        # everything still in kwargs is an envpool task option
+        # (terminate_on_goal, time_limit, enable_field_box,
+        # disable_walker_contacts, ...); max_num_players is NOT one of them --
+        # envpool derives it as 2 * team_size and ignores any override.
         self.env = envpool.make_gymnasium(
             env_name, num_envs=self.num_matches, seed=seed,
-            max_episode_steps=max_steps, **kwargs,
+            team_size=team_size, max_episode_steps=max_steps, **kwargs,
         )
         obs_space = self.env.observation_space
-        # players per match from any per-player obs key
-        self.players = obs_space["ball_ego_position"].shape[0]
-        assert self.players == players, (
-            f"env has {self.players} players, config says {players}: the "
-            f"adapter needs the Denys88/envpool#1 fork build of {FORK_ENV_ID} "
-            f"(obs batched (num_envs, players, ...)); upstream envpool's "
-            f"per-player soccer layout is not supported")
-        self.batch = self.num_matches * self.controlled
+        self._keys = obs_keys(self.players)
+        missing = [k for k in self._keys if k not in obs_space.spaces]
+        assert not missing, (
+            f"{env_name} does not expose {missing}: the adapter needs "
+            f"envpool >= 1.2.7 native dm_control soccer (per-player obs, "
+            f"teammate_i_*/opponent_i_* keys)")
 
         self.obs_dim = 0
-        for k in _OBS_KEYS:
-            shape = obs_space[k].shape  # (players, ...)
-            self.obs_dim += int(np.prod(shape[1:]))
-        self.obs_dim += self.players // 2  # one-hot slot, see flatten_obs
-        act_shape = self.env.action_space.shape  # (players, act_dim)
-        self.act_dim = act_shape[-1]
+        for k in self._keys:
+            # native per-player space is (stack, d); there is no players axis
+            self.obs_dim += int(np.prod(obs_space[k].shape))
+        self.obs_dim += team_size  # one-hot slot, see flatten_obs
+        self.act_dim = self.env.action_space.shape[-1]
+        self.rows = self.num_matches * self.players
 
         self.observation_space = gymnasium.spaces.Box(
             -np.inf, np.inf, (self.obs_dim,), dtype=np.float32)
@@ -155,16 +263,24 @@ class SoccerSelfPlay(IVecEnv):
             self.league = OpponentLeague(
                 self.num_matches, types=league_types,
                 ckpt_dir=league_ckpt_dir, refresh_every=league_refresh,
+                act_dim=self.act_dim,
                 rng=np.random.RandomState(seed + 12345))
         self._away_rng = np.random.RandomState(seed + 54321)
         self._last_obs_dict = None
+
+    # --- native row ordering -------------------------------------------------
+
+    def _sorted(self, obs, info, *arrays):
+        return sort_batch(obs, info, self.num_matches, self.players, *arrays)
+
+    # --- observations / rewards ---------------------------------------------
 
     def _flatten_obs(self, obs):
         flat = flatten_obs(obs, self.num_matches, self.players)
         self._flat_away = flat[:, self.controlled:]  # for league opponents
         # home players come first; only they are controlled outside "self"
         flat = flat[:, :self.controlled]
-        return flat.reshape(self.batch, self.obs_dim)
+        return flat.reshape(self.num_matches * self.controlled, self.obs_dim)
 
     def _away_obs_dict(self, obs):
         ts = self.controlled
@@ -173,9 +289,11 @@ class SoccerSelfPlay(IVecEnv):
             for k in ("ball_ego_position", "team_goal_mid")
         }
 
-    def _shaped_reward(self, obs, info):
-        players_reward = info["players_reward"].reshape(
-            self.num_matches, self.players)
+    def _shaped_reward(self, obs, reward):
+        # native envpool returns the per-player reward directly: 0 except on
+        # a goal, where it is +1 for the scoring team and -1 for the other
+        # (upstream soccer.cc: `rewards[player] = team == scoring_team ? 1 : -1`).
+        per_player_reward = reward.reshape(self.num_matches, self.players)
         vel_ball = obs["stats_vel_ball_to_goal"].reshape(
             self.num_matches, self.players)
         # copied: the team-chase broadcast below writes into it, and the
@@ -190,31 +308,42 @@ class SoccerSelfPlay(IVecEnv):
             # team-level chase: one player near the ball is enough. Broadcast
             # the closest player's vel-to-ball to the whole team so the other
             # player is free to position instead of also chasing.
-            ts = self.players // 2
+            ts = self.team_size
             for lo, hi in ((0, ts), (ts, self.players)):
                 team = vel_player[:, lo:hi]
-                # closest player holds the only nonzero entry (others are 0)
+                # closest player holds the only nonzero entry (others are 0);
+                # upstream zeroes stats_closest_vel_to_ball for every player
+                # that is not its team's nearest to the ball
                 shared = team.sum(axis=1, keepdims=True)
                 vel_player[:, lo:hi] = shared
         dense = 1.0
         if self.dense_anneal_steps > 0:
             dense = max(self.dense_floor,
                         1.0 - self._anneal_step / self.dense_anneal_steps)
-        rew = (self.goal_w_score * np.maximum(players_reward, 0)
-               - self.goal_w_concede * np.maximum(-players_reward, 0)
+        rew = (self.goal_w_score * np.maximum(per_player_reward, 0)
+               - self.goal_w_concede * np.maximum(-per_player_reward, 0)
                + dense * self.vel_ball_w * vel_ball
                + dense * self.vel_player_w * vel_player
                - self.time_w)
         rew = rew[:, :self.controlled]
-        return rew.reshape(self.batch).astype(np.float32), players_reward
+        batch = self.num_matches * self.controlled
+        return rew.reshape(batch).astype(np.float32), per_player_reward
+
+    # --- IVecEnv -------------------------------------------------------------
 
     def reset(self):
-        obs, _ = self.env.reset()
+        obs, info = self.env.reset()
+        # validate the block layout once: every env contributes exactly
+        # `players` contiguous rows, in `info["env_id"]` order
+        check_player_layout(info, self.num_matches, self.players)
+        (obs,) = self._sorted(obs, info)
         self._goal_diff[:] = 0
         self._last_obs_dict = obs
         return self._flatten_obs(obs)
 
     def step(self, actions):
+        # actions are written env-major: envpool reads them against
+        # arange(num_envs), independent of the order the last batch arrived in
         acts = np.asarray(actions, dtype=np.float64).reshape(
             self.num_matches, self.controlled, self.act_dim)
         if self.controlled < self.players:
@@ -228,27 +357,33 @@ class SoccerSelfPlay(IVecEnv):
                     (self.num_matches, self.players - self.controlled,
                      self.act_dim))
             acts = np.concatenate([acts, away], axis=1)
-        obs, _, terminated, truncated, info = self.env.step(acts)
+        obs, reward, terminated, truncated, info = self.env.step(
+            acts.reshape(self.rows, self.act_dim))
+        obs, reward, terminated, truncated = self._sorted(
+            obs, info, reward, terminated, truncated)
         self._last_obs_dict = obs
         self._anneal_step += 1
         done = terminated | truncated  # (M,)
 
         flat_obs = self._flatten_obs(obs)
-        rew, players_reward = self._shaped_reward(obs, info)
+        rew, per_player_reward = self._shaped_reward(obs, reward)
 
         # Progress metric: in self-play the goal-diff averages ~0, so report
         # GOALS per episode — any side for "self", home-only for "random"
-        # (where away goals are just noise).
+        # (where away goals are just noise). per_player_reward[:, 0] is a home
+        # player: +1 when home scores, -1 when it concedes.
         if self.opponent == "self":
-            self._goal_diff += np.abs(players_reward[:, 0])
+            self._goal_diff += np.abs(per_player_reward[:, 0])
         else:
-            self._goal_diff += np.maximum(players_reward[:, 0], 0)
+            self._goal_diff += np.maximum(per_player_reward[:, 0], 0)
         self._ret_goal_diff[:] = self._goal_diff
         self._goal_diff *= 1 - done
 
         # rows are match-major, player-minor (row = match * controlled +
         # player), so repeating each match's done per player keeps the
-        # trainer's per-row autoreset mask aligned with the obs rows
+        # trainer's per-row autoreset mask aligned with the obs rows.
+        # Termination is per MATCH, not per player: a goal ends the match for
+        # everyone, so every row of a match shares its done flag.
         done_p = np.repeat(done, self.controlled)
         info_out = {
             "time_outs": np.repeat(truncated, self.controlled),
@@ -294,3 +429,9 @@ class SoccerSelfPlay(IVecEnv):
         league_rng = env_state.get("league_rng")
         if league_rng is not None and self.league is not None:
             self.league.rng.set_state(league_rng)
+
+
+def _scatter(array, dest):
+    out = np.empty_like(array)
+    out[dest] = array
+    return out

@@ -1,4 +1,4 @@
-"""Eval & rendering tools for EnvPool dm_control soccer self-play.
+"""Eval & rendering tools for envpool dm_control soccer self-play.
 
 Usage:
     python -m rl_games.envs.dmc_soccer_tools video --checkpoint ckpt.pth \
@@ -23,7 +23,8 @@ import numpy as np
 from rl_games.envs.dmc_soccer_opponents import FrozenPolicy, chaser, keeper
 # flatten_obs is the adapter's: eval sees the training features (incl. the
 # +/-1e3 clip), so checkpoints play here what they trained on
-from rl_games.envs.dmc_soccer_selfplay import FORK_ENV_ID, flatten_obs
+from rl_games.envs.dmc_soccer_selfplay import (
+    NATIVE_ENV_ID, check_player_layout, flatten_obs, sort_batch)
 
 # checkpoint dir of the shipped config (rl_games/configs/dm_control/
 # boxhead_soccer_2v2_selfplay.yaml): <train_dir>/<full_experiment_name>/nn,
@@ -31,13 +32,41 @@ from rl_games.envs.dmc_soccer_selfplay import FORK_ENV_ID, flatten_obs
 DEFAULT_RUN_DIR = "runs/boxhead_soccer_2v2_selfplay/nn"
 
 
-def make_soccer_env(num_envs, seed, max_episode_steps, **kwargs):
-    """Fork BoxheadSoccer2v2-v1 env; envpool is imported here, not at module
-    level, so the module imports without it (as with cv2)."""
-    import envpool.mujoco.dmc.registration  # noqa: F401
-    from envpool.registration import make_gymnasium
-    return make_gymnasium(FORK_ENV_ID, num_envs=num_envs, seed=seed,
-                          max_episode_steps=max_episode_steps, **kwargs)
+def make_soccer_env(num_envs, seed, max_episode_steps, team_size=2,
+                    env_name=NATIVE_ENV_ID, **kwargs):
+    """Native envpool (>= 1.2.7) soccer env; envpool is imported here, not at
+    module level, so the module imports without it (as with cv2).
+
+    Returns (env, players): `players` is 2 * team_size, the number of rows
+    every batch carries per match. It cannot be read off the observation
+    space -- natively each space is one PLAYER's, whose leading axis is
+    envpool's stack dim, not a players axis.
+    """
+    import envpool
+    env = envpool.make_gymnasium(env_name, num_envs=num_envs, seed=seed,
+                                 team_size=team_size,
+                                 max_episode_steps=max_episode_steps, **kwargs)
+    return env, 2 * team_size
+
+
+def reset_sorted(env, num_matches, players):
+    """env.reset() with the batch re-sorted into env-major row order."""
+    obs, info = env.reset()
+    check_player_layout(info, num_matches, players)
+    (obs,) = sort_batch(obs, info, num_matches, players)
+    return obs
+
+
+def step_sorted(env, acts, num_matches, players):
+    """env.step() with (M, P, A) actions and an env-major sorted batch back.
+
+    Actions go in env-major order -- envpool reads them against
+    arange(num_envs) -- and obs/reward/terminated/truncated come back
+    permuted, so only the returned batch needs sorting.
+    """
+    obs, reward, term, trunc, info = env.step(
+        np.asarray(acts, dtype=np.float64).reshape(num_matches * players, -1))
+    return sort_batch(obs, info, num_matches, players, reward, term, trunc)
 
 
 class TeamController:
@@ -48,20 +77,20 @@ class TeamController:
         self.net = FrozenPolicy(ckpt) if kind == "checkpoint" else None
         self.rng = np.random.RandomState(0)
 
-    def act(self, flat_team, obs_team):
+    def act(self, flat_team, obs_team, act_dim=3):
         """flat_team: (M, T, obs_dim); obs_team: dict sliced to this team."""
         m, t = flat_team.shape[:2]
         if self.kind == "checkpoint":
             a = self.net.act(flat_team.reshape(m * t, -1))
-            return a.reshape(m, t, 3)
+            return a.reshape(m, t, act_dim)
         if self.kind == "chaser":
             return chaser(obs_team)
         if self.kind == "keeper":
             return keeper(obs_team)
         if self.kind == "random":
-            return self.rng.uniform(-1, 1, (m, t, 3))
+            return self.rng.uniform(-1, 1, (m, t, act_dim))
         if self.kind == "zero":
-            return np.zeros((m, t, 3))
+            return np.zeros((m, t, act_dim))
         raise ValueError(self.kind)
 
 
@@ -93,17 +122,18 @@ def video_main(argv=None):
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--camera", type=int, default=None)
+    parser.add_argument("--team-size", type=int, default=2,
+                        help="players per team (the env's team_size)")
     args = parser.parse_args(argv)
 
     import cv2
     ckpt = args.checkpoint or latest_checkpoint()
     print(f"home team checkpoint: {ckpt}")
 
-    env = make_soccer_env(
-        num_envs=1, seed=123, max_episode_steps=900,
+    env, players = make_soccer_env(
+        num_envs=1, seed=123, max_episode_steps=900, team_size=args.team_size,
         render_mode="rgb_array", render_width=args.width,
         render_height=args.height)
-    players = env.observation_space["ball_ego_position"].shape[0]
 
     home = TeamController("checkpoint", ckpt)
     away = (TeamController("checkpoint", ckpt)
@@ -114,7 +144,7 @@ def video_main(argv=None):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(args.out, fourcc, 40.0,
                              (args.width, args.height))
-    obs, _ = env.reset()
+    obs = reset_sorted(env, 1, players)
     goals = [0, 0]
     ep = 0
     frames = 0
@@ -124,12 +154,14 @@ def video_main(argv=None):
         a_home = home.act(flat[:, :ts], team_obs_dict(obs, 1, players, 0))
         a_away = away.act(flat[:, ts:], team_obs_dict(obs, 1, players, 1))
         acts = np.concatenate([a_home, a_away], axis=1)
-        obs, _, term, trunc, info = env.step(acts)
+        obs, reward, term, trunc = step_sorted(env, acts, 1, players)
         kwargs = {} if args.camera is None else {"camera_id": args.camera}
         frame = env.render(**kwargs)[0]
         writer.write(np.ascontiguousarray(frame[:, :, ::-1]))  # RGB->BGR
         frames += 1
-        pr = info["players_reward"][0, 0]
+        # native per-player reward: +1 for the scoring team, -1 for the
+        # other; row 0 is a home player, so its sign names the scorer
+        pr = reward.reshape(1, players)[0, 0]
         if pr > 0:
             goals[0] += 1
             print(f"  GOAL home (frame {frames})")
@@ -165,16 +197,16 @@ def pick_checkpoints(run_dir, count=3):
 
 def play(env, players, home_ctrl, away_ctrl, num_matches, steps):
     """Returns (home_goals, away_goals) totals and episodes played."""
-    obs, _ = env.reset()
+    obs = reset_sorted(env, num_matches, players)
     hg = ag = eps = 0
     ts = players // 2
     for _ in range(steps):
         flat = flatten_obs(obs, num_matches, players)
         a_h = home_ctrl.act(flat[:, :ts], team_obs_dict(obs, num_matches, players, 0))
         a_a = away_ctrl.act(flat[:, ts:], team_obs_dict(obs, num_matches, players, 1))
-        obs, _, term, trunc, info = env.step(
-            np.concatenate([a_h, a_a], axis=1))
-        pr = info["players_reward"][:, 0]
+        obs, reward, term, trunc = step_sorted(
+            env, np.concatenate([a_h, a_a], axis=1), num_matches, players)
+        pr = reward.reshape(num_matches, players)[:, 0]  # a home player
         hg += (pr > 0).sum()
         ag += (pr < 0).sum()
         eps += (term | trunc).sum()
@@ -187,15 +219,17 @@ def tournament_main(argv=None):
     parser.add_argument("--matches", type=int, default=64)
     parser.add_argument("--steps", type=int, default=1200)
     parser.add_argument("--out", default="tournament.md")
+    parser.add_argument("--team-size", type=int, default=2,
+                        help="players per team (the env's team_size)")
     args = parser.parse_args(argv)
 
     contenders = pick_checkpoints(args.run_dir)
     contenders += [("chaser", None), ("keeper", None), ("random", None)]
     print("contenders:", [n for n, _ in contenders])
 
-    env = make_soccer_env(num_envs=args.matches, seed=999,
-                          max_episode_steps=600)
-    players = env.observation_space["ball_ego_position"].shape[0]
+    env, players = make_soccer_env(num_envs=args.matches, seed=999,
+                                   max_episode_steps=600,
+                                   team_size=args.team_size)
 
     def ctrl(name, path):
         return (TeamController("checkpoint", path) if path

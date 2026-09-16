@@ -41,8 +41,10 @@ params:
     # away teams are played by the opponent league (8 types per rollout)
     num_actors: 512
     env_config:
-      env_name: BoxheadSoccer2v2-v1
-      players_per_match: 4
+      # native envpool (>= 1.2.7) dm_control soccer; no fork needed
+      env_name: DmcSoccerBoxhead-v1
+      team_size: 2                 # 2v2: 4 players per match
+      terminate_on_goal: True      # a goal ends the match (sparse credit)
       max_episode_steps: 600
       # opponent league for robustness: scripted + random + frozen past
       # checkpoints (lagged self-play), one type per match

@@ -5,8 +5,14 @@ Scripted opponents act from the away players' own egocentric observations;
 league opponents run frozen past checkpoints of the training policy
 (lagged self-play), refreshed from the run's checkpoint dir.
 
-BoxHead action conventions: action = [roll, steer, kick], roll = -1 drives
-forward (the actuator gear is negative), steer > 0 turns CCW, all in [-1, 1].
+BoxHead action conventions (measured on envpool 1.2.7, not assumed):
+action = [roll, steer, kick], all in [-1, 1]. roll = -1 drives forward (the
+actuator gear is negative). steer = +1 turns the walker CLOCKWISE, i.e. it
+INCREASES the egocentric bearing of a fixed landmark -- so steering toward a
+target at bearing `ang` needs steer = -ang, which is what `_steer_to` returns.
+These are the 3-DoF boxhead conventions; the ant (8) and humanoid (56) soccer
+walkers have their own action layouts and the scripted opponents below do not
+apply to them.
 """
 
 import glob
@@ -16,7 +22,11 @@ import numpy as np
 
 
 def _steer_to(ang):
-    return np.clip(2.0 * ang, -1, 1)
+    # NEGATIVE: steer > 0 rotates the walker clockwise, which grows `ang`.
+    # Verified by driving steer = +1 and watching a fixed landmark's ego
+    # bearing climb monotonically; the opposite sign steers away from the
+    # target (the chaser then loses ground on the ball instead of closing).
+    return np.clip(-2.0 * ang, -1, 1)
 
 
 def chaser(obs_away, strength=1.0):
@@ -108,9 +118,17 @@ class OpponentLeague:
 
     LEAGUE_TYPES = ("league_latest", "league_old")
 
+    SCRIPTED_TYPES = ("chaser", "chaser_weak", "keeper")
+
     def __init__(self, num_matches, types=None, ckpt_dir=None,
-                 refresh_every=500, rng=None):
+                 refresh_every=500, rng=None, act_dim=3):
         self.types = list(types or self.DEFAULT_TYPES)
+        self.act_dim = act_dim
+        scripted = [t for t in self.types if t in self.SCRIPTED_TYPES]
+        assert not (scripted and act_dim != 3), (
+            f"scripted opponents {scripted} encode the 3-DoF boxhead action "
+            f"[roll, steer, kick]; this walker takes {act_dim} actions. Use "
+            f"DmcSoccerBoxhead-v1 or drop them from league_types.")
         self.assign = np.arange(num_matches) % len(self.types)
         self.ckpt_dir = ckpt_dir
         self.refresh_every = refresh_every
@@ -189,18 +207,19 @@ class OpponentLeague:
             self._refresh_league()
 
         m, pa = flat_obs_away.shape[:2]
-        acts = np.zeros((m, pa, 3))
+        ad = self.act_dim
+        acts = np.zeros((m, pa, ad))
         for ti, tname in enumerate(self.types):
             sel = self.assign == ti
             if not sel.any():
                 continue
             sub = {k: v[sel] for k, v in obs_away_dict.items()}
             if tname == "zero":
-                a = np.zeros((sel.sum(), pa, 3))
+                a = np.zeros((sel.sum(), pa, ad))
             elif tname == "random":
-                a = self.rng.uniform(-1, 1, (sel.sum(), pa, 3))
+                a = self.rng.uniform(-1, 1, (sel.sum(), pa, ad))
             elif tname == "random_weak":
-                a = self.rng.uniform(-0.3, 0.3, (sel.sum(), pa, 3))
+                a = self.rng.uniform(-0.3, 0.3, (sel.sum(), pa, ad))
             elif tname == "chaser":
                 a = chaser(sub)
             elif tname == "chaser_weak":
@@ -211,10 +230,10 @@ class OpponentLeague:
                 net = self._latest if tname == "league_latest" else self._old
                 net = net or self._latest
                 if net is None:  # no checkpoint yet: weak random warmup
-                    a = self.rng.uniform(-0.3, 0.3, (sel.sum(), pa, 3))
+                    a = self.rng.uniform(-0.3, 0.3, (sel.sum(), pa, ad))
                 else:
                     fo = flat_obs_away[sel].reshape(-1, flat_obs_away.shape[-1])
-                    a = net.act(fo).reshape(sel.sum(), pa, 3)
+                    a = net.act(fo).reshape(sel.sum(), pa, ad)
             else:
                 raise ValueError(f"unknown opponent type {tname}")
             acts[sel] = a
