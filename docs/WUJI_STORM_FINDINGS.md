@@ -1,4 +1,4 @@
-# WujiHand action-rate storm: findings and status (2026-09-17, 10:30 PDT)
+# WujiHand action-rate storm: findings and status (2026-09-17, 12:30 PDT)
 
 Companion to `WUJI_STABILITY.md` (the outside review) and the shareable page
 (`https://claude.ai/code/artifact/4413e4cc-fc2b-40db-a112-929ffa3bc65d`, same content, private).
@@ -14,9 +14,22 @@ G: fixed 1e-4, seed 42, 17.7), the rsl-rl reference never drifts (16.9). On the 
 code, `control` (band 5e-5..2e-4) is 1 of 2 seeds clean, and **`no_actor_value`
 (`use_experimental_cv: false`, the actor's auxiliary value head removed) is 2 of 2 seeds
 clean** at 16.8 and 16.4 reaches with action-delta RMS 0.37 (reference 0.39). It is the
-first arm clean on both seeds. Running now: the `sigma_cap` pair (`max_sigma: 1.0`), then
-`no_actor_value` on the held-out seed 123 beside `no_actor_value + max_sigma` on seed 42,
-then `no_actor_value` on 2 GPUs, then `hard_clip`, `rollout_kl`, `no_cv_clip`.
+first arm clean on both seeds. Running now: the `sigma_cap` pair (`max_sigma: 1.0`, first tanh version), then, in the order
+the review asked for: `no_actor_value` on the held-out seed 123 beside `hard_clip` seed 7;
+`hard_clip` seed 42 beside `rollout_kl` seed 7; `rollout_kl` seed 42 beside
+`no_actor_value + max_sigma` seed 42; then `no_actor_value` on 2 GPUs; then `no_cv_clip`.
+About 2.2 h per pair from 12:30.
+
+**Review round 2 (12:00) and what changed.** (1) `no_actor_value` stays the leading
+candidate. (2) The sigma cap had a real defect: the tanh squash reaches exactly 1.0 in fp32 a
+few units above the cap, so its gradient was zero for the states it exists for, and the cap
+never bounded actions, ratios or KL, only their sigma-driven part. Replaced by a rational
+squash (gradient decays polynomially) and the claims are corrected below; the sigma-cap pair
+running now still uses the tanh version and is reported as such. (3) The gradient
+attribution is a checkpoint-restart experiment, described as such below. (4) Signed and
+matched-sample diagnostics are added (commit 6d59960); the held-out seed, hard clipping and
+rollout-KL arms come first in the new queue. The causal language in this note is softened
+accordingly: the tail is measured, its role in the storm is the leading hypothesis.
 
 ## Results, pre-fix code
 
@@ -68,11 +81,15 @@ rollout log-ratio. The batch **mean** sigma sits on the 0.2 floor in every run. 
 The policy std is state-dependent (`softplus(raw) + 0.2`, no ceiling). On a small set of
 states it emits sigma of 40–200 and means of 3–7 (the actuator clamps at ±1), and that tail
 grows for hundreds of iterations before the storm tips. The clean seed-7 control has the
-same tail growing more slowly (max sigma 0.5 at 2,000, 14 at 4,900); `no_actor_value` keeps
-it far smaller (2.5 and 8.8 at 5,000). Those states produce out-of-range actions, likelihood
-ratios of e^100 and per-sample KL of order 100, and they feed back through the three frames
-of raw-action history in the observations and the unbounded action-rate term (weight −1,
-first plus second squared differences of the raw action). Batch means hide all of this.
+same tail growing more slowly (max sigma 0.5 at 2,000, 14 at 4,900); with `no_actor_value`
+it is smaller at 5,000 (2.5 and 8.8) on the two seeds run so far. These are measurements.
+What follows is the leading hypothesis, not yet established: those states produce
+out-of-range actions, likelihood ratios of e^100 and per-sample KL of order 100, and feed
+back through the three frames of raw-action history in the observations and the unbounded
+action-rate term (weight −1, first plus second squared differences of the raw action).
+Batch means hide the tail either way. Whether the tail causes the storm or accompanies it
+needs the matched-sample diagnostics now logged (signed sigma score by advantage sign, tail
+fraction, post-step KL on the same minibatch) and a saved-batch replay around an onset.
 
 Consequences for the adaptive learning rate:
 
@@ -84,9 +101,16 @@ Consequences for the adaptive learning rate:
 3. A linear schedule (2e-4 → 5e-5) has the same blind spot with no feedback; it would sit at
    its highest rate during the pre-takeoff explosive updates and at its lowest late.
 
-Gradient attribution on real training iterations (`scratchpad/wuji/grad_attrib.py`, one
-iteration from a checkpoint with the campaign environment, per-minibatch gradient norms
-into the shared actor trunk):
+These three points hold whatever the tail's causal role is: they follow from what the
+controller reads and what it can move.
+
+Gradient attribution, a **checkpoint-restart experiment** (`scratchpad/wuji/grad_attrib.py`):
+the model, optimizer and normaliser states are restored from a checkpoint, a fresh
+environment is built and one rollout and one PPO iteration are run. The environment's
+curriculum and disturbance state are not in the checkpoint, so the rollout is not the batch
+that produced the original trajectory, and for the onset checkpoint it is not the onset
+batch. It measures how the loss terms compete on that policy under a restarted environment,
+nothing more. Per-minibatch gradient norms into the shared actor trunk:
 
 | checkpoint | surrogate grad norm (median / p90) | value-head grad norm (median / max) | value / surrogate (median / max) | cos | max ratio per iteration (median) |
 |---|---|---|---|---|---|
@@ -95,9 +119,10 @@ into the shared actor trunk):
 | F @ 4,700 (clean) | 0.81 / 1.74 | 0.029 / 0.13 | 0.03 / 0.06 | −0.01 | 4.4 |
 
 The auxiliary value head's gradient is 3–14% of the surrogate's per minibatch and orthogonal
-to it, with spikes to 6x at the onset. Its per-step share is small; its effect over 5,000
-iterations is not, as the study shows: it is an unclipped path into the policy trunk every
-minibatch, and removing it is what shrank the sigma tail. Run H (value normalisation off)
+to it, with spikes to 6x at the onset checkpoint. Its per-step share is small. Over 5,000
+iterations the arm without it finished clean on both seeds with a smaller sigma tail at
+5,000; whether the head causes the tail, or the two seeds got lucky, is what the held-out
+seed and the matched-sample diagnostics are for. Run H (value normalisation off)
 is the extreme case: the head's raw MSE of order 1e25 destroyed the policy within 105
 iterations. Normalised advantages have heavy tails too (max 60–120 after normalisation), so a
 handful of catastrophic samples dictate the surrogate direction on the iterations that matter.
@@ -114,10 +139,19 @@ from iteration ~250 to ~4,000, so it is not stationary at run A's onset.
   identical policies at sigma 0.2), fp32 policy math under autocast, old values and returns
   normalised with the same running statistics, `kl_reference: rollout` option (default
   unchanged), opt-in policy diagnostics.
-- New (6e8d1fc): `max_sigma`, a smooth tanh ceiling after any sigma parametrization,
-  unchanged well below the cap, saturating at the cap, gradient everywhere. Bounds the
-  actions, ratios and per-sample KL on exactly the tail states; for actions in ±1 the cap is
-  1.0. Under test now as `sigma_cap` and `no_actor_value + max_sigma`.
+- New (6e8d1fc, corrected in 6d59960): `max_sigma`, a smooth ceiling after any sigma
+  parametrization, now a rational squash `x/(1+x)` whose gradient decays polynomially (the
+  first version used tanh, which saturates to exactly 1.0 in fp32 a few units above the cap
+  and then has zero gradient). What it bounds: the exploration noise and the sigma-driven
+  part of the likelihood ratio and per-sample KL. What it does not bound: the mean, and
+  therefore sampled actions, ratios and KL through the mean term. Whether a ceiling changes
+  the outcome is an empirical question, not a stability guarantee. The `sigma_cap` pair
+  running now uses the tanh version; `no_actor_value + max_sigma` is queued on the corrected
+  one.
+- New (6d59960): opt-in diagnostics for the review's "signed, matched-sample" request: per
+  mini-epoch the log-sigma score A·(z²−1) split by advantage sign, the fraction of samples
+  with max |z| > 3, and KLs from one extra forward of the same minibatch after the optimizer
+  step (pre→post on those samples; post vs the scheduler's reference, mean and max).
 - Candidate, not yet run: the mean-action counterpart (`bound_loss_type: bound` with a real
   coefficient) so |mu| stays near the clamp range where the task gradient exists.
 
