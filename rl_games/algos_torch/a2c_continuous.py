@@ -230,8 +230,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 # KL by the invalid fraction and biases adaptive LR upward
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
 
-        self.diagnostics.mini_batch(self,
-        {
+        diag_batch = {
             'values': value_preds_batch,
             'returns': return_batch,
             'new_neglogp': action_log_probs,
@@ -240,7 +239,25 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'mu': mu,
             'sigma': sigma,
             'advantages': advantage,
-        }, curr_e_clip, 0)
+            'actions': actions_batch,
+        }
+        if self.use_diagnostics and not self.is_rnn:
+            # matched-sample, post-step KL: the same minibatch re-evaluated
+            # after the optimizer step. kl_step = what THIS step did to these
+            # samples; kl_post_ref = drift from the scheduler's reference after
+            # the step. Running statistics are frozen for the extra forward.
+            stats_mods = [m for m in (getattr(self.model, 'running_mean_std', None), getattr(self.model, 'value_mean_std', None)) if m is not None]
+            was_training = [m.training for m in stats_mods]
+            for m in stats_mods:
+                m.eval()
+            with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+                post = train_model(batch_dict)
+            for m, t in zip(stats_mods, was_training):
+                m.train(t)
+            post_mu, post_sigma = post['mus'].float(), post['sigmas'].float()
+            diag_batch['kl_step'] = torch_ext.policy_kl(mu.detach().float(), sigma.detach().float(), post_mu, post_sigma, False)
+            diag_batch['kl_post_ref'] = torch_ext.policy_kl(post_mu, post_sigma, old_mu_batch.float(), old_sigma_batch.float(), False)
+        self.diagnostics.mini_batch(self, diag_batch, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy,
             kl_dist, self.last_lr, lr_mul,

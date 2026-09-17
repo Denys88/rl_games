@@ -111,14 +111,23 @@ throughput. They are disabled by default.
 ### `max_sigma`
 
 Optional smooth ceiling on the policy std, applied after any parametrization:
-`sigma = min_sigma + (max_sigma - min_sigma) * tanh((sigma - min_sigma) / (max_sigma - min_sigma))`.
-Default `0` (no ceiling). Well below the cap sigma is unchanged (tanh(x) ~ x); at the cap
-the gradient stays non-zero, so a head that extrapolated above it can come back. Motivation:
-with a state-dependent sigma head nothing in the PPO loss bounds sigma on rare states, and on
-WujiHand the batch maximum reached 40-200 while the mean sat at the 0.2 floor; those states
-produce out-of-range actions, likelihood ratios of e^100 and per-sample KL of ~100, which
-dominate the batch-mean KL the adaptive scheduler reads. For actions in [-1, 1] a cap of
-`1.0` is a natural choice. Diagnostics (`use_diagnostics: true`) log `sigma_max` per mini-epoch.
+`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`.
+Default `0` (no ceiling). Well below the cap sigma is nearly unchanged (`x / (1 + x) ~ x`); it
+saturates at `max_sigma`; the gradient `1 / (1 + x)^2` decays polynomially, so a head that
+extrapolated far above the cap still receives a small gradient (a tanh squash reaches exactly
+1.0 in fp32 a few units above the cap and its gradient is then zero). Note the compression
+near the cap: with `min_sigma 0.2`, `max_sigma 1.0` and the usual `sigma_init` of `-1.05`
+(uncapped sigma 0.5) the initial sigma is about 0.42; set `sigma_init` accordingly if the
+initial std matters (uncapped 0.62 maps to 0.5 with these bounds).
+
+What it bounds and what it does not: it bounds the exploration noise, and with it the
+sigma-driven part of the likelihood ratio and of the per-sample KL. The policy mean is not
+bounded by it, so sampled actions, ratios and KL remain unbounded through the mean term;
+the `bound` loss type (`bound_loss_type`, `bounds_loss_coef`) is the mean's counterpart.
+Motivation: with a state-dependent sigma head nothing in the PPO loss bounds sigma on rare
+states; on WujiHand the batch maximum reached 40-200 while the mean sat at the 0.2 floor
+(`use_diagnostics: true` logs `sigma_max` per mini-epoch). Whether a ceiling changes the
+training outcome is an empirical question; it is not a stability guarantee.
 
 ### `sigma_parametrization`
 

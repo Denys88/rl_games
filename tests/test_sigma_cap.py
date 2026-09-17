@@ -23,26 +23,27 @@ def test_cap_bounds_sigma_and_keeps_small_values():
     raw = torch.tensor([-1.05, 0.0, 5.0, 50.0, 500.0])
     sigma, logstd = apply_sigma_parametrization(raw, net)
     assert bool((sigma <= 1.0).all()) and bool((sigma >= 0.2).all())
-    # the Wuji init (raw -1.05 -> 0.5 uncapped) stays close to 0.5
-    assert abs(float(sigma[0]) - 0.5) < 0.02
+    # the Wuji init (raw -1.05 -> 0.5 uncapped) is compressed to about 0.42
+    assert 0.40 < float(sigma[0]) < 0.5
     # far above the cap it saturates at the cap
-    assert abs(float(sigma[-1]) - 1.0) < 1e-4
+    assert abs(float(sigma[-1]) - 1.0) < 5e-3
     assert torch.allclose(logstd, torch.log(sigma))
 
 
-def test_cap_keeps_gradient_above_cap():
+def test_cap_keeps_gradient_far_above_cap_in_fp32():
     net = _net(min_sigma=0.2, sigma_parametrization='softplus', max_sigma=1.0)
-    raw = torch.tensor([3.0], requires_grad=True)   # uncapped sigma 3.2, above the cap
+    # uncapped sigma 200: a tanh squash would have exactly zero gradient here
+    raw = torch.tensor([200.0], requires_grad=True)
     sigma, _ = apply_sigma_parametrization(raw, net)
     sigma.sum().backward()
-    assert raw.grad is not None and float(raw.grad.abs()) > 0.0
+    assert raw.grad is not None and float(raw.grad) > 1e-6
 
 
 def test_cap_applies_to_exp_parametrization_without_floor():
     net = _net(min_sigma=0.0, sigma_parametrization='exp', max_sigma=1.0)
     raw = torch.tensor([math.log(0.3), 4.0])
     sigma, logstd = apply_sigma_parametrization(raw, net)
-    assert abs(float(sigma[0]) - 0.3) < 0.02 and float(sigma[1]) < 1.0 + 1e-6
+    assert 0.2 < float(sigma[0]) < 0.3 and float(sigma[1]) < 1.0 + 1e-6
     assert torch.allclose(logstd, torch.log(sigma))
 
 

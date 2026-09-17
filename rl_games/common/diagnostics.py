@@ -52,6 +52,12 @@ class PpoDiagnostics(DefaultDiagnostics):
             ('sigma_min', 'min'), ('sigma_max', 'max'),
             ('mu_abs_max', 'max'), ('advantage_abs_max', 'max'),
             ('logratio_abs_max', 'max'),
+            # signed log-sigma score A*(z^2-1) by advantage sign: positive = the
+            # surrogate pushes sigma up on those samples, negative = down
+            ('sigma_score_pos', 'mean'), ('sigma_score_neg', 'mean'), ('sigma_score_mean', 'mean'),
+            ('tail_frac', 'mean'),            # fraction of samples with max_i |z_i| > 3
+            ('kl_step', 'mean'),              # KL(pre-step || post-step) on the same minibatch
+            ('kl_post_ref', 'mean'), ('kl_post_ref_max', 'max'),
         ):
             key = f'diagnostics/policy/{name}/{miniepoch}'
             self.diag_dict.pop(key, None)
@@ -92,6 +98,25 @@ class PpoDiagnostics(DefaultDiagnostics):
         for field, name in (('mu', 'mu_abs_max'), ('advantages', 'advantage_abs_max')):
             if field in batch:
                 stats[name] = rows(batch[field]).float().abs().max().cpu()
+        if all(k in batch and batch[k] is not None for k in ('actions', 'mu', 'sigma', 'advantages')):
+            act = rows(batch['actions']).float(); mu = rows(batch['mu']).float(); sg = rows(batch['sigma']).float()
+            adv = rows(batch['advantages']).float().reshape(-1)
+            if act.shape == mu.shape and mu.shape == sg.shape and adv.numel() == act.shape[0]:
+                z = (act - mu) / sg
+                score = (adv[:, None] * (z.square() - 1.0)).mean(dim=1)
+                pos, neg = adv > 0, adv < 0
+                if bool(pos.any()):
+                    stats['sigma_score_pos'] = score[pos].mean().cpu()
+                if bool(neg.any()):
+                    stats['sigma_score_neg'] = score[neg].mean().cpu()
+                stats['sigma_score_mean'] = score.mean().cpu()
+                stats['tail_frac'] = (z.abs().max(dim=1).values > 3.0).float().mean().cpu()
+        for k in ('kl_step', 'kl_post_ref'):
+            if k in batch and batch[k] is not None:
+                v = rows(batch[k]).float()
+                stats[k] = v.mean().cpu()
+                if k == 'kl_post_ref':
+                    stats['kl_post_ref_max'] = v.max().cpu()
         self.policy_stats.append(stats)
 
     def mini_batch(self, agent, batch, e_clip, minibatch):

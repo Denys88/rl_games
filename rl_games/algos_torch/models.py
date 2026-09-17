@@ -245,17 +245,19 @@ def apply_sigma_parametrization(raw, network):
         elif max_sigma <= 0:
             return sigma, raw
     if max_sigma > 0:
-        # Smooth ceiling. A state-dependent sigma head can extrapolate to
-        # sigma >> 1 on rare states (WujiHand: max sigma 40-200 in a batch
-        # whose mean sigma is 0.2), which makes sampled actions, the
-        # likelihood ratio and the per-sample KL meaningless there and feeds
-        # storms through action penalties. tanh keeps sigma ~unchanged well
-        # below the cap, saturates at max_sigma, and keeps a gradient
-        # everywhere (a hard clamp would leave the head stuck above the cap).
+        # Smooth ceiling on the exploration noise. A state-dependent sigma
+        # head can extrapolate to sigma >> 1 on rare states (WujiHand: batch
+        # max 40-200 while the mean sits at 0.2). Rational squash x/(1+x):
+        # ~identity for x << 1, saturates at max_sigma, gradient 1/(1+x)^2
+        # decays polynomially (tanh reaches exactly 1.0 in fp32 a few units
+        # above the cap and its gradient vanishes there). This bounds sigma
+        # only: the mean, the sampled action, the likelihood ratio and the
+        # per-sample KL stay unbounded through the mean term.
         span = max_sigma - min_sigma
         if span <= 0:
             raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
-        sigma = min_sigma + span * torch.tanh((sigma - min_sigma) / span)
+        x = (sigma - min_sigma) / span
+        sigma = min_sigma + span * x / (1.0 + x)
     return sigma, torch.log(sigma)
 
 
