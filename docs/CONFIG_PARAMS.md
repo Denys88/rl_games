@@ -108,6 +108,18 @@ throughput. They are disabled by default.
 
 ## Sigma Parametrization (under `network: space: continuous:`)
 
+### `max_sigma`
+
+Optional smooth ceiling on the policy std, applied after any parametrization:
+`sigma = min_sigma + (max_sigma - min_sigma) * tanh((sigma - min_sigma) / (max_sigma - min_sigma))`.
+Default `0` (no ceiling). Well below the cap sigma is unchanged (tanh(x) ~ x); at the cap
+the gradient stays non-zero, so a head that extrapolated above it can come back. Motivation:
+with a state-dependent sigma head nothing in the PPO loss bounds sigma on rare states, and on
+WujiHand the batch maximum reached 40-200 while the mean sat at the 0.2 floor; those states
+produce out-of-range actions, likelihood ratios of e^100 and per-sample KL of ~100, which
+dominate the batch-mean KL the adaptive scheduler reads. For actions in [-1, 1] a cap of
+`1.0` is a natural choice. Diagnostics (`use_diagnostics: true`) log `sigma_max` per mini-epoch.
+
 ### `sigma_parametrization`
 
 How the sigma head's raw output `r` becomes the Gaussian policy's std.

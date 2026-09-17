@@ -225,6 +225,7 @@ def apply_sigma_parametrization(raw, network):
     if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
         raw = raw.float()
     min_sigma = getattr(network, 'min_sigma', 0.0)
+    max_sigma = getattr(network, 'max_sigma', 0.0)
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
         sigma = torch.nn.functional.softplus(raw) + min_sigma
@@ -241,8 +242,20 @@ def apply_sigma_parametrization(raw, network):
         sigma = torch.exp(raw)
         if min_sigma > 0:
             sigma = sigma + min_sigma
-        else:
+        elif max_sigma <= 0:
             return sigma, raw
+    if max_sigma > 0:
+        # Smooth ceiling. A state-dependent sigma head can extrapolate to
+        # sigma >> 1 on rare states (WujiHand: max sigma 40-200 in a batch
+        # whose mean sigma is 0.2), which makes sampled actions, the
+        # likelihood ratio and the per-sample KL meaningless there and feeds
+        # storms through action penalties. tanh keeps sigma ~unchanged well
+        # below the cap, saturates at max_sigma, and keeps a gradient
+        # everywhere (a hard clamp would leave the head stuck above the cap).
+        span = max_sigma - min_sigma
+        if span <= 0:
+            raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
+        sigma = min_sigma + span * torch.tanh((sigma - min_sigma) / span)
     return sigma, torch.log(sigma)
 
 

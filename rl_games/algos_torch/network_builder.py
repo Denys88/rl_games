@@ -310,6 +310,7 @@ class A2CBuilder(NetworkBuilder):
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
                 # optional hard floor on the action std (see ModelA2CContinuousLogStd)
                 self.min_sigma = float(self.space_config.get('min_sigma', 0.0))
+                self.max_sigma = float(self.space_config.get('max_sigma', 0.0))  # 0 = no ceiling
                 # optional clamp on the raw logstd head: with fixed_sigma False the
                 # exp parametrization is unbounded above and can explode; [-5, 2]
                 # mirrors the SAC convention
