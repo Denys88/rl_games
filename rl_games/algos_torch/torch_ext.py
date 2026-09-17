@@ -76,10 +76,18 @@ numpy_to_torch_dtype_dict = {
 torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
-    c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
-    c3 = -1.0 / 2.0
-    kl = c1 + c2 + c3
+    """KL(N(p0_mu, p0_sigma) || N(p1_mu, p1_sigma)), summed over actions."""
+    # Low-precision squares can underflow before division. Keep the Gaussian
+    # arithmetic in at least fp32, preserving float64 inputs when supplied.
+    p0_mu, p0_sigma, p1_mu, p1_sigma = [
+        t.float() if t.dtype in (torch.float16, torch.bfloat16) else t
+        for t in (p0_mu, p0_sigma, p1_mu, p1_sigma)
+    ]
+    # Policy sigmas are positive. Adding epsilon to their variance biases KL
+    # below zero, even for identical policies, and misleads the LR scheduler.
+    var_ratio = (p0_sigma / p1_sigma).square()
+    mean_delta = (p0_mu - p1_mu) / p1_sigma
+    kl = torch.log(p1_sigma / p0_sigma) + 0.5 * (var_ratio + mean_delta.square() - 1.0)
     kl = kl.sum(dim=-1) # returning mean between all steps of sum between all actions
     if reduce:
         return kl.mean()

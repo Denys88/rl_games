@@ -236,7 +236,10 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'returns': return_batch,
             'new_neglogp': action_log_probs,
             'old_neglogp': old_action_log_probs_batch,
-            'masks': rnn_masks
+            'masks': rnn_masks,
+            'mu': mu,
+            'sigma': sigma,
+            'advantages': advantage,
         }, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy,

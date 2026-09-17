@@ -219,6 +219,11 @@ def apply_sigma_parametrization(raw, network):
     gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
     final sigma so log-probs stay consistent.
     """
+    # Autocast may leave the policy head in bf16/fp16. Distribution math
+    # (especially summing log-std over many actions) needs fp32 even when
+    # the network matmuls use lower precision. Keep double-precision inputs.
+    if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
+        raw = raw.float()
     min_sigma = getattr(network, 'min_sigma', 0.0)
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
@@ -270,6 +275,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
+            if mu.dtype == torch.float16 or mu.dtype == torch.bfloat16:
+                mu = mu.float()
             sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
