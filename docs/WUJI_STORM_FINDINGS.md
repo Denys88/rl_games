@@ -5,6 +5,44 @@ Companion to `WUJI_STABILITY.md` (the outside review) and the shareable page
 All numbers below are computed from the TensorBoard logs by `scratchpad/wuji/stats_all.py`
 and `plot_all.py`; the study runs use branch `VM/fix/wuji-stability` (6e8d1fc).
 
+## Summary
+
+**The issue.** rl_games PPO runs that matched or beat the rsl-rl reference on goal reaches kept
+drifting into an action-rate storm: the raw policy action starts changing wildly step to step,
+the task's unbounded action-rate penalty explodes, and the policy collapses (with a reward floor it
+keeps scoring, with actions 13-40x jerkier than the reference's). The reference never does this.
+
+**Key findings.**
+1. Reaches alone mislead; a run is clean only if raw action smoothness matches the reference
+   (action-delta RMS ~0.39, raw action-rate ~9/s).
+2. The storm is a tail event: the state-dependent sigma head emits noise of 40-200 on rare states
+   while the batch mean sits on the 0.2 floor, and per-state means drift to 3-7 against a ±1
+   clamp; the tail grows for hundreds of iterations before the storm tips, hidden by averages.
+3. The adaptive learning rate cannot handle it: it reads a batch-mean KL that a few tail samples
+   dominate or hide, and it can only scale one global rate. A linear schedule has the same blind
+   spot without feedback.
+4. Structural cause, consistent with all nineteen study runs and with Shadow Hand / DeXtreme
+   never storming: a state-dependent sigma head, updated through a trunk shared with an auxiliary
+   value head, on a task that penalises the raw unclamped action. Trainer-side clipping (IsaacGym's
+   arrangement) was catastrophic here because the penalty then no longer restrains the sigma head;
+   Shadow and DeXtreme used a global sigma.
+5. Ruled out: the cage penalty, the policy std level (0.20 in both), bf16, the KL epsilon bias, the
+   reward floor, the auxiliary head alone, the KL reference alone, hard clipping alone.
+
+**What fixes it.**
+- Bound the exploration noise: `max_sigma: 1.0` (new) gives 18.6 / 18.0 / 17.6 on seeds 42, 7 and
+  the held-out 123, all clean, vs the reference's 16.9 with equal smoothness; or a global sigma
+  (`fixed_sigma: true`, entropy 0, the Shadow/DeXtreme setting) gives 18.8 on the storming seed
+  and 1.56 h to the reference's level vs 2.14 h (other seeds running). Cap recipe on 2 GPUs: 20.2.
+- Correctness fixes on the branch (exact KL, fp32 policy math under autocast, consistent
+  value-normaliser coordinates, `kl_reference: rollout`, diagnostics): necessary, not sufficient.
+- Helps, not sufficient: `use_experimental_cv: false`. Not fixes: reward floor, trainer-side
+  clipping with a per-state sigma, rollout KL alone, hard clip alone, rate schedules.
+
+**Caveat on the score comparison.** The reference ran only its published widths (512/256/128 and
+512/512/256/128); ours is 1024/512/256 with a 1024/1024/512/256 critic, and the July rl_games run
+at reference widths scored 17.15. Equal-width comparisons in both directions are queued.
+
 ## Status: the study is complete, and bounding the exploration noise ends the storms
 
 Nineteen runs on the corrected code (branch `VM/fix/wuji-stability`, 06aa3ce), 8192 envs x 40
