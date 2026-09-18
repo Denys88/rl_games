@@ -250,8 +250,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             was_training = [m.training for m in stats_mods]
             for m in stats_mods:
                 m.eval()
+            # the model normalises observations IN PLACE in the dict it is given
+            # (input_dict['obs'] = norm_obs(...)), so re-using batch_dict would
+            # normalise twice; rebuild it from the raw observations
+            post_dict = {'is_train': True, 'prev_actions': actions_batch, 'obs': obs_batch}
             with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-                post = train_model(batch_dict)
+                post = train_model(post_dict)
             for m, t in zip(stats_mods, was_training):
                 m.train(t)
             post_mu, post_sigma = post['mus'].float(), post['sigmas'].float()
