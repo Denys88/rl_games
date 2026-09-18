@@ -30,10 +30,14 @@ keeps scoring, with actions 13-40x jerkier than the reference's). The reference 
    reward floor, the auxiliary head alone, the KL reference alone, hard clipping alone.
 
 **What fixes it.**
-- Bound the exploration noise: `max_sigma: 1.0` (new) gives 18.6 / 18.0 / 17.6 on seeds 42, 7 and
-  the held-out 123, all clean, vs the reference's 16.9 with equal smoothness; or a global sigma
-  (`fixed_sigma: true`, entropy 0, the Shadow/DeXtreme setting) gives 18.8 on the storming seed
-  and 1.56 h to the reference's level vs 2.14 h (other seeds running). Cap recipe on 2 GPUs: 20.2.
+- Bound the exploration noise: a smooth ceiling (`max_sigma: 1.0`, new) or a global sigma
+  (`fixed_sigma: true`, entropy 0, the Shadow/DeXtreme setting). Single GPU, same frames as the
+  reference: the cap gives 18.6 / 18.0 / 17.6 on seeds 42, 7 and the held-out 123, all clean, vs
+  the reference's 16.9 with equal smoothness; the global sigma gives 18.8 on the storming seed and
+  1.56 h to the reference's level vs 2.14 h (other seeds running). Then on 2 GPUs the cap recipe
+  improves further to 20.2 (twice the frames per iteration, 1.50 h to the reference's level), the
+  best result of the campaign. The single-GPU comparison is the claim; the 2-GPU number is what
+  the recipe scales to.
 - Correctness fixes on the branch (exact KL, fp32 policy math under autocast, consistent
   value-normaliser coordinates, `kl_reference: rollout`, diagnostics): necessary, not sufficient.
 - Helps, not sufficient: `use_experimental_cv: false`. Not fixes: reward floor, trainer-side
