@@ -1,35 +1,67 @@
-# WujiHand action-rate storm: findings and status (2026-09-17, 12:30 PDT)
+# WujiHand action-rate storm: findings and status (2026-09-18, 10:00 PDT)
 
 Companion to `WUJI_STABILITY.md` (the outside review) and the shareable page
 (`https://claude.ai/code/artifact/4413e4cc-fc2b-40db-a112-929ffa3bc65d`, same content, private).
 All numbers below are computed from the TensorBoard logs by `scratchpad/wuji/stats_all.py`
 and `plot_all.py`; the study runs use branch `VM/fix/wuji-stability` (6e8d1fc).
 
-## Status in one paragraph
+## Status: the study is complete, and bounding the exploration noise ends the storms
 
-Eleven 5,000-iteration runs on the pre-fix code, four on the corrected code. On the
-pre-fix code every rl_games run drifts into the action-rate storm at least transiently,
-two survive to 5,000 with the reference's smoothness (F: band 5e-5..2e-4, seed 7, 17.6;
-G: fixed 1e-4, seed 42, 17.7), the rsl-rl reference never drifts (16.9). On the corrected
-code, `control` (band 5e-5..2e-4) is 1 of 2 seeds clean, and **`no_actor_value`
-(`use_experimental_cv: false`, the actor's auxiliary value head removed) is 2 of 2 seeds
-clean** at 16.8 and 16.4 reaches with action-delta RMS 0.37 (reference 0.39). It is the
-first arm clean on both seeds. Running now: the `sigma_cap` pair (`max_sigma: 1.0`, first tanh version), then, in the order
-the review asked for: `no_actor_value` on the held-out seed 123 beside `hard_clip` seed 7;
-`hard_clip` seed 42 beside `rollout_kl` seed 7; `rollout_kl` seed 42 beside
-`no_actor_value + max_sigma` seed 42; then `no_actor_value` on 2 GPUs; then `no_cv_clip`.
-About 2.2 h per pair from 12:30.
+Nineteen runs on the corrected code (branch `VM/fix/wuji-stability`, 06aa3ce), 8192 envs x 40
+steps x 5,000 iterations, raw actions and rewards unchanged unless stated. Reaches at 5,000
+(EMA 50); "clean" means no action storm, action-delta RMS 0.36-0.37 (reference 0.39) and no
+explosive update.
 
-**Review round 2 (12:00) and what changed.** (1) `no_actor_value` stays the leading
-candidate. (2) The sigma cap had a real defect: the tanh squash reaches exactly 1.0 in fp32 a
-few units above the cap, so its gradient was zero for the states it exists for, and the cap
-never bounded actions, ratios or KL, only their sigma-driven part. Replaced by a rational
-squash (gradient decays polynomially) and the claims are corrected below; the sigma-cap pair
-running now still uses the tanh version and is reported as such. (3) The gradient
-attribution is a checkpoint-restart experiment, described as such below. (4) Signed and
-matched-sample diagnostics are added (commit 6d59960); the held-out seed, hard clipping and
-rollout-KL arms come first in the new queue. The causal language in this note is softened
-accordingly: the tail is measured, its role in the storm is the leading hypothesis.
+| arm (all: bignet, adaptive band 5e-5..2e-4 unless stated) | seed 42 | seed 7 | seed 123 (held-out) |
+|---|---|---|---|
+| control | storm at 4,421 | 16.9 clean | |
+| actor value head off | 16.8 clean | 16.4 clean | never took off (storm 2,025) |
+| **sigma cap 1.0** (`max_sigma`) | **18.6 clean** | **18.0 clean** | **17.6 clean** |
+| head off + sigma cap | 18.4 clean | 17.4 clean | |
+| **global sigma** (`fixed_sigma: true`, entropy 0) | **18.8 clean**, takeoff 960, 1.56 h to 16.9 | running | running |
+| head off + global sigma | 18.4 clean | | |
+| hard clip | 16.6 clean | collapsed after 12.9 (sigma tail, no action storm) | |
+| rollout KL reference | 15.3, takeoff only at 3,118 | never took off (storm 2,364) | |
+| trainer-side clip + bound 0.005 | never took off, max sigma 1e4 | | |
+| sigma cap on 2 GPUs (2x frames) | | **20.2 clean**, 1.50 h to 16.9 | |
+
+Reference: 16.9 at 5,000, 2.14 h. Seed-42 cap wall-clock is invalid (GPU shared with another
+project's job for three hours); iteration results stand.
+
+![study](../experiments/wuji/stability/findings/study_all.png)
+
+What the table says:
+
+1. **Every arm that keeps a state-dependent sigma without a ceiling fails on at least one seed**
+   (control, head off, hard clip, rollout KL). **Every run with a bounded or global sigma is
+   clean** (eight of eight so far), and they are also the best scores and the earliest takeoffs
+   of the campaign. The sigma cap passes the predeclared rule: two seeds plus the held-out seed,
+   all above the reference with its smoothness.
+2. **The mechanism, now with a decisive negative.** Trainer-side clipping (IsaacGym's
+   arrangement, with DeXtreme's bound loss) made things catastrophically worse: with clipped
+   actions the task's penalty no longer sees raw noise, and the per-state sigma head, freed of
+   the only force holding it down, ran to 1e4. DeXtreme survived the same clipping with a
+   global sigma. So the raw-action penalty was restraining the sigma head all along, and the
+   storms are what happens on the states where it fails to. The `WUJI_VS_SHADOW_ALLEGRO.md`
+   interaction hypothesis (state-dependent sigma x shared-trunk updates x action boundary)
+   is the explanation that fits all nineteen runs and the historical Shadow/DeXtreme results.
+3. **Global sigma** (the Shadow/DeXtreme setting, entropy 0 because a positive bonus on a
+   global sigma ran away in July) gives the best single-GPU result on the storming seed,
+   18.8, the earliest takeoff (960) and the fastest time to the reference level (1.56 h vs
+   2.14 h). Its sigma sits on the 0.2 floor and its mean tail is the smallest of any run.
+   Seeds 7 and 123 are running; if they hold, it is the simplest official recipe, needing no
+   new code at all.
+4. The auxiliary actor value head is a contributing path (head off helps the tail and helped
+   two seeds), not the cause: with the head on and sigma bounded, every run is clean.
+5. The signed diagnostics show the surrogate pushing sigma **down** on negative-advantage
+   samples even while sigma explodes, so the widening is not the policy gradient's doing; with
+   the head off it still happens (seed 123), so trunk drift from any source suffices once the
+   head is per-state. The corrected post-step KL reads 0.003 per minibatch step and 0.01
+   against the reference per iteration on clean runs, consistent with the 0.01 target.
+
+Running now (09:36): global sigma on seeds 7 and 123; then global sigma and sigma cap each
+with a fixed 1e-4 rate on seed 42 (does adaptivity still matter once sigma is bounded); then
+global sigma on 2 GPUs. Done by about 17:00.
 
 ## Results, pre-fix code
 
