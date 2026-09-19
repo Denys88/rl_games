@@ -70,7 +70,64 @@ per split per mini-epoch; `standard` does one per mini-epoch. On a single
 node the difference is small; at multi-node latencies the extra collectives
 compound — prefer `standard` there unless per-task evidence says otherwise.
 
+### `kl_reference`
+
+Continuous PPO can choose which Gaussian the adaptive scheduler compares
+against. The KL direction remains `KL(current || reference)`.
+
+| Value | Reference distribution |
+|-------|------------------------|
+| `previous_mini_epoch` (default) | The distribution last evaluated on each row; initially the rollout policy, then refreshed on each optimization pass. Preserves historical behavior. |
+| `rollout` | The fixed policy that collected the batch, throughout all mini-epochs. Measures cumulative drift using the same reference as PPO's likelihood ratio. |
+
+`rollout` can reduce the adaptive learning rate sooner; treat it as an
+explicit training ablation rather than assuming the same learning curve.
+This is a measurement/controller option, not a hard KL limit or early stop.
+The scheduler cannot lower the rate below the configured `min_lr`.
+
+### Central critic and `use_experimental_cv`
+
+With `central_value_config`, continuous PPO obtains rollout values from the
+privileged central critic. By default, `use_experimental_cv: true` also
+trains a value head in the actor model. With a shared actor trunk, this
+auxiliary loss changes the policy outside PPO's surrogate clipping.
+`use_experimental_cv: false` disables that auxiliary loss while retaining
+the central critic. It does not disable value training when no central
+critic is configured.
+
+### Policy diagnostics
+
+`use_diagnostics: true` adds per-mini-epoch metrics under
+`diagnostics/policy/`: `sigma_min`, `sigma_mean`, `sigma_max`, `mu_abs_max`,
+`advantage_abs_max`, and `logratio_abs_max`. The last metric uses the fixed
+rollout log probability regardless of `kl_reference`. Metrics cover valid
+learner minibatch rows and are local to the writer's rank under DDP; they
+are not post-update or rollout-distribution measurements. Diagnostics add
+reductions and device synchronizations, so account for this when measuring
+throughput. They are disabled by default.
+
 ## Sigma Parametrization (under `network: space: continuous:`)
+
+### `max_sigma`
+
+Optional smooth ceiling on the policy std, applied after any parametrization:
+`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`.
+Default `0` (no ceiling). Well below the cap sigma is nearly unchanged (`x / (1 + x) ~ x`); it
+saturates at `max_sigma`; the gradient `1 / (1 + x)^2` decays polynomially, so a head that
+extrapolated far above the cap still receives a small gradient (a tanh squash reaches exactly
+1.0 in fp32 a few units above the cap and its gradient is then zero). Note the compression
+near the cap: with `min_sigma 0.2`, `max_sigma 1.0` and the usual `sigma_init` of `-1.05`
+(uncapped sigma 0.5) the initial sigma is about 0.42; set `sigma_init` accordingly if the
+initial std matters (uncapped 0.62 maps to 0.5 with these bounds).
+
+What it bounds and what it does not: it bounds the exploration noise, and with it the
+sigma-driven part of the likelihood ratio and of the per-sample KL. The policy mean is not
+bounded by it, so sampled actions, ratios and KL remain unbounded through the mean term;
+the `bound` loss type (`bound_loss_type`, `bounds_loss_coef`) is the mean's counterpart.
+Motivation: with a state-dependent sigma head nothing in the PPO loss bounds sigma on rare
+states; on WujiHand the batch maximum reached 40-200 while the mean sat at the 0.2 floor
+(`use_diagnostics: true` logs `sigma_max` per mini-epoch). Whether a ceiling changes the
+training outcome is an empirical question; it is not a stability guarantee.
 
 ### `sigma_parametrization`
 

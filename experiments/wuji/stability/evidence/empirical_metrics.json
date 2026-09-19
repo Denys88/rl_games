@@ -1,0 +1,1353 @@
+{
+  "source_root": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji",
+  "source_note": {
+    "july": {
+      "final": 17.15,
+      "peak": 17.17,
+      "peak_it": 4987,
+      "peak_h": 4.06,
+      "n": 5000,
+      "hours": 4.07,
+      "takeoff": 1797,
+      "cross_it": 4806,
+      "cross_h": 3.91,
+      "storm": 705,
+      "end_delta": 0.375,
+      "end_rate": 10.8,
+      "max_delta": 1.2,
+      "terminal_storm": null,
+      "transient_storms": [
+        [
+          705,
+          747,
+          0.74
+        ],
+        [
+          751,
+          755,
+          0.46
+        ],
+        [
+          759,
+          840,
+          0.58
+        ]
+      ]
+    },
+    "arbiter": {
+      "final": 16.89,
+      "peak": 16.91,
+      "peak_it": 4998,
+      "peak_h": 2.14,
+      "n": 4999,
+      "hours": 2.14,
+      "takeoff": 1336,
+      "cross_it": 4997,
+      "cross_h": 2.14,
+      "storm": null,
+      "end_delta": 0.388,
+      "end_rate": 9.1,
+      "max_delta": 0.7,
+      "terminal_storm": null,
+      "transient_storms": []
+    },
+    "A": {
+      "final": 3.61,
+      "peak": 16.69,
+      "peak_it": 3685,
+      "peak_h": 1.64,
+      "n": 4225,
+      "hours": 1.89,
+      "takeoff": 1429,
+      "cross_it": null,
+      "cross_h": null,
+      "storm": 401,
+      "end_delta": 22.791,
+      "end_rate": 98870.1,
+      "max_delta": 27.5,
+      "terminal_storm": 3749,
+      "transient_storms": [
+        [
+          401,
+          441,
+          0.5
+        ]
+      ]
+    },
+    "B": {
+      "final": 0.0,
+      "peak": 0.29,
+      "peak_it": 1046,
+      "peak_h": 0.45,
+      "n": 5000,
+      "hours": 2.25,
+      "takeoff": null,
+      "cross_it": null,
+      "cross_h": null,
+      "storm": 151,
+      "end_delta": 659.325,
+      "end_rate": 66135912.0,
+      "max_delta": 834.8,
+      "terminal_storm": 1044,
+      "transient_storms": [
+        [
+          151,
+          155,
+          0.5
+        ]
+      ]
+    },
+    "C": {
+      "final": 16.98,
+      "peak": 17.22,
+      "peak_it": 4778,
+      "peak_h": 2.16,
+      "n": 5000,
+      "hours": 2.26,
+      "takeoff": 758,
+      "cross_it": 4070,
+      "cross_h": 1.84,
+      "storm": 2967,
+      "end_delta": 5.075,
+      "end_rate": 198694.6,
+      "max_delta": 5.9,
+      "terminal_storm": 2967,
+      "transient_storms": []
+    },
+    "D": {
+      "final": 19.51,
+      "peak": 19.57,
+      "peak_it": 4811,
+      "peak_h": 2.3,
+      "n": 5000,
+      "hours": 2.39,
+      "takeoff": 538,
+      "cross_it": 2008,
+      "cross_h": 0.96,
+      "storm": 1899,
+      "end_delta": 15.992,
+      "end_rate": 1142660.4,
+      "max_delta": 18.4,
+      "terminal_storm": 1918,
+      "transient_storms": [
+        [
+          1899,
+          1899,
+          0.45
+        ],
+        [
+          1903,
+          1904,
+          0.45
+        ]
+      ]
+    },
+    "E": {
+      "final": 12.93,
+      "peak": 16.54,
+      "peak_it": 4701,
+      "peak_h": 2.08,
+      "n": 5000,
+      "hours": 2.21,
+      "takeoff": 2137,
+      "cross_it": null,
+      "cross_h": null,
+      "storm": 684,
+      "end_delta": 0.609,
+      "end_rate": 184.0,
+      "max_delta": 0.9,
+      "terminal_storm": 4909,
+      "transient_storms": [
+        [
+          684,
+          730,
+          0.48
+        ],
+        [
+          2613,
+          2733,
+          0.55
+        ]
+      ]
+    },
+    "F": {
+      "final": 17.56,
+      "peak": 17.57,
+      "peak_it": 4820,
+      "peak_h": 2.14,
+      "n": 5000,
+      "hours": 2.22,
+      "takeoff": 1807,
+      "cross_it": 4367,
+      "cross_h": 1.93,
+      "storm": 614,
+      "end_delta": 0.358,
+      "end_rate": 8.6,
+      "max_delta": 1.1,
+      "terminal_storm": null,
+      "transient_storms": [
+        [
+          614,
+          797,
+          0.94
+        ]
+      ]
+    }
+  },
+  "independent_raw_audit": {
+    "arbiter": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/arbiter_5k",
+      "last_iteration": 4999,
+      "reaches_ema50_final": 16.891856975514646,
+      "reaches_ema50_peak": 16.905838067537804,
+      "peak_iteration": 4998,
+      "hours": 2.143513901233673,
+      "delta_raw_final": 0.3882558345794678,
+      "delta_ema20_final": 0.38712323286618955,
+      "raw_action_rate_final": -9.129607200622559,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 0,
+          "end": 46,
+          "max_ema20": 0.6847246860485411,
+          "start_hours": -1.026524437798394e-06
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.7916905879974365,
+      "sigma_geometric_mean_from_entropy_final": 0.20018305368646086,
+      "onset_samples": [
+        {
+          "iteration": 4999,
+          "Episode_Reward/action_rate": -9.129607200622559,
+          "Episode_Metrics/action_delta_rms": 0.3882558345794678,
+          "Curriculum/success_curriculum/value": 1.0,
+          "Curriculum/adaptive_episode/value": 1.0
+        }
+      ]
+    },
+    "C": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final2_bignet_rclip",
+      "last_iteration": 5000,
+      "reaches_ema50_final": 16.979353424864144,
+      "reaches_ema50_peak": 17.215319129858912,
+      "peak_iteration": 4778,
+      "hours": 2.2628993195295335,
+      "delta_raw_final": 5.07474946975708,
+      "delta_ema20_final": 5.170404898267028,
+      "raw_action_rate_final": -198694.578125,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 46,
+          "max_ema20": 0.6888157323915132,
+          "start_hours": 1.649724112616645e-07
+        },
+        {
+          "start": 2967,
+          "end": 5000,
+          "max_ema20": 5.186749294000637,
+          "start_hours": 1.3454726458920372
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 2967,
+        "end": 5000,
+        "max_ema20": 5.186749294000637,
+        "start_hours": 1.3454726458920372
+      },
+      "entropy_final": -2.566087007522583,
+      "sigma_geometric_mean_from_entropy_final": 0.212833973663993,
+      "onset_samples": [
+        {
+          "iteration": 2967,
+          "info/kl": 0.014776300638914108,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -3.5210824012756348,
+          "losses/cval_loss": 0.042876340448856354,
+          "losses/bounds_loss": 8.74817180633545,
+          "Episode/Episode_Reward/action_rate": -123.6671371459961,
+          "Episode/Episode_Metrics/action_delta_rms": 0.4677163064479828,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20291001922250723
+        }
+      ]
+    },
+    "B": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final2_bignet_seed7",
+      "last_iteration": 5000,
+      "reaches_ema50_final": 0.003146190991980228,
+      "reaches_ema50_peak": 0.28984455368428563,
+      "peak_iteration": 1046,
+      "hours": 2.2524435079097747,
+      "delta_raw_final": 659.3248291015625,
+      "delta_ema20_final": 641.9630062438049,
+      "raw_action_rate_final": -66135912.0,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.68790951525673,
+          "start_hours": 1.9027127159966362e-07
+        },
+        {
+          "start": 151,
+          "end": 155,
+          "max_ema20": 0.4956621082403259,
+          "start_hours": 0.061713280942704944
+        },
+        {
+          "start": 1044,
+          "end": 5000,
+          "max_ema20": 669.350662536438,
+          "start_hours": 0.4483577060037189
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 1044,
+        "end": 5000,
+        "max_ema20": 669.350662536438,
+        "start_hours": 0.4483577060037189
+      },
+      "entropy_final": 10.406342506408691,
+      "sigma_geometric_mean_from_entropy_final": 0.4071305399917414,
+      "onset_samples": [
+        {
+          "iteration": 1044,
+          "info/kl": 4.0382914543151855,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 5.903107643127441,
+          "losses/cval_loss": 1.497482419013977,
+          "losses/bounds_loss": 4.6000285148620605,
+          "Episode/Episode_Reward/action_rate": -1630.7138671875,
+          "Episode/Episode_Metrics/action_delta_rms": 2.318784236907959,
+          "Episode/Curriculum/success_curriculum/value": 0.0,
+          "Episode/Curriculum/adaptive_episode/value": 0.9999938607215881,
+          "sigma_geometric_mean": 0.3250477608303683
+        }
+      ],
+      "dense_onset_samples": [
+        {
+          "iteration": 1020,
+          "info/kl": 0.01979968324303627,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.801377058029175,
+          "losses/cval_loss": 0.001829860731959343,
+          "losses/bounds_loss": 3.6550071239471436,
+          "Episode/Episode_Reward/action_rate": -4.480737209320068,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2542959153652191,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.002925763837993145
+        },
+        {
+          "iteration": 1030,
+          "info/kl": 0.021507102996110916,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.800475835800171,
+          "losses/cval_loss": 0.0012953015975654125,
+          "losses/bounds_loss": 3.4917893409729004,
+          "Episode/Episode_Reward/action_rate": -4.527155876159668,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2539675831794739,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0009897425770759583
+        },
+        {
+          "iteration": 1035,
+          "info/kl": 0.02977043204009533,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.8000450134277344,
+          "losses/cval_loss": 0.001966455252841115,
+          "losses/bounds_loss": 3.592172622680664,
+          "Episode/Episode_Reward/action_rate": -4.628489971160889,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2549819052219391,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0013851199764758348
+        },
+        {
+          "iteration": 1038,
+          "info/kl": 0.02846306748688221,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.800732135772705,
+          "losses/cval_loss": 0.002960759913548827,
+          "losses/bounds_loss": 3.6033756732940674,
+          "Episode/Episode_Reward/action_rate": -4.678738594055176,
+          "Episode/Episode_Metrics/action_delta_rms": 0.25503769516944885,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0012878020061179996
+        },
+        {
+          "iteration": 1039,
+          "info/kl": 0.09417396783828735,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.7929985523223877,
+          "losses/cval_loss": 0.0028698581736534834,
+          "losses/bounds_loss": 3.6099815368652344,
+          "Episode/Episode_Reward/action_rate": -5.352218151092529,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2567436099052429,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0034920729231089354
+        },
+        {
+          "iteration": 1040,
+          "info/kl": 3.160290002822876,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.6259007453918457,
+          "losses/cval_loss": 0.010419277474284172,
+          "losses/bounds_loss": 3.6090829372406006,
+          "Episode/Episode_Reward/action_rate": -6.768726348876953,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2574447989463806,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0033079569693654776
+        },
+        {
+          "iteration": 1041,
+          "info/kl": 1.831559181213379,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.3203811645507812,
+          "losses/cval_loss": 0.1692216694355011,
+          "losses/bounds_loss": 3.594614028930664,
+          "Episode/Episode_Reward/action_rate": -7.330256462097168,
+          "Episode/Episode_Metrics/action_delta_rms": 0.2563614547252655,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.0009777098894119263
+        },
+        {
+          "iteration": 1042,
+          "info/kl": 6.93662166595459,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -2.0835976600646973,
+          "losses/cval_loss": 0.585676908493042,
+          "losses/bounds_loss": 3.6677041053771973,
+          "Episode/Episode_Reward/action_rate": -50.07635498046875,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3321637213230133,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.004049486946314573
+        },
+        {
+          "iteration": 1043,
+          "info/kl": 39.7965087890625,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 1.052703619003296,
+          "losses/cval_loss": 0.9411220550537109,
+          "losses/bounds_loss": 3.9761273860931396,
+          "Episode/Episode_Reward/action_rate": -135.9952850341797,
+          "Episode/Episode_Metrics/action_delta_rms": 0.45919331908226013,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.00855154637247324
+        },
+        {
+          "iteration": 1044,
+          "info/kl": 4.0382914543151855,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 5.903107643127441,
+          "losses/cval_loss": 1.497482419013977,
+          "losses/bounds_loss": 4.6000285148620605,
+          "Episode/Episode_Reward/action_rate": -1630.7138671875,
+          "Episode/Episode_Metrics/action_delta_rms": 2.318784236907959,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.03182588517665863
+        },
+        {
+          "iteration": 1045,
+          "info/kl": 0.1720724105834961,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 10.707717895507812,
+          "losses/cval_loss": 1.2875525951385498,
+          "losses/bounds_loss": 4.885834693908691,
+          "Episode/Episode_Reward/action_rate": -5301.85791015625,
+          "Episode/Episode_Metrics/action_delta_rms": 5.752244472503662,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.03486311808228493
+        },
+        {
+          "iteration": 1046,
+          "info/kl": 0.11221737414598465,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 12.845747947692871,
+          "losses/cval_loss": 0.9038803577423096,
+          "losses/bounds_loss": 4.93277645111084,
+          "Episode/Episode_Reward/action_rate": -9283.037109375,
+          "Episode/Episode_Metrics/action_delta_rms": 8.626169204711914,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.04238968715071678
+        },
+        {
+          "iteration": 1047,
+          "info/kl": 0.03171069547533989,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 13.52988338470459,
+          "losses/cval_loss": 0.6659579873085022,
+          "losses/bounds_loss": 4.856086254119873,
+          "Episode/Episode_Reward/action_rate": -11525.7578125,
+          "Episode/Episode_Metrics/action_delta_rms": 14.219024658203125,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.06616980582475662
+        },
+        {
+          "iteration": 1048,
+          "info/kl": 0.026717420667409897,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": 13.8141450881958,
+          "losses/cval_loss": 0.5213479995727539,
+          "losses/bounds_loss": 4.7284088134765625,
+          "Episode/Episode_Reward/action_rate": -14510.953125,
+          "Episode/Episode_Metrics/action_delta_rms": 17.105138778686523,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.06582548469305038
+        },
+        {
+          "iteration": 1050,
+          "info/kl": 0.013761119917035103,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": 13.366287231445312,
+          "losses/cval_loss": 0.3167461156845093,
+          "losses/bounds_loss": 4.577759742736816,
+          "Episode/Episode_Reward/action_rate": -19491.021484375,
+          "Episode/Episode_Metrics/action_delta_rms": 18.871082305908203,
+          "Episode/Episode_Metrics/cage_escape_frequency": 0.06159008666872978
+        }
+      ]
+    },
+    "E": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final3_lr5e5",
+      "last_iteration": 5000,
+      "reaches_ema50_final": 12.926659086446238,
+      "reaches_ema50_peak": 16.540955069996496,
+      "peak_iteration": 4701,
+      "hours": 2.211274407174852,
+      "delta_raw_final": 0.609199047088623,
+      "delta_ema20_final": 0.6258243736799632,
+      "raw_action_rate_final": -184.00247192382812,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.687702232883703,
+          "start_hours": 1.2874603271484376e-07
+        },
+        {
+          "start": 684,
+          "end": 730,
+          "max_ema20": 0.4780488584664402,
+          "start_hours": 0.28680915594100953
+        },
+        {
+          "start": 2613,
+          "end": 2733,
+          "max_ema20": 0.5457910613075221,
+          "start_hours": 1.132335205607944
+        },
+        {
+          "start": 4909,
+          "end": 5000,
+          "max_ema20": 0.6958103781228416,
+          "start_hours": 2.1702105443345174
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 4909,
+        "end": 5000,
+        "max_ema20": 0.6958103781228416,
+        "start_hours": 2.1702105443345174
+      },
+      "entropy_final": -0.6660998463630676,
+      "sigma_geometric_mean_from_entropy_final": 0.23404461356816447,
+      "onset_samples": [
+        {
+          "iteration": 4500,
+          "info/kl": 0.015201883390545845,
+          "info/last_lr": 0.0001687500043772161,
+          "losses/entropy": -3.6657795906066895,
+          "losses/cval_loss": 0.01929507590830326,
+          "losses/bounds_loss": 7.106153964996338,
+          "Episode/Episode_Reward/action_rate": -8.516468048095703,
+          "Episode/Episode_Metrics/action_delta_rms": 0.35613808035850525,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20144729144434773
+        },
+        {
+          "iteration": 4600,
+          "info/kl": 0.01664106547832489,
+          "info/last_lr": 7.500000356230885e-05,
+          "losses/entropy": -3.6413369178771973,
+          "losses/cval_loss": 0.023907463997602463,
+          "losses/bounds_loss": 7.089632511138916,
+          "Episode/Episode_Reward/action_rate": -9.63414192199707,
+          "Episode/Episode_Metrics/action_delta_rms": 0.35821470618247986,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20169363745841148
+        },
+        {
+          "iteration": 4700,
+          "info/kl": 0.022060517221689224,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -3.5497710704803467,
+          "losses/cval_loss": 0.022523129358887672,
+          "losses/bounds_loss": 6.8897294998168945,
+          "Episode/Episode_Reward/action_rate": -11.097147941589355,
+          "Episode/Episode_Metrics/action_delta_rms": 0.36083289980888367,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20261916695550075
+        },
+        {
+          "iteration": 4800,
+          "info/kl": 0.024113647639751434,
+          "info/last_lr": 0.0001687500043772161,
+          "losses/entropy": -3.4484634399414062,
+          "losses/cval_loss": 0.028878767043352127,
+          "losses/bounds_loss": 6.573431491851807,
+          "Episode/Episode_Reward/action_rate": -10.720748901367188,
+          "Episode/Episode_Metrics/action_delta_rms": 0.35775238275527954,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.2036481141457801
+        },
+        {
+          "iteration": 4850,
+          "info/kl": 0.02332615852355957,
+          "info/last_lr": 0.00011249999806750566,
+          "losses/entropy": -3.3608055114746094,
+          "losses/cval_loss": 0.025079967454075813,
+          "losses/bounds_loss": 6.279988765716553,
+          "Episode/Episode_Reward/action_rate": -12.726777076721191,
+          "Episode/Episode_Metrics/action_delta_rms": 0.36326658725738525,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20454264161554084
+        },
+        {
+          "iteration": 4900,
+          "info/kl": 0.03020242229104042,
+          "info/last_lr": 4.999999873689376e-05,
+          "losses/entropy": -2.772768497467041,
+          "losses/cval_loss": 0.11804168671369553,
+          "losses/bounds_loss": 5.868575096130371,
+          "Episode/Episode_Reward/action_rate": -45.95816421508789,
+          "Episode/Episode_Metrics/action_delta_rms": 0.4094356596469879,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.21064585707746025
+        },
+        {
+          "iteration": 4910,
+          "info/kl": 0.026745079085230827,
+          "info/last_lr": 0.0001687500043772161,
+          "losses/entropy": -2.4845669269561768,
+          "losses/cval_loss": 0.1634303629398346,
+          "losses/bounds_loss": 5.6991400718688965,
+          "Episode/Episode_Reward/action_rate": -102.31206512451172,
+          "Episode/Episode_Metrics/action_delta_rms": 0.4664350748062134,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.2137032561940505
+        },
+        {
+          "iteration": 4950,
+          "info/kl": 0.043239712715148926,
+          "info/last_lr": 4.999999873689376e-05,
+          "losses/entropy": -1.9702032804489136,
+          "losses/cval_loss": 0.1111912727355957,
+          "losses/bounds_loss": 5.1230034828186035,
+          "Episode/Episode_Reward/action_rate": -141.81175231933594,
+          "Episode/Episode_Metrics/action_delta_rms": 0.48211079835891724,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.21927059961537967
+        },
+        {
+          "iteration": 5000,
+          "info/kl": 0.027604445815086365,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -0.6660998463630676,
+          "losses/cval_loss": 0.057084377855062485,
+          "losses/bounds_loss": 4.563260555267334,
+          "Episode/Episode_Reward/action_rate": -184.00247192382812,
+          "Episode/Episode_Metrics/action_delta_rms": 0.609199047088623,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.23404461356816447
+        }
+      ]
+    },
+    "F": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final3_lr5e5_seed7",
+      "last_iteration": 5000,
+      "reaches_ema50_final": 17.556922071126248,
+      "reaches_ema50_peak": 17.567383258959346,
+      "peak_iteration": 4820,
+      "hours": 2.2179999332295526,
+      "delta_raw_final": 0.3584095239639282,
+      "delta_ema20_final": 0.3591270841573999,
+      "raw_action_rate_final": -8.649454116821289,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.687125964371948,
+          "start_hours": 1.7550256517198352e-07
+        },
+        {
+          "start": 614,
+          "end": 797,
+          "max_ema20": 0.9435258159715381,
+          "start_hours": 0.2553487315442827
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.798189640045166,
+      "sigma_geometric_mean_from_entropy_final": 0.20011801425015116,
+      "onset_samples": [
+        {
+          "iteration": 5000,
+          "info/kl": 0.01336261909455061,
+          "info/last_lr": 0.00011249999806750566,
+          "losses/entropy": -3.798189640045166,
+          "losses/cval_loss": 0.01841921918094158,
+          "losses/bounds_loss": 7.234220027923584,
+          "Episode/Episode_Reward/action_rate": -8.649454116821289,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3584095239639282,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20011801425015116
+        }
+      ]
+    },
+    "D": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final3_rclip_ddp",
+      "last_iteration": 5000,
+      "reaches_ema50_final": 19.51123695489478,
+      "reaches_ema50_peak": 19.566841015599024,
+      "peak_iteration": 4811,
+      "hours": 2.393165991504987,
+      "delta_raw_final": 15.991719245910645,
+      "delta_ema20_final": 15.08582748788158,
+      "raw_action_rate_final": -1142660.375,
+      "frames_per_iteration": 655360,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 45,
+          "max_ema20": 0.68798665246185,
+          "start_hours": 1.2444125281439887e-07
+        },
+        {
+          "start": 1899,
+          "end": 1899,
+          "max_ema20": 0.4507905253072638,
+          "start_hours": 0.9025678418742286
+        },
+        {
+          "start": 1903,
+          "end": 1904,
+          "max_ema20": 0.45090315761807886,
+          "start_hours": 0.9044661437140571
+        },
+        {
+          "start": 1918,
+          "end": 5000,
+          "max_ema20": 15.293838061550318,
+          "start_hours": 0.9116432815790176
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 1918,
+        "end": 5000,
+        "max_ema20": 15.293838061550318,
+        "start_hours": 0.9116432815790176
+      },
+      "entropy_final": -1.765589952468872,
+      "sigma_geometric_mean_from_entropy_final": 0.2215253983511887,
+      "onset_samples": [
+        {
+          "iteration": 1918,
+          "info/kl": 0.01241922378540039,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -3.581223249435425,
+          "losses/cval_loss": 0.04450150579214096,
+          "losses/bounds_loss": 7.589707374572754,
+          "Episode/Episode_Reward/action_rate": -129.25894165039062,
+          "Episode/Episode_Metrics/action_delta_rms": 0.4932485520839691,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.2023007766578931
+        }
+      ]
+    },
+    "A": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/final_bignet_5k",
+      "last_iteration": 4225,
+      "reaches_ema50_final": 3.6117722791768823,
+      "reaches_ema50_peak": 16.690861596481515,
+      "peak_iteration": 3685,
+      "hours": 1.8900861797067854,
+      "delta_raw_final": 22.790578842163086,
+      "delta_ema20_final": 23.1336534907791,
+      "raw_action_rate_final": -98870.109375,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.6909072641731021,
+          "start_hours": 1.4894538455539278e-07
+        },
+        {
+          "start": 401,
+          "end": 441,
+          "max_ema20": 0.5032138187259942,
+          "start_hours": 0.16792859348985884
+        },
+        {
+          "start": 3749,
+          "end": 4225,
+          "max_ema20": 23.169766611686047,
+          "start_hours": 1.6664636733134588
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 3749,
+        "end": 4225,
+        "max_ema20": 23.169766611686047,
+        "start_hours": 1.6664636733134588
+      },
+      "entropy_final": 9.504344940185547,
+      "sigma_geometric_mean_from_entropy_final": 0.3891768987368516,
+      "onset_samples": [
+        {
+          "iteration": 3300,
+          "info/kl": 0.014687917195260525,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -3.7895050048828125,
+          "losses/cval_loss": 0.01914811134338379,
+          "losses/bounds_loss": 6.272926330566406,
+          "Episode/Episode_Reward/action_rate": -8.260344505310059,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3511175811290741,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20020493071688936
+        },
+        {
+          "iteration": 3600,
+          "info/kl": 0.05606939271092415,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.762319326400757,
+          "losses/cval_loss": 0.031040970236063004,
+          "losses/bounds_loss": 6.328019618988037,
+          "Episode/Episode_Reward/action_rate": -9.411561965942383,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3608398139476776,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20047725109916842
+        },
+        {
+          "iteration": 3660,
+          "info/kl": 0.07300874590873718,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.7783424854278564,
+          "losses/cval_loss": 0.021637624129652977,
+          "losses/bounds_loss": 6.109519004821777,
+          "Episode/Episode_Reward/action_rate": -9.575126647949219,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3570479452610016,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20031670147677527
+        },
+        {
+          "iteration": 3685,
+          "info/kl": 0.01702434942126274,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": -3.7827000617980957,
+          "losses/cval_loss": 0.01837657019495964,
+          "losses/bounds_loss": 6.155883312225342,
+          "Episode/Episode_Reward/action_rate": -8.974848747253418,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3564576506614685,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20027306146481902
+        },
+        {
+          "iteration": 3700,
+          "info/kl": 0.02104254625737667,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.7762093544006348,
+          "losses/cval_loss": 0.025856994092464447,
+          "losses/bounds_loss": 6.227280139923096,
+          "Episode/Episode_Reward/action_rate": -9.410025596618652,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3639369606971741,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20033806770473864
+        },
+        {
+          "iteration": 3720,
+          "info/kl": 0.03482289984822273,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.7550530433654785,
+          "losses/cval_loss": 0.03547469899058342,
+          "losses/bounds_loss": 6.073321342468262,
+          "Episode/Episode_Reward/action_rate": -14.408276557922363,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3754313588142395,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20055010055441713
+        },
+        {
+          "iteration": 3740,
+          "info/kl": 0.05124922841787338,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -3.6177945137023926,
+          "losses/cval_loss": 0.06931425631046295,
+          "losses/bounds_loss": 5.8693156242370605,
+          "Episode/Episode_Reward/action_rate": -35.18223571777344,
+          "Episode/Episode_Metrics/action_delta_rms": 0.3914594054222107,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.20193119490444314
+        },
+        {
+          "iteration": 3750,
+          "info/kl": 0.08108249306678772,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -2.583390712738037,
+          "losses/cval_loss": 0.5322705507278442,
+          "losses/bounds_loss": 5.697949409484863,
+          "Episode/Episode_Reward/action_rate": -159.9972381591797,
+          "Episode/Episode_Metrics/action_delta_rms": 0.6728211641311646,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 1.0,
+          "sigma_geometric_mean": 0.21264991248197965
+        },
+        {
+          "iteration": 3780,
+          "info/kl": 0.0358421765267849,
+          "info/last_lr": 9.999999747378752e-05,
+          "losses/entropy": -0.7046818137168884,
+          "losses/cval_loss": 0.3911021947860718,
+          "losses/bounds_loss": 5.849600315093994,
+          "Episode/Episode_Reward/action_rate": -598.9954223632812,
+          "Episode/Episode_Metrics/action_delta_rms": 1.287791132926941,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 0.9999977350234985,
+          "sigma_geometric_mean": 0.2335935536954773
+        },
+        {
+          "iteration": 3840,
+          "info/kl": 0.013388244435191154,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": 3.4145257472991943,
+          "losses/cval_loss": 0.4133251905441284,
+          "losses/bounds_loss": 7.8932204246521,
+          "Episode/Episode_Reward/action_rate": -1402.8724365234375,
+          "Episode/Episode_Metrics/action_delta_rms": 2.317312240600586,
+          "Episode/Curriculum/success_curriculum/value": 1.0,
+          "Episode/Curriculum/adaptive_episode/value": 0.9999982118606567,
+          "sigma_geometric_mean": 0.28701745511964644
+        },
+        {
+          "iteration": 4000,
+          "info/kl": 0.013672510161995888,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": 5.5946784019470215,
+          "losses/cval_loss": 0.24531687796115875,
+          "losses/bounds_loss": 4.9694695472717285,
+          "Episode/Episode_Reward/action_rate": -9440.7998046875,
+          "Episode/Episode_Metrics/action_delta_rms": 6.6354241371154785,
+          "Episode/Curriculum/success_curriculum/value": 0.9999998211860657,
+          "Episode/Curriculum/adaptive_episode/value": 0.9999762773513794,
+          "sigma_geometric_mean": 0.32007350286631536
+        },
+        {
+          "iteration": 4150,
+          "info/kl": 0.014158982783555984,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": 7.509132385253906,
+          "losses/cval_loss": 0.17899474501609802,
+          "losses/bounds_loss": 4.2874436378479,
+          "Episode/Episode_Reward/action_rate": -54237.36328125,
+          "Episode/Episode_Metrics/action_delta_rms": 14.471246719360352,
+          "Episode/Curriculum/success_curriculum/value": 0.9999842047691345,
+          "Episode/Curriculum/adaptive_episode/value": 0.9999890327453613,
+          "sigma_geometric_mean": 0.3522261232828272
+        },
+        {
+          "iteration": 4225,
+          "info/kl": 0.010989276692271233,
+          "info/last_lr": 0.00019999999494757503,
+          "losses/entropy": 9.504344940185547,
+          "losses/cval_loss": 0.18009576201438904,
+          "Episode/Episode_Reward/action_rate": -98870.109375,
+          "Episode/Episode_Metrics/action_delta_rms": 22.790578842163086,
+          "Episode/Curriculum/success_curriculum/value": 0.9999706149101257,
+          "Episode/Curriculum/adaptive_episode/value": 0.999987781047821,
+          "sigma_geometric_mean": 0.3891768987368516
+        }
+      ]
+    },
+    "r2a_bignet_fp32": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/r2a_bignet_fp32",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 10.620489538733326,
+      "reaches_ema50_peak": 10.621255071780757,
+      "peak_iteration": 2498,
+      "hours": 2.724977356592814,
+      "delta_raw_final": 0.33506861329078674,
+      "delta_ema20_final": 0.3347403309185461,
+      "raw_action_rate_final": -7.031394958496094,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 51,
+          "max_ema20": 0.6868392837919148,
+          "start_hours": 1.2086497412787543e-07
+        },
+        {
+          "start": 726,
+          "end": 743,
+          "max_ema20": 0.5936942684346221,
+          "start_hours": 0.7560544697443644
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.8054001331329346,
+      "sigma_geometric_mean_from_entropy_final": 0.2000458797761362
+    },
+    "r2b_bignet_nowarm": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/r2b_bignet_nowarm",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 0.003982125250768584,
+      "reaches_ema50_peak": 0.2671656615684127,
+      "peak_iteration": 575,
+      "hours": 2.715345637732082,
+      "delta_raw_final": 348.5101623535156,
+      "delta_ema20_final": 368.90254719210105,
+      "raw_action_rate_final": -25348876.0,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 63,
+          "max_ema20": 0.6882336811957331,
+          "start_hours": 8.881754345364041e-07
+        },
+        {
+          "start": 176,
+          "end": 193,
+          "max_ema20": 0.6717603249658675,
+          "start_hours": 0.15858425557613373
+        },
+        {
+          "start": 620,
+          "end": 2500,
+          "max_ema20": 375.00356333498036,
+          "start_hours": 0.6236180998219384
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 620,
+        "end": 2500,
+        "max_ema20": 375.00356333498036,
+        "start_hours": 0.6236180998219384
+      },
+      "entropy_final": 14.71629524230957,
+      "sigma_geometric_mean_from_entropy_final": 0.5050369060503845
+    },
+    "r2c_bignet_geo16k": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/r2c_bignet_geo16k",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 0.0020187729436804114,
+      "reaches_ema50_peak": 0.35316699963458575,
+      "peak_iteration": 921,
+      "hours": 3.3756209925148224,
+      "delta_raw_final": 94.7023696899414,
+      "delta_ema20_final": 94.34361054276556,
+      "raw_action_rate_final": -312220.65625,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.6875591133907719,
+          "start_hours": 1.6835000779893664e-07
+        },
+        {
+          "start": 479,
+          "end": 531,
+          "max_ema20": 0.48299626140919577,
+          "start_hours": 0.617356098956532
+        },
+        {
+          "start": 601,
+          "end": 687,
+          "max_ema20": 0.643778986787045,
+          "start_hours": 0.7777981820371416
+        },
+        {
+          "start": 901,
+          "end": 953,
+          "max_ema20": 1.6521702980159974,
+          "start_hours": 1.1804434435897404
+        },
+        {
+          "start": 1044,
+          "end": 2500,
+          "max_ema20": 96.32720461259855,
+          "start_hours": 1.3736332391368018
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 1044,
+        "end": 2500,
+        "max_ema20": 96.32720461259855,
+        "start_hours": 1.3736332391368018
+      },
+      "entropy_final": 74.76110076904297,
+      "sigma_geometric_mean_from_entropy_final": 10.166688121428535
+    },
+    "r2d_bignet_lr3e4": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/r2d_bignet_lr3e4",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 11.034269080591603,
+      "reaches_ema50_peak": 11.034269080591603,
+      "peak_iteration": 2500,
+      "hours": 3.254030622508791,
+      "delta_raw_final": 0.3362847864627838,
+      "delta_ema20_final": 0.33510737177588246,
+      "raw_action_rate_final": -7.297589302062988,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.6895345362759606,
+          "start_hours": 9.777148564656575e-07
+        },
+        {
+          "start": 401,
+          "end": 424,
+          "max_ema20": 0.5833096212540572,
+          "start_hours": 0.4489713464842902
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.7895820140838623,
+      "sigma_geometric_mean_from_entropy_final": 0.20020415983728543
+    },
+    "w0_control": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w0_control",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 11.088291059062088,
+      "reaches_ema50_peak": 11.088291059062088,
+      "peak_iteration": 2500,
+      "hours": 2.495863677594397,
+      "delta_raw_final": 0.3292931318283081,
+      "delta_ema20_final": 0.32915988514521954,
+      "raw_action_rate_final": -6.977710247039795,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.6916056103073565,
+          "start_hours": 1.5894571940104166e-07
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.76911997795105,
+      "sigma_geometric_mean_from_entropy_final": 0.20040909389123635
+    },
+    "w1_std016": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w1_std016",
+      "last_iteration": 1573,
+      "reaches_ema50_final": 0.017390609346986458,
+      "reaches_ema50_peak": 0.1875633693033228,
+      "peak_iteration": 1374,
+      "hours": 1.5695699033472272,
+      "delta_raw_final": 0.7115669846534729,
+      "delta_ema20_final": 0.634919894006255,
+      "raw_action_rate_final": -86.84898376464844,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.7010504603385925,
+          "start_hours": 1.4291869269476997e-07
+        },
+        {
+          "start": 1499,
+          "end": 1573,
+          "max_ema20": 0.634919894006255,
+          "start_hours": 1.4931379200352564
+        }
+      ],
+      "terminal_storm_ema20": {
+        "start": 1499,
+        "end": 1573,
+        "max_ema20": 0.634919894006255,
+        "start_hours": 1.4931379200352564
+      },
+      "entropy_final": 11.326812744140625,
+      "sigma_geometric_mean_from_entropy_final": 0.4263059934847747
+    },
+    "w2_bignet": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w2_bignet",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 12.080507394224512,
+      "reaches_ema50_peak": 12.080507394224512,
+      "peak_iteration": 2500,
+      "hours": 1.9916603691048091,
+      "delta_raw_final": 0.34042105078697205,
+      "delta_ema20_final": 0.34035337187247744,
+      "raw_action_rate_final": -7.331642150878906,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.689261774262205,
+          "start_hours": 1.40686829884847e-06
+        },
+        {
+          "start": 304,
+          "end": 310,
+          "max_ema20": 0.4871854747601206,
+          "start_hours": 0.2821915003326204
+        },
+        {
+          "start": 561,
+          "end": 605,
+          "max_ema20": 1.5827321290364096,
+          "start_hours": 0.543630355199178
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.800921678543091,
+      "sigma_geometric_mean_from_entropy_final": 0.20009067961122282
+    },
+    "w3_compile": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w3_compile",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 3.7081758138261165,
+      "reaches_ema50_peak": 7.0657661494573505,
+      "peak_iteration": 2237,
+      "hours": 2.489312339425087,
+      "delta_raw_final": 0.3098278045654297,
+      "delta_ema20_final": 0.3161458180751083,
+      "raw_action_rate_final": -7.173881530761719,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 50,
+          "max_ema20": 0.6911510069817448,
+          "start_hours": 9.906291961669922e-07
+        },
+        {
+          "start": 208,
+          "end": 219,
+          "max_ema20": 0.5227066527764973,
+          "start_hours": 0.1786887922551897
+        },
+        {
+          "start": 226,
+          "end": 226,
+          "max_ema20": 0.45085145200750026,
+          "start_hours": 0.19482276678085328
+        },
+        {
+          "start": 740,
+          "end": 758,
+          "max_ema20": 0.5365063023104196,
+          "start_hours": 0.697535420788659
+        },
+        {
+          "start": 2305,
+          "end": 2388,
+          "max_ema20": 0.659099956989543,
+          "start_hours": 2.290130849149492
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -2.3940391540527344,
+      "sigma_geometric_mean_from_entropy_final": 0.2146727526900202
+    },
+    "w4_cvep2": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w4_cvep2",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 8.356226053930603,
+      "reaches_ema50_peak": 8.356226053930603,
+      "peak_iteration": 2500,
+      "hours": 1.0321072931422128,
+      "delta_raw_final": 0.31359565258026123,
+      "delta_ema20_final": 0.3135736828207098,
+      "raw_action_rate_final": -6.283736705780029,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.6957526206970215,
+          "start_hours": 1.4682610829671224e-07
+        },
+        {
+          "start": 226,
+          "end": 234,
+          "max_ema20": 0.5537446593000688,
+          "start_hours": 0.08757701244619158
+        },
+        {
+          "start": 309,
+          "end": 334,
+          "max_ema20": 0.6089257072613339,
+          "start_hours": 0.12087685253885057
+        },
+        {
+          "start": 481,
+          "end": 497,
+          "max_ema20": 0.5892625710660314,
+          "start_hours": 0.19048239105277592
+        },
+        {
+          "start": 501,
+          "end": 503,
+          "max_ema20": 0.4897818484095163,
+          "start_hours": 0.19859140654404958
+        },
+        {
+          "start": 940,
+          "end": 986,
+          "max_ema20": 1.2587371222843604,
+          "start_hours": 0.3781068221065733
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.797987699508667,
+      "sigma_geometric_mean_from_entropy_final": 0.20012003485731023
+    },
+    "w5_ent0": {
+      "directory": "/tmp/claude-1000/-home-viktor-Projects-Research-rl-games/170a2599-6ecd-48cd-b797-4c2724627508/scratchpad/wuji/tb/w5_ent0",
+      "last_iteration": 2500,
+      "reaches_ema50_final": 10.916638831788498,
+      "reaches_ema50_peak": 10.916638831788498,
+      "peak_iteration": 2500,
+      "hours": 1.0569836072127023,
+      "delta_raw_final": 0.3315593898296356,
+      "delta_ema20_final": 0.3309244032569244,
+      "raw_action_rate_final": -6.878376007080078,
+      "frames_per_iteration": 327680,
+      "all_ema20_excursions_over_045": [
+        {
+          "start": 1,
+          "end": 49,
+          "max_ema20": 0.6915413118273763,
+          "start_hours": 1.442432403564453e-07
+        },
+        {
+          "start": 551,
+          "end": 556,
+          "max_ema20": 0.5022245316528883,
+          "start_hours": 0.22353759500715467
+        }
+      ],
+      "terminal_storm_ema20": null,
+      "entropy_final": -3.801853895187378,
+      "sigma_geometric_mean_from_entropy_final": 0.2000813534354799
+    }
+  }
+}

@@ -1422,9 +1422,13 @@ class DiscreteA2CBase(A2CBase):
                 returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
+                self.value_mean_std(values)
+                self.value_mean_std(returns)
+                self.value_mean_std.eval()
+                # Old predictions and targets must share the final statistics,
+                # especially when value clipping compares their differences.
                 values = self.value_mean_std(values)
                 returns = self.value_mean_std(returns)
-                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
@@ -1585,6 +1589,14 @@ class ContinuousA2CBase(A2CBase):
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
 
+        # Preserve the historical moving KL reference by default. The rollout
+        # option measures total drift against the policy that collected the
+        # batch, matching the reference used by PPO's likelihood ratio.
+        self.kl_reference = self.config.get('kl_reference', 'previous_mini_epoch')
+        if self.kl_reference not in ('previous_mini_epoch', 'rollout'):
+            raise ValueError(
+                f"kl_reference must be 'previous_mini_epoch' or 'rollout', got '{self.kl_reference}'")
+
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
@@ -1652,7 +1664,8 @@ class ContinuousA2CBase(A2CBase):
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset.update_mu_sigma(cmu, csigma)
+                if self.kl_reference == 'previous_mini_epoch':
+                    self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'per_minibatch':
                     av_kls = self._kl_for_lr_schedule(kl)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
@@ -1711,9 +1724,12 @@ class ContinuousA2CBase(A2CBase):
                 returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
+                self.value_mean_std(values)
+                self.value_mean_std(returns)
+                self.value_mean_std.eval()
+                # Use the same final statistics for old predictions and targets.
                 values = self.value_mean_std(values)
                 returns = self.value_mean_std(returns)
-                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
