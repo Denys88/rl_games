@@ -77,14 +77,12 @@ torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype
 
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
     """KL(N(p0_mu, p0_sigma) || N(p1_mu, p1_sigma)), summed over actions."""
-    # Low-precision squares can underflow before division. Keep the Gaussian
-    # arithmetic in at least fp32, preserving float64 inputs when supplied.
+    # keep the Gaussian arithmetic in at least fp32
     p0_mu, p0_sigma, p1_mu, p1_sigma = [
         t.float() if t.dtype in (torch.float16, torch.bfloat16) else t
         for t in (p0_mu, p0_sigma, p1_mu, p1_sigma)
     ]
-    # Policy sigmas are positive. Adding epsilon to their variance biases KL
-    # below zero, even for identical policies, and misleads the LR scheduler.
+    # exact form: an epsilon on the variance biased KL below zero even for identical policies
     var_ratio = (p0_sigma / p1_sigma).square()
     mean_delta = (p0_mu - p1_mu) / p1_sigma
     kl = torch.log(p1_sigma / p0_sigma) + 0.5 * (var_ratio + mean_delta.square() - 1.0)

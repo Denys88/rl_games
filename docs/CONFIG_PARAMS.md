@@ -110,24 +110,13 @@ throughput. They are disabled by default.
 
 ### `max_sigma`
 
-Optional smooth ceiling on the policy std, applied after any parametrization:
-`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`.
-Default `0` (no ceiling). Well below the cap sigma is nearly unchanged (`x / (1 + x) ~ x`); it
-saturates at `max_sigma`; the gradient `1 / (1 + x)^2` decays polynomially, so a head that
-extrapolated far above the cap still receives a small gradient (a tanh squash reaches exactly
-1.0 in fp32 a few units above the cap and its gradient is then zero). Note the compression
-near the cap: with `min_sigma 0.2`, `max_sigma 1.0` and the usual `sigma_init` of `-1.05`
-(uncapped sigma 0.5) the initial sigma is about 0.42; set `sigma_init` accordingly if the
-initial std matters (uncapped 0.62 maps to 0.5 with these bounds).
-
-What it bounds and what it does not: it bounds the exploration noise, and with it the
-sigma-driven part of the likelihood ratio and of the per-sample KL. The policy mean is not
-bounded by it, so sampled actions, ratios and KL remain unbounded through the mean term;
-the `bound` loss type (`bound_loss_type`, `bounds_loss_coef`) is the mean's counterpart.
-Motivation: with a state-dependent sigma head nothing in the PPO loss bounds sigma on rare
-states; on WujiHand the batch maximum reached 40-200 while the mean sat at the 0.2 floor
-(`use_diagnostics: true` logs `sigma_max` per mini-epoch). Whether a ceiling changes the
-training outcome is an empirical question; it is not a stability guarantee.
+Optional smooth ceiling on the policy std, applied after any parametrization
+(`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`).
+Default `0` (off). Sigma is nearly unchanged well below the cap, saturates at `max_sigma`, and keeps a
+(polynomially decaying) gradient above it. It bounds the exploration noise only; the policy mean is not
+bounded. Use it when a state-dependent sigma head can extrapolate on rare states: for actions in
+`[-1, 1]` a cap of `1.0` is a natural choice (see the MJLab WujiHand notes). With `min_sigma 0.2`,
+`max_sigma 1.0` and `sigma_init -1.05` the initial std is 0.42 instead of 0.5.
 
 ### `sigma_parametrization`
 

@@ -219,9 +219,7 @@ def apply_sigma_parametrization(raw, network):
     gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
     final sigma so log-probs stay consistent.
     """
-    # Autocast may leave the policy head in bf16/fp16. Distribution math
-    # (especially summing log-std over many actions) needs fp32 even when
-    # the network matmuls use lower precision. Keep double-precision inputs.
+    # autocast may leave the head in bf16/fp16; distribution math needs fp32
     if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
         raw = raw.float()
     min_sigma = getattr(network, 'min_sigma', 0.0)
@@ -245,14 +243,9 @@ def apply_sigma_parametrization(raw, network):
         elif max_sigma <= 0:
             return sigma, raw
     if max_sigma > 0:
-        # Smooth ceiling on the exploration noise. A state-dependent sigma
-        # head can extrapolate to sigma >> 1 on rare states (WujiHand: batch
-        # max 40-200 while the mean sits at 0.2). Rational squash x/(1+x):
-        # ~identity for x << 1, saturates at max_sigma, gradient 1/(1+x)^2
-        # decays polynomially (tanh reaches exactly 1.0 in fp32 a few units
-        # above the cap and its gradient vanishes there). This bounds sigma
-        # only: the mean, the sampled action, the likelihood ratio and the
-        # per-sample KL stay unbounded through the mean term.
+        # smooth ceiling x/(1+x): ~identity well below the cap, saturates at
+        # max_sigma, gradient decays polynomially (tanh would hit exactly 1.0
+        # in fp32 and lose its gradient). Bounds sigma only, not the mean.
         span = max_sigma - min_sigma
         if span <= 0:
             raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
