@@ -16,14 +16,14 @@ params:
         sigma_init:
           name: const_initializer
           val: -1.05
-        fixed_sigma: false
+        fixed_sigma: true    # global exploration std: see docs/MJLAB.md, stability notes
         min_sigma: 0.2
         sigma_parametrization: softplus
     mlp:
       units:
+      - 1024
       - 512
       - 256
-      - 128
       activation: elu
       initializer:
         name: default
@@ -40,7 +40,7 @@ params:
     tau: 0.95
     learning_rate: 0.0001
     grad_norm: 1.0
-    entropy_coef: 0.001
+    entropy_coef: 0.0    # a positive bonus on a global std runs away over long runs
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
@@ -74,10 +74,10 @@ params:
         central_value: true
         mlp:
           units:
-          - 512
+          - 1024
+          - 1024
           - 512
           - 256
-          - 128
           activation: elu
           initializer:
             name: default
@@ -87,5 +87,5 @@ params:
     algo_observer: isaac
     clip_actions: false
     kl_threshold: 0.01
-    min_lr: 0.0001
+    min_lr: 0.00005
     max_lr: 0.0002

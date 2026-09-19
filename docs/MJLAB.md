@@ -100,37 +100,50 @@ bootstrap on.
 ### WujiHand In-Hand Cube Reorientation
 
 In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
-trained on the unmodified wuji-mjlab task (reward design, DR, and success
-protocol exactly as released). Same-machine comparison against the vendored
-rsl-rl fork that ships with wuji-mjlab, identical data budget
-(8192 envs × 40 steps, 5000 iterations, ~1.6B frames):
+trained on the unmodified wuji-mjlab task (reward design, DR and success
+protocol exactly as released). Same-machine comparison (one RTX PRO 6000 per
+run, same window) against the vendored rsl-rl fork that ships with wuji-mjlab,
+identical data budget (8192 envs × 40 steps, 5000 iterations, 1.64B frames).
+Score: goal reaches per episode (training metric, 50-iteration EMA). The raw
+action smoothness is reported next to it because a policy can keep scoring
+while its actions become unusable (see the stability notes below); the
+reference's step-to-step action change is 0.39.
 
-| Trainer | Goal reaches / episode (train, last-100 mean) | Held-out eval | Wall-clock |
-|---------|-----------------------------------------------|---------------|------------|
-| wuji-mjlab rsl-rl fork | 16.4 (peak 16.9) | — | 4.08 h |
-| rl_games (`ppo_wujihand_reorient.yaml`) | **17.1** (peak 17.6) | 15.1 reaches/ep | **4.07 h** |
+| Trainer | Goal reaches / episode at 5000 | Time to the reference's final score | Action change / step |
+|---------|-------------------------------|-------------------------------------|----------------------|
+| wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
+| rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **18.8 / 18.2 / 18.9** | **1.56 / 1.86 / 1.60 h** | 0.37 |
+| rl_games, same recipe at the reference's network widths | 16.7 | — | 0.36 |
+| rl_games, same recipe on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
 
-rl_games reaches the reference's final quality (16.4) at 3.34 h — 18% less
-wall-clock than the reference needs for its full run. Under the project's own
-sim2sim deployment protocol (100 trials, reach-one-goal criterion), the
-rl_games policy exported to ONNX scores identically to the officially
-released policy: success rate 1.00, drop rate 0.0, 1.07 goal reaches per
-trial (the protocol saturates after the first reach).
+Three seeds, all clean. At the reference's network widths rl_games matches the
+reference; the wider actor (1024/512/256) and critic (1024/1024/512/256) train
+stably in rl_games and add about 10%.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
 privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
-truncation `value_bootstrap` on, minibatch 16384 — small minibatches (≤10240)
-make the KL-adaptive scheduler noisy, and very few optimizer steps per
-iteration (minibatch 32768 → 40 steps) starve the discovery phase on this
-task; adaptive LR on the band `min_lr 1e-4` – `max_lr 2e-4` — the floor keeps
-the early phase at the reference's proven rate, the cap prevents a
-late-training collapse (the env's escalating out-of-cage penalties produce
-rare huge negative return bursts that a high LR converts into an unrecoverable
-policy regression); state-dependent sigma with
-`sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
-exploration floor the task was designed around.
+truncation `value_bootstrap` on, minibatch 16384, KL-adaptive LR on the band
+`min_lr 5e-5` – `max_lr 2e-4`, and a **global exploration std**
+(`fixed_sigma: true`, `sigma_parametrization: softplus`, `min_sigma: 0.2`) with
+`entropy_coef: 0`.
+
+**Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
+task can collapse thousands of iterations into training: on rare states the
+std head extrapolates to values of 40–200 while the batch mean stays at 0.2,
+the task's penalty on the raw (unclamped) action explodes, and the policy
+does not recover. Batch averages such as entropy and mean KL do not show it,
+and an adaptive learning rate cannot act on a tail of states. Two settings
+remove it, each verified on three seeds: a global std (the setting Shadow
+Hand and DeXtreme trained with; the recipe above) or a ceiling on the
+state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches). Do not clip
+actions in the trainer while using a state-dependent std here (the task's
+penalty then no longer restrains the std head), do not add an entropy bonus
+to a global std on long runs, and read every score together with a smoothness
+metric. `use_diagnostics: true` logs the batch-max std per mini-epoch
+(`diagnostics/policy/sigma_max`), which shows the tail long before a collapse.
+`CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference` and the diagnostics.
 
 ## Notebooks
 
