@@ -112,13 +112,15 @@ reference's step-to-step action change is 0.39.
 | Trainer | Goal reaches / episode at 5000 | Time to the reference's final score | Action change / step |
 |---------|-------------------------------|-------------------------------------|----------------------|
 | wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
+| wuji-mjlab rsl-rl fork at rl_games' network widths | 17.4 | 2.22 h | 0.40 |
 | rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **18.8 / 18.2 / 18.9** | **1.56 / 1.86 / 1.60 h** | 0.37 |
 | rl_games, same recipe at the reference's network widths | 16.7 | — | 0.36 |
 | rl_games, same recipe on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
 
-Three seeds, all clean. At the reference's network widths rl_games matches the
-reference; the wider actor (1024/512/256) and critic (1024/1024/512/256) train
-stably in rl_games and add about 10%.
+Three seeds, all clean. Width and trainer are separated by the two crossed
+rows: at the reference's widths rl_games matches the reference (16.7 vs 16.9),
+and at rl_games' widths the reference trainer gains 3% (17.4) where rl_games
+gains 8–12%; both reach the same score in 30% less wall-clock.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
