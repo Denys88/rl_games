@@ -61,7 +61,7 @@ params:
       render: false
     save_frequency: 500
     save_best_after: 100
-    lr_schedule: adaptive
+    lr_schedule: None    # fixed 1e-4: with a global std the KL-adaptive band was 3% behind on every seed (see docs/MJLAB.md)
     central_value_config:
       minibatch_size: 16384
       mini_epochs: 4
@@ -86,6 +86,3 @@ params:
     vecenv_type: MJLAB
     algo_observer: isaac
     clip_actions: false
-    kl_threshold: 0.01
-    min_lr: 0.00005
-    max_lr: 0.0002

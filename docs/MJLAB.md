@@ -113,23 +113,29 @@ reference's step-to-step action change is 0.39.
 |---------|-------------------------------|-------------------------------------|----------------------|
 | wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
 | wuji-mjlab rsl-rl fork at rl_games' network widths | 17.4 | 2.22 h | 0.40 |
-| rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **18.8 / 18.2 / 18.9** | **1.56 / 1.86 / 1.60 h** | 0.37 |
-| rl_games, same recipe at the reference's network widths | 16.7 | — | 0.36 |
-| rl_games, same recipe on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
+| rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **19.6 / 18.9 / 18.9** | **1.38 / 1.44 / 1.54 h** | 0.37 |
+| rl_games, same recipe with the KL-adaptive band 5e-5..2e-4 instead of the fixed rate | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
+| rl_games, adaptive band, at the reference's network widths | 16.7 | — | 0.36 |
+| rl_games, adaptive band, on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
 
-Three seeds, all clean. Width and trainer are separated by the two crossed
+Three seeds per row, all clean. Width and trainer are separated by the crossed
 rows: at the reference's widths rl_games matches the reference (16.7 vs 16.9),
 and at rl_games' widths the reference trainer gains 3% (17.4) where rl_games
-gains 8–12%; both reach the same score in 30% less wall-clock.
+gains 9–16%, reaching the same score in 30–40% less wall-clock.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
 privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
-truncation `value_bootstrap` on, minibatch 16384, KL-adaptive LR on the band
-`min_lr 5e-5` – `max_lr 2e-4`, and a **global exploration std**
-(`fixed_sigma: true`, `sigma_parametrization: softplus`, `min_sigma: 0.2`) with
-`entropy_coef: 0`.
+truncation `value_bootstrap` on, minibatch 16384, a **fixed learning rate of
+1e-4**, and a **global exploration std** (`fixed_sigma: true`,
+`sigma_parametrization: softplus`, `min_sigma: 0.2`) with `entropy_coef: 0`.
+The fixed rate is deliberate: the KL-adaptive band was 3% behind on every
+seed. Before takeoff the per-minibatch KL runs at 2–5× the 0.01 target on
+both schedules and does not respond to the rate (it is driven by heavy-tailed
+advantages, not by step size), so the controller brakes to its floor for the
+first ~800 iterations, delays takeoff by 150–250 iterations, and then settles
+at 1e-4 anyway. With the global std that early KL excess is harmless.
 
 **Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
 task can collapse thousands of iterations into training: on rare states the
@@ -139,7 +145,8 @@ does not recover. Batch averages such as entropy and mean KL do not show it,
 and an adaptive learning rate cannot act on a tail of states. Two settings
 remove it, each verified on three seeds: a global std (the setting Shadow
 Hand and DeXtreme trained with; the recipe above) or a ceiling on the
-state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches). Do not clip
+state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches with the adaptive
+band, 18.8–19.2 with the fixed rate). Do not clip
 actions in the trainer while using a state-dependent std here (the task's
 penalty then no longer restrains the std head), do not add an entropy bonus
 to a global std on long runs, and read every score together with a smoothness
