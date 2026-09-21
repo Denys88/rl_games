@@ -103,7 +103,8 @@ In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
 trained on the unmodified wuji-mjlab task (reward design, DR and success
 protocol exactly as released). Same-machine comparison (one RTX PRO 6000 per
 run, same window) against the vendored rsl-rl fork that ships with wuji-mjlab,
-identical data budget (8192 envs × 40 steps, 5000 iterations, 1.64B frames).
+identical single-GPU data budget (8192 envs × 40 steps, 5000 iterations,
+1.64B frames). The 2-GPU run processes twice as many frames.
 Score: goal reaches per episode (training metric, 50-iteration EMA). The raw
 action smoothness is reported next to it because a policy can keep scoring
 while its actions become unusable (see the stability notes below); the
@@ -112,16 +113,21 @@ reference's step-to-step action change is 0.39.
 | Trainer | Goal reaches / episode at 5000 | Time to the reference's final score | Action change / step |
 |---------|-------------------------------|-------------------------------------|----------------------|
 | wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
-| wuji-mjlab rsl-rl fork at rl_games' network widths | 17.4 | 2.22 h | 0.40 |
+| wuji-mjlab rsl-rl fork at rl_games' network widths | 17.35 | 2.22 h | 0.40 |
 | rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **19.6 / 18.9 / 18.9** | **1.38 / 1.44 / 1.54 h** | 0.37 |
 | rl_games, same recipe with the KL-adaptive band 5e-5..2e-4 instead of the fixed rate | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
 | rl_games, adaptive band, at the reference's network widths | 16.7 | — | 0.36 |
 | rl_games, adaptive band, on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
 
-Three seeds per row, all clean. Width and trainer are separated by the crossed
-rows: at the reference's widths rl_games matches the reference (16.7 vs 16.9),
-and at rl_games' widths the reference trainer gains 3% (17.4) where rl_games
-gains 9–16%, reaching the same score in 30–40% less wall-clock.
+The full-width single-GPU fixed and adaptive recipes each have three seeds
+(42 / 7 / 123); the other rows each report one run. These runs had no terminal
+action storm. The width comparisons help assess the recipes, but do not
+isolate the trainer: exploration, normalization and minibatch geometry also
+differ, and the smaller rl_games network used the adaptive schedule. These
+are training metrics, not held-out evaluation scores. The fixed-rate recipe
+reaches the published reference's final training score in 28–36% less wall
+time on this machine; equal frames do not imply equal optimizer steps or
+compute cost.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
@@ -130,29 +136,37 @@ privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
 truncation `value_bootstrap` on, minibatch 16384, a **fixed learning rate of
 1e-4**, and a **global exploration std** (`fixed_sigma: true`,
 `sigma_parametrization: softplus`, `min_sigma: 0.2`) with `entropy_coef: 0`.
-The fixed rate is deliberate: the KL-adaptive band was 3% behind on every
-seed. Before takeoff the per-minibatch KL runs at 2–5× the 0.01 target on
-both schedules and does not respond to the rate (it is driven by heavy-tailed
-advantages, not by step size), so the controller brakes to its floor for the
-first ~800 iterations, delays takeoff by 150–250 iterations, and then settles
-at 1e-4 anyway. With the global std that early KL excess is harmless.
+The fixed rate is deliberate: final training scores improved by 4.0%, 3.9%
+and 0.4% on the paired seeds, with a 2.8% higher mean score. The adaptive
+controller often lowered the rate early, while the fixed-rate runs learned
+faster. This supports the fixed recipe for this task; it does not establish
+that KL is insensitive to learning rate or that early KL excess is harmless.
+The existing scheduler reads a forward pass made before the optimizer step,
+relative to a stored policy, so its signal includes earlier updates and
+changes to observation normalization. Heavy-tailed advantages can affect
+updates, but their causal contribution needs a controlled replay.
 
 **Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
 task can collapse thousands of iterations into training: on rare states the
 std head extrapolates to values of 40–200 while the batch mean stays at 0.2,
 the task's penalty on the raw (unclamped) action explodes, and the policy
-does not recover. Batch averages such as entropy and mean KL do not show it,
-and an adaptive learning rate cannot act on a tail of states. Two settings
-remove it, each verified on three seeds: a global std (the setting Shadow
-Hand and DeXtreme trained with; the recipe above) or a ceiling on the
-state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches with the adaptive
-band, 18.8–19.2 with the fixed rate). Do not clip
-actions in the trainer while using a state-dependent std here (the task's
-penalty then no longer restrains the std head), do not add an entropy bonus
-to a global std on long runs, and read every score together with a smoothness
-metric. `use_diagnostics: true` logs the batch-max std per mini-epoch
-(`diagnostics/policy/sigma_max`), which shows the tail long before a collapse.
-`CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference` and the diagnostics.
+does not recover. Batch averages can hide rare states; a global learning
+rate can affect those states but does not constrain their individual policy
+changes. Two recipes avoided terminal storms across three seeds each: global
+std with entropy zero (the recipe above), and a ceiling on state-dependent
+std (`max_sigma: 1.0`, 17.6–18.6 reaches with the adaptive band). The capped
+recipe with a fixed rate scored 18.8–19.2 on two seeds. These results support
+the recipes without proving a unique cause or guaranteeing stability. Global
+std and entropy zero changed together, so their individual effects are not
+isolated. Trainer-side action clipping changes the actions seen by this
+task's raw-action penalty and history; the tested clipped-action recipe
+failed. Keep the documented action interface and entropy setting when
+reproducing these results, and report smoothness alongside reaches.
+`use_diagnostics: true` logs learner batch-max std per mini-epoch
+(`diagnostics/policy/sigma_max`), which exposed tails before recorded collapses.
+`CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference`, the opt-in
+`kl_schedule_source` and diagnostics. The alternative scheduler signal still
+needs a calibrated target and a matched training comparison.
 
 ## Notebooks
 
