@@ -47,10 +47,35 @@ def test_cap_applies_to_exp_parametrization_without_floor():
     assert torch.allclose(logstd, torch.log(sigma))
 
 
-def test_cap_below_floor_rejected():
-    net = _net(min_sigma=0.5, sigma_parametrization='softplus', max_sigma=0.4)
+def _params(**space):
+    cont = dict(mu_activation='None', sigma_activation='None', mu_init={'name': 'default'},
+                sigma_init={'name': 'const_initializer', 'val': 0.0}, fixed_sigma=False)
+    cont.update(space)
+    return {'model': {'name': 'continuous_a2c_logstd'},
+            'network': {'name': 'actor_critic', 'separate': False, 'space': {'continuous': cont},
+                        'mlp': {'units': [8], 'activation': 'elu', 'initializer': {'name': 'default'}}}}
+
+
+BUILD_KWARGS = dict(actions_num=3, input_shape=(5,), num_seqs=1, value_size=1,
+                    normalize_value=False, normalize_input=False)
+
+
+def test_max_sigma_read_through_builder_and_applied_in_forward():
+    from rl_games.algos_torch.model_builder import ModelBuilder
+    model = ModelBuilder().load(_params(sigma_parametrization='softplus', min_sigma=0.2, max_sigma=1.0)).build(dict(BUILD_KWARGS))
+    net = model.a2c_network
+    assert (net.min_sigma, net.max_sigma) == (0.2, 1.0)
+    with torch.no_grad():
+        net.sigma.bias.fill_(500.0)  # raw head far above the cap: x/(1+x) reaches 0.998
+    out = model({'is_train': False, 'prev_actions': None, 'obs': torch.zeros(2, 5)})
+    assert torch.all(out['sigmas'] < 1.0) and torch.all(out['sigmas'] > 0.99)
+
+
+def test_cap_below_floor_rejected_at_build_time():
+    from rl_games.algos_torch.model_builder import ModelBuilder
     try:
-        apply_sigma_parametrization(torch.zeros(2), net)
-    except ValueError:
+        ModelBuilder().load(_params(sigma_parametrization='softplus', min_sigma=0.5, max_sigma=0.4)).build(dict(BUILD_KWARGS))
+    except ValueError as e:
+        assert 'max_sigma' in str(e)
         return
     raise AssertionError('expected ValueError for max_sigma <= min_sigma')

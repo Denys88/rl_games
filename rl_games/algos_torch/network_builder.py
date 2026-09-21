@@ -29,6 +29,16 @@ def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
 
+def read_sigma_bounds(space_config):
+    """Optional hard floor / smooth ceiling on the action std (see
+    models.apply_sigma_parametrization). Validated here, at config time."""
+    min_sigma = float(space_config.get('min_sigma', 0.0))
+    max_sigma = float(space_config.get('max_sigma', 0.0))  # 0 = no ceiling
+    if max_sigma > 0 and max_sigma <= min_sigma:
+        raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
+    return min_sigma, max_sigma
+
+
 class NetworkBuilder:
     def __init__(self, **kwargs):
         pass
@@ -308,9 +318,7 @@ class A2CBuilder(NetworkBuilder):
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
-                # optional hard floor on the action std (see ModelA2CContinuousLogStd)
-                self.min_sigma = float(self.space_config.get('min_sigma', 0.0))
-                self.max_sigma = float(self.space_config.get('max_sigma', 0.0))  # 0 = no ceiling
+                self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
                 # optional clamp on the raw logstd head: with fixed_sigma False the
                 # exp parametrization is unbounded above and can explode; [-5, 2]
                 # mirrors the SAC convention
@@ -760,6 +768,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
+                self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)

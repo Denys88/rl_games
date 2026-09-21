@@ -98,13 +98,28 @@ critic is configured.
 ### Policy diagnostics
 
 `use_diagnostics: true` adds per-mini-epoch metrics under
-`diagnostics/policy/`: `sigma_min`, `sigma_mean`, `sigma_max`, `mu_abs_max`,
-`advantage_abs_max`, and `logratio_abs_max`. The last metric uses the fixed
-rollout log probability regardless of `kl_reference`. Metrics cover valid
-learner minibatch rows and are local to the writer's rank under DDP; they
-are not post-update or rollout-distribution measurements. Diagnostics add
-reductions and device synchronizations, so account for this when measuring
-throughput. They are disabled by default.
+`diagnostics/policy/<name>/<mini_epoch>`, in two groups.
+
+In-batch, from the learner's forward pass before the optimizer step:
+`sigma_min`, `sigma_mean`, `sigma_max`, `mu_abs_max`, `advantage_abs_max`,
+`logratio_abs_max` (uses the fixed rollout log probability regardless of
+`kl_reference`), `sigma_score_pos`, `sigma_score_neg`, `sigma_score_mean`
+(the signed log-std score `A * (z^2 - 1)` averaged over samples with positive,
+negative and any advantage; positive means the surrogate pushes the std up on
+those samples) and `tail_frac` (fraction of samples with `max_i |z_i| > 3`,
+`z = (a - mu) / sigma`).
+
+Post-step, from one extra no-grad forward on the same minibatch after
+`optimizer.step()`, on rank 0 only, through the raw module with the
+observation normaliser's statistics frozen: `kl_step` (KL(pre-step ||
+post-step)), `kl_post_ref` (mean KL(post-step || reference), the reference
+being the Gaussian `kl_reference` selects) and `kl_post_ref_max` (its
+per-sample max). Not available for recurrent policies.
+
+All metrics cover valid learner minibatch rows and are local to the writer's
+rank under DDP. Diagnostics add reductions, device synchronizations and, for
+the post-step group, one forward per minibatch, so account for this when
+measuring throughput. They are disabled by default.
 
 ## Sigma Parametrization (under `network: space: continuous:`)
 
@@ -112,8 +127,11 @@ throughput. They are disabled by default.
 
 Optional smooth ceiling on the policy std, applied after any parametrization
 (`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`).
-Default `0` (off). Sigma is nearly unchanged well below the cap, saturates at `max_sigma`, and keeps a
-(polynomially decaying) gradient above it. It bounds the exploration noise only; the policy mean is not
+Default `0` (off). The squash compresses the whole range, not only the top: with `min_sigma 0.2` and
+`max_sigma 1.0` a raw std of 0.3 becomes 0.29, 0.5 becomes 0.42 and 0.8 becomes 0.54. It is exact only at
+the floor, saturates at `max_sigma`, and keeps a (polynomially decaying) gradient above it. Read, like
+`min_sigma`, by the `actor_critic` and `resnet_actor_critic` builders; `max_sigma <= min_sigma` is
+rejected when the network is built. It bounds the exploration noise only; the policy mean is not
 bounded. Use it when a state-dependent sigma head can extrapolate on rare states: for actions in
 `[-1, 1]` a cap of `1.0` is a natural choice (see the MJLab WujiHand notes). With `min_sigma 0.2`,
 `max_sigma 1.0` and `sigma_init -1.05` the initial std is 0.42 instead of 0.5.

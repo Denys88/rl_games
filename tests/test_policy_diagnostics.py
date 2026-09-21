@@ -117,5 +117,11 @@ def test_continuous_agent_supplies_learner_policy_and_rollout_logprobs(tmp_path)
         valid = minibatch['rnn_masks'].bool()
         assert metrics['advantage_abs_max'].item() == pytest.approx(
             minibatch['advantages'][valid].abs().max().item())
+        # post-step forward: the optimizer step moved the policy, so the
+        # matched-sample KLs are strictly positive, finite, and max >= mean
+        for name in ('kl_step', 'kl_post_ref', 'kl_post_ref_max'):
+            assert torch.isfinite(metrics[name]), name
+            assert metrics[name].item() > 0., name
+        assert metrics['kl_post_ref_max'].item() >= metrics['kl_post_ref'].item()
     finally:
         agent.writer.close()

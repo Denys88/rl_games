@@ -246,9 +246,7 @@ def apply_sigma_parametrization(raw, network):
         # smooth ceiling x/(1+x): ~identity well below the cap, saturates at
         # max_sigma, gradient decays polynomially (tanh would hit exactly 1.0
         # in fp32 and lose its gradient). Bounds sigma only, not the mean.
-        span = max_sigma - min_sigma
-        if span <= 0:
-            raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
+        span = max_sigma - min_sigma  # > 0: validated by the network builder at config time
         x = (sigma - min_sigma) / span
         sigma = min_sigma + span * x / (1.0 + x)
     return sigma, torch.log(sigma)

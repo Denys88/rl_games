@@ -151,7 +151,7 @@ actions in the trainer while using a state-dependent std here (the task's
 penalty then no longer restrains the std head), do not add an entropy bonus
 to a global std on long runs, and read every score together with a smoothness
 metric. `use_diagnostics: true` logs the batch-max std per mini-epoch
-(`diagnostics/policy/sigma_max`), which shows the tail long before a collapse.
+(`diagnostics/policy/sigma_max/<mini_epoch>`), which shows the tail long before a collapse.
 `CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference` and the diagnostics.
 
 ## Notebooks
