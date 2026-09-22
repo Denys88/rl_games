@@ -52,13 +52,16 @@ config:
 
 | Value | LR updates | KL input | When |
 |-------|------------|----------|------|
-| `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | rl_games' original adaptive stepping (the old name marks its seniority; rsl-rl adopted the same mechanism) — tracks on-policy KL swings within a rollout. Requires reliable per-minibatch KL estimates: use large minibatches (16k+ on vectorized continuous control). |
+| `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | Responds within an optimization pass; noisy estimates can cause frequent rate changes. |
 | `standard` | once per mini-epoch | epoch-mean KL | Smoother; consider when minibatches are small (noisy KL estimates make per-minibatch stepping oscillate between the band edges). |
 
-The practical failure modes to know: `per_minibatch` with *small* minibatches
-rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
-size, not the schedule); `standard` on tasks with fast on-policy KL swings
-adapts too slowly and can leave measurable reward on the table.
+The cadence trades responsiveness against noise. Neither setting is
+universally better; compare them with the same minibatch geometry and KL
+measurement. `lr_multiplier` (default `1.5`) controls each rate adjustment:
+divide by it above `2 * kl_threshold`, multiply by it below
+`0.5 * kl_threshold`, and otherwise leave the rate unchanged, subject to
+`min_lr` / `max_lr`. A smaller multiplier such as `1.1` changes the rate more
+gradually; it is a tuning choice, not a validated improvement for every task.
 
 **Scope:** `schedule_type` applies to continuous PPO only. Discrete PPO always
 steps its adaptive scheduler once per mini-epoch on the mean KL (i.e.
@@ -72,8 +75,9 @@ compound — prefer `standard` there unless per-task evidence says otherwise.
 
 ### `kl_reference`
 
-Continuous PPO can choose which Gaussian the adaptive scheduler compares
-against. The KL direction remains `KL(current || reference)`.
+Continuous PPO can choose which Gaussian the reference KL compares against.
+The KL direction remains `KL(current || reference)`. This is the scheduler
+signal when `kl_schedule_source: reference` (the default).
 
 | Value | Reference distribution |
 |-------|------------------------|
@@ -84,6 +88,52 @@ against. The KL direction remains `KL(current || reference)`.
 explicit training ablation rather than assuming the same learning curve.
 This is a measurement/controller option, not a hard KL limit or early stop.
 The scheduler cannot lower the rate below the configured `min_lr`.
+
+### `kl_schedule_source`
+
+Selects the continuous PPO KL measurement passed to the learning-rate
+scheduler. `schedule_type` still determines when the scheduler changes the
+rate; this option does not change PPO's fixed rollout log-probability
+reference or its loss.
+
+| Value | Scheduler measurement |
+|-------|-----------------------|
+| `reference` (default) | Mean `KL(current || reference)` from the pre-optimizer forward pass, using `kl_reference`. Preserves existing behavior. |
+| `optimizer_step` | Mean `KL(post_step || pre_step)` on the same valid minibatch rows, with the same observation-normalization statistics for both distributions. Measures the change caused by that optimizer step. |
+
+`optimizer_step` requires an extra forward pass without gradients on every
+rank. It supports feedforward continuous PPO; recurrent policies and
+discrete PPO do not support it. It measures the combined effect of all
+losses updating the actor, including a shared auxiliary value loss. It does
+not include observation-statistics changes made before the pre-step forward,
+and does not constrain cumulative drift over a mini-epoch or rollout. The
+measurement arrives after the step and adjusts subsequent updates; there is
+no rollback or hard KL limit.
+The actor's distribution parameters must be deterministic for a matched
+input to isolate optimizer movement. Custom stochastic forwards (for example,
+dropout) need matched randomness; this path does not replay RNG state. An
+extra forward can also consume RNG in models that sample entropy estimates.
+The Wuji Gaussian actor has neither behavior.
+
+Calibrate `kl_threshold` for this measurement from a known working fixed-rate
+run or saved-batch replay. A threshold tuned for rollout-relative or
+previous-pass KL is not interchangeable with a single-step threshold.
+The extra measurement also runs with a fixed learning rate when
+`kl_schedule_source: optimizer_step`, so calibration does not require
+turning on adaptation or `use_diagnostics`.
+`schedule_type: standard` with `lr_multiplier: 1.1` is a candidate for slower
+adaptation, to compare against the fixed-rate baseline after calibration.
+Keep frames, minibatches, mini-epochs, seeds and instrumentation matched;
+include the extra forward's cost in wall-clock comparisons. The shipped
+WujiHand recipe remains fixed-rate.
+
+`info/kl` retains the reference-KL meaning selected by `kl_reference`.
+`info/scheduler_kl` reports the epoch mean of the selected scheduler signal.
+`info/lr_mean`, `info/lr_min` and `info/lr_max` summarize the rates actually
+used for minibatch updates; `info/lr_at_min_fraction` and
+`info/lr_at_max_fraction` show the fractions of updates at the adaptive
+bounds. These distinguish applied rates from the final rate scheduled for
+the next update.
 
 ### Central critic and `use_experimental_cv`
 

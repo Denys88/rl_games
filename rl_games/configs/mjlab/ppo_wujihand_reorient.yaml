@@ -61,7 +61,7 @@ params:
       render: false
     save_frequency: 500
     save_best_after: 100
-    lr_schedule: None    # fixed 1e-4: with a global std the KL-adaptive band was 3% behind on every seed (see docs/MJLAB.md)
+    lr_schedule: None    # fixed 1e-4: mean score +2.8% over the adaptive band on three seeds (see docs/MJLAB.md)
     central_value_config:
       minibatch_size: 16384
       mini_epochs: 4
