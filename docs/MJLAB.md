@@ -307,16 +307,15 @@ Global std and entropy zero changed together, so their individual effects are no
 Same-machine comparison against Pollen's rsl-rl reference recipe at its own
 geometry (4096 envs × 24 steps), identical env and reward terms, raw
 100-episode mean return on both sides: `ppo_microduck_velocity.yaml` on three
-runs (seeds 7, 17 and 7 again, 4000 epochs) vs the reference run (5000
-iterations, one seed).
+seeds (7, 17, 27; 4000 epochs) vs the reference run (5000 iterations, one
+seed). All rl_games rows are on the current code (exact KL, #381).
 
-| | rl_games (3 runs) | rsl-rl reference |
-|---|---|---|
-| final reward (last 200 / 500 iterations) | **128** (121 to 133) | 120.3 |
-| peak reward | **147.7** (147 to 149) | 131.7 |
-| reaches the rsl-rl plateau (120.3) | **iterations 273 to 297, 3.5 to 3.6 min** | iteration 1,333, 16.3 min |
-| wall-clock for the full run | 47.6 min alone, 48 to 51 min sharing the box, for 4,000 iterations | 59.5 min for 5,000 |
-| seconds per iteration | 0.71 alone, 0.72 to 0.76 shared | 0.71 |
+| | rl_games, shipped recipe (3 seeds) | rl_games, same recipe without value normalization (2 seeds) | rsl-rl reference |
+|---|---|---|---|
+| final return (last 200 / 500 iterations) | **136.1 / 138.3 / 139.0** (mean 137.8) | 127.6 / 130.1 | 120.3 |
+| peak return | **151.4 / 150.7 / 149.1** | 143.1 / 143.6 | 131.7 |
+| reaches the rsl-rl final level (120.3) | **iterations 223 to 245, 2.9 to 3.2 min** | iterations 256 to 288 | iteration 1,333, 16.3 min |
+| wall-clock for the run | 46 to 50 min for 4,000 iterations (two runs sharing the box) | same | 59.5 min for 5,000 |
 
 ![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
 
@@ -325,11 +324,27 @@ iterations, one seed).
 The clips (here and in the README) are the seed-17 checkpoint of the
 shipped config under one pinned command each, rendered from a camera that
 follows the robot, with the commanded and the measured body-frame velocity
-(0.5 s average) drawn on the frame. Measured: forward 0.4 m/s command,
-0.23 m/s; backward 0.4 m/s, 0.22 m/s; turn in place at 1.0 rad/s, 1.0 rad/s;
-sidestep 0.3 m/s, 0.05 m/s. Forward and backward track at just over half
-the command, yaw tracks exactly, lateral is the weak axis. No falls in any
-take.
+(0.5 s average) drawn on the frame. Yaw tracks the command; forward and
+backward track at about half of it, as does Pollen's reference policy in the
+same simulator; lateral is the weak axis.
+
+**Recipe notes.** The config is Pollen's geometry and reward terms with four
+rl_games-side choices, each measured on paired seeds on this task:
+`entropy_coef: 0` (a positive bonus on the global log-std runs the std away
+under this task's penalty ramp), an explicit adaptive-rate band (`max_lr
+1e-3`; the legacy 1e-2 ceiling let the KL-driven raise run away),
+`clip_actions: false` (mjlab clamps in the env; pre-clamping distorts both the
+actions and the KL the scheduler reads), and `normalize_value: true`, the
+change that lifts the final return from 128 / 130 to 136 / 138 / 139: the task ramps
+its penalty weights with iteration, so the return scale shifts during
+training and an unnormalized value target lags every ramp. Things that did
+not help here: a step-KL scheduler (`kl_schedule_source: optimizer_step`,
+the WujiHand choice) adds nothing over the legacy one once values are
+normalized, because on this task the global std anneals from 0.5 to 0.09 and
+either scheduler lowers the rate exactly as fast as the std shrinks; a bigger
+central-value critic; and a constant rate, which storms once the std is small
+(3e-4 collapses at iteration 1,300, 1.8e-4 at the end of the run).
+A floor on the global std (`min_sigma: 0.1`): final 137.2 vs 136.1 without it on seed 7, peak 141.9 vs 151.4; the rate stays higher (8e-5 late instead of 5e-6) but the return does not follow, so the floor is not shipped.
 
 **Speed lane (research preview).** Same robot, same 61-dimensional
 observation contract, trained on a variant of the task kept in our fork of
@@ -345,21 +360,6 @@ occasional fall appears), against 0.23 m/s for the shipped recipe at its
 at the same 0.4 m/s command in the ported simulator.
 
 ![MicroDuck, speed lane](pictures/mjlab/microduck_speed.gif)
-
-The three tabulated rl_games runs shared the workstation with another
-training job; a fourth run on an idle box (seed 27: 47.6 min, final 126.8,
-peak 148.3, the 120.3 plateau at iteration 207) shows sharing cost nothing
-measurable. Per-iteration cost matches the reference, so the wall-clock gain
-is sample efficiency, not simulator throughput. The task
-curriculum ramps penalty weights with iteration on both sides, so both
-curves peak early and settle lower as the penalties come in; the final-window
-numbers are the steady state, and one of the three runs settled at 121 with
-shorter episodes, hence the spread. Recipe differences from the
-reference: `entropy_coef: 0` (a positive entropy bonus on rl_games' free
-per-dimension log-std inflates sigma under the action-rate ramp and the
-policy learns to fall), explicit `min_lr`/`max_lr` bounds on the adaptive
-schedule, `clip_actions: false`, value normalization off as in the
-reference.
 
 ## Notebooks
 

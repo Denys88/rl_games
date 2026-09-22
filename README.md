@@ -39,7 +39,7 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 
 ## Why rl_games
 
-- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 128 vs 120 final return, and their final plateau reached in 3.5 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 19.1–20.1 vs 16.9 goal reaches per episode over three seeds, the reference's score in 1.3–1.4 h instead of 2.1 h, 21.1 on two GPUs. Lift-Cube-Yam: success 0.85 vs 0.72.
+- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 138 vs 120 final return over three seeds, and their final level reached in 3 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 19.1–20.1 vs 16.9 goal reaches per episode over three seeds, the reference's score in 1.3–1.4 h instead of 2.1 h, 21.1 on two GPUs. Lift-Cube-Yam: success 0.85 vs 0.72.
 - **Built for GPU simulators.** One process drives thousands of environments. Asymmetric actor-critic with a separate central-value critic, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, population-based training, self-play, ONNX export, a live viewer with keyboard command control.
 - **Proven in sim-to-real.** DeXtreme, DexPBT, TriFinger, DextrAH-RGB and Play2Perfect trained their policies with rl_games.
 - **SAC too.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past that budget.
@@ -53,11 +53,11 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 <table width="100%">
 <tr>
 <td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_forward.gif" width="100%" alt="MicroDuck walking forward under a 0.4 m/s command with commanded and measured velocity shown"></td>
-<td width="50%"><img src="docs/pictures/mjlab/microduck_comparison_wall.png" width="100%" alt="MicroDuck training reward vs wall-clock: rl_games crosses the rsl-rl plateau at 3.5 minutes and finishes at 128 vs 120"></td>
+<td width="50%"><img src="docs/pictures/mjlab/microduck_comparison_wall.png" width="100%" alt="MicroDuck training reward vs wall-clock: rl_games crosses the rsl-rl final level at 3 minutes and finishes at 138 vs 120"></td>
 </tr>
 <tr>
 <td><b>Forward 0.4 m/s</b>, the shipped config's policy. The overlay shows the commanded and the measured body-frame velocity.</td>
-<td>Same environment, reward terms and 4096 x 24 geometry as Pollen's rsl-rl reference: rl_games (3 runs, min-max band) crosses the reference's final plateau at 3.5 min vs 16.3 and finishes higher.</td>
+<td>Same environment, reward terms and 4096 x 24 geometry as Pollen's rsl-rl reference: rl_games (3 seeds) crosses the reference's final level at 3 min vs 16.3 and finishes at 138 vs 120.</td>
 </tr>
 <tr>
 <td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_backward.gif" width="100%" alt="MicroDuck walking backward under a 0.4 m/s command"></td>

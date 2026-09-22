@@ -29,8 +29,10 @@ params:
     name: MJLab_MicroDuck_Velocity
     env_name: mjlab_microduck_velocity
     normalize_input: true
-    # default is no value normalization -- A/B normalize_value: true later
-    normalize_value: false
+    # value normalization: +8 final return on paired seeds (136 / 138 vs 128 / 130)
+    # and a 151 peak vs 143; the task's penalty weights ramp with the curriculum,
+    # so the return scale shifts during training (docs/MJLAB.md)
+    normalize_value: true
     # 20 s episodes end in truncation, not failure: bootstrap is essential
     value_bootstrap: true
     reward_shaper:
