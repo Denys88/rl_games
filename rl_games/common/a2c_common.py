@@ -356,7 +356,7 @@ class A2CBase(BaseAlgorithm):
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
                 min_lr=float(config.get('min_lr', 1e-6)),
-                max_lr=float(config.get('max_lr', 1e-2)),
+                max_lr=float(config.get('max_lr', 1e-3)),
                 lr_multiplier=float(config.get('lr_multiplier', 1.5)))
 
         elif self.linear_lr:
@@ -1717,7 +1717,7 @@ class ContinuousA2CBase(A2CBase):
 
         self.sync_running_stats()
         min_lr = self.config.get('min_lr', 1e-6)
-        max_lr = self.config.get('max_lr', 1e-2)
+        max_lr = self.config.get('max_lr', 1e-3)
         self.scheduler_stats = {
             'scheduler_kl': torch_ext.mean_list(schedule_kls).item(),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),
