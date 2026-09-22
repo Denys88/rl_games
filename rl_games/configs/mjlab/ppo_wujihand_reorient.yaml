@@ -61,7 +61,19 @@ params:
       render: false
     save_frequency: 500
     save_best_after: 100
-    lr_schedule: None    # fixed 1e-4: mean score +2.8% over the adaptive band on three seeds (see docs/MJLAB.md)
+    # adaptive rate driven by the KL of the optimizer step itself (an extra
+    # no-grad forward after each step), averaged over a mini-epoch before the
+    # rule acts. Beat a fixed 1e-4 on every seed and the legacy reference-KL
+    # scheduler by a wide margin on this task (docs/MJLAB.md). Keep
+    # schedule_type standard: per-minibatch stepping on this signal ratchets
+    # the rate to the floor on tail events.
+    lr_schedule: adaptive
+    kl_schedule_source: optimizer_step
+    schedule_type: standard
+    kl_threshold: 0.002    # calibrated on the fixed-rate run's step KL (0.002 before takeoff, 0.003 after)
+    min_lr: 5.0e-05
+    max_lr: 2.0e-04
+    lr_multiplier: 1.5
     central_value_config:
       minibatch_size: 16384
       mini_epochs: 4

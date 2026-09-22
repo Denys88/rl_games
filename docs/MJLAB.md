@@ -114,18 +114,19 @@ reference's step-to-step action change is 0.39.
 |---------|-------------------------------|-------------------------------------|----------------------|
 | wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
 | wuji-mjlab rsl-rl fork at rl_games' network widths | 17.35 | 2.22 h | 0.40 |
-| rl_games `ppo_wujihand_reorient.yaml`, seeds 42 / 7 / 123 | **19.6 / 18.9 / 18.9** | **1.38 / 1.44 / 1.54 h** | 0.37 |
-| rl_games, same recipe with the KL-adaptive band 5e-5..2e-4 instead of the fixed rate | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
+| rl_games `ppo_wujihand_reorient.yaml` (step-KL adaptive rate), seeds 42 / 7 / 123 | **20.1 / 19.1 / 19.5** | **1.30 / 1.44 / 1.40 h** | 0.37 |
+| rl_games, same recipe with a fixed rate of 1e-4 | 19.6 / 18.9 / 18.9 | 1.38 / 1.44 / 1.54 h | 0.37 |
+| rl_games, same recipe with the legacy reference-KL scheduler (band 5e-5..2e-4, target 0.01) | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
 | rl_games, adaptive band, at the reference's network widths | 16.7 | — | 0.36 |
 | rl_games, adaptive band, on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
 
-The full-width single-GPU fixed and adaptive recipes each have three seeds
+The three full-width single-GPU rl_games rows each have three seeds
 (42 / 7 / 123); the other rows each report one run. These runs had no terminal
 action storm. The width comparisons help assess the recipes, but do not
 isolate the trainer: exploration, normalization and minibatch geometry also
 differ, and the smaller rl_games network used the adaptive schedule. These
-are training metrics, not held-out evaluation scores. The fixed-rate recipe
-reaches the published reference's final training score in 28–36% less wall
+are training metrics, not held-out evaluation scores. The shipped recipe
+reaches the published reference's final training score in 33–39% less wall
 time on this machine; equal frames do not imply equal optimizer steps or
 compute cost.
 
@@ -133,18 +134,27 @@ compute cost.
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
 privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
-truncation `value_bootstrap` on, minibatch 16384, a **fixed learning rate of
-1e-4**, and a **global exploration std** (`fixed_sigma: true`,
-`sigma_parametrization: softplus`, `min_sigma: 0.2`) with `entropy_coef: 0`.
-The fixed rate is deliberate: final training scores improved by 4.0%, 3.9%
-and 0.4% on the paired seeds, with a 2.8% higher mean score. The adaptive
-controller often lowered the rate early, while the fixed-rate runs learned
-faster. This supports the fixed recipe for this task; it does not establish
-that KL is insensitive to learning rate or that early KL excess is harmless.
-The existing scheduler reads a forward pass made before the optimizer step,
-relative to a stored policy, so its signal includes earlier updates and
-changes to observation normalization. Heavy-tailed advantages can affect
-updates, but their causal contribution needs a controlled replay.
+truncation `value_bootstrap` on, minibatch 16384, a **global exploration std**
+(`fixed_sigma: true`, `sigma_parametrization: softplus`, `min_sigma: 0.2`)
+with `entropy_coef: 0`, and a **step-KL adaptive learning rate**
+(`kl_schedule_source: optimizer_step`, `schedule_type: standard`,
+`kl_threshold: 0.002`, band 5e-5..2e-4, factor 1.5).
+
+The scheduler choice is the result of a controlled comparison on this task
+(same seeds, same budget). The legacy scheduler reads a KL measured before the
+optimizer step against a stored policy; early in training that number is
+mostly drift accumulated over the pass plus observation-normaliser movement,
+not the step it is about to take, so it brakes to its floor for the first
+~800 iterations and takes off later (18.2–18.9). The shipped scheduler reads
+KL(after step || before step) on the same minibatch, averaged over a
+mini-epoch, with the target calibrated on the fixed-rate run's step KL
+(0.002 before takeoff, 0.003 after). On every seed it settled at ~1.3e-4
+before takeoff and 8.9e-5 after, which matches the recipe's own rate
+response (fixed 5e-5 / 1e-4 / 1.5e-4 / 2e-4 on seed 42: 18.5 / 19.9 / 19.2 /
+16.8 reaches): headroom above 1e-4 early, none late. Two variants to avoid:
+per-minibatch stepping on the step-KL signal ratchets the rate to the floor on
+tail events (19.3 on seed 42), and recalibrating the legacy scheduler's
+target to 0.02 only reaches parity with the fixed rate (19.4–19.5).
 
 **Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
 task can collapse thousands of iterations into training: on rare states the
