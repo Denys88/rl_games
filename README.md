@@ -39,7 +39,7 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 
 ## Why rl_games
 
-- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 128 vs 120 final return, and their final plateau reached in 3.5 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 17.1 vs 16.4 goal reaches. Lift-Cube-Yam: success 0.85 vs 0.72.
+- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 128 vs 120 final return, and their final plateau reached in 3.5 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 19.1–20.1 vs 16.9 goal reaches per episode over three seeds, the reference's score in 1.3–1.4 h instead of 2.1 h, 21.1 on two GPUs. Lift-Cube-Yam: success 0.85 vs 0.72.
 - **Built for GPU simulators.** One process drives thousands of environments. Asymmetric actor-critic with a separate central-value critic, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, population-based training, self-play, ONNX export, a live viewer with keyboard command control.
 - **Proven in sim-to-real.** DeXtreme, DexPBT, TriFinger, DextrAH-RGB and Play2Perfect trained their policies with rl_games.
 - **SAC too.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past that budget.
@@ -47,6 +47,8 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 ## Results
 
 ### MicroDuck: Pollen's biped, their recipe, same machine
+
+*Reproducing these runs needs the mjlab-1.6 port of the MicroDuck task plugin (upstream pins mjlab 1.3); the port is validated but not published yet, see [docs/MJLAB.md](docs/MJLAB.md).*
 
 <table width="100%">
 <tr>
@@ -84,11 +86,11 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 </tr>
 <tr>
 <td width="50%" align="center"><img src="docs/pictures/mjlab/wujihand_reorient.gif" width="100%" alt="WujiHand in-hand cube reorientation"></td>
-<td width="50%"><img src="docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 17.1 vs rsl-rl fork 16.4 goal reaches per episode"></td>
+<td width="50%"><img src="docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 19.1–20.1 vs rsl-rl fork 16.9 goal reaches per episode, three seeds"></td>
 </tr>
 <tr>
 <td><b>WujiHand in-hand reorientation</b> (<a href="https://github.com/wuji-technology/wuji-mjlab">wuji-mjlab</a>), unmodified task; the exported ONNX policy passes the project's sim2sim deployment protocol.</td>
-<td>17.1 vs 16.4 goal reaches per episode at the same training budget.</td>
+<td>19.1–20.1 vs 16.9 goal reaches per episode at the same training budget (three seeds), the reference's final score in 1.3–1.4 h instead of 2.1 h; 21.1 on two GPUs. Recipe and stability notes in <a href="docs/MJLAB.md">docs/MJLAB.md</a>.</td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/pictures/mjlab/go1_rough_training.png" width="100%" alt="Go1 rough terrain: central value network reaches about 60 reward vs about 45 without it"></td>

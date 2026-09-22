@@ -23,6 +23,7 @@ over a few steps.
 
 import argparse
 import copy
+import dataclasses
 import os
 
 import yaml
@@ -194,6 +195,13 @@ class CommandController:
         cfg = getattr(self.term, 'cfg', None)
         if cfg is None:
             return
+        # mjlab's CommandTermCfg is a plain (non-frozen) dataclass, so the live
+        # cfg can be mutated in place (verified on mjlab 1.6). Fail clearly
+        # rather than with FrozenInstanceError if that ever changes.
+        if dataclasses.is_dataclass(cfg) and cfg.__dataclass_params__.frozen:
+            raise TypeError(
+                f'{type(cfg).__name__} is a frozen dataclass: command control cannot pin '
+                'its sampling distribution')
         ranges = getattr(cfg, 'ranges', None)
         if ranges is not None:
             for attr, val in (('lin_vel_x', vx), ('lin_vel_y', vy),
@@ -377,6 +385,8 @@ def run_play(yaml_config_path, checkpoint, task_id_override=None, num_envs=4,
     try:
         ui.run()  # blocks; ENTER = reset, SPACE = pause (viewer built-ins)
     finally:
+        if controller is not None:
+            controller.restore_distribution()  # un-pin the term cfg before teardown
         env.close()
 
 
@@ -388,7 +398,9 @@ def main():
     p.add_argument('--task', default=None,
                    help="task id override (default: the config's env_config.task_name)")
     p.add_argument('--num-envs', type=int, default=4)
-    p.add_argument('--viewer', choices=['auto', 'native', 'viser'], default='auto')
+    p.add_argument('--viewer', choices=['auto', 'native', 'viser'], default='auto',
+                   help="auto = native window when DISPLAY or WAYLAND_DISPLAY is set, else the "
+                        "viser browser UI (so macOS without DISPLAY gets viser; pass native to force)")
     p.add_argument('--stochastic', action='store_true',
                    help='sample actions instead of taking the deterministic mean')
     p.add_argument('--device', default=None,
