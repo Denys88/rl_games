@@ -221,37 +221,86 @@ bootstrap on.
 ### WujiHand In-Hand Cube Reorientation
 
 In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
-trained on the unmodified wuji-mjlab task (reward design, DR, and success
-protocol exactly as released). Same-machine comparison against the vendored
-rsl-rl fork that ships with wuji-mjlab, identical data budget
-(8192 envs × 40 steps, 5000 iterations, ~1.6B frames):
+trained on the unmodified wuji-mjlab task (reward design, DR and success
+protocol exactly as released). Same-machine comparison (one RTX PRO 6000 per
+run, same window) against the vendored rsl-rl fork that ships with wuji-mjlab,
+identical single-GPU data budget (8192 envs × 40 steps, 5000 iterations,
+1.64B frames). The 2-GPU run processes twice as many frames.
+Score: goal reaches per episode (training metric, 50-iteration EMA). The raw
+action smoothness is reported next to it because a policy can keep scoring
+while its actions become unusable (see the stability notes below); the
+reference's step-to-step action change is 0.39.
 
-| Trainer | Goal reaches / episode (train, last-100 mean) | Held-out eval | Wall-clock |
-|---------|-----------------------------------------------|---------------|------------|
-| wuji-mjlab rsl-rl fork | 16.4 (peak 16.9) | — | 4.08 h |
-| rl_games (`ppo_wujihand_reorient.yaml`) | **17.1** (peak 17.6) | 15.1 reaches/ep | **4.07 h** |
+| Trainer | Goal reaches / episode at 5000 | Time to the reference's final score | Action change / step |
+|---------|-------------------------------|-------------------------------------|----------------------|
+| wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
+| wuji-mjlab rsl-rl fork at rl_games' network widths | 17.35 | 2.22 h | 0.40 |
+| rl_games `ppo_wujihand_reorient.yaml` (step-KL adaptive rate), seeds 42 / 7 / 123 | **20.1 / 19.1 / 19.5** | **1.30 / 1.44 / 1.40 h** | 0.37 |
+| rl_games, same recipe with a fixed rate of 1e-4 | 19.6 / 18.9 / 18.9 | 1.38 / 1.44 / 1.54 h | 0.37 |
+| rl_games, same recipe with the legacy reference-KL scheduler (band 5e-5..2e-4, target 0.01) | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
+| rl_games, legacy scheduler, at the reference's network widths | 16.7 | — | 0.36 |
+| rl_games `ppo_wujihand_reorient.yaml` on 2 GPUs (2× frames per iteration) | **21.1** | **1.02 h** | 0.36 |
+| rl_games, legacy scheduler, on 2 GPUs | 20.6 | 1.27 h | 0.36 |
 
-rl_games reaches the reference's final quality (16.4) at 3.34 h — 18% less
-wall-clock than the reference needs for its full run. Under the project's own
-sim2sim deployment protocol (100 trials, reach-one-goal criterion), the
-rl_games policy exported to ONNX scores identically to the officially
-released policy: success rate 1.00, drop rate 0.0, 1.07 goal reaches per
-trial (the protocol saturates after the first reach).
+The three full-width single-GPU rl_games rows each have three seeds
+(42 / 7 / 123); the other rows each report one run. These runs had no terminal
+action storm. The width comparisons help assess the recipes, but do not
+isolate the trainer: exploration, normalization and minibatch geometry also
+differ, and the smaller rl_games network used the legacy scheduler. These
+are training metrics, not held-out evaluation scores. The shipped recipe
+reaches the published reference's final training score in 33–39% less wall
+time on this machine; equal frames do not imply equal optimizer steps or
+compute cost.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
 privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
-truncation `value_bootstrap` on, minibatch 16384 — small minibatches (≤10240)
-make the KL-adaptive scheduler noisy, and very few optimizer steps per
-iteration (minibatch 32768 → 40 steps) starve the discovery phase on this
-task; adaptive LR on the band `min_lr 1e-4` – `max_lr 2e-4` — the floor keeps
-the early phase at the reference's proven rate, the cap prevents a
-late-training collapse (the env's escalating out-of-cage penalties produce
-rare huge negative return bursts that a high LR converts into an unrecoverable
-policy regression); state-dependent sigma with
-`sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
-exploration floor the task was designed around.
+truncation `value_bootstrap` on, minibatch 16384, a **global exploration std**
+(`fixed_sigma: true`, `sigma_parametrization: softplus`, `min_sigma: 0.2`)
+with `entropy_coef: 0`, and a **step-KL adaptive learning rate**
+(`kl_schedule_source: optimizer_step`, `schedule_type: standard`,
+`kl_threshold: 0.002`, band 5e-5..2e-4, factor 1.5).
+
+The scheduler choice is the result of a controlled comparison on this task
+(same seeds, same budget). The legacy scheduler reads a KL measured before the
+optimizer step against a stored policy; early in training that number is
+mostly drift accumulated over the pass plus observation-normaliser movement,
+not the step it is about to take, so it brakes to its floor for the first
+~800 iterations and takes off later (18.2–18.9). The shipped scheduler reads
+KL(after step || before step) on the same minibatch, averaged over a
+mini-epoch, with the target calibrated on the fixed-rate run's step KL
+(0.002 before takeoff, 0.003 after). On every seed it ran at ~1.3e-4
+before takeoff and 8.9e-5 after (seed 42 stepped down once more, to
+7.7e-5, in the last thousand iterations), which matches the recipe's own rate
+response (fixed 5e-5 / 1e-4 / 1.5e-4 / 2e-4 on seed 42: 18.5 / 19.9 / 19.2 /
+16.8 reaches): headroom above 1e-4 early, none late. Two variants to avoid:
+per-minibatch stepping on the step-KL signal ratchets the rate to the floor on
+tail events (19.3 on seed 42), and recalibrating the legacy scheduler's
+target to 0.02 only reaches parity with the fixed rate (19.4–19.5).
+The paired gain over the fixed rate on the three development seeds is
++0.5 / +0.2 / +0.6 reaches (mean +0.4; a 95% interval on three seeds spans
+−0.1 to +1.0), and a fourth fixed run on seed 42, with the step-KL
+measurement enabled, scored 19.9 and reached the reference's score in
+1.23 h, ahead of the scheduler's 1.30 h on that seed. The sign is consistent
+and the mechanism is understood; a comparison on fresh seeds is the next step.
+
+**Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
+task can collapse thousands of iterations into training: on rare states the
+std head extrapolates to values of 40–200 while the batch mean stays at 0.2,
+the task's penalty on the raw (unclamped) action explodes, and the policy
+does not recover. Batch averages such as entropy and mean KL do not show it,
+and an adaptive learning rate cannot act on a tail of states. Two settings
+remove it, each verified on three seeds: a global std (the setting Shadow
+Hand and DeXtreme trained with; the recipe above) or a ceiling on the
+state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches with the adaptive
+band, 18.8–19.2 with the fixed rate). Do not clip
+actions in the trainer while using a state-dependent std here (the task's
+penalty then no longer restrains the std head), do not add an entropy bonus
+to a global std on long runs, and read every score together with a smoothness
+metric. `use_diagnostics: true` logs the batch-max std per mini-epoch
+(`diagnostics/policy/sigma_max/<mini_epoch>`), which shows the tail long before a collapse.
+Global std and entropy zero changed together, so their individual effects are not isolated. `CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference`, `kl_schedule_source` and the diagnostics.
 
 ### MicroDuck Flat Velocity
 

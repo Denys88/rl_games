@@ -40,6 +40,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.model.to(self.ppo_device)
         self.states = None
         self.init_rnn_from_model(self.model)
+        if self.kl_schedule_source == 'optimizer_step' and self.is_rnn:
+            raise ValueError("kl_schedule_source='optimizer_step' does not support recurrent (RNN) policies")
         self.last_lr = float(self.last_lr)
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(),
@@ -229,15 +231,66 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 # mean over VALID rows only: dividing by numel() understates
                 # KL by the invalid fraction and biases adaptive LR upward
                 kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
+        self.kl_schedule_value = kl_dist
 
-        self.diagnostics.mini_batch(self,
-        {
+        diag_batch = {
             'values': value_preds_batch,
             'returns': return_batch,
             'new_neglogp': action_log_probs,
             'old_neglogp': old_action_log_probs_batch,
-            'masks': rnn_masks
-        }, curr_e_clip, 0)
+            'masks': rnn_masks,
+            'mu': mu,
+            'sigma': sigma,
+            'advantages': advantage,
+            'actions': actions_batch,
+        }
+        measure_step = getattr(self, 'kl_schedule_source', 'reference') == 'optimizer_step'
+        log_post_step = self.use_diagnostics and self.global_rank == 0 and not self.is_rnn
+        if measure_step or log_post_step:
+            # post-step KL on the same minibatch (kl_step: this step's change;
+            # kl_post_ref: drift from the scheduler's reference); one extra
+            # no-grad forward with running statistics frozen. The scheduler
+            # needs this on EVERY rank, even when diagnostics are disabled.
+            stats_mods = [m for m in (getattr(self.model, 'running_mean_std', None), getattr(self.model, 'value_mean_std', None)) if m is not None]
+            was_training = [m.training for m in stats_mods]
+            for m in stats_mods:
+                m.eval()
+            # BatchNorm must retain training-mode batch statistics for a
+            # matched replay, but its running buffers must advance only once
+            # per optimizer update, rather than again for this measurement.
+            batchnorm_buffers = [
+                (buffer, buffer.detach().clone())
+                for module in self.model.modules()
+                if isinstance(module, torch.nn.modules.batchnorm._BatchNorm)
+                for buffer in module.buffers(recurse=False)
+            ]
+            # the model normalises obs in place in its input dict: rebuild it
+            post_dict = {'is_train': True, 'prev_actions': actions_batch, 'obs': obs_batch}
+            try:
+                with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+                    post = self.model(post_dict)
+            finally:
+                with torch.no_grad():
+                    for buffer, saved in batchnorm_buffers:
+                        buffer.copy_(saved)
+                for m, t in zip(stats_mods, was_training):
+                    m.train(t)
+            post_mu, post_sigma = post['mus'].float(), post['sigmas'].float()
+            if measure_step:
+                # Same observations and normalizer state on both sides:
+                # unlike reference KL, this responds to the step just taken.
+                # Direction matches policy_kl(new_policy, old_policy).
+                step_kl = torch_ext.policy_kl(post_mu, post_sigma, mu.detach().float(), sigma.detach().float(), False)
+                if rnn_masks is None:
+                    self.kl_schedule_value = step_kl.mean()
+                else:
+                    masks = rnn_masks.reshape(-1)
+                    self.kl_schedule_value = (step_kl * masks).sum() / masks.sum().clamp(min=1.0)
+            if log_post_step:
+                # Preserve the historical diagnostic's pre||post direction.
+                diag_batch['kl_step'] = torch_ext.policy_kl(mu.detach().float(), sigma.detach().float(), post_mu, post_sigma, False)
+                diag_batch['kl_post_ref'] = torch_ext.policy_kl(post_mu, post_sigma, old_mu_batch.float(), old_sigma_batch.float(), False)
+        self.diagnostics.mini_batch(self, diag_batch, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy,
             kl_dist, self.last_lr, lr_mul,

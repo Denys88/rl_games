@@ -633,6 +633,8 @@ class A2CBase(BaseAlgorithm):
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
+        for name, value in getattr(self, 'scheduler_stats', {}).items():
+            self.writer.add_scalar('info/' + name, value, frame)
         self.writer.add_scalar('info/epochs', epoch_num, frame)
         self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
@@ -1315,6 +1317,8 @@ class DiscreteA2CBase(A2CBase):
 
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
+        if self.config.get('kl_schedule_source', 'reference') != 'reference':
+            raise ValueError("kl_schedule_source='optimizer_step' currently requires a continuous policy")
 
         batch_size = self.num_agents * self.num_actors
         action_space = self.env_info['action_space']
@@ -1424,9 +1428,13 @@ class DiscreteA2CBase(A2CBase):
                 returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
+                self.value_mean_std(values)
+                self.value_mean_std(returns)
+                self.value_mean_std.eval()
+                # Old predictions and targets must share the final statistics,
+                # especially when value clipping compares their differences.
                 values = self.value_mean_std(values)
                 returns = self.value_mean_std(returns)
-                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
@@ -1587,6 +1595,23 @@ class ContinuousA2CBase(A2CBase):
     def __init__(self, base_name, params):
         A2CBase.__init__(self, base_name, params)
 
+        # Preserve the historical moving KL reference by default. The rollout
+        # option measures total drift against the policy that collected the
+        # batch, matching the reference used by PPO's likelihood ratio.
+        self.kl_reference = self.config.get('kl_reference', 'previous_mini_epoch')
+        if self.kl_reference not in ('previous_mini_epoch', 'rollout'):
+            raise ValueError(
+                f"kl_reference must be 'previous_mini_epoch' or 'rollout', got '{self.kl_reference}'")
+
+        # The historical signal measures drift BEFORE the optimizer step,
+        # against either the rollout or the preceding mini-epoch. An optional
+        # matched pre/post forward measures the actual optimizer step instead.
+        self.kl_schedule_source = self.config.get('kl_schedule_source', 'reference')
+        if self.kl_schedule_source not in ('reference', 'optimizer_step'):
+            raise ValueError(
+                "kl_schedule_source must be 'reference' or 'optimizer_step', "
+                f"got '{self.kl_schedule_source}'")
+
         self.is_discrete = False
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
@@ -1643,30 +1668,47 @@ class ContinuousA2CBase(A2CBase):
         entropies = []
         kls = []
 
+        schedule_kls = []
+        applied_lrs = []
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
+            ep_schedule_kls = []
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
+                # Keep info/kl's historical reference semantics. The signal
+                # driving adaptation is logged separately, as are ALL rates
+                # actually used, rather than just the final minibatch's rate.
+                schedule_kl = getattr(self, 'kl_schedule_value', kl)
+                applied_lrs.append(last_lr * lr_mul)
                 entropies.append(entropy)
                 if self.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
-                self.dataset.update_mu_sigma(cmu, csigma)
+                if self.kl_reference == 'previous_mini_epoch':
+                    self.dataset.update_mu_sigma(cmu, csigma)
                 if self.schedule_type == 'per_minibatch':
-                    av_kls = self._kl_for_lr_schedule(kl)
+                    av_kls = self._kl_for_lr_schedule(schedule_kl.clone())
+                    ep_schedule_kls.append(av_kls)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
                     self.update_lr(self.last_lr)
+                else:
+                    ep_schedule_kls.append(schedule_kl)
 
             av_kls = torch_ext.mean_list(ep_kls)
             if self.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
             if self.schedule_type == 'standard':
-                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
+                schedule_kl = (av_kls if self.kl_schedule_source == 'reference' else
+                               self._kl_for_lr_schedule(torch_ext.mean_list(ep_schedule_kls)))
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, schedule_kl.item())
                 self.update_lr(self.last_lr)
+                schedule_kls.append(schedule_kl)
+            else:
+                schedule_kls.append(torch_ext.mean_list(ep_schedule_kls))
 
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
@@ -1674,6 +1716,16 @@ class ContinuousA2CBase(A2CBase):
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         self.sync_running_stats()
+        min_lr = self.config.get('min_lr', 1e-6)
+        max_lr = self.config.get('max_lr', 1e-2)
+        self.scheduler_stats = {
+            'scheduler_kl': torch_ext.mean_list(schedule_kls).item(),
+            'lr_mean': sum(applied_lrs) / len(applied_lrs),
+            'lr_min': min(applied_lrs),
+            'lr_max': max(applied_lrs),
+            'lr_at_min_fraction': sum(abs(lr - min_lr) <= 1e-12 for lr in applied_lrs) / len(applied_lrs),
+            'lr_at_max_fraction': sum(abs(lr - max_lr) <= 1e-12 for lr in applied_lrs) / len(applied_lrs),
+        }
         update_time_end = time.perf_counter()
         play_time = play_time_end - play_time_start
         update_time = update_time_end - update_time_start
@@ -1713,9 +1765,12 @@ class ContinuousA2CBase(A2CBase):
                 returns = self.value_mean_std(returns)
             else:
                 self.value_mean_std.train()
+                self.value_mean_std(values)
+                self.value_mean_std(returns)
+                self.value_mean_std.eval()
+                # Use the same final statistics for old predictions and targets.
                 values = self.value_mean_std(values)
                 returns = self.value_mean_std(returns)
-                self.value_mean_std.eval()
 
         advantages = torch.sum(advantages, axis=1)
 
