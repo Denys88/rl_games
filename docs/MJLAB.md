@@ -117,14 +117,15 @@ reference's step-to-step action change is 0.39.
 | rl_games `ppo_wujihand_reorient.yaml` (step-KL adaptive rate), seeds 42 / 7 / 123 | **20.1 / 19.1 / 19.5** | **1.30 / 1.44 / 1.40 h** | 0.37 |
 | rl_games, same recipe with a fixed rate of 1e-4 | 19.6 / 18.9 / 18.9 | 1.38 / 1.44 / 1.54 h | 0.37 |
 | rl_games, same recipe with the legacy reference-KL scheduler (band 5e-5..2e-4, target 0.01) | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
-| rl_games, adaptive band, at the reference's network widths | 16.7 | — | 0.36 |
-| rl_games, adaptive band, on 2 GPUs (2× frames per iteration) | **20.6** | 1.27 h | 0.36 |
+| rl_games, legacy scheduler, at the reference's network widths | 16.7 | — | 0.36 |
+| rl_games `ppo_wujihand_reorient.yaml` on 2 GPUs (2× frames per iteration) | **21.1** | **1.02 h** | 0.36 |
+| rl_games, legacy scheduler, on 2 GPUs | 20.6 | 1.27 h | 0.36 |
 
 The three full-width single-GPU rl_games rows each have three seeds
 (42 / 7 / 123); the other rows each report one run. These runs had no terminal
 action storm. The width comparisons help assess the recipes, but do not
 isolate the trainer: exploration, normalization and minibatch geometry also
-differ, and the smaller rl_games network used the adaptive schedule. These
+differ, and the smaller rl_games network used the legacy scheduler. These
 are training metrics, not held-out evaluation scores. The shipped recipe
 reaches the published reference's final training score in 33–39% less wall
 time on this machine; equal frames do not imply equal optimizer steps or

@@ -45,7 +45,7 @@
 **WujiHand in-hand cube reorientation** ([wuji-mjlab](https://github.com/wuji-technology/wuji-mjlab)):
 on the unmodified task, rl_games trains to **19.1–20.1 goal reaches per episode (three seeds) vs 16.9**
 for the reference rsl-rl fork at the same training budget, reaches the reference's final score in
-1.3–1.4 h instead of 2.1 h, and scales to 20.6 on 2 GPUs. Full comparison, the training recipe and the
+1.3–1.4 h instead of 2.1 h, and scales to 21.1 on 2 GPUs (reference score in 1.0 h). Full comparison, the training recipe and the
 stability notes in [docs/MJLAB.md](docs/MJLAB.md).
 
 ![WujiHand Reorient](https://raw.githubusercontent.com/Denys88/rl_games/master/docs/pictures/mjlab/wujihand_reorient.gif)
