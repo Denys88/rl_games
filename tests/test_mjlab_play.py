@@ -499,7 +499,7 @@ def test_microduck_config_parses_and_matches_recipe():
 
     # the default MicroDuck config
     assert config['normalize_input'] is True
-    assert config['normalize_value'] is False
+    assert config['normalize_value'] is True  # +8 final return on paired seeds (docs/MJLAB.md)
     assert config['value_bootstrap'] is True    # 20 s truncation
     assert config['gamma'] == 0.99
     assert config['tau'] == 0.95
