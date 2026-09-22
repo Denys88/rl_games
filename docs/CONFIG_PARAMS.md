@@ -109,6 +109,17 @@ not include observation-statistics changes made before the pre-step forward,
 and does not constrain cumulative drift over a mini-epoch or rollout. The
 measurement arrives after the step and adjusts subsequent updates; there is
 no rollback or hard KL limit.
+
+Using it: the step KL is a different scale from the reference KL, so
+`kl_threshold` must be re-calibrated, not carried over. Read
+`info/scheduler_kl` from a fixed-rate run of the same task and set the target
+so that the dead band (`0.5 .. 2` times the target) contains the healthy
+run's values in every phase; on the WujiHand recipe that is 0.002 (0.002
+before takeoff, 0.003 after). Pair it with `schedule_type: standard`: the
+per-minibatch step KL has a heavy upper tail, and per-minibatch stepping
+brakes on every tail event while nothing ever triggers an increase, so the
+rate ratchets down to `min_lr` (measured on WujiHand: 19.3 vs 20.1 reaches).
+
 The actor's distribution parameters must be deterministic for a matched
 input to isolate optimizer movement. Custom stochastic forwards (for example,
 dropout) need matched randomness; this path does not replay RNG state. An
