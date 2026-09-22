@@ -149,13 +149,20 @@ not the step it is about to take, so it brakes to its floor for the first
 ~800 iterations and takes off later (18.2–18.9). The shipped scheduler reads
 KL(after step || before step) on the same minibatch, averaged over a
 mini-epoch, with the target calibrated on the fixed-rate run's step KL
-(0.002 before takeoff, 0.003 after). On every seed it settled at ~1.3e-4
-before takeoff and 8.9e-5 after, which matches the recipe's own rate
+(0.002 before takeoff, 0.003 after). On every seed it ran at ~1.3e-4
+before takeoff and 8.9e-5 after (seed 42 stepped down once more, to
+7.7e-5, in the last thousand iterations), which matches the recipe's own rate
 response (fixed 5e-5 / 1e-4 / 1.5e-4 / 2e-4 on seed 42: 18.5 / 19.9 / 19.2 /
 16.8 reaches): headroom above 1e-4 early, none late. Two variants to avoid:
 per-minibatch stepping on the step-KL signal ratchets the rate to the floor on
 tail events (19.3 on seed 42), and recalibrating the legacy scheduler's
 target to 0.02 only reaches parity with the fixed rate (19.4–19.5).
+The paired gain over the fixed rate on the three development seeds is
++0.5 / +0.2 / +0.6 reaches (mean +0.4; a 95% interval on three seeds spans
+−0.1 to +1.0), and a fourth fixed run on seed 42, with the step-KL
+measurement enabled, scored 19.9 and reached the reference's score in
+1.23 h, ahead of the scheduler's 1.30 h on that seed. The sign is consistent
+and the mechanism is understood; a comparison on fresh seeds is the next step.
 
 **Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
 task can collapse thousands of iterations into training: on rare states the
