@@ -349,7 +349,7 @@ A floor on the global std (`min_sigma: 0.1`): final 137.2 vs 136.1 without it on
 
 **Speed lane (research preview).** Same robot, same 61-dimensional
 observation contract, trained on a variant of the task kept in our fork of
-`microduck_rl` (publication pending): an ADR-style curriculum that raises
+`microduck_rl` ([ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl), branch `speed-lane`): an ADR-style curriculum that raises
 the forward-command cap by 0.1 m/s whenever the rolling median tracking
 error at the current cap drops below 0.15 m/s (coupled with the action-rate
 penalty ramp), a touchdown-stride gait term, and a bilateral
