@@ -471,7 +471,7 @@ wheels = [
 
 [[package]]
 name = "envpool"
-version = "1.2.6"
+version = "1.2.7"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -481,6 +481,7 @@ resolution-markers = [
 dependencies = [
     { name = "dm-env" },
     { name = "envpool-assets", version = "0.4.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "envpool-assets-mjlab" },
     { name = "envpool-assets-mujoco-large", version = "0.4.0", source = { registry = "https://pypi.org/simple" } },
     { name = "envpool-assets-mujoco-playground-humanoid", version = "0.4.0", source = { registry = "https://pypi.org/simple" } },
     { name = "glfw" },
@@ -492,18 +493,18 @@ dependencies = [
     { name = "pillow" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/7c/e9857a9d01c8337ffd1a1a36ba17b9a165eb72e3be1e1a1c0cae88e2acfb/envpool-1.2.6-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:05a90c9e0bb099fd1fbdd2d67d174c8e81dac5ade2fb84036840e0d32bd1733b", size = 44347735, upload-time = "2026-08-28T13:36:59.763Z" },
-    { url = "https://files.pythonhosted.org/packages/be/c0/2b3fcd6dec54356aa3bde8171f2f0baaf2d151e98fddd66afe411c278df4/envpool-1.2.6-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:9a55d4dec5c59bc37691083173f857b948d10ee26cdef5dfbd7cc480ebaba429", size = 60308481, upload-time = "2026-08-28T13:37:05.15Z" },
-    { url = "https://files.pythonhosted.org/packages/78/79/319a89e8770c61e893d790b528ca28ed9f3999ad93fa27ab634a4f086d6e/envpool-1.2.6-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:1e9f1d3bdaaea1d7ec9adf598b027e4a5985c9ec8f0740942c98589208ffaf5a", size = 63001329, upload-time = "2026-08-28T13:37:09.93Z" },
-    { url = "https://files.pythonhosted.org/packages/80/53/b946dd67bac5aa9c75dd35ece2565390eb28483134554648f4cfcaba6ffd/envpool-1.2.6-cp312-cp312-win_amd64.whl", hash = "sha256:67ba0772a77cfddd9d24529407d06f0a164618bfa7ca10906ee62fa78daf8c34", size = 54536649, upload-time = "2026-08-28T13:37:14.407Z" },
-    { url = "https://files.pythonhosted.org/packages/be/c4/a0bab891e3d47ebd0abae5cd96566b485bc9018c98c7a03dbaabdd9a4dcf/envpool-1.2.6-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:a7233e8f9621cfb069d456c31abf517bfcb1e3a5f8440e9f64050356b56c17e1", size = 44348709, upload-time = "2026-08-28T13:37:18.737Z" },
-    { url = "https://files.pythonhosted.org/packages/81/67/5555cdac8894ddb266cc021822b183e863b1c90a6c23fec5db37f556b877/envpool-1.2.6-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:aaac9ef3ec23cf44d978e6232c687e9ffaee3caf7e8cdb35f1098c9a84c1a123", size = 60308752, upload-time = "2026-08-28T13:37:24.725Z" },
-    { url = "https://files.pythonhosted.org/packages/58/88/f23f59033a5aa0e2eb6d284b37975bccda8ccfc08f48b0235ee69f4c5d7a/envpool-1.2.6-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:f9ebe60cf5e115e5089e22ba290bf0875821962601800f234f8e95ae4052183e", size = 63002235, upload-time = "2026-08-28T13:37:31.333Z" },
-    { url = "https://files.pythonhosted.org/packages/0a/47/ac9fbab24d093a91b9a4c1544bc4baccbda301c938ae5842a6100e8d21ab/envpool-1.2.6-cp313-cp313-win_amd64.whl", hash = "sha256:6201b845befd9da7d2c7a88cc6897c4688fb07d4411adcb4013c493f5efb4d9b", size = 54536669, upload-time = "2026-08-28T13:37:37.111Z" },
-    { url = "https://files.pythonhosted.org/packages/4a/b2/478b12cb6c92835aa28dfb8e7a60f624d6479b0c0b8bc2a47f026676cada/envpool-1.2.6-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:54bbc6585dd8cf287d23f1bf2ad880e5aecbb3de8d8ee14e630ca3a910657167", size = 44358817, upload-time = "2026-08-28T13:37:41.826Z" },
-    { url = "https://files.pythonhosted.org/packages/74/5f/422ae45d10b040e663213a7b9de68311c99bbfd6b63f01b29ea72c965473/envpool-1.2.6-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:67169ee3578758656dde64505f235bc024bf0f69e5d807353fab6c14485e236f", size = 60315348, upload-time = "2026-08-28T13:37:46.785Z" },
-    { url = "https://files.pythonhosted.org/packages/5f/10/af28d1c04b513851af9188c418b31ec58d300e73382a265c9df1e9d39490/envpool-1.2.6-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:6553911b5cb360f96489d9e43f2d2efe6d6ed12b450b6f9de9c6510e0712ae48", size = 63006840, upload-time = "2026-08-28T13:37:51.8Z" },
-    { url = "https://files.pythonhosted.org/packages/92/d2/953cc071f9f678c387eeaa62a56a399865d34465e259093b91ddbe61ea14/envpool-1.2.6-cp314-cp314-win_amd64.whl", hash = "sha256:cc95d4950bc8c4207f84efec344a3e1ddd33717c8432655ceefaa5291c078bf9", size = 56724208, upload-time = "2026-08-28T13:37:57.119Z" },
+    { url = "https://files.pythonhosted.org/packages/04/65/73896a85fd89458ad61ecebb666989102508b56e2626c68236b0aed267db/envpool-1.2.7-cp312-cp312-macosx_13_0_arm64.whl", hash = "sha256:e775b468446d639e698d0ba47e0ddee0a819a75cbee3febcda95557c31dd5dbd", size = 46580129, upload-time = "2026-09-15T19:49:43.945Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/a0/47eb2d112f98b13560d39583b1dd93a593d300b34e2fe860a566300d369a/envpool-1.2.7-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:9289ad9ddd754b7a8b8d7348bfc3d4aedefaf9dd6bd46f6d7a680d4855344694", size = 61688919, upload-time = "2026-09-15T19:49:48.671Z" },
+    { url = "https://files.pythonhosted.org/packages/67/09/60ddfa05fc7ddab16a20559b30710507c1f49e2b02818fb0a1b4faefe054/envpool-1.2.7-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:9d9e1b1eb9b6b9f7c38afa92ffccac4c69c32a8c8267b4429bcd66e3bce778bd", size = 63859235, upload-time = "2026-09-15T19:49:54.243Z" },
+    { url = "https://files.pythonhosted.org/packages/82/1a/2044963b155b384d55d4c3554aab1886ae09ef79a937399fc12146cf03da/envpool-1.2.7-cp312-cp312-win_amd64.whl", hash = "sha256:937bae2b5f50892e268bf204299c8911cb513960b5c7394659b886e952077da4", size = 44346506, upload-time = "2026-09-15T19:50:02.396Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/e5/996e6e4c5af647ace8000b47d9674942ea290d2ab71f33cef74707b02979/envpool-1.2.7-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:cb60cc7d936172782ad2647ae95cc858f04e56e5e6c6b103315dc3646e95788d", size = 46582324, upload-time = "2026-09-15T19:50:07.243Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/62/531becf02730033fc052e77fea569a8905a66215e8f7b34ee751f1af7f10/envpool-1.2.7-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:e37eeff7b8bd331778bb24e750e54eea7b32b4916d4d4dd9196dd22a824d73a1", size = 61688683, upload-time = "2026-09-15T19:50:13.573Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/4c/b53151304a8470c49bb6a03d4bd199c5c91731d99eb85ddc270386ee4d30/envpool-1.2.7-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:d5a61ac054df7f81734fa1f4f9b16a604cde11d60cdd983827f94bddf8099490", size = 63860333, upload-time = "2026-09-15T19:50:19.904Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/62/1e82423f294e8fa390c46025c9f9462ff54303549d4f2c8e74bcbdd4321a/envpool-1.2.7-cp313-cp313-win_amd64.whl", hash = "sha256:91cfce6a537e974775f7e95a7f010f1da6e29b49713bb7eb5627a35e8ac11b49", size = 44347317, upload-time = "2026-09-15T19:50:24.848Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/f4/1757dd0ae4291f95d8d6e8013c035b8e47c1d7bc580b0300ec327d16514d/envpool-1.2.7-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:1901579fea37db629a608a161d1ebc466c173326d42312d644bece01b09c307b", size = 46603644, upload-time = "2026-09-15T19:50:32.204Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/36/a4eec9fc183ac9ac1b438ea508604fd775625e1cf2e9f579865e4936697e/envpool-1.2.7-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:206e843a485cad2cc27645ca9b426ced2204c7a61fc4b2ba8f1da045001110cb", size = 61700199, upload-time = "2026-09-15T19:50:39.052Z" },
+    { url = "https://files.pythonhosted.org/packages/69/e8/9d2a2ebcc18dad6791aef45ccbc09f01f6638dff5c9bf9a4baf89035f2c3/envpool-1.2.7-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:49568f465b63eff6e7ac2240085bff222ad2bf3006fdd66c08cf367c90fad8d5", size = 63860741, upload-time = "2026-09-15T19:50:44.736Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/3b/334ef4570928f239163bfa76489b6d9d65330b0ed9993c9c88f761a2056d/envpool-1.2.7-cp314-cp314-win_amd64.whl", hash = "sha256:ca90c06427cf1a580a461326ff436b639d65b08b72263a9c606c9f8e18d67d8b", size = 45198549, upload-time = "2026-09-15T19:50:49.217Z" },
 ]
 
 [[package]]
@@ -528,6 +529,14 @@ resolution-markers = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/cd/adfcc0fe720af4827b65439a0ffc313225bfea7e314e4ef702febdc7380c/envpool_assets-0.4.1-py3-none-any.whl", hash = "sha256:3c3f2f85865854b6ccbcd9765c277d883a440193a40785aa7f7c4ed96b58fcea", size = 91605332, upload-time = "2026-08-29T16:22:44.582Z" },
+]
+
+[[package]]
+name = "envpool-assets-mjlab"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/70/8e10c81ade3909f730108d0cc53ff2cdb1559fa871e6f6959a046a578a5b/envpool_assets_mjlab-0.1.0-py3-none-any.whl", hash = "sha256:337a31733926c9521d6b5af2a1706ef0f649647b1ac031661c1ee6b49bd48a2a", size = 65138816, upload-time = "2026-08-30T18:49:05.348Z" },
 ]
 
 [[package]]
@@ -1901,7 +1910,7 @@ atari = [
 ]
 envpool = [
     { name = "envpool", version = "1.2.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "envpool", version = "1.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "envpool", version = "1.2.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 mujoco = [
     { name = "imageio" },
@@ -1917,7 +1926,7 @@ dev = [
 requires-dist = [
     { name = "ale-py", marker = "extra == 'atari'", specifier = ">=0.8" },
     { name = "autorom", extras = ["accept-rom-license"], marker = "extra == 'atari'", specifier = ">=0.4.2" },
-    { name = "envpool", marker = "python_full_version >= '3.12' and extra == 'envpool'", specifier = ">=1.2.6" },
+    { name = "envpool", marker = "python_full_version >= '3.12' and extra == 'envpool'", specifier = ">=1.2.7" },
     { name = "envpool", marker = "python_full_version < '3.12' and extra == 'envpool'", specifier = ">=1.2.5,<1.2.6" },
     { name = "gymnasium", specifier = ">=1.0.0" },
     { name = "imageio", marker = "extra == 'mujoco'" },
