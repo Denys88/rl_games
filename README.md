@@ -48,7 +48,7 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 
 ### MicroDuck: Pollen's biped, their recipe, same machine
 
-*Reproducing these runs needs the mjlab-1.6 port of the MicroDuck task plugin (upstream pins mjlab 1.3); the port is validated but not published yet, see [docs/MJLAB.md](docs/MJLAB.md).*
+*The task plugin runs on mjlab 1.6 from our fork, [ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl) (branch `rl-games`, the default), which also carries the ONNX exporter and the deployment guide; install steps in [docs/MJLAB.md](docs/MJLAB.md).*
 
 <table width="100%">
 <tr>

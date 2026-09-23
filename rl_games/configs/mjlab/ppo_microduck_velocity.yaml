@@ -71,12 +71,9 @@ params:
     max_epochs: 4000
     save_best_after: 100
     env_config:
-      # Requires the MicroDuck task plugin ported to mjlab 1.6: upstream
-      # pollen-robotics/microduck_rl pins mjlab 1.3.0 and the port is not
-      # published yet, so Mjlab-Velocity-Flat-MicroDuck does not resolve in
-      # the registry until it is (see docs/MJLAB.md, "MicroDuck").
-      # Task: 50 Hz control, 20 s episodes, actor obs 61 / privileged critic
-      # obs 76.
+      # Task plugin: the mjlab-1.6 port at github.com/ViktorM/microduck_rl (branch
+      # rl-games; upstream pins mjlab 1.3). Install steps in docs/MJLAB.md.
+      # 50 Hz control, 20 s episodes, actor obs 61 / privileged critic obs 76.
       task_name: Mjlab-Velocity-Flat-MicroDuck
       device: cuda
     player:

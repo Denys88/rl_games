@@ -142,12 +142,13 @@ velocity config: asymmetric actor-critic (actor obs 61, privileged critic
 obs 76 on the `critic` obs group), 4096 envs, 50 Hz control. Episodes are
 20 s and end in truncation, so `value_bootstrap: true` is essential.
 
-**Port status (2026-09-01):** upstream microduck_rl pins mjlab 1.3.0; the
-port of its task plugin to mjlab 1.6 that this config was validated on is
-local and not yet published, so `Mjlab-Velocity-Flat-MicroDuck` does not
-resolve in the registry and the config ships for the recipe. Once the port
-is published, install it as an editable task plugin (its tasks register via
-mjlab entry points, like wuji-mjlab above).
+**Port (published 2026-09-22):** upstream `microduck_rl` pins mjlab 1.3; the mjlab-1.6 port lives in
+[ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl), branch `rl-games` (the default),
+with upstream's `develop` merged, the ball-walk task, an rl_games ONNX exporter in the robot
+runtime's contract and a training / play / export / deploy guide in its README. Install, in a
+Python 3.12 venv: `torch==2.13.0` from the cu130 index, `mjlab==1.6.0`, the actuator model
+`git+https://github.com/Rhoban/bam.git@57d13ead53206a6bf0db3d66f86506ae8c2ce01a`, the fork
+(`pip install -e .`), then rl_games; after that `Mjlab-*-MicroDuck` task names resolve here.
 
 ## Results
 
