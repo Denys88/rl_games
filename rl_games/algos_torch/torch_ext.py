@@ -237,14 +237,19 @@ def normalization_with_masks(values, masks):
     return normalized_values
 
 def get_mean_var_with_masks(values, masks):
-    # clamp the denominators so degenerate masks (0 or 1 valid rows) yield
-    # finite (mean, 0) instead of NaN poisoning the whole batch -- same
-    # guard style as apply_masks
+    """Mean and unbiased variance over the elements where ``masks`` is 1.
+
+    Two-pass (centered) moments: the one-pass E[x^2] - E[x]^2 form cancels
+    catastrophically in float32 for nearly constant inputs (sixteen rows of
+    0.1 gave a negative variance, whose sqrt turned every normalized
+    advantage into NaN and the next update into NaN weights). The
+    denominators are clamped so degenerate masks (0 or 1 valid rows) yield a
+    finite (mean, 0) -- same guard style as apply_masks.
+    """
     sum_mask = masks.sum().clamp(min=1.0)
-    values_mask = values * masks
-    values_mean = values_mask.sum() / sum_mask
-    min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_var = min_sqr * sum_mask / (sum_mask - 1).clamp(min=1.0)
+    values_mean = (values * masks).sum() / sum_mask
+    centered = (values - values_mean) * masks
+    values_var = (centered * centered).sum() / (sum_mask - 1).clamp(min=1.0)
     return values_mean, values_var
 
 def get_mean_std_with_masks(values, masks):
