@@ -130,6 +130,7 @@ def test_skipped_fp16_step_does_not_raise_the_rate():
     agent.train()
     # one minibatch, skipped at scale 2**16: the rate must stay put
     assert agent.step_skipped
+    assert agent.skipped_steps in (0, 1)  # reset when the epoch's stats are written
     assert agent.last_lr == pytest.approx(1e-4)
 
 

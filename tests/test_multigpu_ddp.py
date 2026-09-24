@@ -144,6 +144,7 @@ class _GuardAgent:
         self.truncate_grads = False
         self.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
         self.scaler = grad_scaler(None)
+        self.skipped_steps = 0
 
 
 def _bypass_guard_worker(rank, world_size, port, results):

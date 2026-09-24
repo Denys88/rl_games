@@ -486,6 +486,7 @@ class A2CBase(BaseAlgorithm):
         self.mixed_precision = self.amp_dtype is not None
         self.scaler = torch_ext.grad_scaler(self.amp_dtype)
         self.step_skipped = False
+        self.skipped_steps = 0
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -577,6 +578,7 @@ class A2CBase(BaseAlgorithm):
         # fp16 skips steps with inf/nan gradients and lowers the scale; a skipped
         # step leaves the policy unchanged, and its ~0 KL must not raise the rate
         self.step_skipped = scale is not None and self.scaler.get_scale() < scale
+        self.skipped_steps += self.step_skipped
 
         if self._ddp_model is not None:
             self._ddp_model.forward_seen = False
@@ -642,6 +644,10 @@ class A2CBase(BaseAlgorithm):
         for k, v in self.aux_loss_dict.items():
             self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+        if self.scaler.is_enabled():
+            self.writer.add_scalar('info/grad_scale', self.scaler.get_scale(), frame)
+            self.writer.add_scalar('info/skipped_steps', self.skipped_steps, frame)
+            self.skipped_steps = 0
         self.writer.add_scalar('info/lr_mul', lr_mul, frame)
         self.writer.add_scalar('info/e_clip', self.e_clip * lr_mul, frame)
         self.writer.add_scalar('info/kl', torch_ext.mean_list(kls).item(), frame)
