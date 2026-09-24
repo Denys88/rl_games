@@ -7,5 +7,6 @@
 from rl_games.common.pbt.mutation import mutate
 from rl_games.common.pbt.pbt import MultiObserver, PbtAlgoObserver
 from rl_games.common.pbt.pbt_cfg import PbtCfg
+from rl_games.common.pbt.pbt_utils import restart_info
 
-__all__ = ["MultiObserver", "PbtAlgoObserver", "PbtCfg", "mutate"]
+__all__ = ["MultiObserver", "PbtAlgoObserver", "PbtCfg", "mutate", "restart_info"]
