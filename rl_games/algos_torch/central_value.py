@@ -32,7 +32,7 @@ class CentralValueTrain(nn.Module):
             config['mini_epochs'], horizon_length * num_actors)
 
         self.ppo_device = ppo_device
-        self.mixed_precision = config.get('mixed_precision', torch_ext.default_mixed_precision())
+        self.mixed_precision = config.get('mixed_precision', False)
 
 
         self.num_agents = num_agents

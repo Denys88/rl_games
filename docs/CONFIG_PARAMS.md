@@ -34,6 +34,24 @@ params:
 
 **Ray note:** `torch.set_num_threads()` only affects the trainer process. Ray workers (`RayWorker`) are separate processes that use their own default thread count. This setting does NOT propagate to Ray workers.
 
+## Precision (under `config:`)
+
+### `mixed_precision`
+
+Runs the training forward pass under bf16 autocast. Default: `False`. Applies to: PPO, the central value network, SAC.
+
+With `False`, matmuls run in TF32 on GPUs that support it, because rl_games enables TF32 at startup.
+
+Keep it off for continuous control with `lr_schedule: adaptive`. bf16 rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.05, that rounding alone is a KL of 0.01 to 0.03 per update at any learning rate, and the adaptive schedule lowers the rate to `min_lr`. Rollouts run without autocast, so under bf16 the rollout policy and the updated policy also differ before the first gradient step.
+
+| MicroDuck task, 4096 envs | bf16 | TF32 |
+|---|---|---|
+| Velocity, final return (2 seeds) | 136.1, 138.3 | 149.7, 148.1 |
+| Ball walk, final return (seed 42) | 13.8 | 25.0 |
+| Training throughput, frames/s | 130.1k | 133.4k |
+
+Set it to `True` only when the network update dominates the iteration time, and check that the logged learning rate does not settle at `min_lr`.
+
 ## Adaptive LR (under `config:`)
 
 ### `schedule_type`

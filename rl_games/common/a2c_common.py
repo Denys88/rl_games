@@ -476,10 +476,11 @@ class A2CBase(BaseAlgorithm):
             self.config.get('normalize_input_init_count', None),
             self.mini_epochs_num, self.batch_size)
 
-        # bf16 autocast is enabled by default on capable GPUs; set
-        # mixed_precision: False in the config to opt out. bf16 has fp32's
-        # exponent range, so no GradScaler/loss scaling is involved.
-        self.mixed_precision = self.config.get('mixed_precision', torch_ext.default_mixed_precision())
+        # Off by default: matmuls then run in TF32 (set in torch_runner).
+        # bf16 rounds the policy mean by up to 0.4 %, which at small sigma is a
+        # KL of 0.01-0.03 per update at any learning rate, and the adaptive
+        # schedule reads it as a large step. See docs/CONFIG_PARAMS.md.
+        self.mixed_precision = self.config.get('mixed_precision', False)
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
