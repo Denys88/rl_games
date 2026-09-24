@@ -478,9 +478,14 @@ class A2CBase(BaseAlgorithm):
 
         # Off by default: matmuls then run in TF32 (set in torch_runner).
         # bf16 rounds the policy mean by up to 0.4 %, which at small sigma is a
-        # KL of 0.01-0.03 per update at any learning rate, and the adaptive
-        # schedule reads it as a large step. See docs/CONFIG_PARAMS.md.
-        self.mixed_precision = self.config.get('mixed_precision', False)
+        # KL of 0.01-0.03 per update at any learning rate and noise in the PPO
+        # ratio. fp16 rounds 8x finer. Rollouts use the same autocast as the
+        # update, so both see the same policy. See docs/CONFIG_PARAMS.md.
+        self.amp_dtype = torch_ext.resolve_mixed_precision(
+            self.config.get('mixed_precision', False), self.ppo_device)
+        self.mixed_precision = self.amp_dtype is not None
+        self.scaler = torch_ext.grad_scaler(self.amp_dtype)
+        self.step_skipped = False
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -560,10 +565,18 @@ class A2CBase(BaseAlgorithm):
                     "step's gradients were never synced across ranks: route "
                     "the training forward through self.train_model() (not "
                     "self.model), or set multi_gpu_grad_sync: 'flat_allreduce'")
+        # gradients are synced while still scaled: every rank then sees the
+        # same inf/nan and skips the same steps
         if self.truncate_grads:
+            self.scaler.unscale_(self.optimizer)
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        self.optimizer.step()
+        scale = self.scaler.get_scale() if self.scaler.is_enabled() else None
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        # fp16 skips steps with inf/nan gradients and lowers the scale; a skipped
+        # step leaves the policy unchanged, and its ~0 KL must not raise the rate
+        self.step_skipped = scale is not None and self.scaler.get_scale() < scale
 
         if self._ddp_model is not None:
             self._ddp_model.forward_seen = False
@@ -689,7 +702,7 @@ class A2CBase(BaseAlgorithm):
             'rnn_states': self.rnn_states
         }
 
-        with torch.no_grad():
+        with torch.no_grad(), torch_ext.autocast(self.amp_dtype):
             res_dict = self.inference_model()(input_dict)
             if self.has_central_value:
                 states = obs['states']
@@ -699,10 +712,13 @@ class A2CBase(BaseAlgorithm):
                 }
                 value = self.get_central_value(input_dict)
                 res_dict['values'] = value
+        # the value head may come out of autocast in half precision; GAE and
+        # the fp32 experience buffer expect fp32
+        res_dict['values'] = res_dict['values'].float()
         return res_dict
 
     def get_values(self, obs):
-        with torch.no_grad():
+        with torch.no_grad(), torch_ext.autocast(self.amp_dtype):
             if self.has_central_value:
                 states = obs['states']
                 self.central_value_net.eval()
@@ -724,7 +740,7 @@ class A2CBase(BaseAlgorithm):
                 }
                 result = self.inference_model()(input_dict)
                 value = result['values']
-            return value
+            return value.float()
 
     @property
     def device(self):
@@ -928,10 +944,14 @@ class A2CBase(BaseAlgorithm):
         state['epoch'] = self.epoch_num
         state['frame'] = self.frame
         state['optimizer'] = self.optimizer.state_dict()
+        if self.scaler.is_enabled():
+            state['scaler'] = self.scaler.state_dict()
 
         if self.has_central_value:
             state['assymetric_vf_nets'] = self.central_value_net.state_dict()
             state['assymetric_vf_optimizer'] = self.central_value_net.optimizer.state_dict()
+            if self.central_value_net.scaler.is_enabled():
+                state['assymetric_vf_scaler'] = self.central_value_net.scaler.state_dict()
 
         # last_mean_rewards is the best reward ever achieved (misleading name).
         # Saved so a restart doesn't overwrite the "best ever" checkpoint.
@@ -966,8 +986,12 @@ class A2CBase(BaseAlgorithm):
             self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
             if 'assymetric_vf_optimizer' in weights:
                 self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
+            if 'assymetric_vf_scaler' in weights and self.central_value_net.scaler.is_enabled():
+                self.central_value_net.scaler.load_state_dict(weights['assymetric_vf_scaler'])
 
         self.optimizer.load_state_dict(weights['optimizer'])
+        if 'scaler' in weights and self.scaler.is_enabled():
+            self.scaler.load_state_dict(weights['scaler'])
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
@@ -1688,7 +1712,7 @@ class ContinuousA2CBase(A2CBase):
 
                 if self.kl_reference == 'previous_mini_epoch':
                     self.dataset.update_mu_sigma(cmu, csigma)
-                if self.schedule_type == 'per_minibatch':
+                if self.schedule_type == 'per_minibatch' and not self.step_skipped:
                     av_kls = self._kl_for_lr_schedule(schedule_kl.clone())
                     ep_schedule_kls.append(av_kls)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())

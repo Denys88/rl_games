@@ -55,7 +55,10 @@ class SACAgent(BaseAlgorithm):
         self.replay_buffer_size = config["replay_buffer_size"]
         self.save_replay_buffer = config.get("save_replay_buffer", False)
         self.normalize_input = config.get("normalize_input", False)
-        self.enable_mixed_precision = config.get("mixed_precision", False)
+        self.amp_dtype = torch_ext.resolve_mixed_precision(config.get("mixed_precision", False), self._device)
+        self.enable_mixed_precision = self.amp_dtype is not None
+        self.critic_scaler = torch_ext.grad_scaler(self.amp_dtype)
+        self.actor_scaler = torch_ext.grad_scaler(self.amp_dtype)
 
         # Update the actor once every policy_frequency critic updates
         self.policy_frequency = config.get("policy_frequency", 2)
@@ -137,7 +140,6 @@ class SACAgent(BaseAlgorithm):
 
         self.algo_observer = config['features']['observer']
 
-        self.amp_dtype = torch.bfloat16 if self.enable_mixed_precision else torch.float32
 
         # ────────────────────────────────────
         # Summary writer
@@ -308,6 +310,9 @@ class SACAgent(BaseAlgorithm):
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
+        if self.critic_scaler.is_enabled():
+            state['critic_scaler'] = self.critic_scaler.state_dict()
+            state['actor_scaler'] = self.actor_scaler.state_dict()
 
         # set_full_state_weights restores last_mean_rewards (and frame/epoch above);
         # saving it keeps the best-ever checkpoint watermark across restarts.
@@ -341,6 +346,9 @@ class SACAgent(BaseAlgorithm):
 
         if 'log_alpha' in weights:
             self.log_alpha.data.copy_(weights['log_alpha'].to(self._device))
+        if 'critic_scaler' in weights and self.critic_scaler.is_enabled():
+            self.critic_scaler.load_state_dict(weights['critic_scaler'])
+            self.actor_scaler.load_state_dict(weights['actor_scaler'])
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
@@ -428,7 +436,7 @@ class SACAgent(BaseAlgorithm):
             target_V = target_V.detach()
 
         # get current Q estimates and build target_Q inside autocast
-        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
+        with torch_ext.autocast(self.amp_dtype):
             current_Q1, current_Q2 = self.model.critic(obs, action)
 
             # Build target_Q inside autocast to match dtypes
@@ -439,10 +447,12 @@ class SACAgent(BaseAlgorithm):
             critic_loss = 0.5 * (critic1_loss + critic2_loss)
 
         self.critic_optimizer.zero_grad(set_to_none=True)
-        critic_loss.backward()
+        self.critic_scaler.scale(critic_loss).backward()
         if self.critic_grad_clip > 0:
+            self.critic_scaler.unscale_(self.critic_optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.sac_network.critic.parameters(), self.critic_grad_clip)
-        self.critic_optimizer.step()
+        self.critic_scaler.step(self.critic_optimizer)
+        self.critic_scaler.update()
 
         return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
 
@@ -450,7 +460,7 @@ class SACAgent(BaseAlgorithm):
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = False
 
-        with torch.amp.autocast('cuda', enabled=self.enable_mixed_precision, dtype=self.amp_dtype):
+        with torch_ext.autocast(self.amp_dtype):
             dist = self.model.actor(obs)
             action = dist.rsample()
             # Rescale actions for critic evaluation
@@ -473,11 +483,12 @@ class SACAgent(BaseAlgorithm):
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad(set_to_none=True)
 
-        total_loss.backward()
+        self.actor_scaler.scale(total_loss).backward()
 
-        self.actor_optimizer.step()
+        self.actor_scaler.step(self.actor_optimizer)
         if self.learnable_temperature:
-            self.log_alpha_optimizer.step()
+            self.actor_scaler.step(self.log_alpha_optimizer)
+        self.actor_scaler.update()
 
         for p in self.model.sac_network.critic.parameters():
             p.requires_grad = True

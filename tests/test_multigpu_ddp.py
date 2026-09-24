@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from rl_games.algos_torch.torch_ext import wrap_model_ddp, flat_allreduce_grads
+from rl_games.algos_torch.torch_ext import wrap_model_ddp, flat_allreduce_grads, grad_scaler
 
 
 class _TwoHeadNet(nn.Module):
@@ -143,6 +143,7 @@ class _GuardAgent:
         self.model = model
         self.truncate_grads = False
         self.optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+        self.scaler = grad_scaler(None)
 
 
 def _bypass_guard_worker(rank, world_size, port, results):

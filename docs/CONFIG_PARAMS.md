@@ -38,11 +38,22 @@ params:
 
 ### `mixed_precision`
 
-Runs the training forward pass under bf16 autocast. Default: `False`. Applies to: PPO, the central value network, SAC.
+Selects autocast for the policy and critic forward passes, in rollouts and in updates. Default: `False`. Applies to: PPO, the central value network, SAC.
 
-With `False`, matmuls run in TF32 on GPUs that support it, because rl_games enables TF32 at startup.
+| Value | Matmuls | Loss scaling |
+|---|---|---|
+| `False` | TF32: fp32 weights, 10-bit mantissa inputs | none |
+| `fp16` | float16 autocast | `GradScaler` |
+| `bf16` | bfloat16 autocast | none |
 
-Keep it off for continuous control with `lr_schedule: adaptive`. bf16 rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.05, that rounding alone is a KL of 0.01 to 0.03 per update at any learning rate, and the adaptive schedule lowers the rate to `min_lr`. Rollouts run without autocast, so under bf16 the rollout policy and the updated policy also differ before the first gradient step.
+`True` selects `bf16` and warns. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
+
+Keep the default for continuous control. bf16 keeps 8 significant bits, so it rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.1, that rounding adds noise to the PPO ratio and a KL of 0.01 to 0.03 per update at any learning rate. With `lr_schedule: adaptive`, the rate then falls to `min_lr`. fp16 rounds 8 times finer and does neither.
+
+| Rounding noise before any update | sigma 0.19 | sigma 0.067 | sigma 0.024 |
+|---|---|---|---|
+| Samples outside the PPO clip range, bf16 | 0.1 % | 7.8 % | 57 % |
+| Samples outside the PPO clip range, fp16 | 0.0 % | 0.0 % | 0.0 % |
 
 | MicroDuck task, 4096 envs | bf16 | TF32 |
 |---|---|---|
@@ -50,7 +61,7 @@ Keep it off for continuous control with `lr_schedule: adaptive`. bf16 rounds the
 | Ball walk, final return (seed 42) | 13.8 | 25.0 |
 | Training throughput, frames/s | 130.1k | 133.4k |
 
-Set it to `True` only when the network update dominates the iteration time, and check that the logged learning rate does not settle at `min_lr`.
+Use `fp16` when the network update dominates the iteration time, for example with image encoders. With small MLPs the simulator dominates and TF32 is as fast.
 
 ## Adaptive LR (under `config:`)
 
