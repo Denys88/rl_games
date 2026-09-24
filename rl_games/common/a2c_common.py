@@ -984,9 +984,16 @@ class A2CBase(BaseAlgorithm):
             else:
                 self.config['capability_manifest'] = weights['capability_manifest']
 
-        # old checkpoints lack these keys: keep config-derived values then
-        self.last_lr = weights.get('last_lr', self.last_lr)
-        self.entropy_coef = weights.get('entropy_coef', self.entropy_coef)
+        # old checkpoints lack these keys: keep config-derived values then.
+        # A PBT restart passes mutated values on the command line; those must win.
+        pbt_overrides = set(self.config.get('pbt_restart_overrides', ()))
+        if 'learning_rate' not in pbt_overrides:
+            self.last_lr = weights.get('last_lr', self.last_lr)
+        else:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.last_lr
+        if 'entropy_coef' not in pbt_overrides:
+            self.entropy_coef = weights.get('entropy_coef', self.entropy_coef)
 
         # central-value stats load after set_weights ran; re-seed everything
         self._seed_stats_sync_snapshots()
