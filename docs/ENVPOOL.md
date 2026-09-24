@@ -27,7 +27,7 @@ python runner.py --train --file rl_games/configs/mujoco/walker2d_envpool.yaml
 python runner.py --train --file rl_games/configs/mujoco/humanoid_envpool.yaml
 ```
 
-To target Apple Silicon, add `device: mps` to the YAML's `config` block. If the config sets `mixed_precision: True`, set it to `False`: MPS does not implement the bf16 autocast path.
+To target Apple Silicon, add `device: mps` to the YAML's `config` block.
 
 ## Results — Apple Silicon (M5 Max, MPS)
 
