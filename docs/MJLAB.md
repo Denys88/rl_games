@@ -338,14 +338,21 @@ under this task's penalty ramp), an explicit adaptive-rate band (`max_lr
 actions and the KL the scheduler reads), and `normalize_value: true`, the
 change that lifts the final return from 144.1 to 147.7 (means of three seeds, whose ranges overlap): the task ramps
 its penalty weights with iteration, so the return scale shifts during
-training and an unnormalized value target lags every ramp. Things that did
-not help here: a step-KL scheduler (`kl_schedule_source: optimizer_step`,
-the WujiHand choice) adds nothing over the legacy one once values are
-normalized, because on this task the global std anneals from 0.5 to 0.09 and
-either scheduler lowers the rate exactly as fast as the std shrinks; a bigger
-central-value critic; and a constant rate, which storms once the std is small
-(3e-4 collapses at iteration 1,300, 1.8e-4 at the end of the run).
-A floor on the global std (`min_sigma: 0.1`): final 137.2 vs 136.1 without it on seed 7, peak 141.9 vs 151.4; the rate stays higher (8e-5 late instead of 5e-6) but the return does not follow, so the floor is not shipped.
+training and an unnormalized value target lags every ramp.
+
+Things that did not help, each measured on seed 7 against the same recipe:
+
+| Change | Final return | Without the change |
+|---|---|---|
+| Step-KL scheduler (`kl_schedule_source: optimizer_step`, the WujiHand choice) | 148.9 | 149.7 |
+| Floor on the global std (`min_sigma: 0.1`) | 141.1 | 149.7 |
+| Constant rate 1.8e-4, no value normalization | 128.3 | 144.1 (adaptive) |
+| Constant rate 3e-4, no value normalization | collapses at iteration 1,340 | 144.1 (adaptive) |
+
+Both schedulers settle at a rate near 4e-5. The std floor holds the std at
+0.10 instead of 0.044. With a constant 3e-4 the policy mean grows without
+bound once the std is small; with 1.8e-4 the run survives, but its
+optimizer-step KL ends 8 times higher than with the adaptive rate.
 
 **Speed lane (research preview).** Same robot, same 61-dimensional
 observation contract, trained on a variant of the task kept in our fork of
