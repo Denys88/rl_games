@@ -487,6 +487,9 @@ class A2CBase(BaseAlgorithm):
         self.scaler = torch_ext.grad_scaler(self.amp_dtype)
         self.step_skipped = False
         self.skipped_steps = 0
+        # the scale after the previous step; before the first step get_scale()
+        # returns the initial scale without a device sync
+        self._last_scale = self.scaler.get_scale() if self.scaler.is_enabled() else None
 
         self.last_lr = self.config['learning_rate']
         self.frame = 0
@@ -572,13 +575,16 @@ class A2CBase(BaseAlgorithm):
             self.scaler.unscale_(self.optimizer)
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        scale = self.scaler.get_scale() if self.scaler.is_enabled() else None
         self.scaler.step(self.optimizer)
         self.scaler.update()
         # fp16 skips steps with inf/nan gradients and lowers the scale; a skipped
-        # step leaves the policy unchanged, and its ~0 KL must not raise the rate
-        self.step_skipped = scale is not None and self.scaler.get_scale() < scale
-        self.skipped_steps += self.step_skipped
+        # step leaves the policy unchanged, and its KL must not drive the rate.
+        # One device sync per step: compare with the scale after the last step.
+        if self.scaler.is_enabled():
+            scale = self.scaler.get_scale()
+            self.step_skipped = scale < self._last_scale
+            self._last_scale = scale
+            self.skipped_steps += self.step_skipped
 
         if self._ddp_model is not None:
             self._ddp_model.forward_seen = False
@@ -998,6 +1004,7 @@ class A2CBase(BaseAlgorithm):
         self.optimizer.load_state_dict(weights['optimizer'])
         if 'scaler' in weights and self.scaler.is_enabled():
             self.scaler.load_state_dict(weights['scaler'])
+            self._last_scale = self.scaler.get_scale()
 
         self.last_mean_rewards = weights.get('last_mean_rewards', -float('inf'))
 
@@ -1402,22 +1409,27 @@ class DiscreteA2CBase(A2CBase):
 
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
+            stepped_kls = []  # KLs of the steps the optimizer took (fp16 skips some)
             self.dataset.apply_permutation()
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
+                if not self.step_skipped:
+                    stepped_kls.append(kl)
                 entropies.append(entropy)
 
             # honors multi_gpu_scheduler_kl: 'global' (default) all-reduces the
             # mean KL exactly as before; 'local' steps on rank 0's estimate and
             # skips the collective (lr is broadcast from rank 0 either way, so
             # ranks stay consistent; the logged KL is then rank 0's local mean)
-            av_kls = self._kl_for_lr_schedule(torch_ext.mean_list(ep_kls))
-
-            self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
-            self.update_lr(self.last_lr)
+            # every rank skips the same steps, so the branch and its
+            # collectives stay aligned across ranks
+            av_kls = self._kl_for_lr_schedule(torch_ext.mean_list(stepped_kls or ep_kls))
+            if stepped_kls:
+                self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
+                self.update_lr(self.last_lr)
             kls.append(av_kls)
             self.diagnostics.mini_epoch(self, mini_ep)
             if self.normalize_input:
@@ -1702,6 +1714,7 @@ class ContinuousA2CBase(A2CBase):
         for mini_ep in range(0, self.mini_epochs_num):
             ep_kls = []
             ep_schedule_kls = []
+            stepped_kls = []  # reference KLs of the steps the optimizer took (fp16 skips some)
             for i in range(len(self.dataset)):
                 a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = self.train_actor_critic(self.dataset[i])
                 a_losses.append(a_loss)
@@ -1718,7 +1731,10 @@ class ContinuousA2CBase(A2CBase):
 
                 if self.kl_reference == 'previous_mini_epoch':
                     self.dataset.update_mu_sigma(cmu, csigma)
-                if self.schedule_type == 'per_minibatch' and not self.step_skipped:
+                if self.step_skipped:
+                    continue
+                stepped_kls.append(kl)
+                if self.schedule_type == 'per_minibatch':
                     av_kls = self._kl_for_lr_schedule(schedule_kl.clone())
                     ep_schedule_kls.append(av_kls)
                     self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, av_kls.item())
@@ -1730,13 +1746,22 @@ class ContinuousA2CBase(A2CBase):
             if self.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
-            if self.schedule_type == 'standard':
-                schedule_kl = (av_kls if self.kl_schedule_source == 'reference' else
-                               self._kl_for_lr_schedule(torch_ext.mean_list(ep_schedule_kls)))
+            # every rank skips the same steps, so the branches and their
+            # collectives stay aligned across ranks
+            if self.schedule_type == 'standard' and stepped_kls:
+                if self.kl_schedule_source != 'reference':
+                    schedule_kl = self._kl_for_lr_schedule(torch_ext.mean_list(ep_schedule_kls))
+                elif len(stepped_kls) == len(ep_kls):
+                    schedule_kl = av_kls
+                else:
+                    schedule_kl = torch_ext.mean_list(stepped_kls)
+                    if self.multi_gpu:
+                        dist.all_reduce(schedule_kl, op=dist.ReduceOp.SUM)
+                        schedule_kl /= self.world_size
                 self.last_lr, self.entropy_coef = self.scheduler.update(self.last_lr, self.entropy_coef, self.epoch_num, self.frame, schedule_kl.item())
                 self.update_lr(self.last_lr)
                 schedule_kls.append(schedule_kl)
-            else:
+            elif ep_schedule_kls:
                 schedule_kls.append(torch_ext.mean_list(ep_schedule_kls))
 
             kls.append(av_kls)
@@ -1748,7 +1773,7 @@ class ContinuousA2CBase(A2CBase):
         min_lr = self.config.get('min_lr', 1e-6)
         max_lr = self.config.get('max_lr', 1e-2)
         self.scheduler_stats = {
-            'scheduler_kl': torch_ext.mean_list(schedule_kls).item(),
+            'scheduler_kl': torch_ext.mean_list(schedule_kls).item() if schedule_kls else float('nan'),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),
             'lr_min': min(applied_lrs),
             'lr_max': max(applied_lrs),

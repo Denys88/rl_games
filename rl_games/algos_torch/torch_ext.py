@@ -380,34 +380,41 @@ def get_mean(v):
 
 _HALF_DTYPES = {'fp16': torch.float16, 'float16': torch.float16, 'half': torch.float16,
                 'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16}
-_FULL_NAMES = ('false', 'off', 'none', 'fp32', 'tf32')
+_OFF_NAMES = ('false', '0', 'no', 'off', 'none', 'fp32', 'tf32')
+_ON_NAMES = ('true', '1', 'yes', 'on')
 
 
 def resolve_mixed_precision(value, device='cuda'):
     """Map the `mixed_precision` config value to an autocast dtype, or None.
 
-    False or None: no autocast (fp32 weights, TF32 matmuls). 'fp16': float16
-    autocast with loss scaling. 'bf16', or True for 1.x configs: bfloat16.
-    Half precision needs a CUDA device; elsewhere it resolves to None.
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). 'fp16':
+    float16 autocast with loss scaling. 'bf16', or True / 1 for 1.x configs:
+    bfloat16. Strings from CLI or Hydra overrides ('true', 'False', '0') map
+    the same way. Half precision needs a CUDA device; elsewhere it resolves
+    to None.
     """
-    if value is None or value is False:
+    if isinstance(value, str):
+        name = value.strip().lower()
+        if name in _OFF_NAMES:
+            return None
+        if name in _ON_NAMES:
+            value = True
+        elif name in _HALF_DTYPES:
+            value = _HALF_DTYPES[name]
+    if value is None or value is False or (type(value) is int and value == 0):
         return None
-    if value is True:
+    if value is True or (type(value) is int and value == 1):
         warnings.warn("mixed_precision: True selects bf16. At small sigma bf16 rounding adds "
                       "a KL of 0.01-0.03 per update and noise in the PPO ratio; "
                       "use mixed_precision: fp16 instead.", stacklevel=2)
-        dtype = torch.bfloat16
-    elif isinstance(value, str) and value.lower() in _FULL_NAMES:
-        return None
-    elif isinstance(value, str) and value.lower() in _HALF_DTYPES:
-        dtype = _HALF_DTYPES[value.lower()]
-    else:
+        value = torch.bfloat16
+    if value not in (torch.float16, torch.bfloat16):
         raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
     if not str(device).startswith('cuda'):
-        warnings.warn(f"mixed_precision: {value} needs a CUDA device; running {device} without autocast.",
+        warnings.warn(f"mixed_precision needs a CUDA device; running {device} without autocast.",
                       stacklevel=2)
         return None
-    return dtype
+    return value
 
 
 def autocast(dtype):

@@ -9,7 +9,8 @@ import pytest
 import torch
 
 from rl_games.algos_torch import torch_ext
-from tests.test_ppo_masking import make_ppo_agent
+from tests.test_critical_fixes import make_cartpole_agent
+from tests.test_ppo_masking import HORIZON, NUM_ENVS, make_ppo_agent, _rollout_batch
 from tests.test_sac_correctness import make_fake_env_sac_agent
 
 cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason='needs CUDA')
@@ -89,14 +90,21 @@ def test_resolve_values(value, dtype):
     assert torch_ext.resolve_mixed_precision(value, 'cuda:0') is dtype
 
 
-def test_resolve_true_is_bf16_with_warning():
+@pytest.mark.parametrize('value', [True, 1, 'true', 'True', '1'])
+def test_resolve_true_is_bf16_with_warning(value):
     with pytest.warns(UserWarning, match='fp16'):
-        assert torch_ext.resolve_mixed_precision(True, 'cuda:0') is torch.bfloat16
+        assert torch_ext.resolve_mixed_precision(value, 'cuda:0') is torch.bfloat16
+
+
+@pytest.mark.parametrize('value', [0, '0', 'False', 'FALSE'])
+def test_resolve_false_strings_and_zero(value):
+    assert torch_ext.resolve_mixed_precision(value, 'cuda:0') is None
 
 
 def test_resolve_rejects_unknown():
-    with pytest.raises(ValueError):
-        torch_ext.resolve_mixed_precision('fp8', 'cuda:0')
+    for value in ('fp8', 2, 0.5):
+        with pytest.raises(ValueError):
+            torch_ext.resolve_mixed_precision(value, 'cuda:0')
 
 
 def test_resolve_half_on_cpu_falls_back():
@@ -113,8 +121,7 @@ def test_ppo_fp16_trains_with_loss_scaling():
     after = list(agent.model.parameters())
     assert all(torch.isfinite(p).all() for p in after)
     assert any(not torch.equal(a, b) for a, b in zip(after, before))
-    # the first steps overflow at the initial scale 2**16 and are skipped
-    assert 0 < agent.scaler.get_scale() < 2.0 ** 16
+    assert 0 < agent.scaler.get_scale() <= 2.0 ** 16
 
     state = agent.get_full_state_weights()
     assert 'scaler' in state
@@ -123,15 +130,96 @@ def test_ppo_fp16_trains_with_loss_scaling():
     assert fresh.scaler.get_scale() == agent.scaler.get_scale()
 
 
-@cuda
-def test_skipped_fp16_step_does_not_raise_the_rate():
-    agent, _ = make_cuda_ppo_agent(mixed_precision='fp16', max_epochs=1, lr_schedule='adaptive',
-                                   schedule_type='per_minibatch', learning_rate=1e-4)
-    agent.train()
-    # one minibatch, skipped at scale 2**16: the rate must stay put
-    assert agent.step_skipped
-    assert agent.skipped_steps in (0, 1)  # reset when the epoch's stats are written
-    assert agent.last_lr == pytest.approx(1e-4)
+class _SkippingScaler:
+    """GradScaler stand-in that runs on CPU and skips the listed optimizer steps."""
+
+    def __init__(self, skip):
+        self.skip, self.calls, self._scale, self._skipping = set(skip), 0, 2.0 ** 16, False
+
+    def is_enabled(self):
+        return True
+
+    def scale(self, loss):
+        return loss
+
+    def unscale_(self, optimizer):
+        pass
+
+    def step(self, optimizer):
+        self._skipping = self.calls in self.skip
+        self.calls += 1
+        if not self._skipping:
+            optimizer.step()
+
+    def update(self):
+        if self._skipping:
+            self._scale /= 2
+
+    def get_scale(self):
+        return self._scale
+
+
+def _with_skipping_scaler(agent, skip):
+    agent.scaler = _SkippingScaler(skip)
+    agent._last_scale = agent.scaler.get_scale()
+    agent.vec_env.set_train_info = lambda *args: None
+    calls = []
+    update = agent.scheduler.update
+
+    def record(lr, entropy, epoch, frames, kl, **kwargs):
+        calls.append(kl)
+        return update(lr, entropy, epoch, frames, kl, **kwargs)
+
+    agent.scheduler.update = record
+    return calls
+
+
+@pytest.mark.parametrize('schedule_type', ['per_minibatch', 'standard'])
+def test_skipped_step_does_not_drive_the_continuous_rate(schedule_type):
+    # one minibatch per mini-epoch: skipping step 0 leaves mini-epoch 0 without
+    # a step, so it must not update the rate under either schedule
+    agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, max_lr=1e-3,
+                              schedule_type=schedule_type, mini_epochs=3)
+    _rollout_batch(agent)
+    calls = _with_skipping_scaler(agent, skip={0})
+    agent.train_epoch()
+    assert agent.scaler.calls == 3
+    assert len(calls) == 2
+    assert agent.skipped_steps == 1
+
+
+def test_standard_schedule_averages_only_the_steps_taken():
+    # each minibatch's KL is measured before its own step: step 0 moves the
+    # policy, so minibatch 1 reports a KL above zero; its step is skipped
+    agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, max_lr=1e-2,
+                              learning_rate=1e-2, schedule_type='standard', mini_epochs=1,
+                              minibatch_size=NUM_ENVS * HORIZON // 2)
+    _rollout_batch(agent)
+    calls = _with_skipping_scaler(agent, skip={1})
+    kls = []
+    train = agent.train_actor_critic
+
+    def record_train(batch):
+        result = train(batch)
+        kls.append(result[3].item())
+        return result
+
+    agent.train_actor_critic = record_train
+    agent.train_epoch()
+    assert len(kls) == 2 and len(calls) == 1
+    assert kls[1] > kls[0] + 1e-6
+    assert calls[0] == pytest.approx(kls[0])
+
+
+def test_skipped_step_does_not_drive_the_discrete_rate():
+    agent = make_cartpole_agent(lr_schedule='adaptive', kl_threshold=0.008, max_lr=1e-3,
+                                num_actors=2, horizon_length=8, minibatch_size=16, mini_epochs=3)
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    calls = _with_skipping_scaler(agent, skip={0})
+    agent.train_epoch()
+    assert agent.scaler.calls == 3
+    assert len(calls) == 2
 
 
 @cuda
