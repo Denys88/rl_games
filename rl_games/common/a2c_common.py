@@ -1,5 +1,6 @@
 import copy
 import os
+import warnings
 
 from rl_games.common import vecenv
 
@@ -348,15 +349,20 @@ class A2CBase(BaseAlgorithm):
             raise ValueError(
                 f"schedule_type must be 'per_minibatch' (alias 'legacy') or 'standard', got '{self.schedule_type}'")
 
-        # scheduler bounds are cast: YAML 1.1 reads a bare exponent without a
-        # dot ('1e-5') as a string, and the first out-of-band KL would raise
-        # TypeError in the scheduler's max()/min() (in-band KL passes through)
+        # scheduler bounds are cast once: YAML 1.1 reads a bare exponent
+        # without a dot ('1e-5') as a string. The scheduler and the per-epoch
+        # rate stats both use these values.
+        self.min_lr = float(config.get('min_lr', 1e-6))
+        self.max_lr = float(config.get('max_lr', 1e-3))
+        if self.is_adaptive_lr and 'max_lr' not in config and self.global_rank == 0:
+            warnings.warn("lr_schedule: adaptive without max_lr: the default ceiling changed from 1e-2 "
+                          "to 1e-3 in rl_games 2.0. Set max_lr: 1.0e-2 for the old ceiling.", stacklevel=2)
         if self.is_adaptive_lr:
             self.kl_threshold = float(config['kl_threshold'])
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
-                min_lr=float(config.get('min_lr', 1e-6)),
-                max_lr=float(config.get('max_lr', 1e-3)),
+                min_lr=self.min_lr,
+                max_lr=self.max_lr,
                 lr_multiplier=float(config.get('lr_multiplier', 1.5)))
 
         elif self.linear_lr:
@@ -373,7 +379,7 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
-                    min_lr=float(config.get('min_lr', 1e-6)),
+                    min_lr=self.min_lr,
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),
@@ -1716,8 +1722,7 @@ class ContinuousA2CBase(A2CBase):
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         self.sync_running_stats()
-        min_lr = self.config.get('min_lr', 1e-6)
-        max_lr = self.config.get('max_lr', 1e-3)
+        min_lr, max_lr = self.min_lr, self.max_lr
         self.scheduler_stats = {
             'scheduler_kl': torch_ext.mean_list(schedule_kls).item(),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),

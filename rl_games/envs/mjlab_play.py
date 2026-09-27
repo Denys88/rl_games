@@ -385,9 +385,11 @@ def run_play(yaml_config_path, checkpoint, task_id_override=None, num_envs=4,
     try:
         ui.run()  # blocks; ENTER = reset, SPACE = pause (viewer built-ins)
     finally:
-        if controller is not None:
-            controller.restore_distribution()  # un-pin the term cfg before teardown
-        env.close()
+        try:
+            if controller is not None:
+                controller.restore_distribution()  # un-pin the term cfg before teardown
+        finally:
+            env.close()
 
 
 def main():

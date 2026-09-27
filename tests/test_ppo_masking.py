@@ -299,6 +299,28 @@ class TestYamlSchedulerBounds:
         lr, _ = agent.scheduler.update(1.2e-5, 0.0, 0, 0, kl_dist=0.05)
         assert lr == pytest.approx(1e-5)
 
+    def test_train_epoch_with_yaml_exponent_bounds(self):
+        # the per-epoch rate stats compare the applied rates with the bounds too
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5\nmax_lr: 1e-3')
+        agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, **raw)
+        assert (agent.min_lr, agent.max_lr) == (1e-5, 1e-3)
+        _rollout_batch(agent)
+        agent.vec_env.set_train_info = lambda *args: None
+        agent.train_epoch()
+        assert 0.0 <= agent.scheduler_stats['lr_at_min_fraction'] <= 1.0
+        assert 0.0 <= agent.scheduler_stats['lr_at_max_fraction'] <= 1.0
+
+    def test_adaptive_without_max_lr_warns_about_the_new_default(self):
+        with pytest.warns(UserWarning, match='max_lr: 1.0e-2'):
+            agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008)
+        assert agent.max_lr == 1e-3
+
+    def test_explicit_max_lr_or_other_schedule_does_not_warn(self, recwarn):
+        make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, max_lr=1e-3)
+        make_ppo_agent(lr_schedule='linear', max_epochs=10)
+        assert not [w for w in recwarn if 'max_lr' in str(w.message)]
+
     def test_linear_min_lr_from_yaml_exponent_string(self):
         import yaml
         raw = yaml.safe_load('min_lr: 1e-5')
