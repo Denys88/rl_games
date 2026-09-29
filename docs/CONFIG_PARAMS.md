@@ -46,7 +46,7 @@ Selects autocast for the policy and critic forward passes, in rollouts and in up
 | `fp16` | float16 autocast | `GradScaler` |
 | `bf16` | bfloat16 autocast | none |
 
-`True` selects `bf16` and warns. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
+`True` selects `fp16`. fp16 overflows above 65,504: with large returns, keep `normalize_value: true`. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
 
 Keep the default for continuous control. bf16 keeps 8 significant bits, so it rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.1, that rounding adds noise to the PPO ratio and a KL of 0.01 to 0.03 per update at any learning rate. With `lr_schedule: adaptive`, the rate then falls to `min_lr`. fp16 rounds 8 times finer and does neither.
 

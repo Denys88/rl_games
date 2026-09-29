@@ -387,11 +387,13 @@ _ON_NAMES = ('true', '1', 'yes', 'on')
 def resolve_mixed_precision(value, device='cuda'):
     """Map the `mixed_precision` config value to an autocast dtype, or None.
 
-    False, None or 0: no autocast (fp32 weights, TF32 matmuls). 'fp16':
-    float16 autocast with loss scaling. 'bf16', or True / 1 for 1.x configs:
-    bfloat16. Strings from CLI or Hydra overrides ('true', 'False', '0') map
-    the same way. Half precision needs a CUDA device; elsewhere it resolves
-    to None.
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). True, 1 or
+    'fp16': float16 autocast with loss scaling, the meaning True had through
+    rl_games 1.6.1. 'bf16': bfloat16, only on request, because at small sigma
+    its rounding adds a KL of 0.01-0.03 per update and noise in the PPO
+    ratio. Strings from CLI or Hydra overrides ('true', 'False', '0') map the
+    same way. Half precision needs a CUDA device; elsewhere it resolves to
+    None.
     """
     if isinstance(value, str):
         name = value.strip().lower()
@@ -404,10 +406,7 @@ def resolve_mixed_precision(value, device='cuda'):
     if value is None or value is False or (type(value) is int and value == 0):
         return None
     if value is True or (type(value) is int and value == 1):
-        warnings.warn("mixed_precision: True selects bf16. At small sigma bf16 rounding adds "
-                      "a KL of 0.01-0.03 per update and noise in the PPO ratio; "
-                      "use mixed_precision: fp16 instead.", stacklevel=2)
-        value = torch.bfloat16
+        value = torch.float16
     if value not in (torch.float16, torch.bfloat16):
         raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
     if not str(device).startswith('cuda'):
