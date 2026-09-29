@@ -142,7 +142,7 @@ velocity config: asymmetric actor-critic (actor obs 61, privileged critic
 obs 76 on the `critic` obs group), 4096 envs, 50 Hz control. Episodes are
 20 s and end in truncation, so `value_bootstrap: true` is essential.
 
-**Port (published 2026-09-22):** upstream `microduck_rl` pins mjlab 1.3; the mjlab-1.6 port lives in
+**Port:** upstream `microduck_rl` pins mjlab 1.3; the mjlab-1.6 port lives in
 [ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl), branch `rl-games` (the default),
 with upstream's `develop` merged, the ball-walk task, an rl_games ONNX exporter in the robot
 runtime's contract and a training / play / export / deploy guide in its README. Install, in a
@@ -305,54 +305,24 @@ Global std and entropy zero changed together, so their individual effects are no
 
 ### MicroDuck Flat Velocity
 
-Same-machine comparison against Pollen's rsl-rl reference recipe at its own
-geometry (4096 envs × 24 steps), identical env and reward terms, raw
-100-episode mean return on both sides: `ppo_microduck_velocity.yaml` on three
-seeds (7, 17, 27; 4000 epochs) vs the reference run (5000 iterations, one
-seed). All rl_games rows are on the current code (exact KL, #381) with the TF32 default (#383).
+`ppo_microduck_velocity.yaml` against Pollen's rsl-rl recipe on the same machine, with the same
+env, reward terms and 4096 × 24 geometry:
 
-| | rl_games, shipped recipe (3 seeds) | rl_games, same recipe without value normalization (3 seeds) | rsl-rl reference |
-|---|---|---|---|
-| final return (last 200 / 500 iterations) | **149.7 / 148.1 / 145.4** (mean 147.7) | 144.1 / 140.6 / 147.5 (mean 144.1) | 120.3 |
-| peak return (EMA 50) | **155.1 / 153.4 / 151.1** | 146.6 / 144.7 / 150.3 | 127.8 |
-| reaches the rsl-rl final level (120.3) | **iterations 221 to 244, 2.8 to 3.1 min** | iterations 258 to 283 | iteration 1,332, 16.3 min |
-| wall-clock for the run | 45 to 49 min for 4,000 iterations (two runs sharing the box) | same | 59.5 min for 5,000 |
+| | rl_games (3 seeds) | rsl-rl reference |
+|---|---|---|
+| final return | **147.7** (149.7 / 148.1 / 145.4) | 120.3 |
+| time to reach 120.3 | **3 min** | 16.3 min |
 
 ![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
 
 ![MicroDuck, forward 0.4 m/s](pictures/mjlab/microduck_forward.gif)
 
-The clips (here and in the README) are a seed-17 checkpoint of the
-shipped recipe under one pinned command each, rendered from a camera that
-follows the robot, with the commanded and the measured body-frame velocity
-(0.5 s average) drawn on the frame. Yaw tracks the command; forward and
-backward track at about half of it, as does Pollen's reference policy in the
-same simulator; lateral is the weak axis.
+The clip plays a seed-17 policy under a pinned 0.4 m/s forward command, with the commanded and the
+measured body-frame velocity on the frame. Forward and backward speed reach about half of the
+command, as with Pollen's reference policy in the same simulator.
 
-**Recipe notes.** The config is Pollen's geometry and reward terms with four
-rl_games-side choices, each measured on paired seeds on this task:
-`entropy_coef: 0` (a positive bonus on the global log-std runs the std away
-under this task's penalty ramp), an explicit adaptive-rate band (`max_lr
-1e-3`; the legacy 1e-2 ceiling let the KL-driven raise run away),
-`clip_actions: false` (mjlab clamps in the env; pre-clamping distorts both the
-actions and the KL the scheduler reads), and `normalize_value: true`, the
-change that lifts the final return from 144.1 to 147.7 (means of three seeds, whose ranges overlap): the task ramps
-its penalty weights with iteration, so the return scale shifts during
-training and an unnormalized value target lags every ramp.
-
-Things that did not help, each measured on seed 7 against the same recipe:
-
-| Change | Final return | Without the change |
-|---|---|---|
-| Step-KL scheduler (`kl_schedule_source: optimizer_step`, the WujiHand choice) | 148.9 | 149.7 |
-| Floor on the global std (`min_sigma: 0.1`) | 141.1 | 149.7 |
-| Constant rate 1.8e-4, no value normalization | 128.3 | 144.1 (adaptive) |
-| Constant rate 3e-4, no value normalization | collapses at iteration 1,340 | 144.1 (adaptive) |
-
-Both schedulers settle at a rate near 4e-5. The std floor holds the std at
-0.10 instead of 0.044. With a constant 3e-4 the policy mean grows without
-bound once the std is small; with 1.8e-4 the run survives, but its
-optimizer-step KL ends 8 times higher than with the adaptive rate.
+**Recipe.** Pollen's geometry and reward terms, plus `entropy_coef: 0`, `max_lr: 1e-3`,
+`clip_actions: false` (mjlab clamps actions in the env) and `normalize_value: true`.
 
 **Speed lane (research preview).** Same robot, same 61-dimensional
 observation contract, trained on a variant of the task kept in our fork of
