@@ -32,7 +32,6 @@ params:
     normalize_value: True
     value_bootstrap: True
     normalize_advantage: True
-    mixed_precision: True
     reward_shaper:
       scale_value: 1
     gamma: 0.99

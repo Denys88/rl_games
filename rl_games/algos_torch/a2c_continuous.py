@@ -62,7 +62,9 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
+                # the critic follows the policy's precision unless its own config sets one
+                'config': {'mixed_precision': self.config.get('mixed_precision', False),
+                           **self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
@@ -182,7 +184,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 batch_dict['dones'] = input_dict['dones']
 
         train_model = self.train_model()
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+        with torch_ext.autocast(self.amp_dtype):
             res_dict = train_model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -220,7 +222,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        loss.backward()
+        self.scaler.scale(loss).backward()
         #TODO: Refactor this ugliest code of they year
         self.trancate_gradients_and_step()
 
@@ -267,7 +269,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             # the model normalises obs in place in its input dict: rebuild it
             post_dict = {'is_train': True, 'prev_actions': actions_batch, 'obs': obs_batch}
             try:
-                with torch.no_grad(), torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+                with torch.no_grad(), torch_ext.autocast(self.amp_dtype):
                     post = self.model(post_dict)
             finally:
                 with torch.no_grad():

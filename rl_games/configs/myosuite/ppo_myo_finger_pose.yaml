@@ -28,7 +28,6 @@ params:
   config:
     name: MyoFingerPoseRandom
     env_name: envpool
-    mixed_precision: true
     normalize_input: true
     normalize_value: true
     value_bootstrap: true
