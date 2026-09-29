@@ -68,8 +68,8 @@ Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/),
 <td><b>Turn in place at 1.0 rad/s</b>: measured 1.0 rad/s.</td>
 </tr>
 <tr>
-<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_speed.gif" width="100%" alt="MicroDuck speed-lane policy running at 0.4 m/s under a 0.8 m/s command"></td>
-<td><b>Speed lane.</b> A tracking-gated curriculum on the forward command plus a gait term takes the same robot to <b>0.40 m/s body-frame speed</b> with no falls, against 0.23 m/s for the shipped recipe and Pollen's reference policy at their 0.4 m/s command. Recipe and provenance in <a href="docs/MJLAB.md#microduck-flat-velocity">docs/MJLAB.md</a>.</td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_speed.gif" width="100%" alt="MicroDuck speed-lane policy walking at about 0.4 m/s under a 0.8 m/s command"></td>
+<td><b>Speed lane.</b> A tracking-gated curriculum on the forward command, a gait term and a mirror-symmetry loss take the same robot to <b>0.39 m/s</b> with no falls, against 0.33 m/s for Pollen's released policy under the same 0.8 m/s command. Recipe in <a href="docs/MJLAB.md#microduck-flat-velocity">docs/MJLAB.md</a>.</td>
 </tr>
 </table>
 

@@ -318,24 +318,21 @@ env, reward terms and 4096 × 24 geometry:
 ![MicroDuck, forward 0.4 m/s](pictures/mjlab/microduck_forward.gif)
 
 The clip plays a seed-17 policy under a pinned 0.4 m/s forward command, with the commanded and the
-measured body-frame velocity on the frame. Forward and backward speed reach about half of the
-command, as with Pollen's reference policy in the same simulator.
+measured body-frame velocity on the frame. Under a 0.4 m/s command the policy walks at 0.26 m/s, and
+Pollen's released policy at 0.19 m/s in the same simulator.
 
 **Recipe.** Pollen's geometry and reward terms, plus `entropy_coef: 0`, `max_lr: 1e-3`,
 `clip_actions: false` (mjlab clamps actions in the env) and `normalize_value: true`.
 
-**Speed lane (research preview).** Same robot, same 61-dimensional
-observation contract, trained on a variant of the task kept in our fork of
-`microduck_rl` ([ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl), branch `speed-lane`): an ADR-style curriculum that raises
-the forward-command cap by 0.1 m/s whenever the rolling median tracking
-error at the current cap drops below 0.15 m/s (coupled with the action-rate
-penalty ramp), a touchdown-stride gait term, and a bilateral
-mirror-consistency loss on the policy, at 16,384 environments for 2,000
-iterations (about 45 minutes). The policy reaches **0.40 m/s body-frame
-speed** at a 0.8 m/s command with no falls (0.39 m/s at 1.0 m/s, where an
-occasional fall appears), against 0.23 m/s for the shipped recipe at its
-0.4 m/s command and 0.23 m/s measured for Pollen's reference rsl-rl policy
-at the same 0.4 m/s command in the ported simulator.
+**Speed lane.** `configs/mjlab/ppo_microduck_speed_lane.yaml` trains the same robot on a variant of
+the task in our fork of `microduck_rl` ([ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl),
+branch `speed-lane`): a forward-command curriculum that raises the cap by 0.1 m/s whenever the tracking
+error at the current cap drops below 0.15 m/s, a touchdown-stride gait term, and a mirror-consistency
+loss on the policy (`symmetry_loss`), with 16,384 environments for 2,000 epochs (about 45 minutes). It
+walks at **0.39 m/s** under a 0.8 to 1.0 m/s command with no falls, against 0.33 m/s for Pollen's
+released policy under the same 0.8 m/s command (64 robots for 10 s each, no pushes). The task's tracking
+reward is lenient, since a 0.13 m/s shortfall still earns 85 % of it, so both policies walk slower than
+commanded.
 
 ![MicroDuck, speed lane](pictures/mjlab/microduck_speed.gif)
 
