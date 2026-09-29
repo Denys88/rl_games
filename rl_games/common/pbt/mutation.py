@@ -14,6 +14,22 @@ def mutate_float(x: float, change_min: float = 1.1, change_max: float = 1.5) -> 
     return x / k if random.random() < 0.5 else x * k
 
 
+def mutate_float_min_1(x: float, **kwargs) -> float:
+    """mutate_float, floored at 1.0."""
+    return max(1.0, mutate_float(x, **kwargs))
+
+
+def mutate_eps_clip(x: float, **kwargs) -> float:
+    """mutate_float, clamped to the PPO clip range [0.01, 0.3]."""
+    return min(0.3, max(0.01, mutate_float(x, **kwargs)))
+
+
+def mutate_mini_epochs(x: int, **kwargs) -> int:
+    """Step the number of PPO passes by ±1, clamped to [1, 8]."""
+    new_value = x + 1 if random.random() < 0.5 else x - 1
+    return int(min(8, max(1, new_value)))
+
+
 def mutate_discount(x: float, **kwargs) -> float:
     """Conservative change near 1.0 by mutating (1 - x) in [1.1, 1.2].
 
@@ -27,6 +43,9 @@ def mutate_discount(x: float, **kwargs) -> float:
 
 MUTATION_FUNCS: dict[str, Callable[..., Any]] = {
     "mutate_float": mutate_float,
+    "mutate_float_min_1": mutate_float_min_1,
+    "mutate_eps_clip": mutate_eps_clip,
+    "mutate_mini_epochs": mutate_mini_epochs,
     "mutate_discount": mutate_discount,
 }
 
@@ -37,6 +56,7 @@ def mutate(
     mutation_rate: float,
     change_range: tuple[float, float],
 ) -> dict[str, Any]:
+    """Mutate whitelisted params. Integer params need an integer rule (mutate_mini_epochs)."""
     cmin, cmax = change_range
     out: dict[str, Any] = {}
     for name, val in params.items():
