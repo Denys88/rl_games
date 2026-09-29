@@ -76,6 +76,7 @@ class TestUtils:
 class FakeAlgo:
     def __init__(self, frame=0):
         self.frame = frame
+        self.epoch_num = 0
         self.experiment_name = "fake_exp"
         self.train_dir = "runs"
 
@@ -706,3 +707,118 @@ def test_two_process_gloo_objective_pooling_and_restart_broadcast(tmp_path):
     assert pbt_it0 == pbt_it1 and len(iterations0) == pbt_it0 and iterations1 == []
     assert all(score == pytest.approx(0.2) and best == pytest.approx(0.2) for score, best, _ in iterations0)
     assert restarts0 == [720]
+
+
+# ---------------------------------------------------------------------------------------------
+# Review round 2 (#382): multi-agent indices, silent objective failures, shared-filesystem
+# temp names, per-rank window gate, mutation function names, restart counters.
+
+class TestMultiAgentObjective:
+
+    def test_per_env_values_are_read_at_the_env_of_each_agent_index(self):
+        values = torch.tensor([10., 20., 30., 40.])
+        done = torch.tensor([[2], [6]])                       # agents 2 and 6 = envs 1 and 3 (2 agents per env)
+        assert pbt_utils.episode_sum_count(values, done, num_agents=2) == (60.0, 2)
+        assert pbt_utils.episode_sum_count(values.numpy(), done, num_agents=2) == (60.0, 2)
+        with pytest.raises(IndexError, match="out of range"):
+            pbt_utils.episode_sum_count(torch.tensor([1., 2.]), torch.tensor([[6]]), num_agents=2)
+
+    def test_observer_uses_the_algo_agent_count(self, tmp_path):
+        obs = make_observer(tmp_path)
+        algo = FakeAlgo()
+        algo.num_agents, algo.num_actors, algo.train_dir = 2, 4, str(tmp_path)
+        obs.after_init(algo)
+        obs.process_infos({"episode": {"success": torch.tensor([0., 1., 0., 1.])}}, torch.tensor([[2], [6]]))
+        assert obs.score == pytest.approx(1.0)
+
+
+class TestReviewRound2:
+
+    def test_unresolved_objective_warns_once_per_iteration(self, tmp_path, capsys):
+        obs = make_observer(tmp_path)
+        algo = FakeAlgo(frame=0)
+        algo.train_dir = str(tmp_path)
+        obs.after_init(algo)
+        obs.after_steps()                                     # cadence init
+        obs.process_infos({"episode": {"sucess": 1.0}}, None)  # misspelled key in the infos
+        algo.frame = 1500
+        obs.after_steps()
+        obs.after_steps()
+        out = capsys.readouterr().out
+        assert out.count("WARNING PBT iteration 1 waits for objective 'episode.success'") == 1
+        assert "KeyError('success')" in out and obs.pbt_it == 0
+
+    def test_unknown_mutation_function_rejected_at_init(self, tmp_path):
+        with pytest.raises(ValueError, match="mutate_flaot"):
+            make_observer(tmp_path, extra_pbt={"mutation": {"agent.params.config.learning_rate": "mutate_flaot"}})
+
+    def test_small_dexpbt_population_and_undistributed_torchrun_warn(self, tmp_path, capsys, monkeypatch):
+        make_observer(tmp_path, extra_pbt={"num_policies": 2})
+        monkeypatch.setenv("WORLD_SIZE", "2")
+        make_observer(tmp_path, extra_pbt={"num_policies": 4})
+        out = capsys.readouterr().out
+        assert "never replaces with num_policies <= 2" in out and "restart flag is not broadcast" in out
+
+    def test_temp_names_are_unique_per_host_and_member(self, tmp_path):
+        import socket
+        name = pbt_utils._tmp_path(str(tmp_path / "best.yaml"), "p003")
+        assert ".tmp.p003." in name and socket.gethostname() in name and name.endswith(str(os.getpid()))
+
+    def test_non_dict_best_yaml_and_stale_temp_files(self, tmp_path):
+        import time
+        ckpt = tmp_path / "c.pth"
+        torch.save({"frame": 1}, ckpt)
+        best = tmp_path / "best"
+        best.mkdir()
+        (best / "best.yaml").write_text("- not\n- a dict\n")
+        stale = best / "best.yaml.tmp.p001.otherhost.123"
+        stale.write_text("partial")
+        os.utime(stale, (time.time() - 7200, time.time() - 7200))
+        assert pbt_utils.maybe_save_best(str(tmp_path), 0, 1.0, 1, 100, str(ckpt), {})
+        assert yaml.safe_load((best / "best.yaml").read_text())["policy_idx"] == 0
+        assert not stale.exists()
+
+    def test_restart_checkpoint_keeps_member_counters(self, tmp_path):
+        src = tmp_path / "src.pth"
+        torch.save({"frame": 5000, "epoch": 40}, src)
+        state = torch.load(pbt_utils.prepare_restart_checkpoint(str(src), str(tmp_path), 7000, {}, epoch=55),
+                           weights_only=False)
+        assert (state["frame"], state["epoch"]) == (7000, 55)
+
+
+def _pbt_gloo_uneven_worker(rank, world_size, port, workdir, results):
+    import datetime
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ.update(RANK=str(rank), WORLD_SIZE=str(world_size), LOCAL_RANK=str(rank))
+    import torch.distributed as dist
+    dist.init_process_group('gloo', rank=rank, world_size=world_size, init_method=f'tcp://127.0.0.1:{port}',
+                            timeout=datetime.timedelta(seconds=60))
+    params = {"pbt": {"enabled": True, "policy_idx": 0, "num_policies": 3, "directory": workdir,
+                      "interval_steps": 100, "objective": "obj",
+                      "mutation": {"agent.params.config.learning_rate": "mutate_float"}},
+              "params": {"config": {"device": "cpu", "learning_rate": 3e-4}}}
+    obs = PbtAlgoObserver(params, args_cli=types.SimpleNamespace(distributed=True))
+    algo = FakeAlgo(frame=0)
+    algo.num_actors = 4
+    algo.train_dir = workdir
+    algo.writer = BandWriter() if rank == 0 else None
+    obs.after_init(algo)
+    iterations = []
+    obs._pbt_iteration = lambda score, best, frame: iterations.append(frame)
+    for step in range(8):
+        if rank == 0:                                          # rank 0 alone holds twice its window
+            obs.process_infos({"obj": torch.ones(8)}, torch.arange(8).reshape(-1, 1))
+        obs.after_steps()
+        algo.frame += 60
+    results[rank] = (iterations, obs.pbt_it)
+    dist.destroy_process_group()
+
+
+def test_two_process_gloo_window_gate_requires_every_rank(tmp_path):
+    import torch.multiprocessing as mp
+    port = 29717 + os.getpid() % 1000
+    with mp.Manager() as mgr:
+        results = mgr.dict()
+        mp.spawn(_pbt_gloo_uneven_worker, args=(2, port, str(tmp_path), results), nprocs=2, join=True)
+        (iterations0, it0), (iterations1, it1) = results[0], results[1]
+    assert iterations0 == [] and iterations1 == [] and it0 == it1 == 0

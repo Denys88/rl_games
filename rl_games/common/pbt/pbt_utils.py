@@ -10,6 +10,7 @@ import os
 import random
 import shutil
 import socket
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -182,31 +183,34 @@ def to_float(value) -> float:
     return float(value)
 
 
-def episode_sum_count(value, done_indices) -> tuple[float, int]:
+def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, int]:
     """Objective contribution of one step: (sum over finished episodes, number of episodes).
 
-    A per-env tensor/array is read at `done_indices`. A scalar is taken as the mean over the
-    envs that finished on this step (Isaac Lab episode logs), so it is weighted by their count;
-    without `done_indices` it counts as one sample.
+    `done_indices` are agent indices (env * num_agents), one per finished env, as rl_games
+    passes them to observers. A per-env tensor/array is read at those envs. A scalar is taken
+    as the mean over the envs that finished on this step (Isaac Lab episode logs), so it is
+    weighted by their count; without `done_indices` it counts as one sample.
     """
     n_done = None
     if done_indices is not None:
         idx = done_indices.reshape(-1) if torch.is_tensor(done_indices) else np.asarray(done_indices).reshape(-1)
         n_done = int(idx.shape[0])
-    if torch.is_tensor(value) and value.numel() > 1:
+    per_env = (torch.is_tensor(value) and value.numel() > 1) or (isinstance(value, np.ndarray) and value.size > 1)
+    if per_env:
+        size = int(value.numel()) if torch.is_tensor(value) else int(value.size)
         if n_done is None:
-            return float(value.detach().float().sum().item()), int(value.numel())
+            total = value.detach().float().sum().item() if torch.is_tensor(value) else value.sum()
+            return float(total), size
         if n_done == 0:
             return 0.0, 0
-        picked = value.reshape(-1)[torch.as_tensor(idx, device=value.device)]
-        return float(picked.detach().float().sum().item()), n_done
-    if isinstance(value, np.ndarray) and value.size > 1:
-        if n_done is None:
-            return float(value.sum()), int(value.size)
-        if n_done == 0:
-            return 0.0, 0
-        idx_np = idx.cpu().numpy() if torch.is_tensor(idx) else idx
-        return float(value.reshape(-1)[idx_np].sum()), n_done
+        env_idx = torch.as_tensor(idx).cpu().long() // max(1, int(num_agents))
+        if int(env_idx.min()) < 0 or int(env_idx.max()) >= size:
+            # checked on the host: an out-of-range CUDA index is a device-side assert
+            raise IndexError(f"done env index {int(env_idx.max())} out of range for a per-env objective of size {size}")
+        if torch.is_tensor(value):
+            picked = value.reshape(-1)[env_idx.to(value.device)]
+            return float(picked.detach().float().sum().item()), n_done
+        return float(value.reshape(-1)[env_idx.numpy()].sum()), n_done
     scalar = to_float(value)
     if n_done is None:
         return scalar, 1
@@ -218,15 +222,46 @@ def _read_text(path) -> str:
         return fobj.read()
 
 
-def _atomic_write_yaml(path, data) -> None:
-    tmp = f"{path}.tmp{os.getpid()}"
+_TMP_MARK = ".tmp."
+_STALE_TMP_SECONDS = 3600
+
+
+def _tmp_path(path, tag="") -> str:
+    """Temp name unique per writer: members may run in containers sharing a filesystem."""
+    return f"{path}{_TMP_MARK}{tag}{'.' if tag else ''}{socket.gethostname()}.{os.getpid()}"
+
+
+def _remove_stale_tmp(directory, max_age=_STALE_TMP_SECONDS) -> None:
+    """Drop temp files left by writers that died between write and rename."""
+    now = time.time()
+    for name in os.listdir(directory):
+        if _TMP_MARK in name:
+            path = os.path.join(directory, name)
+            try:
+                if now - os.path.getmtime(path) > max_age:
+                    os.remove(path)
+            except FileNotFoundError:
+                pass
+
+
+def _load_yaml_dict(path) -> dict:
+    """A workspace YAML file as a dict; unreadable or non-dict content counts as empty."""
+    try:
+        data = yaml.load(_read_text(path), Loader=yaml.FullLoader)
+    except (OSError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _atomic_write_yaml(path, data, tag="") -> None:
+    tmp = _tmp_path(path, tag)
     with open(tmp, "w") as fobj:
         yaml.dump(data, fobj)
     os.replace(tmp, path)
 
 
-def _atomic_torch_save(state, path) -> None:
-    tmp = f"{path}.tmp{os.getpid()}"
+def _atomic_torch_save(state, path, tag="") -> None:
+    tmp = _tmp_path(path, tag)
     safe_save(state, tmp)
     os.replace(tmp, path)
 
@@ -316,6 +351,7 @@ def cleanup(checkpoints: dict[int, dict], policy_dir, keep_back: int = 20, max_y
         live = [it for it in iterations if it >= newest - keep_back]
         threshold = max(0, min(live) - keep_back)
         root = Path(policy_dir)
+        _remove_stale_tmp(policy_dir)
 
         # group files by numeric iteration (only *.yaml / *.pth)
         groups: dict[int, list[Path]] = {}
@@ -337,14 +373,16 @@ def cleanup(checkpoints: dict[int, dict], policy_dir, keep_back: int = 20, max_y
             groups.pop(it, None)
 
 
-def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry) -> str:
+def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry, epoch=None) -> str:
     """Copy the source checkpoint into this member's workspace for the restart.
 
-    The copy survives the source's cleanup, keeps this member's frame count (DexPBT) and
-    appends `history_entry` to the checkpoint's `pbt_history`.
+    The copy survives the source's cleanup, keeps this member's frame (DexPBT) and epoch
+    counters, and appends `history_entry` to the checkpoint's `pbt_history`.
     """
     state = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
     state["frame"] = int(frame)
+    if epoch is not None:
+        state["epoch"] = int(epoch)
     state["pbt_history"] = list(state.get("pbt_history", [])) + [history_entry]
     restart_checkpoint = os.path.join(policy_dir, "restart.pth")
     _atomic_torch_save(state, restart_checkpoint)
@@ -359,26 +397,28 @@ def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, chec
     """
     best_dir = os.path.join(workspace_dir, "best")
     os.makedirs(best_dir, exist_ok=True)
+    _remove_stale_tmp(best_dir)
     meta_file = os.path.join(best_dir, "best.yaml")
     if os.path.isfile(meta_file):
+        previous = _load_yaml_dict(meta_file)
         try:
-            previous = yaml.load(_read_text(meta_file), Loader=yaml.FullLoader) or {}
-        except yaml.YAMLError:
-            previous = {}
-        if to_float(previous.get("true_objective", UNINITIALIZED_VALUE)) >= objective:
+            previous_objective = to_float(previous.get("true_objective", UNINITIALIZED_VALUE))
+        except (TypeError, ValueError):
+            previous_objective = UNINITIALIZED_VALUE
+        if previous_objective >= objective:
             return False
-    name = f"best_p{policy_idx:03d}_{iteration:06d}.pth"
-    best_checkpoint = os.path.join(best_dir, name)
-    tmp = f"{best_checkpoint}.tmp{os.getpid()}"
+    tag = f"p{policy_idx:03d}"
+    best_checkpoint = os.path.join(best_dir, f"best_{tag}_{iteration:06d}.pth")
+    tmp = _tmp_path(best_checkpoint, tag)
     shutil.copyfile(checkpoint, tmp)
     os.replace(tmp, best_checkpoint)
-    _atomic_write_yaml(meta_file, {
+    _atomic_write_yaml(meta_file, tag=tag, data={
         "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
         "true_objective": to_float(objective), "params": params,
         "checkpoint": os.path.abspath(best_checkpoint), "source_checkpoint": os.path.abspath(checkpoint),
     })
     # drop this member's older copies that best.yaml no longer names
-    current = os.path.basename(yaml.load(_read_text(meta_file), Loader=yaml.FullLoader)["checkpoint"])
+    current = os.path.basename(str(_load_yaml_dict(meta_file).get("checkpoint", "")))
     for f in os.listdir(best_dir):
         if f.startswith(f"best_p{policy_idx:03d}_") and f.endswith(".pth") and f != current:
             try:
