@@ -25,7 +25,7 @@ Replacement rules (`replace_rule`):
   with mutated parameters. A member whose best objective in the iteration reaches the top
   group is kept, and nothing is replaced until more than half the population has reported.
   The new parameters mutate the source's values with probability `leader_params_prob`,
-  otherwise the member's own.
+  otherwise the member's own. The rule needs at least 3 members: with 2 it never replaces.
 - `threshold`: underperformers (score < min(mean − `threshold_std`·std, mean − `threshold_abs`))
   restart from a random leader (the mirror image above the mean). Configs that set
   `threshold_std`/`threshold_abs` without `replace_rule` keep this rule (with a notice).
@@ -47,6 +47,10 @@ iteration is retried on every step:
 - a per-env tensor is read at the envs that finished on that step;
 - a scalar is taken as the mean over the envs that finished on that step (Isaac Lab
   episode logs) and weighted by their count.
+
+Done indices arrive per agent (`env * num_agents`), as rl_games passes them to observers;
+per-env tensors are read at `index // num_agents`. If no objective has arrived by an
+iteration boundary, the member prints a warning with the last lookup error.
 
 Prefer a true task metric over raw reward when reward shaping is non-stationary. With a
 curriculum, rank curriculum progress first (e.g. progress + 0.01 × success, as DexPBT's
@@ -115,6 +119,9 @@ The restarted process receives the transfer metadata through `rl_games.common.pb
 `learning_rate` / `entropy_coef` over the values restored from the checkpoint; environments can
 read it in `set_env_state` to tell a population transfer from an ordinary resume (e.g. to
 inherit or keep curriculum state, or to re-seed).
+
+Distributed members must pass an `args_cli` with `distributed=True`, also with `launch_argv`:
+the restart flag is broadcast to the other ranks only then.
 
 By default the restart uses `sys.executable` (plain Python). Isaac Sim workflows that
 must go through a wrapper set it explicitly:

@@ -15,7 +15,7 @@ import torch.distributed as dist
 
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
-from rl_games.common.pbt.mutation import mutate
+from rl_games.common.pbt.mutation import MUTATION_FUNCS, mutate
 from rl_games.common.pbt.pbt_cfg import PbtCfg
 
 _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
@@ -103,6 +103,8 @@ class PbtAlgoObserver(AlgoObserver):
         self._window_count = 0
         self._window_size = max(1, self.cfg.objective_window)
         self._consecutive_errors = 0
+        self._last_objective_error = None
+        self._warned_iteration = None
 
         flat = pbt_utils.flatten_dict({"agent": params})
         flat.update(extra_params or {})
@@ -110,6 +112,15 @@ class PbtAlgoObserver(AlgoObserver):
         missing = sorted(set(self.cfg.mutation) - set(self.pbt_params))
         if missing:
             raise ValueError(f"pbt.mutation keys not found in the params or extra_params: {missing}")
+        unknown = sorted({fn for fn in self.cfg.mutation.values() if fn not in MUTATION_FUNCS})
+        if unknown:
+            raise ValueError(f"unknown pbt.mutation functions {unknown}; available: {sorted(MUTATION_FUNCS)}")
+        if self.cfg.replace_rule == "dexpbt" and self.cfg.num_policies <= 2:
+            print("PbtAlgoObserver: WARNING the dexpbt rule needs more than max(2, num_policies // 2) members "
+                  "to report, so it never replaces with num_policies <= 2; use 3+ members or replace_rule: threshold")
+        if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not self.distributed_args.distributed:
+            print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: the restart flag "
+                  "is not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
 
         assert len(self.pbt_params) > 0, "[DANGER]: Dictionary that contains params to mutate is empty"
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
@@ -161,13 +172,15 @@ class PbtAlgoObserver(AlgoObserver):
         `self.score` is this rank's mean over the window.
         """
         value = infos
+        num_agents = int(getattr(getattr(self, "algo", None), "num_agents", 1) or 1)
         try:
             for part in self.cfg.objective.split("."):
                 value = value[part]
-            total, count = pbt_utils.episode_sum_count(value, done_indices)
-        except (KeyError, TypeError, IndexError, ValueError, RuntimeError):
-            # the address may not resolve on every step (or every backend);
-            # keep the previous score instead of killing training
+            total, count = pbt_utils.episode_sum_count(value, done_indices, num_agents)
+        except (KeyError, TypeError, IndexError, ValueError, RuntimeError) as exc:
+            # the address may not resolve on every step (or every backend); keep the previous
+            # score, and report the last failure if no objective arrives by an iteration boundary
+            self._last_objective_error = repr(exc)
             return
         if count == 0 or not math.isfinite(total):
             return
@@ -185,12 +198,14 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _pooled_window(self, distributed):
         """(sum, count, known) of the episode windows of all ranks; known once every rank's is full."""
+        full = self._window_count >= self._window_size
         if not distributed:
-            return self._window_sum, self._window_count, self._window_count >= self._window_size
-        sums = torch.tensor([self._window_sum, float(self._window_count)], dtype=torch.float64, device=self.device)
+            return self._window_sum, self._window_count, full
+        sums = torch.tensor([self._window_sum, float(self._window_count), float(full)],
+                            dtype=torch.float64, device=self.device)
         dist.all_reduce(sums, op=dist.ReduceOp.SUM)
-        total, count = sums[0].item(), sums[1].item()
-        return total, count, count >= self._window_size * dist.get_world_size()
+        total, count, full_ranks = sums.tolist()
+        return total, count, int(full_ranks) == dist.get_world_size()
 
     def after_steps(self):
         """Main PBT tick executed every train step.
@@ -228,7 +243,15 @@ class PbtAlgoObserver(AlgoObserver):
             if self.best_in_iteration is None or objective > self.best_in_iteration:
                 self.best_in_iteration = objective
 
-        if frame // self.cfg.interval_steps <= self.pbt_it or not known:
+        if frame // self.cfg.interval_steps <= self.pbt_it:
+            return
+        if not known:
+            iteration = frame // self.cfg.interval_steps
+            if self.distributed_args.rank == 0 and self._warned_iteration != iteration:
+                self._warned_iteration = iteration
+                print(f"Policy {self.cfg.policy_idx}: WARNING PBT iteration {iteration} waits for objective "
+                      f"'{self.cfg.objective}': {int(count)} finished episodes counted, "
+                      f"{self._window_size} per rank needed; last lookup error: {self._last_objective_error}")
             return
 
         self.pbt_it = frame // self.cfg.interval_steps
@@ -292,9 +315,9 @@ class PbtAlgoObserver(AlgoObserver):
         new_params = mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range)
         try:
             restart_checkpoint = pbt_utils.prepare_restart_checkpoint(
-                ckpts[source]["checkpoint"], self.curr_policy_dir, frame,
-                {"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
-                 "objective": float(score), "source_objective": float(objectives[source])})
+                ckpts[source]["checkpoint"], self.curr_policy_dir, frame, epoch=int(self.algo.epoch_num),
+                history_entry={"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
+                               "objective": float(score), "source_objective": float(objectives[source])})
         except Exception as exc:
             # the source checkpoint may have been cleaned up meanwhile: keep training as is
             print(f"Policy {cfg.policy_idx}: exception {exc!r} while preparing the restart checkpoint; "
