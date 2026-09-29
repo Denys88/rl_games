@@ -216,6 +216,26 @@ rank under DDP. Diagnostics add reductions, device synchronizations and, for
 the post-step group, one forward per minibatch, so account for this when
 measuring throughput. They are disabled by default.
 
+## Symmetry (under `config:`)
+
+### `symmetry_loss`
+
+Adds a mirror-consistency loss on the policy mean: the mean on mirrored observations is pulled
+toward the mirrored mean on the original observations, as in rsl-rl's mirror loss. Default: off.
+Applies to: continuous PPO with a feed-forward policy and flat observations.
+
+```yaml
+config:
+  symmetry_loss:
+    coef: 0.5
+    maps: mjlab_microduck.tasks.symmetry:mirror_maps
+```
+
+`maps` names a dict, or a function that returns one, with `obs_perm`, `obs_sign`, `act_perm` and
+`act_sign`. The mirror of an observation is `obs[:, obs_perm] * obs_sign` on the raw layout, and
+likewise for actions. Mirrored observations do not update the observation normalizer. The loss is
+logged as `losses/symmetry_loss`. On several GPUs, set `multi_gpu_grad_sync: 'flat_allreduce'`.
+
 ## Sigma Parametrization (under `network: space: continuous:`)
 
 ### `max_sigma`

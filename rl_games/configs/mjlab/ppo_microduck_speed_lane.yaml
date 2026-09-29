@@ -26,7 +26,7 @@ params:
       initializer:
         name: default
   config:
-    name: MJLab_MicroDuck_Velocity
+    name: MJLab_MicroDuck_SpeedLane
     env_name: mjlab_microduck_velocity
     normalize_input: true
     # value normalization: 147.7 vs 144.1 final return (means of 3 seeds); the
@@ -59,22 +59,22 @@ params:
     # pre-clamp to [-1, 1] would distort both the actions and the KL the
     # adaptive LR reads
     clip_actions: false
-    num_actors: 4096
+    num_actors: 16384
     horizon_length: 24
-    minibatch_size: 24576  # 4096 envs x 24 steps / 4 minibatches
+    minibatch_size: 32768  # 16384 envs x 24 steps / 12 minibatches
     mini_epochs: 5
     critic_coef: 1
     use_smooth_clamp: true
     bound_loss_type: regularisation
     bounds_loss_coef: 0.0
     device: cuda:0
-    max_epochs: 4000
+    max_epochs: 2000
     save_best_after: 100
     env_config:
-      # Task plugin: the mjlab-1.6 port at github.com/ViktorM/microduck_rl (branch
-      # rl-games; upstream pins mjlab 1.3). Install steps in docs/MJLAB.md.
-      # 50 Hz control, 20 s episodes, actor obs 61 / privileged critic obs 76.
-      task_name: Mjlab-Velocity-Flat-MicroDuck
+      # Task plugin: github.com/ViktorM/microduck_rl, branch speed-lane. Gait16k is
+      # the velocity task with a tracking-gated forward-command curriculum and a
+      # touchdown-stride gait term. Install steps in docs/MJLAB.md.
+      task_name: Mjlab-Velocity-Flat-MicroDuck-Gait16k
       device: cuda
     player:
       render: false
@@ -101,3 +101,7 @@ params:
       grad_norm: 1.0
     vecenv_type: MJLAB
     algo_observer: isaac
+    # mirror-consistency loss on the policy mean (docs/CONFIG_PARAMS.md)
+    symmetry_loss:
+      coef: 0.5
+      maps: mjlab_microduck.tasks.symmetry:mirror_maps
