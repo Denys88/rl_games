@@ -2,17 +2,19 @@
 
 ## Overview
 
-RL-Games supports PyTorch's `torch.compile` for enhanced performance, providing 10-40% improvement in training throughput depending on model architecture, batch size, and hardware configuration.
+`torch_compile` wraps the model forwards in PyTorch's `torch.compile`. It is off by default: on
+default-size policy networks it costs about 1 % of total throughput and adds startup time. Enable it
+for large networks, where it gains about 2–3 %.
 
 ## Configuration
 
 Add `torch_compile` to your YAML config under `params.config`:
 
 ```yaml
-# Enable with default mode - recommended for most cases
+# Compile with the default mode
 torch_compile: true
 
-# Disable compilation
+# No compilation (the default)
 torch_compile: false
 
 # Specify mode as string
@@ -28,7 +30,7 @@ torch_compile:
 
 ## Performance Modes
 
-- **`default`** (default): Kernel fusion, operator optimization, and graph-level optimizations. Recommended for all model types.
+- **`default`**: Kernel fusion, operator optimization, and graph-level optimizations. Works with every model type.
 - **`reduce-overhead`**: Adds CUDA graph capture/replay on top of `default`. **Not compatible with RNN/LSTM models** (see warning below).
 - **`max-autotune`**: Maximum runtime performance with extensive kernel tuning. First epoch will be significantly slower (~2-5x). **Not compatible with RNN/LSTM models** (see warning below).
 
@@ -88,19 +90,15 @@ For standard PPO/SAC, only the main model is compiled (which includes both actor
 
 ## Performance Expectations
 
-Typical speedup over non-compiled training:
+Measured on an RTX PRO 6000 with torch 2.13, as total training throughput:
 
-| Mode | First Epoch | Steady State | Use Case |
-|------|-------------|--------------|----------|
-| `default` | 0.9x | 1.10-1.15x | All models (recommended) |
-| `reduce-overhead` | 0.5-0.8x | 1.15-1.30x | FF models only |
-| `max-autotune` | 0.2-0.5x | 1.25-1.40x | FF models, long training |
+| Policy network | `torch_compile: true` vs `false` |
+|---|---|
+| default size (for example `[512, 256, 128]`) | about −1 % |
+| `[4096, 2048, 1024]` | about +2–3 % |
 
-Actual speedup varies significantly based on:
-- **Model architecture**: Larger models benefit more from compilation
-- **Batch size**: Larger batches enable better kernel optimization
-- **Hardware**: Newer GPUs (Ampere/Hopper) show larger improvements
-- **Environment**: Faster environments show smaller relative speedup (more time in env.step)
+The update step itself speeds up more than these totals show, because most of an iteration is spent
+in the simulator.
 
 ## Troubleshooting
 

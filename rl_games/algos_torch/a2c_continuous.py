@@ -6,6 +6,7 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
+import importlib
 import torch
 
 
@@ -80,6 +81,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+        self.symmetry_loss_coef, self._symmetry_maps = self._init_symmetry_loss(self.config.get('symmetry_loss'))
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -205,9 +207,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 entropy,
                 rnn_masks
             )
+            if self.symmetry_loss_coef > 0:
+                sym_loss = self.symmetry_loss(obs_batch, mu, rnn_masks)
+                loss = loss + self.symmetry_loss_coef * sym_loss
 
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
+            if self.symmetry_loss_coef > 0:
+                self.aux_loss_dict['symmetry_loss'] = [sym_loss.detach()]
             if aux_loss is not None:
                 for k, v in aux_loss.items():
                     loss += v
@@ -297,6 +304,70 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         self.train_result = (a_loss, c_loss, entropy,
             kl_dist, self.last_lr, lr_mul,
             mu.detach(), sigma.detach(), b_loss)
+
+    def _init_symmetry_loss(self, cfg):
+        """Opt-in mirror-consistency loss on the policy mean (rsl-rl's mirror loss).
+
+        ``config.symmetry_loss``::
+
+            coef: 0.5                  # loss weight
+            maps: pkg.module:attr      # or an inline dict
+
+        ``maps`` holds ``obs_perm``, ``obs_sign``, ``act_perm`` and ``act_sign``:
+        the mirror of an observation is ``obs[:, obs_perm] * obs_sign`` on the raw
+        (unnormalized) layout, and likewise for actions. A string names a dict or
+        a zero-argument callable that returns one.
+        """
+        if not cfg:
+            return 0.0, None
+        if self.is_rnn:
+            raise ValueError('symmetry_loss supports feed-forward policies only')
+        if isinstance(self.obs_shape, dict):
+            raise ValueError('symmetry_loss supports flat observations only')
+        if self.multi_gpu and self.multi_gpu_grad_sync != 'flat_allreduce':
+            # the mirrored forward goes through the unwrapped model, so DDP
+            # would not sync the gradient it adds
+            raise ValueError("symmetry_loss on several GPUs needs multi_gpu_grad_sync: 'flat_allreduce'")
+        maps = cfg['maps']
+        if isinstance(maps, str):
+            module_name, attr = maps.rsplit(':', 1)
+            maps = getattr(importlib.import_module(module_name), attr)
+        if callable(maps):
+            maps = maps()
+        sizes = {'obs': self.obs_shape[0], 'act': self.actions_num}
+        tensors = []
+        for kind in ('obs', 'act'):
+            perm = torch.as_tensor(list(maps[f'{kind}_perm']), dtype=torch.long)
+            sign = torch.as_tensor(list(maps[f'{kind}_sign']), dtype=torch.float32)
+            if len(perm) != sizes[kind] or len(sign) != sizes[kind]:
+                raise ValueError(f'symmetry_loss {kind}_perm / {kind}_sign need {sizes[kind]} entries, '
+                                 f'got {len(perm)} / {len(sign)}')
+            if not torch.equal(torch.sort(perm).values, torch.arange(sizes[kind])):
+                raise ValueError(f'symmetry_loss {kind}_perm is not a permutation')
+            tensors += [perm.to(self.ppo_device), sign.to(self.ppo_device)]
+        return float(cfg.get('coef', 0.5)), tuple(tensors)
+
+    def symmetry_loss(self, obs, mu, masks=None):
+        """MSE between the policy mean on mirrored observations and the mirrored
+        (detached) policy mean on the original ones."""
+        obs_perm, obs_sign, act_perm, act_sign = self._symmetry_maps
+        mirrored = obs[:, obs_perm] * obs_sign
+        rms = getattr(self.model, 'running_mean_std', None)
+        was_training = rms is not None and rms.training
+        if was_training:
+            rms.eval()  # mirrored rows must not update the observation statistics
+        try:
+            mirrored = self.model.norm_obs(mirrored)
+        finally:
+            if was_training:
+                rms.train()
+        mu_mirrored = self.model.a2c_network({'obs': mirrored})[0].float()
+        target = (mu.float()[:, act_perm] * act_sign).detach()
+        per_row = ((mu_mirrored - target) ** 2).mean(dim=-1)
+        if masks is None:
+            return per_row.mean()
+        masks = masks.reshape(-1).to(per_row.dtype)
+        return (per_row * masks).sum() / masks.sum().clamp(min=1.0)
 
     def train_actor_critic(self, input_dict):
         self.set_train()
