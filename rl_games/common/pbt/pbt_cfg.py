@@ -225,8 +225,8 @@ class PbtCfg:
     itself (a self-mutation), the best member or member idx, whatever the rule says; a
     self-mutation that changes no value still keeps training. It takes the rule's place in
     `pbt_utils.select_dexpbt` and `select_threshold`, so a subclass whose `_pbt_iteration` calls
-    them gets it too. Every rank says so at init, and the member's workspace yamls, best records
-    and restart.yaml carry `forced: <value>`. Empty: off."""
+    them gets it too. Every rank says so at init, and the member's workspace yamls, best records,
+    restart.yaml and decisions.jsonl lines carry `forced: <value>`. Empty: off."""
 
     initial_mutation: bool = False
     """Mutate a fresh member's `agent.params.config` values once at init, in the params the
