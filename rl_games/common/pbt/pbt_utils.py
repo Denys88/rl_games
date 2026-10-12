@@ -8,8 +8,10 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import socket
+import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -27,6 +29,9 @@ UNINITIALIZED_VALUE = float(-1e9)
 class DistributedArgs:
     """Distributed-launch flags reconstructed for a PBT restart.
 
+    The restart relaunches every rank of the member on rank 0's node with a standalone
+    rendezvous: torchrun binds a free port itself (a port picked in advance can be taken
+    before torchrun binds it). Other flags of the original torchrun command are not kept.
     All attribute lookups are defaulted so any argparse namespace (or None) works.
     """
 
@@ -35,13 +40,10 @@ class DistributedArgs:
         self.nproc_per_node = int(os.environ.get("WORLD_SIZE", 1))
         self.rank = int(os.environ.get("RANK", 0))
         self.nnodes = 1
-        self.master_port = getattr(args_cli, "master_port", None)
 
     def get_args_list(self) -> list[str]:
-        args = ["-m", "torch.distributed.run", f"--nnodes={self.nnodes}", f"--nproc_per_node={self.nproc_per_node}"]
-        if self.master_port:
-            args.append(f"--master_port={self.master_port}")
-        return args
+        return ["-m", "torch.distributed.run", "--standalone", f"--nnodes={self.nnodes}",
+                f"--nproc_per_node={self.nproc_per_node}"]
 
 
 class EnvArgs:
@@ -113,7 +115,12 @@ class WandbArgs:
 
 
 def dump_env_sizes():
-    """Print summary of environment variable usage (count, bytes, top-5 largest, SC_ARG_MAX)."""
+    """Print the size of the environment a restart passes on: variable count, bytes, the five
+    largest variables and SC_ARG_MAX (execv fails with E2BIG past it).
+
+    Names and lengths only, never values: they hold credentials (WANDB_API_KEY, cloud
+    session tokens) and member logs are widely shared.
+    """
 
     n = len(os.environ)
     # total bytes in "KEY=VAL\0" for all envp entries
@@ -123,13 +130,27 @@ def dump_env_sizes():
 
     print(f"[ENV MONITOR] vars={n}, total_bytes={total}")
     for k, v in biggest:
-        print(f"    {k!r} length={len(v)} → {v[:60]}{'…' if len(v) > 60 else ''}")
+        print(f"    {k!r} length={len(v)}")
 
     try:
         argmax = os.sysconf("SC_ARG_MAX")
         print(f"[ENV MONITOR] SC_ARG_MAX = {argmax}")
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, OSError):
         pass
+
+
+def dedup_path_list(value: str) -> str:
+    """A PATH-like list without repeated entries, first occurrences kept in order.
+
+    The first empty entry is kept too: it stands for the current directory (what
+    `export PYTHONPATH=$PYTHONPATH:/x` leaves when the variable was unset).
+    """
+    seen, parts = set(), []
+    for part in value.split(os.pathsep):
+        if part not in seen:
+            seen.add(part)
+            parts.append(part)
+    return os.pathsep.join(parts)
 
 
 def flatten_dict(d, prefix="", separator="."):
@@ -143,18 +164,6 @@ def flatten_dict(d, prefix="", separator="."):
             res[prefix + key] = value
 
     return res
-
-
-def find_free_port(max_tries: int = 20) -> int:
-    """Return an OS-assigned free TCP port, with a few retries; fall back to a random high port."""
-    for _ in range(max_tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("", 0))
-                return s.getsockname()[1]
-            except OSError:
-                continue
-    return random.randint(20000, 65000)
 
 
 def filter_params(params, params_to_mutate):
@@ -181,6 +190,29 @@ def to_float(value) -> float:
     if isinstance(value, np.ndarray):
         return float(np.mean(value))
     return float(value)
+
+
+def plain_number(value):
+    """A numpy or torch scalar as the Python number it holds; anything else unchanged.
+
+    Custom mutation functions may return numpy scalars (np.clip gives np.int64): the restart
+    passes plain numbers on the command line and in the JSON payload.
+    """
+    if type(value) in (bool, int, float, str) or not callable(getattr(value, "item", None)):
+        return value
+    try:
+        number = value.item()
+    except (TypeError, ValueError, RuntimeError):
+        return value
+    return number if isinstance(number, (bool, int, float)) else value
+
+
+def json_default(value):
+    """`json.dumps` default: numpy and torch scalars as Python numbers, anything else a TypeError."""
+    number = plain_number(value)
+    if number is value:
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+    return number
 
 
 def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, int]:
@@ -571,6 +603,21 @@ def derive_seed(base_seed: int, policy_idx: int, restart_count: int) -> int:
     return random.Random(f"{base_seed}:{policy_idx}:{restart_count}").randrange(2**31 - 1)
 
 
+def member_seed(seed, policy_idx: int, stride: int = 1_000_000):
+    """Launch seed of population member `policy_idx`: `seed + policy_idx * stride`; -1 (random
+    per launch) and None are returned unchanged.
+
+    Members launched with the same seed start as copies (initial weights, env and sampling
+    streams), so the train script launches each member with `member_seed(seed, policy_idx)`.
+    With `multi_gpu`, rl_games adds the global rank to the seed itself; scripts that add it
+    as well get `seed + 2 * rank`, so `stride` must exceed 2 * (GPUs per member - 1).
+    """
+    if seed is None:
+        return None
+    seed = int(seed)
+    return seed if seed == -1 else seed + int(policy_idx) * int(stride)
+
+
 def build_launch_restart_args(launch_argv, new_params, restart_from_checkpoint, checkpoint_arg="--checkpoint"):
     """Restart command from the original launch argv: everything verbatim except the checkpoint
     argument and the mutated `key=value` overrides (exact key match)."""
@@ -580,6 +627,75 @@ def build_launch_restart_args(launch_argv, new_params, restart_from_checkpoint, 
     out.append(f"{checkpoint_arg}={restart_from_checkpoint}")
     out += [f"{param}={value}" for param, value in new_params.items()]
     return out
+
+
+def argv_rewritten() -> bool:
+    """Whether `sys.argv` is no longer the tail of `sys.orig_argv`: the script replaced its
+    command line (Isaac Lab style `sys.argv = [sys.argv[0]] + hydra_args`), or it runs as
+    `python -m` (`sys.argv[0]` is then the module's file). False when the command is unknown."""
+    orig = list(getattr(sys, "orig_argv", None) or [])
+    if not orig:
+        return False
+    argv = list(sys.argv)
+    return len(argv) > len(orig) or orig[len(orig) - len(argv):] != argv
+
+
+def launch_dirs() -> tuple[str, str | None]:
+    """(directory the job was launched from, Hydra run dir a restart must reuse, or None).
+
+    Hydra with 1.1 job semantics (`version_base` omitted or '1.1', or `hydra.job.chdir=True`)
+    runs the job inside its run dir. A restart then starts from the launch directory, where
+    the relative paths of the command point, and passes that run dir on: the child would
+    otherwise nest a new run dir inside it and move a relative train_dir and its workspace.
+    Without a Hydra job this is (os.getcwd(), None); Hydra is not imported for the check.
+    """
+    cwd = os.getcwd()
+    if "hydra" not in sys.modules:
+        return cwd, None
+    try:
+        from hydra.core.hydra_config import HydraConfig
+        from hydra.utils import get_original_cwd
+
+        if not HydraConfig.initialized():
+            return cwd, None
+        original = get_original_cwd()
+    except (ImportError, AttributeError, ValueError):
+        return cwd, None
+    try:
+        run_dir = os.path.join(original, HydraConfig.get().runtime.output_dir)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        run_dir = cwd  # Hydra without runtime.output_dir (< 1.2) always runs the job in its run dir
+    changed = os.path.realpath(run_dir) == os.path.realpath(cwd) != os.path.realpath(original)
+    return original, (os.path.abspath(run_dir) if changed else None)
+
+
+def absolute_script_path(args: list[str], launch_cwd: str) -> list[str]:
+    """`args` with the script (`args[0]`) as an absolute path when it is a relative path that
+    exists under `launch_cwd`; a module launch (`-m pkg.mod`) and anything else stay as given."""
+    if not args or args[0] == "-m" or os.path.isabs(args[0]):
+        return list(args)
+    path = os.path.join(launch_cwd, args[0])
+    return [os.path.abspath(path)] + list(args[1:]) if os.path.exists(path) else list(args)
+
+
+_HYDRA_PLAIN_VALUE = re.compile(r"[A-Za-z0-9_/.\-+@%*?|:]+")
+
+
+def hydra_override_value(value: str) -> str:
+    """`value` written for a Hydra `key=value` override: as is when the override grammar takes it
+    unquoted, else single-quoted (spaces, parentheses, `=`, `,`, brackets, quotes...)."""
+    if _HYDRA_PLAIN_VALUE.fullmatch(value):
+        return value
+    # in a quoted value a backslash escapes only a quote or the closing quote
+    escaped = re.sub(r"(\\+)(?='|\Z)", r"\1\1", value).replace("'", "\\'")
+    return f"'{escaped}'"
+
+
+def pin_hydra_run_dir(args: list[str], run_dir: str) -> list[str]:
+    """`args` with every `hydra.run.dir` override replaced by one naming `run_dir`, so the
+    restarted Hydra job reuses the run dir instead of nesting a new one (as IsaacGymEnvs did)."""
+    kept = [arg for arg in args[1:] if _arg_name(arg).lstrip("+~") != "hydra.run.dir"]
+    return [args[0]] + kept + [f"hydra.run.dir={hydra_override_value(run_dir)}"]
 
 
 def _render_table(headers: list[str], rows: list[list]) -> str:
