@@ -254,6 +254,14 @@ class PbtCfg:
     and extra_params values, central_value_config values). Either way the member's grace window
     and objective window start over."""
 
+    transfer: str = "restart"
+    """How a transfer (the member takes another member's weights) takes effect: 'restart' re-execs
+    the member from restart.pth; 'in_process' loads restart.pth into the running learner on every
+    rank at the start of the next epoch, after the decision epoch's update, as the restarted
+    process would restore it, keeping the member's epoch, frame and best reward, when the running
+    learner can take every changed value (as for self_mutation), and restarts otherwise. The
+    learner's observer chain must forward before_steps (rl_games' MultiObserver does)."""
+
     max_member_lag: int = 10
     """Liveness, in the deciding member's median iteration wall times (>= 0). A member without a
     sign of life for longer, neither a heartbeat in its owner record (owner.yaml, renewed at every
@@ -346,7 +354,8 @@ class PbtCfg:
         donor = re.fullmatch(r"donor:([0-9]+)", self.force_outcome) if isinstance(self.force_outcome, str) else None
         require(self.force_outcome in ("", "self", "best") or (donor and int(donor.group(1)) < self.num_policies),
                 "force_outcome", "'', 'self', 'best' or 'donor:<idx>' with idx in [0, num_policies)")
-        require(self.self_mutation in ("restart", "in_process"), "self_mutation", "'restart' or 'in_process'")
+        for name in ("self_mutation", "transfer"):
+            require(getattr(self, name) in ("restart", "in_process"), name, "'restart' or 'in_process'")
         require(self.interval_unit in ("frames", "epochs"), "interval_unit", "'frames' or 'epochs'")
 
     @classmethod

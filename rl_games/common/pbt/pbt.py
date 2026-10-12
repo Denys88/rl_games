@@ -22,6 +22,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
+from rl_games.algos_torch import torch_ext
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
 from rl_games.common.pbt.mutation import clamp_to_bounds, mutate
@@ -35,7 +36,7 @@ _CONFIG_PREFIX = "agent.params.config."
 
 # rank 0's decision at a PBT iteration, broadcast to every rank (`PbtAlgoObserver._sync_decision`);
 # 0 keeps training
-_RESTART, _MUTATE_IN_PROCESS = 1, 2
+_RESTART, _MUTATE_IN_PROCESS, _TRANSFER_IN_PROCESS = 1, 2, 3
 
 
 class _PooledWindow(NamedTuple):
@@ -101,6 +102,23 @@ def _flush_stdio():
             pass
 
 
+@contextlib.contextmanager
+def _uncompiled(algo):
+    """The learner's actor-critic and central value models as the modules torch.compile wraps,
+    for a load of checkpoint keys without '_orig_mod.' (`torch_ext.load_checkpoint` strips it), as
+    a restarted process restores before the runner compiles. The compiled models share their
+    parameters, so they compute with what was loaded."""
+    holders = [algo] + ([algo.central_value_net] if algo.has_central_value else [])
+    models = [holder.model for holder in holders]
+    for holder, model in zip(holders, models):
+        holder.model = getattr(model, "_orig_mod", model)
+    try:
+        yield
+    finally:
+        for holder, model in zip(holders, models):
+            holder.model = model
+
+
 class PbtAlgoObserver(AlgoObserver):
     """rl_games observer that implements Population-Based Training for a single policy process.
 
@@ -109,7 +127,8 @@ class PbtAlgoObserver(AlgoObserver):
     workspace, compares itself against the population, and — if the replacement rule selects
     it — re-execs itself from a better member's checkpoint (or its own) with mutated
     hyperparameters. With `pbt.self_mutation: in_process` a mutation of its own values is set
-    on the running learner instead (`_apply_self_mutation`).
+    on the running learner instead (`_apply_self_mutation`), and with `pbt.transfer: in_process`
+    a better member's checkpoint loads into it (`_load_transfer`).
 
     Restarts need a train script that accepts `key=value` hyperparameter overrides (Hydra
     style, as in Isaac Lab / IsaacGymEnvs train scripts) and a checkpoint argument. Pass the
@@ -271,9 +290,12 @@ class PbtAlgoObserver(AlgoObserver):
             self.device = params.get("params", {}).get("config", {}).get("device", "cpu")
         # rank 0's decision at a PBT iteration, which every rank acts on in the same step
         # (`_sync_decision`): a restart (`_pbt_iteration` sets restart_flag[0] = 1, as subclasses
-        # that replace it do) or an in-process self-mutation (`_apply_self_mutation`)
+        # that replace it do), an in-process self-mutation (`_apply_self_mutation`) or transfer
         self.restart_flag = torch.tensor([0])
-        self._mutate_in_process = False
+        self._mutate_in_process = self._transfer_in_process = False
+        # every rank: (changed values, payload) of an in-process transfer, loaded at the next before_steps
+        self._pending_transfer = None
+        self._before_steps_called = False
 
     def _initial_mutation(self, params):
         """`pbt.initial_mutation`: mutate a fresh member's `agent.params.config` values once, in
@@ -616,15 +638,17 @@ class PbtAlgoObserver(AlgoObserver):
                the global `random` module swapped to the member's private generator
                (`_draw_rng`). Until then the iteration is retried on every step without
                advancing `pbt_it` (see `_wait_for_objective`). When the iteration decided a
-               restart (the flag is set), rank 0 writes the member's restart.yaml
-               (`_save_restart_record`), unless the population has finished
+               restart (the flag is set) or an in-process transfer, rank 0 writes the member's
+               restart.yaml (`_save_restart_record`), unless the population has finished
                (`pbt.stop_with_first`); then it appends the iteration's outcome to
                decisions.jsonl (`_append_decision`).
             4) All ranks, at the iteration: act on rank 0's decision (`_sync_decision`): the
-               member restarts before this epoch's update, or applies an in-process
-               self-mutation. Then rank 0 raises if another launch took the member over.
+               member restarts before this epoch's update, applies an in-process
+               self-mutation, or loads an in-process transfer at the start of the next epoch
+               (`before_steps`). Then rank 0 raises if another launch took the member over.
         With `pbt.stop_with_first` rank 0 first watches for the population's end
-        (`_watch_population_end`).
+        (`_watch_population_end`). With `pbt.transfer: in_process` the first step raises on every
+        rank when the learner's before_steps doesn't reach the observer.
         """
         distributed = self._distributed()
         frame = self.algo.frame
@@ -632,6 +656,12 @@ class PbtAlgoObserver(AlgoObserver):
         if self.cfg.stop_with_first and self.distributed_args.rank == 0:
             self._watch_population_end(frame)
         if self.pbt_it == -1:
+            if self.cfg.transfer == "in_process" and not self._before_steps_called:
+                # every rank alike: the same observer chain
+                raise RuntimeError(
+                    f"Policy {self.cfg.policy_idx}: pbt.transfer is in_process, but the learner's before_steps "
+                    f"does not reach this observer, which loads a transfer there: an observer chain must forward "
+                    f"before_steps (rl_games' MultiObserver does), or set pbt.transfer: restart")
             # first step after (re)start: the checkpoint restore has already set the frame and epoch
             self.pbt_it = progress // self.cfg.interval_steps
             self.initial_frame = progress
@@ -679,7 +709,7 @@ class PbtAlgoObserver(AlgoObserver):
                 decision = {"outcome": "ending", f"{self.cfg.interval_unit}_left": 0,
                             "limit": pbt_utils.FINISHED_MARKER}
             # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
-            if int(self.restart_flag[0]) == 1:
+            if int(self.restart_flag[0]) == 1 or self._transfer_in_process:
                 self.restart_time = time.time()
                 self._save_restart_record()
             if decision is not None:
@@ -692,31 +722,97 @@ class PbtAlgoObserver(AlgoObserver):
         """Every rank, right after rank 0's PBT iteration: act on its decision. Rank 0 broadcasts
         [action, n, values...] (float64, 2 + one slot per mutable param), the iteration's one
         broadcast. A restart (`restart_flag`) happens now, before this epoch's update: the other
-        ranks exit, rank 0 re-execs. An in-process self-mutation (`_apply_self_mutation`) carries
-        the n new values in sorted key order (rank 0's new params may come in a yaml's order);
-        every rank applies those that differ from `previous`, its values before the decision,
-        which every rank shares (`_apply_in_process`).
+        ranks exit, rank 0 re-execs. An in-process self-mutation (`_apply_self_mutation`) or
+        transfer carries the n new values in sorted key order (rank 0's new params may come in a
+        yaml's order; a value a donor doesn't have is the member's own); every rank applies those
+        that differ from `previous`, its values before the decision, which every rank shares: a
+        self-mutation now (`_apply_in_process`), a transfer at the start of the next epoch
+        (`before_steps`), with its restart payload, which rank 0 broadcasts next.
         """
         keys = sorted(previous)
         message = torch.zeros(2 + len(keys), dtype=torch.float64, device=self.device)
-        if self.distributed_args.rank == 0:
+        rank0 = self.distributed_args.rank == 0
+        if rank0:
             if int(self.restart_flag[0]) == 1:
                 message[0] = _RESTART
-            elif self._mutate_in_process:
-                message[0], message[1] = _MUTATE_IN_PROCESS, len(keys)
-                message[2:] = torch.tensor([float(self.pbt_params[key]) for key in keys], dtype=torch.float64)
-            self._mutate_in_process = False
+            elif self._mutate_in_process or self._transfer_in_process:
+                new = self.new_params if self._transfer_in_process else self.pbt_params
+                message[0] = _TRANSFER_IN_PROCESS if self._transfer_in_process else _MUTATE_IN_PROCESS
+                message[1] = len(keys)
+                message[2:] = torch.tensor([float(new.get(key, previous[key])) for key in keys], dtype=torch.float64)
+            self._mutate_in_process = self._transfer_in_process = False
         if distributed:
             dist.broadcast(message, src=0)
         action, count = int(message[0]), int(message[1])
         if action == _RESTART:
-            if self.distributed_args.rank != 0:
+            if not rank0:
                 _flush_stdio()
                 os._exit(0)
             self._restart_with_new_params(self.new_params, self.restart_from_checkpoint)
-        elif action == _MUTATE_IN_PROCESS:
+        elif action in (_MUTATE_IN_PROCESS, _TRANSFER_IN_PROCESS):
             values = dict(zip(keys, message[2:2 + count].tolist()))
-            self._apply_in_process({key: value for key, value in values.items() if value != previous[key]})
+            changed = {key: value for key, value in values.items() if value != previous[key]}
+            if action == _MUTATE_IN_PROCESS:
+                self._apply_in_process(changed)
+                return
+            # the payload a restarted process would parse (JSON types)
+            payload = [json.loads(json.dumps(self._restart_payload(self.new_params, self.restart_from_checkpoint),
+                                             default=pbt_utils.json_default)) if rank0 else None]
+            if distributed:
+                dist.broadcast_object_list(payload, src=0, device=self.device)
+            self._pending_transfer = changed, payload[0]
+
+    def before_steps(self):
+        """Every rank, at the start of each epoch, before its rollout: load the in-process transfer
+        rank 0 decided at the last iteration (`_load_transfer`). Not at the decision: that epoch's
+        update would then train the donor's weights on this member's rollout (and its adaptive LR
+        would fall on the KL between the two policies)."""
+        self._before_steps_called = True
+        if getattr(self, "_pending_transfer", None) is not None:
+            changed, payload = self._pending_transfer
+            self._pending_transfer = None
+            self._load_transfer(changed, payload)
+
+    def _load_transfer(self, changed, payload):
+        """Every rank, at the start of the epoch after an in-process transfer was decided: load the
+        member's restart.pth into the running learner as the restarted process would restore it,
+        and start the member over from it.
+
+        The changed values are set first (`algo.set_param`), so the restore compares the new
+        values with the pre-mutation ones restart.pth stores (see `_pbt_iteration`). Every rank
+        loads the whole state itself (weights, normalizers, optimizer, scaler, central value net):
+        ranks given the weights alone would step apart. Compiled models load through the modules
+        they wrap (`_uncompiled`). The member keeps its epoch, frame and best reward (it writes
+        into its own run directory), and `restart_info()` returns the transfer's payload from
+        then on, already in the env's `set_env_state`. What belonged to the old policy starts
+        over: the envs, its episodes, the RNN states, the objective and grace windows.
+        """
+        algo = self.algo
+        for key in sorted(changed):
+            algo.set_param(key[len(_CONFIG_PREFIX):], changed[key])
+        # rank 0 keeps the values its decision drew (see _apply_in_process)
+        new_params = dict(self.pbt_params, **(self.new_params if self.distributed_args.rank == 0 else changed))
+        best = algo.last_mean_rewards
+        pbt_utils._set_restart_info(payload)
+        state = torch_ext.load_checkpoint(payload["checkpoint"])
+        with _uncompiled(algo):
+            algo.set_full_state_weights(state, set_epoch=False)
+        algo.last_mean_rewards = best
+        algo.reset_envs()
+        envs = algo.num_agents * algo.num_actors
+        algo.init_current_rewards(envs, (envs, algo.value_size))
+        algo.clear_stats(clean_rewards=False)
+        if algo.has_central_value and algo.central_value_net.is_rnn:
+            critic = algo.central_value_net
+            critic.rnn_states = [s.to(critic.ppo_device) for s in critic.model.get_default_rnn_state()]
+        self.restart_count += 1
+        self._set_pbt_params(new_params)
+        self._reset_objective_window()
+        self.initial_frame = self._progress(algo.frame)
+        if self.distributed_args.rank == 0:
+            print(f"Policy {self.cfg.policy_idx}: loaded member {payload['source_policy']}'s checkpoint in process "
+                  f"(restart {self.restart_count}); the grace window restarts at {self.initial_frame} "
+                  f"{self.cfg.interval_unit}")
 
     def _apply_in_process(self, changed):
         """Every rank: set the changed `agent.params.config` values of an in-process self-mutation
@@ -859,7 +955,8 @@ class PbtAlgoObserver(AlgoObserver):
         {"schema", "time", "iteration", "frame", "objective", "outcome", ...} plus the outcome's
         numbers. Outcomes: those of the rule ("not_worst", "too_few_reported", "kept" by the
         interval's best objective, "transfer", "self_mutation", with the worst and top groups, the
-        candidate, its lead and the thresholds), "grace", "ending", "no_op", "in_process", "error",
+        candidate, its lead and the thresholds; a transfer loaded in process says `in_process:
+        true`), "grace", "ending", "no_op", "in_process", "error",
         "stale" (an iteration waiting for its objective), "restarted" (`_record_restart`) and
         "forced" (`pbt.force_outcome` names a donor that has not reported). Under
         `pbt.force_outcome` every line carries `forced`. A line that can't be written only warns."""
@@ -881,9 +978,12 @@ class PbtAlgoObserver(AlgoObserver):
         the population has finished (`pbt.stop_with_first`); the member's yaml says
         `replaceable: false` then, so peers keep it out of their worst group. The new values are
         clamped into `mutation_bounds`. A self-mutation that changes no value keeps training; one
-        with changes goes to `_apply_self_mutation` first, and restarts unless that applied it. A
-        restart marks this iteration's yaml not replaceable once restart.pth is written: peers
-        read it until the restarted process saves. Peers that run other code or another
+        with changes goes to `_apply_self_mutation` first, and restarts unless that applied it.
+        Under `pbt.transfer: in_process` a transfer whose changed values the running learner
+        takes (`_not_settable`) loads at the start of the next epoch instead of restarting
+        (`before_steps`), from the same restart.pth and restart.yaml. A restart (or such a
+        transfer) marks this iteration's yaml not replaceable once restart.pth is written: peers
+        read it until the member saves again. Peers that run other code or another
         population setup (`_foreign_members`), and stale ones (`pbt.max_member_lag`,
         `pbt_utils.member_status`), are left out.
 
@@ -1038,16 +1138,24 @@ class PbtAlgoObserver(AlgoObserver):
         self.restart_frame = int(frame)
         # values the restored checkpoint would otherwise impose on the new process
         self.restart_mutated = {k: v for k, v in new_params.items() if source_params.get(k) != v}
-        self.restart_flag[0] = 1
+        if source != cfg.policy_idx and cfg.transfer == "in_process":
+            fixed = self._not_settable({k: v for k, v in new_params.items() if self.pbt_params.get(k) != v})
+            if fixed:
+                print(f"Policy {cfg.policy_idx}: {fixed} can't change in the running process: the transfer restarts "
+                      f"the member")
+            self._transfer_in_process = not fixed
+        if not self._transfer_in_process:
+            self.restart_flag[0] = 1
         self.printer.print_mutation_diff(base_params, new_params)
-        # peers read this iteration's yaml as the member's state until the restarted process saves
+        # peers read this iteration's yaml as the member's state until the member saves again
         try:
             pbt_utils.mark_not_replaceable(self.curr_policy_dir)
         except Exception as exc:
             print(f"Policy {cfg.policy_idx}: WARNING could not mark the newest workspace yaml not replaceable: "
                   f"{exc!r}")
-        return dict(details, outcome=pbt_utils.restart_kind(cfg.policy_idx, source), source=source,
-                    mutated=self.restart_mutated)
+        decision = dict(details, outcome=pbt_utils.restart_kind(cfg.policy_idx, source), source=source,
+                        mutated=self.restart_mutated)
+        return dict(decision, in_process=True) if self._transfer_in_process else decision
 
     def _foreign_members(self, ckpts):
         """The peers whose newest yaml (in `ckpts`) says they run other code (`code_fingerprint`) or
@@ -1096,15 +1204,23 @@ class PbtAlgoObserver(AlgoObserver):
         """
         if self.cfg.self_mutation != "in_process":
             return False
-        settable = getattr(self.algo, "SET_PARAMS", ())
-        fixed = sorted(key for key in changed
-                       if not key.startswith(_CONFIG_PREFIX) or key[len(_CONFIG_PREFIX):] not in settable)
+        fixed = self._not_settable(changed)
         if fixed:
             print(f"Policy {self.cfg.policy_idx}: {fixed} can't change in the running process: the self-mutation "
                   f"restarts the member")
             return False
         self._mutate_in_process = True
         return True
+
+    def _not_settable(self, changed):
+        """The keys of `changed` the running learner can't take: all but this member's
+        `agent.params.config` values its `set_param` sets (`A2CBase.SET_PARAMS`). Env and
+        extra_params values apply when the env is built, central_value_config values when the
+        critic is; a donor's value this member doesn't mutate has no slot in the decision
+        broadcast."""
+        settable = getattr(self.algo, "SET_PARAMS", ())
+        return sorted(key for key in changed if key not in self.pbt_params or not key.startswith(_CONFIG_PREFIX)
+                      or key[len(_CONFIG_PREFIX):] not in settable)
 
     def _forced_stamp(self):
         """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls, best records,

@@ -1245,7 +1245,8 @@ def restart_info() -> dict | None:
     frame_reached, the decision's epoch, every new param value and the seed the restart command
     passes (`seed`, `seed_arg`). Environments can read the payload in `set_env_state` to tell a
     population transfer from a resume. Parsed once per process; the variable is then removed
-    from the environment.
+    from the environment. After a transfer loaded in the running process (`pbt.transfer:
+    in_process`) it returns that transfer's payload, on every rank, already in `set_env_state`.
     """
     global _restart_info_cache, _restart_info_read
     if not _restart_info_read:
@@ -1263,6 +1264,12 @@ def _reset_restart_info_cache() -> None:
     """Test helper: forget the parsed restart info."""
     global _restart_info_cache, _restart_info_read
     _restart_info_cache, _restart_info_read = None, False
+
+
+def _set_restart_info(info) -> None:
+    """Make `info` this process's restart payload (`restart_info`): an in-process transfer's."""
+    global _restart_info_cache, _restart_info_read
+    _restart_info_cache, _restart_info_read = info, True
 
 
 def write_restart_record(policy_dir, record) -> str:
