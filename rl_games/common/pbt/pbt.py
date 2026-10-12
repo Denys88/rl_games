@@ -676,7 +676,8 @@ class PbtAlgoObserver(AlgoObserver):
                 self.restart_flag[0] = 0
                 print(f"Policy {self.cfg.policy_idx}: the population has finished ({pbt_utils.FINISHED_MARKER}): "
                       f"the restart is dropped")
-                decision = {"outcome": "ending", "frames_left": 0, "limit": pbt_utils.FINISHED_MARKER}
+                decision = {"outcome": "ending", f"{self.cfg.interval_unit}_left": 0,
+                            "limit": pbt_utils.FINISHED_MARKER}
             # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
             if int(self.restart_flag[0]) == 1:
                 self.restart_time = time.time()

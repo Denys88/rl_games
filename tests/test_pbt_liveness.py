@@ -579,6 +579,18 @@ def test_a_restart_decided_once_the_population_finished_is_dropped(tmp_path, exe
     assert not os.path.exists(os.path.join(member_dir(tmp_path), pbt_utils.RESTART_RECORD))
 
 
+@pytest.mark.parametrize("unit, epoch_num", [("frames", 40), ("epochs", 5 * INTERVAL + 1)])
+def test_a_dropped_restarts_line_counts_the_interval_unit(tmp_path, execs, unit, epoch_num):
+    """Its `ending` line says what is left in pbt.interval_unit, as the base rule's ending lines do."""
+    obs = member(tmp_path, cls=CopiedIteration, stop_with_first=True, interval_unit=unit)
+    algo = Algo(tmp_path, epoch_num=epoch_num, stop_fn=None)
+    obs.after_init(algo)
+    finished(tmp_path, obs.cfg)
+    decide(obs, algo, 5, 1.0)
+    line = decisions(tmp_path)[-1]
+    assert (line["outcome"], line[f"{unit}_left"], line["limit"]) == ("ending", 0, pbt_utils.FINISHED_MARKER)
+
+
 @pytest.mark.parametrize("start, reuse_workspace, age, removed", [
     ("fresh", True, 100, True), ("fresh", False, 100, False), ("fresh", True, -100, False),
     ("restart", True, 100, False), ("resume", True, 100, False)])
