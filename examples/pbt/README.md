@@ -53,12 +53,12 @@ python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
 `tests/test_pbt_e2e.py` runs a three-member population of this script on CPU with real restarts
 (about 30 s), with forced objectives (`--fake-objective`): member 2 always ranks last, alternately
 far behind (a transfer from member 0) and close behind (a self-mutation). It checks the restarts
-(same process, restart info, command, checkpoint, frame and epoch counters), that every restarted
-process trains with its new values, that restarts draw different mutations, that no member logs a
-failure it trained on (an exception the observer caught), that member 0 holds the population best,
-and that no secret from the environment reaches a log. A single LSTM member with the
-qualification's settings also runs PBT iterations scored by the default objective, the episode
-return:
+(same process, restart info and its kind, command, checkpoint, frame and epoch counters,
+`restart.yaml`), that every restarted process trains with its new values, that restarts draw
+different mutations, that no member logs a failure it trained on (an exception the observer
+caught), that member 0 holds the population best, and that no secret from the environment reaches
+a log. A single LSTM member with the qualification's settings also runs PBT iterations scored by
+the default objective, the episode return:
 
 ```bash
 python -m pytest tests/test_pbt_e2e.py
