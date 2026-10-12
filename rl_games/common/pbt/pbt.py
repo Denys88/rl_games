@@ -193,6 +193,17 @@ class PbtAlgoObserver(AlgoObserver):
                   "(sys.orig_argv): restarts rebuild the command from sys.argv and args_cli and drop the other "
                   "launch flags; pass launch_argv=list(sys.argv) captured before sys.argv is rewritten, or "
                   "['-m', '<module>', *sys.argv[1:]] for a `python -m` launch")
+        seed_arg = self.cfg.seed_arg
+        if (self.launch_argv is not None and self.distributed_args.rank == 0 and self.cfg.reseed_on_restart
+                and seed_arg and pbt_utils.get_cli_arg(self.launch_argv, seed_arg) is None):
+            print(f"PbtAlgoObserver: NOTICE launch_argv has no {seed_arg} argument: every restart seeds torch, "
+                  f"numpy and the environment with the launch seed again, so their random streams replay after "
+                  f"each restart (PBT's own draws come from a private generator); pass {seed_arg} on the command "
+                  f"line, or set pbt.seed_arg to the name it uses (e.g. seed for a Hydra override), and each "
+                  f"restart gets a seed derived from it")
+        # PBT's draws come from a generator private to this member and process start (`_draw_rng`)
+        self._seed = params.get("params", {}).get("seed")
+        self._rng = None
 
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
 
@@ -347,9 +358,10 @@ class PbtAlgoObserver(AlgoObserver):
                track the best pooled objective of the iteration.
             3) On the PBT cadence (`interval_steps`), once every rank has a full window and a
                finite objective since the last iteration, rank 0 saves a checkpoint, loads the
-               population, logs, and applies the replacement rule (after the `initial_delay` /
-               `start_after` grace windows). Until then the iteration is retried on every step
-               without advancing `pbt_it` (see `_wait_for_objective`).
+               population, logs, and applies the replacement rule (`_pbt_iteration`), with the
+               global `random` module swapped to the member's private generator (`_draw_rng`).
+               Until then the iteration is retried on every step without advancing `pbt_it`
+               (see `_wait_for_objective`).
         """
         distributed = self._distributed()
         if distributed:
@@ -394,7 +406,18 @@ class PbtAlgoObserver(AlgoObserver):
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
         if self.distributed_args.rank != 0:
             return
-        self._pbt_iteration(pooled.total / pooled.count, best_in_iteration, frame)
+        # PBT's draws (donor, leader-params coin, mutations) come from this member's private stream,
+        # also in a subclass that replaces _pbt_iteration and calls `random` itself
+        with pbt_utils.swap_random_state(self._draw_rng()):
+            self._pbt_iteration(pooled.total / pooled.count, best_in_iteration, frame)
+
+    def _draw_rng(self):
+        """The generator of PBT's draws, created at the first iteration from the config seed, the
+        member, the restart count and the frame this process started at (`pbt_utils.draw_rng`)."""
+        if getattr(self, "_rng", None) is None:
+            self._rng = pbt_utils.draw_rng(getattr(self, "_seed", None), self.cfg.policy_idx,
+                                           getattr(self, "restart_count", 0), getattr(self, "initial_frame", 0))
+        return self._rng
 
     def _wait_for_objective(self, iteration, pooled):
         """The iteration due at boundary `iteration` waits: a rank's window is not full yet, or a
@@ -469,11 +492,26 @@ class PbtAlgoObserver(AlgoObserver):
                   f"them as this member's current state")
 
     def _pbt_iteration(self, score, best_in_iteration, frame):
+        """One PBT iteration on rank 0: save this member's checkpoint, load the population's, log,
+        record a new population best, and apply the replacement rule.
+
+        No decision inside the grace windows (`start_after` since the process started or a
+        self-mutation was applied, `initial_delay` since the start of training), nor when the
+        run ends before a restart could pay off (`_frames_to_end`); the member's yaml says
+        `replaceable: false` then, so peers keep it out of their worst group. A self-mutation
+        that changes no value keeps training; one with changes goes to `_apply_self_mutation`
+        first, and restarts unless that applied it. A restart marks this iteration's yaml not
+        replaceable once restart.pth is written: peers read it until the restarted process saves.
+        """
         cfg = self.cfg
         frame_left = (self.pbt_it + 1) * cfg.interval_steps - frame
         print(f"Policy {cfg.policy_idx}, frames_left {frame_left}, PBT it {self.pbt_it}, objective {score:.6g}")
+        in_grace = frame - self.initial_frame < cfg.start_after or frame < cfg.initial_delay
+        to_end = self._frames_to_end(frame)
+        ending = to_end is not None and to_end[0] < max(cfg.start_after, cfg.interval_steps)
         try:
-            pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params)
+            pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params,
+                                          replaceable=not (in_grace or ending))
             ckpts = pbt_utils.load_pbt_ckpts(self.ws_dir, cfg.policy_idx, cfg.num_policies, self.pbt_it)
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
         except Exception as exc:
@@ -486,31 +524,47 @@ class PbtAlgoObserver(AlgoObserver):
             return
         self._consecutive_errors = 0
 
+        status = pbt_utils.member_status(ckpts, self.pbt_it)
         sumry = {i: None if c is None else {k: v for k, v in c.items() if k != "params"} for i, c in ckpts.items()}
-        self.printer.print_ckpt_summary(sumry)
+        self.printer.print_ckpt_summary(sumry, status=status)
+        unreported = sorted(p for p, s in status.items() if s == pbt_utils.NOT_REPORTED)
+        if unreported:
+            print(f"Policy {cfg.policy_idx}: WARNING members {unreported} have not reported (no checkpoint at or "
+                  f"below iteration {self.pbt_it} in {self.ws_dir}), so they are not ranked: are all "
+                  f"{cfg.num_policies} members (num_policies) running?")
 
         objectives = {p: (c["true_objective"] if c else None) for p, c in ckpts.items()}
         initialized = {p: o for p, o in objectives.items() if o is not None and o > _UNINITIALIZED_VALUE}
-        self._write_summaries(score, initialized, frame)
+        # equal objectives rank in an order every member shares at this iteration, new at the next
+        order = pbt_utils.tie_break_order(cfg.workspace, self.pbt_it, cfg.num_policies)
+        self._write_summaries(score, initialized, frame, order=order)
         if not initialized:
             print("No policies initialized; skipping PBT iteration.")
             return
 
-        best_objective, best_policy = max((o, p) for p, o in initialized.items())
+        best_policy = pbt_utils.rank_members(initialized, order)[0]
         if best_policy == cfg.policy_idx:
             try:
-                pbt_utils.maybe_save_best(self.ws_dir, cfg.policy_idx, best_objective, self.pbt_it, frame,
+                pbt_utils.maybe_save_best(self.ws_dir, cfg.policy_idx, initialized[best_policy], self.pbt_it, frame,
                                           ckpts[best_policy]["checkpoint"], self.pbt_params)
             except Exception as exc:
                 print(f"Policy {cfg.policy_idx}: exception {exc!r} while saving the population-best checkpoint")
 
-        if frame - self.initial_frame < cfg.start_after or frame < cfg.initial_delay:
+        if in_grace:
             print(f"Policy {cfg.policy_idx}: within the grace window (frame {frame}, restarted at "
                   f"{self.initial_frame}, start_after {cfg.start_after}, initial_delay {cfg.initial_delay})")
             return
+        if ending:
+            print(f"Policy {cfg.policy_idx}: {to_end[0]} frames left after this epoch before {to_end[1]} ends the "
+                  f"run, fewer than max(start_after, interval_steps) = {max(cfg.start_after, cfg.interval_steps)}: "
+                  f"no replacement this close to the end (a restarted member could not leave its grace window "
+                  f"or reach another iteration)")
+            return
 
         if cfg.replace_rule == "dexpbt":
-            source, reason = pbt_utils.select_dexpbt(objectives, cfg.policy_idx, score, best_in_iteration, cfg)
+            eligible = {p for p, s in status.items() if s == pbt_utils.REPLACEABLE}
+            source, reason = pbt_utils.select_dexpbt(objectives, cfg.policy_idx, score, best_in_iteration, cfg,
+                                                     eligible=eligible, order=order)
         else:
             source, reason = pbt_utils.select_threshold(objectives, cfg.policy_idx, cfg)
         print(f"Policy {cfg.policy_idx}: {reason}")
@@ -521,6 +575,24 @@ class PbtAlgoObserver(AlgoObserver):
         use_source_params = cfg.replace_rule == "threshold" or random.random() < cfg.leader_params_prob
         base_params = source_params if use_source_params else self.pbt_params
         new_params = mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range)
+        if source == cfg.policy_idx:
+            changed = {k: v for k, v in new_params.items() if self.pbt_params.get(k) != v}
+            if not changed:
+                # a restart would cost a start-up and a new grace window for the same values
+                print(f"Policy {cfg.policy_idx}: no-op self-mutation: keep training (no value changed)")
+                return
+            if self._apply_self_mutation(changed):
+                # at the x of this iteration's current values, as a restart logs them
+                self._write_params(self.algo.writer, new_params, self._summary_step(frame))
+                self.algo.writer.flush()
+                self.printer.print_mutation_diff(self.pbt_params, new_params,
+                                                 header="Mutated params (applied in process)")
+                self.pbt_params = new_params
+                # the grace window starts over; the saves in it say replaceable: false
+                self.initial_frame = int(frame)
+                print(f"Policy {cfg.policy_idx}: self-mutation applied in process, no restart; grace window from "
+                      f"frame {self.initial_frame}")
+                return
         try:
             # the values this restart mutated from: the child's restore then moves an inherited
             # adaptive LR by this restart's mutation factor only (1 when nothing was mutated)
@@ -555,6 +627,65 @@ class PbtAlgoObserver(AlgoObserver):
         self.restart_mutated = {k: v for k, v in new_params.items() if source_params.get(k) != v}
         self.restart_flag[0] = 1
         self.printer.print_mutation_diff(base_params, new_params)
+        # peers read this iteration's yaml as the member's state until the restarted process saves
+        try:
+            pbt_utils.mark_not_replaceable(self.curr_policy_dir)
+        except Exception as exc:
+            print(f"Policy {cfg.policy_idx}: WARNING could not mark the newest workspace yaml not replaceable: "
+                  f"{exc!r}")
+
+    def _apply_self_mutation(self, changed):
+        """Hook: apply a self-mutation in the running process instead of restarting; return True
+        when it was applied. The base observer restarts (returns False).
+
+        Called on rank 0 inside `_pbt_iteration` for a self-mutation (the member keeps its own
+        weights) that changes some values, before anything is written for a restart. `changed`
+        maps each changed flattened param to its new value. On True the observer takes the new
+        values as `pbt_params`, logs them, restarts the member's grace window (`initial_frame`;
+        its saves say `replaceable: false` until `start_after` frames have passed) and keeps
+        training. The subclass must apply the values on every rank (rank 0 broadcasts them, e.g.
+        after `super().after_steps()`), and should call `_reset_objective_window()` on every rank:
+        the next iteration then ranks the member by episodes played with the new values.
+        """
+        return False
+
+    def _reset_objective_window(self):
+        """Start this rank's objective over: drop its window of episodes, its score and the
+        iteration's best objective. The next iteration waits until every rank's window is full
+        again (see `after_steps`). For a subclass that applies a self-mutation in process
+        (`_apply_self_mutation`), on every rank."""
+        self._window.clear()
+        self._window_sum, self._window_count = 0.0, 0
+        self.score = _UNINITIALIZED_VALUE
+        self.best_in_iteration = None
+
+    def _epoch_frames(self):
+        """The frames the learner adds to `algo.frame` after this epoch's `after_steps`:
+        `curr_frames`, on every rank with multi_gpu."""
+        algo = self.algo
+        curr_frames = int(getattr(algo, "curr_frames", 0) or 0)
+        if getattr(algo, "multi_gpu", False):
+            curr_frames *= int(getattr(algo, "world_size", 1) or 1)
+        return curr_frames
+
+    def _frames_to_end(self, frame):
+        """(frames, limit): the frames this member trains after the current epoch before `limit`
+        (max_epochs or max_frames, the nearer one) ends the run; None without either limit.
+
+        `after_steps` runs before the epoch's frames are added to `algo.frame`, and the run ends
+        after the epoch that reaches a limit: in the last epoch this is <= 0, and no later
+        `after_steps` would act on a restart flag.
+        """
+        algo = self.algo
+        epoch_frames = self._epoch_frames()
+        left = []
+        max_epochs = getattr(algo, "max_epochs", -1)
+        if max_epochs is not None and max_epochs != -1:
+            left.append(((int(max_epochs) - int(algo.epoch_num)) * epoch_frames, "max_epochs"))
+        max_frames = getattr(algo, "max_frames", -1)
+        if max_frames is not None and max_frames != -1:
+            left.append((int(max_frames) - int(frame) - epoch_frames, "max_frames"))
+        return min(left) if left else None
 
     def _summary_step(self, frame=None):
         """x of the pbt/* scalars: the x of this epoch's `rewards/step` point (env steps).
@@ -565,14 +696,13 @@ class PbtAlgoObserver(AlgoObserver):
         """
         algo = self.algo
         frame = int(algo.frame if frame is None else frame)
-        curr_frames = int(getattr(algo, "curr_frames", 0) or 0)
-        if getattr(algo, "multi_gpu", False):
-            curr_frames *= int(getattr(algo, "world_size", 1) or 1)
-        return (frame + curr_frames) // max(1, int(getattr(algo, "num_agents", 1) or 1))
+        return (frame + self._epoch_frames()) // max(1, int(getattr(algo, "num_agents", 1) or 1))
 
-    def _write_summaries(self, score, initialized, frame):
+    def _write_summaries(self, score, initialized, frame, *, order=None):
         """The iteration's pbt/* scalars at `_summary_step(frame)`: objective, population best,
-        rank, restart count and the current value of every numeric mutable param."""
+        rank, restart count and the current value of every numeric mutable param. Members with
+        equal objectives rank in `order` (`pbt_utils.tie_break_order`); without it they share the
+        best of their ranks."""
         writer = getattr(self.algo, "writer", None)
         if writer is None:
             return
@@ -582,7 +712,10 @@ class PbtAlgoObserver(AlgoObserver):
         if initialized:
             writer.add_scalar("pbt/00_best_objective", max(initialized.values()), step)
             if self.cfg.policy_idx in initialized:
-                rank = 1 + sorted(initialized.values(), reverse=True).index(initialized[self.cfg.policy_idx])
+                if order is None:
+                    rank = 1 + sorted(initialized.values(), reverse=True).index(initialized[self.cfg.policy_idx])
+                else:
+                    rank = 1 + pbt_utils.rank_members(initialized, order).index(self.cfg.policy_idx)
                 writer.add_scalar("pbt/rank", rank, step)
         writer.add_scalar("pbt/restart_count", self.restart_count, step)
         self._write_params(writer, self.pbt_params, step)

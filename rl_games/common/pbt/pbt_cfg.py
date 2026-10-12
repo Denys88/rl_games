@@ -40,7 +40,8 @@ class PbtCfg:
     Two replacement rules are available (`replace_rule`):
       - "dexpbt" (default): rank the population; a member in the worst `replace_fraction_worst`
         restarts from a random member of the best `replace_fraction_best` when the gap is large
-        enough, otherwise it restarts from itself with mutated parameters (DexPBT).
+        enough, otherwise it restarts from itself with mutated parameters (DexPBT), unless the
+        mutation changed no value.
       - "threshold": underperformers (score < min(mean - threshold_std*std, mean - threshold_abs))
         restart from a random leader (score > max(mean + threshold_std*std, mean + threshold_abs)).
     On replacement, selected hyperparameters are mutated by a random factor in `change_range`.
@@ -87,8 +88,10 @@ class PbtCfg:
     """Environment steps between PBT iterations (save, compare, replace/mutate); > 0."""
 
     start_after: int = 0
-    """Environment steps a member trains after each (re)start before it can be replaced.
-    Scores right after a restart still mostly measure the source policy, not the mutation."""
+    """Environment steps a member trains after each (re)start, or a self-mutation applied in
+    process, before it can be replaced. Scores right after a restart still mostly measure the
+    source policy, not the mutation. No replacement is decided either with fewer than
+    max(start_after, interval_steps) steps left before max_epochs/max_frames end the run."""
 
     initial_delay: int = 0
     """Environment steps from the start of training before any member can be replaced."""
@@ -99,7 +102,9 @@ class PbtCfg:
     else 'dexpbt'."""
 
     replace_fraction_worst: float = 0.125
-    """dexpbt: fraction of the population (rounded up) eligible for replacement, in (0, 1]."""
+    """dexpbt: fraction of the population (rounded up) eligible for replacement, in (0, 1]: the
+    members ranked last among those that reported and can be replaced now (not restarting, in a
+    grace window, near the end of their run or 2+ iterations behind)."""
 
     replace_fraction_best: float = 0.3
     """dexpbt: fraction of the population (rounded up) that replacements are drawn from, in (0, 1]."""
@@ -147,9 +152,10 @@ class PbtCfg:
     """CLI name of the train script's checkpoint argument; restarts pass `<name>=<path>`."""
 
     reseed_on_restart: bool = True
-    """Give every restart a new seed derived from (seed, policy_idx, restart count), so a
-    member does not replay its initial random streams after each replacement. A seed of -1
-    (random per launch) is kept as is."""
+    """Give every restart a new seed derived from (seed, policy_idx, restart count) on its
+    command line (`seed_arg`), so a member does not replay its initial random streams after
+    each replacement. A seed of -1 (random per launch) is kept as is. PBT's own draws (donor,
+    mutations) come from a private generator either way."""
 
     seed_arg: str = "--seed"
     """CLI name of the train script's seed argument (used by `reseed_on_restart`)."""
