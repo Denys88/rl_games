@@ -155,11 +155,12 @@ class PbtCfg:
     """CLI name of the train script's seed argument (used by `reseed_on_restart`)."""
 
     max_consecutive_errors: int = 5
-    """Raise after this many consecutive PBT iterations fail to save/load checkpoints, or after
-    this many iteration boundaries in a row at which a rank had finished a full window of
-    episodes, and one per env, since the process's last iteration, none with a finite
-    objective (a diverged member), instead of silently training without PBT (>= 1). Waiting
-    for episodes to end, or for the first iteration after a (re)start, never counts."""
+    """Raise after this many consecutive PBT iterations fail to save/load checkpoints (a state
+    whose weights hold NaN or inf is not saved), or after this many iteration boundaries in a
+    row at which a rank had no finite objective since its last iteration (or the process
+    start) although every env of the rank had ended an episode, and at least a window of
+    episodes ended (a diverged member), instead of silently training without PBT (>= 1).
+    Waiting for episodes to end never counts."""
 
     wandb_finish_timeout: float = 120.0
     """Seconds a restart waits for the open wandb run to finish before re-executing (a finite

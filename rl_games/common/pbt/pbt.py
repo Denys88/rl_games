@@ -36,7 +36,7 @@ class _PooledWindow(NamedTuple):
     count: int         # episodes in the windows
     known: bool        # every rank's window is full
     stale_ranks: int   # ranks without a finite objective since the last iteration
-    failed_ranks: int  # stale ranks that finished a window of episodes since then, none with one
+    failed_ranks: int  # stale ranks whose every env ended an episode since then (and a window of them)
     valid: int         # episodes since then with a finite objective
     nonfinite: int     # ... with a NaN or infinite one
     unread: int        # ... on steps whose objective could not be read
@@ -165,9 +165,9 @@ class PbtAlgoObserver(AlgoObserver):
         # this rank's finished episodes since the last PBT iteration: with a finite objective (in
         # the window), with a NaN/inf one, and on steps whose objective could not be read
         self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
-        # non-finite or unreadable episodes without a finite one that make a rank failed (diverged)
-        self._failed_episodes = self._window_size
-        self._iteration_ran = False  # an iteration ran in this process
+        # the envs that ended an episode since the last iteration while the rank had no finite
+        # objective (sized in after_init): with every env marked, the rank has failed (diverged)
+        self._failed_envs = np.zeros(1, dtype=bool)
         self._wait_iteration = None  # the boundary the next iteration waits at
         self._failed_boundaries = 0  # consecutive boundaries waited at with a failed rank
 
@@ -242,9 +242,9 @@ class PbtAlgoObserver(AlgoObserver):
         num_envs = max(1, int(getattr(algo, "num_actors", 1) or 1))
         if self.cfg.objective_window <= 0:
             self._window_size = num_envs
-        # a full window and an episode per env: a few envs diverging between the episodes of the
-        # others don't make a failed rank
-        self._failed_episodes = max(self._window_size, num_envs)
+        # a failed rank needs a failed episode on every env: one env in a NaN reset loop while the
+        # others are mid-episode is not a diverged policy
+        self._failed_envs = np.zeros(num_envs, dtype=bool)
         if self.distributed_args.rank != 0:
             return
 
@@ -259,7 +259,8 @@ class PbtAlgoObserver(AlgoObserver):
         `self.score` is this rank's mean over the window. An episode whose objective is NaN or
         infinite is left out on its own (see `pbt_utils.episode_stats`). For the iteration gate
         the rank counts its finished episodes since the last PBT iteration: with a finite
-        objective, with a non-finite one, and on steps whose objective could not be read.
+        objective, with a non-finite one, and on steps whose objective could not be read. Until
+        it has a finite one, it also marks the envs that ended an episode.
         """
         value = infos
         num_agents = int(getattr(getattr(self, "algo", None), "num_agents", 1) or 1)
@@ -272,11 +273,14 @@ class PbtAlgoObserver(AlgoObserver):
             # score, and report the last failure if no objective arrives by an iteration boundary
             self._last_objective_error = repr(exc)
             self._interval_unread += _num_finished(done_indices)
+            self._mark_failed_envs(done_indices, num_agents)
             return
         if count and not math.isfinite(total):
             nonfinite, count = nonfinite + count, 0  # finite values whose sum overflows
         self._interval_nonfinite += nonfinite
         if count == 0:
+            if nonfinite:
+                self._mark_failed_envs(done_indices, num_agents)
             return
         self._interval_valid += count
         self._window.append((total, count))
@@ -288,6 +292,22 @@ class PbtAlgoObserver(AlgoObserver):
             self._window_count -= old_count
         self.score = self._window_sum / self._window_count
 
+    def _mark_failed_envs(self, done_indices, num_agents):
+        """Mark the envs that ended an episode on a step without a finite objective. Only needed
+        while the rank has had no finite objective since the last iteration (one makes it fresh
+        until the next iteration, whatever the mask holds), so the done indices are copied to
+        the host (one sync) on such steps only."""
+        if self._interval_valid or self._failed_envs.all():
+            return
+        if done_indices is None:
+            self._failed_envs[:] = True  # no env indices: the sample stands for the rank
+            return
+        try:
+            env_idx = torch.as_tensor(done_indices).reshape(-1).cpu().long().numpy() // max(1, num_agents)
+        except (TypeError, ValueError, RuntimeError):
+            return
+        self._failed_envs[env_idx[(env_idx >= 0) & (env_idx < self._failed_envs.size)]] = True
+
     def _distributed(self):
         return self.distributed_args.distributed and dist.is_available() and dist.is_initialized()
 
@@ -296,11 +316,13 @@ class PbtAlgoObserver(AlgoObserver):
         pooled in the one all-reduce every rank makes per step (see `_PooledWindow`).
 
         A rank is stale without a finite objective since the last iteration, and failed when it
-        is stale although it finished a full window of episodes since then, and at least one
-        per env (all non-finite or unreadable: a diverged policy, not episodes yet to end).
+        is stale although every one of its envs ended an episode since then, and at least a
+        window of episodes ended (all non-finite or unreadable: a diverged policy, or infos
+        without the objective; not episodes yet to end, nor a few envs failing on their own).
         """
         fresh = self._interval_valid > 0
-        failed = not fresh and self._interval_nonfinite + self._interval_unread >= self._failed_episodes
+        failed = (not fresh and self._interval_nonfinite + self._interval_unread >= self._window_size
+                  and bool(self._failed_envs.all()))
         local = [self._window_sum, self._window_count, self._window_count >= self._window_size, fresh, failed,
                  self._interval_valid, self._interval_nonfinite, self._interval_unread]
         ranks = 1
@@ -366,7 +388,8 @@ class PbtAlgoObserver(AlgoObserver):
         self.pbt_it = iteration
         # the next iteration needs a new objective on every rank; its warnings report its own lookup errors
         self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
-        self._iteration_ran, self._wait_iteration, self._failed_boundaries = True, None, 0
+        self._failed_envs[:] = False
+        self._wait_iteration, self._failed_boundaries = None, 0
         self._last_objective_error = None
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
         if self.distributed_args.rank != 0:
@@ -376,29 +399,32 @@ class PbtAlgoObserver(AlgoObserver):
     def _wait_for_objective(self, iteration, pooled):
         """The iteration due at boundary `iteration` waits: a rank's window is not full yet, or a
         rank has no finite objective since the last iteration (its episodes are still running,
-        or their objective is NaN or missing). `after_steps` retries it at every step.
+        or their objective is NaN or missing). `after_steps` retries it at every step. Nothing
+        is saved meanwhile, so a healthy member's workspace iterations skip the boundaries it
+        waits through: with synchronized time limits (every env resets at a (re)start) episodes
+        end in bursts, and an interval shorter than an episode often passes without one ending.
 
-        Rank 0 warns once per boundary. Once an iteration has run in this process, every rank
-        raises after `max_consecutive_errors` boundaries in a row at which a rank had failed
-        (finished a full window of episodes, and one per env, since the last iteration, none
-        with a finite objective): a diverged member would otherwise train on without ever saving
-        or being replaced. Boundaries that only wait for episodes to end don't count. Pooled
-        values: every rank decides alike.
+        Rank 0 warns once per boundary. Every rank raises after `max_consecutive_errors`
+        boundaries in a row at which a rank had failed (no finite objective since the last
+        iteration or the process start, although every env of the rank ended an episode, and at
+        least a window of them): a diverged member, also one that is NaN from its first step (a
+        restart or resume from a diverged checkpoint), would otherwise train on without ever
+        saving or being replaced. Boundaries that only wait for episodes to end don't count.
+        Pooled values: every rank decides alike.
         """
         if iteration == self._wait_iteration:
             return
         self._wait_iteration = iteration
         cfg = self.cfg
-        if self._iteration_ran:
-            self._failed_boundaries = self._failed_boundaries + 1 if pooled.failed_ranks else 0
+        self._failed_boundaries = self._failed_boundaries + 1 if pooled.failed_ranks else 0
         counts = (f"{pooled.valid} finite, {pooled.nonfinite} non-finite and {pooled.unread} unreadable episodes "
                   f"since iteration {self.pbt_it}")
         if self._failed_boundaries >= cfg.max_consecutive_errors:
             raise RuntimeError(
                 f"PBT objective '{cfg.objective}': {self._failed_boundaries} consecutive iteration boundaries at "
-                f"which {pooled.failed_ranks} of {pooled.ranks} ranks had finished episodes without a finite "
-                f"objective (max_consecutive_errors): a diverged policy, or infos that no longer carry the "
-                f"objective; {counts}; last lookup error: {self._last_objective_error}")
+                f"which {pooled.failed_ranks} of {pooled.ranks} ranks had no finite objective although every env "
+                f"had ended an episode (max_consecutive_errors): a diverged policy, or infos that no longer carry "
+                f"the objective; {counts}; last lookup error: {self._last_objective_error}")
         if self.distributed_args.rank != 0:
             return
         if pooled.known:
@@ -407,8 +433,8 @@ class PbtAlgoObserver(AlgoObserver):
         else:
             what = (f"objective '{cfg.objective}': {pooled.count} finished episodes counted, {self._window_size} "
                     f"per rank needed ({pooled.nonfinite} non-finite and {pooled.unread} unreadable dropped)")
-        stops = (f"; the member stops at {cfg.max_consecutive_errors} boundaries in a row at which a rank finished "
-                 f"episodes without a finite objective ({self._failed_boundaries} so far)"
+        stops = (f"; the member stops at {cfg.max_consecutive_errors} boundaries in a row at which a rank had no "
+                 f"finite objective although every env had ended an episode ({self._failed_boundaries} so far)"
                  if self._failed_boundaries else "")
         print(f"Policy {cfg.policy_idx}: WARNING PBT iteration {iteration} waits for {what}; "
               f"last lookup error: {self._last_objective_error}{stops}")
