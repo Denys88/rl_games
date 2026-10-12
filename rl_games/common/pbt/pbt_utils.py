@@ -143,14 +143,16 @@ def dedup_path_list(value: str) -> str:
     """A PATH-like list without repeated entries, first occurrences kept in order.
 
     The first empty entry is kept too: it stands for the current directory (what
-    `export PYTHONPATH=$PYTHONPATH:/x` leaves when the variable was unset).
+    `export PYTHONPATH=$PYTHONPATH:/x` leaves when the variable was unset). A list of empty
+    entries only (`:`) stays one separator, since an empty value has no entry at all.
     """
     seen, parts = set(), []
     for part in value.split(os.pathsep):
         if part not in seen:
             seen.add(part)
             parts.append(part)
-    return os.pathsep.join(parts)
+    deduped = os.pathsep.join(parts)
+    return deduped if deduped or not value else os.pathsep
 
 
 def flatten_dict(d, prefix="", separator="."):
@@ -609,6 +611,10 @@ def member_seed(seed, policy_idx: int, stride: int = 1_000_000):
 
     Members launched with the same seed start as copies (initial weights, env and sampling
     streams), so the train script launches each member with `member_seed(seed, policy_idx)`.
+    Apply it to the seed the run uses, after the command-line override, e.g.
+    `params['seed'] = member_seed(params['seed'], policy_idx)`, not to an optional `--seed`
+    that defaults to None: a None seed leaves rl_games' Runner to seed with `int(time.time())`,
+    so members launched in the same second start as copies.
     With `multi_gpu`, rl_games adds the global rank to the seed itself; scripts that add it
     as well get `seed + 2 * rank`, so `stride` must exceed 2 * (GPUs per member - 1).
     """
@@ -648,6 +654,7 @@ def launch_dirs() -> tuple[str, str | None]:
     the relative paths of the command point, and passes that run dir on: the child would
     otherwise nest a new run dir inside it and move a relative train_dir and its workspace.
     Without a Hydra job this is (os.getcwd(), None); Hydra is not imported for the check.
+    A best-effort probe: whatever Hydra raises here is not a reason to stop the member.
     """
     cwd = os.getcwd()
     if "hydra" not in sys.modules:
@@ -659,12 +666,15 @@ def launch_dirs() -> tuple[str, str | None]:
         if not HydraConfig.initialized():
             return cwd, None
         original = get_original_cwd()
-    except (ImportError, AttributeError, ValueError):
+    except Exception:
         return cwd, None
     try:
         run_dir = os.path.join(original, HydraConfig.get().runtime.output_dir)
-    except (AttributeError, KeyError, TypeError, ValueError):
-        run_dir = cwd  # Hydra without runtime.output_dir (< 1.2) always runs the job in its run dir
+    except Exception:
+        # Hydra < 1.2 has no runtime.output_dir and always runs the job in its run dir; a config
+        # set by hand (compose API, HydraConfig.instance().set_config) leaves it unset (omegaconf
+        # raises MissingMandatoryValue): no job ran, and the cwd is normally the original one
+        run_dir = cwd
     changed = os.path.realpath(run_dir) == os.path.realpath(cwd) != os.path.realpath(original)
     return original, (os.path.abspath(run_dir) if changed else None)
 

@@ -10,6 +10,7 @@ import random
 import re
 import sys
 import threading
+import traceback
 from collections import deque
 
 import torch
@@ -51,28 +52,6 @@ def _wandb_run():
     return getattr(wandb, "run", None) if wandb is not None else None
 
 
-def _finish_wandb_run(run, timeout):
-    """`run.finish()` in a daemon thread joined for `timeout` seconds: None once it returned,
-    else what went wrong. finish() can block for a long time while wandb is unreachable."""
-    result = {}
-
-    def finish():
-        try:
-            run.finish()
-            result["finished"] = True
-        except BaseException as exc:  # reported by the caller; the restart goes ahead
-            result["error"] = exc
-
-    thread = threading.Thread(target=finish, name="pbt-wandb-finish", daemon=True)
-    thread.start()
-    thread.join(timeout)
-    if thread.is_alive():
-        return f"did not finish within {timeout:g} s"
-    if not result.get("finished"):
-        return f"finish raised {result.get('error')!r}"
-    return None
-
-
 def _flush_stdio():
     """Flush Python's stdout/stderr: os.execv and os._exit discard buffered output, which loses
     the last log lines when output goes to a file or a pipe."""
@@ -96,9 +75,11 @@ class PbtAlgoObserver(AlgoObserver):
     Restarts need a train script that accepts `key=value` hyperparameter overrides (Hydra
     style, as in Isaac Lab / IsaacGymEnvs train scripts) and a checkpoint argument. Pass the
     unmodified launch command as `launch_argv` when the script rewrites `sys.argv` (e.g. for
-    Hydra); the restart then re-runs it verbatim with only the checkpoint and mutated
-    overrides replaced. The restart runs from the launch directory (Hydra's original cwd
-    inside a Hydra job), see `pbt_utils.launch_dirs`.
+    Hydra); the restart then re-runs it with the checkpoint and the mutated overrides
+    replaced, the seed replaced when the command passes `seed_arg` and `reseed_on_restart` is
+    set, the script path made absolute, and `hydra.run.dir` pinned to the run dir inside a
+    Hydra job that changed into it. The restart runs from the launch directory (Hydra's
+    original cwd inside a Hydra job), see `pbt_utils.launch_dirs`.
     """
 
     def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None):
@@ -462,29 +443,75 @@ class PbtAlgoObserver(AlgoObserver):
                 script_args = [script_args[0]] + pbt_utils.remove_cli_arg(script_args[1:], cfg.seed_arg)
                 script_args.append(f"{cfg.seed_arg}={seed}")
 
-        script_args = pbt_utils.absolute_script_path(script_args, self.launch_cwd)
-        if self.hydra_run_dir is not None:
-            script_args = pbt_utils.pin_hydra_run_dir(script_args, self.hydra_run_dir)
+        script_args = pbt_utils.absolute_script_path(script_args, self._launch_cwd())
+        hydra_run_dir = getattr(self, "hydra_run_dir", None)
+        if hydra_run_dir is not None:
+            script_args = pbt_utils.pin_hydra_run_dir(script_args, hydra_run_dir)
 
         command = [self._get_launcher()]
         if self.distributed_args.distributed:
             command.extend(self.distributed_args.get_args_list())
         return command + script_args
 
-    def _finish_wandb(self, run):
-        """Finish the open wandb run before the re-exec; the child resumes it by id through the
-        inherited wandb service. A finish that hangs (wandb unreachable) or fails must not stop
-        the restart: after `wandb_finish_timeout` seconds the child gets its own wandb service and
-        a new run `<run id>-r<restart count>`, as the old service may still be writing this run."""
+    def _launch_cwd(self):
+        """The directory restarts run from: `launch_cwd` from init, else (an observer built
+        without `__init__`, as some downstream tests do) the current directory."""
+        return getattr(self, "launch_cwd", None) or os.getcwd()
+
+    def _finish_wandb(self, run, command):
+        """Finish the open wandb run before the re-exec, on the calling (main) thread: with
+        console="redirect" finish() restores a signal handler, which only the main thread can do.
+
+        After a clean finish the child resumes the run by id through the inherited wandb service.
+        A finish that raises, or that has not returned after `wandb_finish_timeout` seconds
+        (wandb unreachable), must not stop the restart: the child then logs to a new run
+        (`_new_wandb_run`). After a timeout a daemon watchdog thread does that and execs `command`
+        itself while finish() still blocks, and ends the process if that exec fails. Returns when
+        the calling thread is to exec `command`, never once the watchdog has taken over.
+        """
         run_id = run.id
         # setdefault only affects the restarted child process
         os.environ.setdefault("WANDB_RUN_ID", run_id)  # continue with the same run id
         os.environ.setdefault("WANDB_RESUME", "allow")  # allow wandb to resume
         os.environ.setdefault("WANDB_INIT_TIMEOUT", "300")  # give wandb init more time to be fault tolerant
-        failure = _finish_wandb_run(run, self.cfg.wandb_finish_timeout)
-        if failure is None:
-            return
-        # replace the suffix of an earlier timed-out restart instead of appending to it
+        timeout = getattr(self.cfg, "wandb_finish_timeout", PbtCfg.wandb_finish_timeout)
+        finished = threading.Event()
+        exec_claim = threading.Lock()  # taken, never released, by the one thread that execs
+
+        def watchdog():
+            if finished.wait(timeout) or not exec_claim.acquire(blocking=False):
+                return
+            try:
+                self._new_wandb_run(run_id, f"did not finish within {timeout:g} s")
+                self._exec_restart(command)
+            except BaseException:
+                try:
+                    traceback.print_exc()
+                except Exception:
+                    pass
+            # execv returned, so it failed, and finish() may never return: end the member
+            _flush_stdio()
+            os._exit(1)
+
+        thread = threading.Thread(target=watchdog, name="pbt-wandb-watchdog", daemon=True)
+        thread.start()
+        failure = None
+        try:
+            run.finish()
+        except Exception as exc:
+            failure = f"finish raised {exc!r}"
+        finally:
+            finished.set()  # the watchdog stands down, also when finish() is interrupted
+        if not exec_claim.acquire(blocking=False):
+            thread.join()  # the watchdog is replacing (or ending) the process
+            raise RuntimeError("PBT restart: the wandb watchdog thread neither restarted nor ended the process")
+        if failure is not None:
+            self._new_wandb_run(run_id, failure)
+
+    def _new_wandb_run(self, run_id, failure):
+        """After a wandb finish that failed or timed out: the child gets its own wandb service and
+        a new run `<run id>-r<restart count>`, as the old service may still be writing this run."""
+        # replace the suffix of an earlier failed restart instead of appending to it
         new_id = re.sub(r"-r\d+$", "", run_id) + f"-r{self.restart_count + 1}"
         # an inherited service makes the child's wandb.init hang, or fail with "run ID is in use"
         os.environ.pop("WANDB_SERVICE", None)
@@ -522,10 +549,15 @@ class PbtAlgoObserver(AlgoObserver):
 
         run = _wandb_run()
         if run is not None:
-            self._finish_wandb(run)
+            self._finish_wandb(run, command)
+        self._exec_restart(command)
 
+    def _exec_restart(self, command):
+        """Replace this process with `command`, run from the launch directory. Called on the main
+        thread, or by the wandb watchdog thread while finish() blocks the main thread."""
+        launch_cwd = self._launch_cwd()
         print("Running command:", command, flush=True)
-        print(f"Policy {self.cfg.policy_idx}: Restarting self with args {command[1:]} in {self.launch_cwd}", flush=True)
+        print(f"Policy {self.cfg.policy_idx}: Restarting self with args {command[1:]} in {launch_cwd}", flush=True)
 
         pbt_utils.dump_env_sizes()
 
@@ -536,7 +568,7 @@ class PbtAlgoObserver(AlgoObserver):
                 os.environ[var] = pbt_utils.dedup_path_list(val)
 
         try:
-            os.chdir(self.launch_cwd)
+            os.chdir(launch_cwd)
         except OSError as exc:
             print(f"Policy {self.cfg.policy_idx}: WARNING cannot return to the launch directory: {exc!r}")
         _flush_stdio()
