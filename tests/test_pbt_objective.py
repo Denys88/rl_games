@@ -341,7 +341,14 @@ def _gloo_member(rank, world_size, port, workdir, scenario):
     algo.writer = BandWriter() if rank == 0 else None
     obs.after_init(algo)
     result = {"iterations": [], "trace": [], "restarts": [], "raised": None, "returned": False}
-    obs._pbt_iteration = lambda score, best, frame: result["iterations"].append([round(score, 6), frame])
+
+    def iteration(score, best, frame):
+        result["iterations"].append([round(score, 6), frame])
+        if frame == 720:                                    # rank 0 decides a restart
+            obs.new_params, obs.restart_from_checkpoint = {}, "/r.pth"
+            obs.restart_flag[0] = 1
+
+    obs._pbt_iteration = iteration
     obs._restart_with_new_params = lambda *a: result["restarts"].append(algo.frame)
 
     def save():
@@ -359,11 +366,8 @@ def _gloo_member(rank, world_size, port, workdir, scenario):
         result["trace"].append(obs.pbt_it)
         algo.frame += 60
     else:
-        if rank == 0:                                       # rank 0 decides to restart
-            obs.new_params, obs.restart_from_checkpoint = {}, "/r.pth"
-            obs.restart_flag[0] = 1
         save()
-        obs.after_steps()                                   # rank 1 leaves through os._exit(0)
+        obs.after_steps()                                   # the iteration at 720: rank 1 leaves through os._exit(0)
         result["returned"] = True
     save()
     # end as a restarting member does, without tearing the process group down: with a peer gone
@@ -384,9 +388,9 @@ def test_two_process_gloo_stale_rank_holds_both_ranks(tmp_path):
     # after_steps at frames 0, 60, ..., 660; boundaries are crossed at 120, 240, 300, 420, 540, 600.
     # Rank 1 is NaN at frames 180-360: the iteration due at 240 waits until 420 on both ranks
     assert r0["trace"] == r1["trace"] == [0, 0, 1, 1, 1, 1, 1, 4, 4, 5, 6, 6]
-    assert r0["iterations"] == [[0.15, 120], [0.15, 420], [0.15, 540], [0.15, 600]] and r1["iterations"] == []
-    assert r0["raised"] is None and r1["raised"] is None
-    # the restart flag still reaches rank 1, which leaves instead of returning
+    assert r0["iterations"] == [[0.15, 120], [0.15, 420], [0.15, 540], [0.15, 600], [0.15, 720]]
+    assert r1["iterations"] == [] and r0["raised"] is None and r1["raised"] is None
+    # rank 0's restart decision at 720 still reaches rank 1, which leaves instead of returning
     assert r0["restarts"] == [720] and r0["returned"] and not r1["returned"]
 
 
@@ -468,6 +472,7 @@ def test_restart_logs_the_new_params_at_the_iteration_step(tmp_path, monkeypatch
     monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
     monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
     monkeypatch.setattr(pbt_utils, "maybe_save_best", lambda *a, **k: False)
+    obs._restart_with_new_params = lambda *args: None
     obs.process_infos({"episode": {"success": 1.0}}, None)
     obs.after_steps()
     assert obs.restart_flag.item() == 1 and obs.new_params[LR] != 3e-4

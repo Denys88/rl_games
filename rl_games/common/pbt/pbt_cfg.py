@@ -243,6 +243,14 @@ class PbtCfg:
     and holds no '='); `name=value` is one argument. E.g. {'--reset-env-state': 0} for a
     warm-start switch that must not act on restart.pth."""
 
+    self_mutation: str = "restart"
+    """How a self-mutation (the member keeps its weights) takes effect: 'restart' re-execs the
+    member from restart.pth, as a transfer does; 'in_process' sets the new values on the running
+    learner, on every rank before the decision epoch's update (`algo.set_param`), when every
+    changed key is an `agent.params.config` value set_param takes, and restarts otherwise (env
+    and extra_params values, central_value_config values). Either way the member's grace window
+    and objective window start over."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -291,6 +299,7 @@ class PbtCfg:
         donor = re.fullmatch(r"donor:([0-9]+)", self.force_outcome) if isinstance(self.force_outcome, str) else None
         require(self.force_outcome in ("", "self", "best") or (donor and int(donor.group(1)) < self.num_policies),
                 "force_outcome", "'', 'self', 'best' or 'donor:<idx>' with idx in [0, num_policies)")
+        require(self.self_mutation in ("restart", "in_process"), "self_mutation", "'restart' or 'in_process'")
 
     @classmethod
     def from_dict(cls, d):

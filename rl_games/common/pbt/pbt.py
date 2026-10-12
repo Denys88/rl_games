@@ -30,6 +30,10 @@ _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 # prefix of the algo-config keys among the flattened mutable params
 _CONFIG_PREFIX = "agent.params.config."
 
+# rank 0's decision at a PBT iteration, broadcast to every rank (`PbtAlgoObserver._sync_decision`);
+# 0 keeps training
+_RESTART, _MUTATE_IN_PROCESS = 1, 2
+
 
 class _PooledWindow(NamedTuple):
     """The objective windows of all ranks and their episode counts since the last PBT iteration."""
@@ -101,7 +105,8 @@ class PbtAlgoObserver(AlgoObserver):
     fixed cadence (`interval_steps`) every learner saves a scored checkpoint into a shared
     workspace, compares itself against the population, and — if the replacement rule selects
     it — re-execs itself from a better member's checkpoint (or its own) with mutated
-    hyperparameters.
+    hyperparameters. With `pbt.self_mutation: in_process` a mutation of its own values is set
+    on the running learner instead (`_apply_self_mutation`).
 
     Restarts need a train script that accepts `key=value` hyperparameter overrides (Hydra
     style, as in Isaac Lab / IsaacGymEnvs train scripts) and a checkpoint argument. Pass the
@@ -203,8 +208,8 @@ class PbtAlgoObserver(AlgoObserver):
                       + ("" if "pbt_idx" in algo_config else
                          "; params.config.pbt_idx is missing, so the agent will raise KeyError('pbt_idx')"))
         if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not self.distributed_args.distributed:
-            print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: the restart flag "
-                  "is not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
+            print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: rank 0's PBT "
+                  "decisions are not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
         if self.cfg.force_outcome:
             # on every rank: no log of a forced member may pass for a PBT run
             print(f"PbtAlgoObserver: WARNING pbt.force_outcome is {self.cfg.force_outcome!r}: every iteration outside "
@@ -238,11 +243,15 @@ class PbtAlgoObserver(AlgoObserver):
             self._initial_mutation(params)
 
         if self.distributed_args.distributed and torch.cuda.is_available():
-            # NCCL broadcast requires a CUDA tensor
+            # NCCL collectives require CUDA tensors
             self.device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}'
         else:
             self.device = params.get("params", {}).get("config", {}).get("device", "cpu")
-        self.restart_flag = torch.tensor([0], device=self.device)
+        # rank 0's decision at a PBT iteration, which every rank acts on in the same step
+        # (`_sync_decision`): a restart (`_pbt_iteration` sets restart_flag[0] = 1, as subclasses
+        # that replace it do) or an in-process self-mutation (`_apply_self_mutation`)
+        self.restart_flag = torch.tensor([0])
+        self._mutate_in_process = False
 
     def _initial_mutation(self, params):
         """`pbt.initial_mutation`: mutate a fresh member's `agent.params.config` values once, in
@@ -482,10 +491,9 @@ class PbtAlgoObserver(AlgoObserver):
         """Main PBT tick executed every train step.
 
         Flow:
-            1) All ranks: sync the restart flag; non-zero ranks exit and rank 0 re-execs
-               when it is set. The first step after a (re)start then only sets the PBT
-               cadence from the restored frame and gives the learner this process's PBT state
-               again (`_take_learner_state`); rank 0 checks the member directory
+            1) The first step after a (re)start only sets the PBT cadence from the restored
+               frame and gives the learner this process's PBT state again
+               (`_take_learner_state`); rank 0 checks the member directory
                (`_check_member_dir`), and a restarted process logs the restart's cost
                (`_record_restart`).
             2) All ranks: pool the objective windows and episode counts across ranks and
@@ -498,18 +506,11 @@ class PbtAlgoObserver(AlgoObserver):
                (see `_wait_for_objective`). When the iteration decided a restart (the flag is
                set), rank 0 writes the member's restart.yaml (`_save_restart_record`); then it
                appends the iteration's outcome to decisions.jsonl (`_append_decision`).
+            4) All ranks, at the iteration: act on rank 0's decision (`_sync_decision`): the
+               member restarts before this epoch's update, or applies an in-process
+               self-mutation.
         """
         distributed = self._distributed()
-        if distributed:
-            dist.broadcast(self.restart_flag, src=0)
-
-        if self.restart_flag.cpu().item() == 1:
-            if self.distributed_args.rank != 0:
-                _flush_stdio()
-                os._exit(0)
-            self._restart_with_new_params(self.new_params, self.restart_from_checkpoint)
-            return
-
         frame = self.algo.frame
         if self.pbt_it == -1:
             # first step after (re)start: the checkpoint restore has already set the frame
@@ -543,19 +544,62 @@ class PbtAlgoObserver(AlgoObserver):
         self._wait_iteration, self._failed_boundaries = None, 0
         self._last_objective_error = None
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
+        previous = dict(self.pbt_params)  # every rank's values before rank 0's decision
+        if self.distributed_args.rank == 0:
+            objective = pooled.total / pooled.count
+            # PBT's draws (donor, leader-params coin, mutations) come from this member's private stream,
+            # also in a subclass that replaces _pbt_iteration and calls `random` itself
+            with pbt_utils.swap_random_state(self._draw_rng()):
+                decision = self._pbt_iteration(objective, best_in_iteration, frame)
+            # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
+            if int(self.restart_flag[0]) == 1:
+                self.restart_time = time.time()
+                self._save_restart_record()
+            if decision is not None:
+                self._append_decision(self.pbt_it, frame, objective, decision)
+        self._sync_decision(distributed, previous)
+
+    def _sync_decision(self, distributed, previous):
+        """Every rank, right after rank 0's PBT iteration: act on its decision. Rank 0 broadcasts
+        [action, n, values...] (float64, 2 + one slot per mutable param), the iteration's one
+        broadcast. A restart (`restart_flag`) happens now, before this epoch's update: the other
+        ranks exit, rank 0 re-execs. An in-process self-mutation (`_apply_self_mutation`) carries
+        the n new values in sorted key order (rank 0's new params may come in a yaml's order);
+        every rank applies those that differ from `previous`, its values before the decision,
+        which every rank shares (`_apply_in_process`).
+        """
+        keys = sorted(previous)
+        message = torch.zeros(2 + len(keys), dtype=torch.float64, device=self.device)
+        if self.distributed_args.rank == 0:
+            if int(self.restart_flag[0]) == 1:
+                message[0] = _RESTART
+            elif self._mutate_in_process:
+                message[0], message[1] = _MUTATE_IN_PROCESS, len(keys)
+                message[2:] = torch.tensor([float(self.pbt_params[key]) for key in keys], dtype=torch.float64)
+            self._mutate_in_process = False
+        if distributed:
+            dist.broadcast(message, src=0)
+        action, count = int(message[0]), int(message[1])
+        if action == _RESTART:
+            if self.distributed_args.rank != 0:
+                _flush_stdio()
+                os._exit(0)
+            self._restart_with_new_params(self.new_params, self.restart_from_checkpoint)
+        elif action == _MUTATE_IN_PROCESS:
+            values = dict(zip(keys, message[2:2 + count].tolist()))
+            self._apply_in_process({key: value for key, value in values.items() if value != previous[key]})
+
+    def _apply_in_process(self, changed):
+        """Every rank: set the changed `agent.params.config` values of an in-process self-mutation
+        on the learner, in key order, with `algo.set_param` (rank-symmetric: every rank changes
+        the same values), take them as this member's params (rank 0's `_pbt_iteration` already
+        has), and start the objective window over: the next iteration ranks the member on
+        episodes played with them."""
+        for key in sorted(changed):
+            self.algo.set_param(key[len(_CONFIG_PREFIX):], changed[key])
         if self.distributed_args.rank != 0:
-            return
-        objective = pooled.total / pooled.count
-        # PBT's draws (donor, leader-params coin, mutations) come from this member's private stream,
-        # also in a subclass that replaces _pbt_iteration and calls `random` itself
-        with pbt_utils.swap_random_state(self._draw_rng()):
-            decision = self._pbt_iteration(objective, best_in_iteration, frame)
-        # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
-        if self.restart_flag.cpu().item() == 1:
-            self.restart_time = time.time()
-            self._save_restart_record()
-        if decision is not None:
-            self._append_decision(self.pbt_it, frame, objective, decision)
+            self._set_pbt_params(dict(self.pbt_params, **changed))
+        self._reset_objective_window()
 
     def _draw_rng(self):
         """The generator of PBT's draws, created at the first iteration from the config seed, the
@@ -617,11 +661,11 @@ class PbtAlgoObserver(AlgoObserver):
         Workspace files are named by iteration only, so peers read whatever this directory holds
         as this member's current state, and may copy its weights. A fresh launch (not a PBT
         restart, frame 0 after the restore) over numbered checkpoints of an earlier run raises
-        unless `pbt.reuse_workspace` is set; this step's only collective (the restart flag
-        broadcast) is behind it, and torchrun then stops the other ranks. Otherwise this member's
-        files above its current iteration are deleted: a relaunch from an older checkpoint, or
-        reused leftovers. So is a restart.yaml of a decision above the current iteration, unless
-        this process is a PBT restart (the record is then its own).
+        unless `pbt.reuse_workspace` is set; the step runs no collective, and torchrun then stops
+        the other ranks. Otherwise this member's files above its current iteration are deleted: a
+        relaunch from an older checkpoint, or reused leftovers. So is a restart.yaml of a decision
+        above the current iteration, unless this process is a PBT restart (the record is then its
+        own).
         """
         directory = getattr(self, "curr_policy_dir", None)
         if directory is None or not os.path.isdir(directory):
@@ -872,7 +916,7 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _apply_self_mutation(self, changed):
         """Hook: apply a self-mutation in the running process instead of restarting; return True
-        when it was applied. The base observer restarts (returns False).
+        when it is applied.
 
         Called on rank 0 inside `_pbt_iteration` for a self-mutation (the member keeps its own
         weights) that changes some values, before anything is written for a restart. `changed`
@@ -881,12 +925,30 @@ class PbtAlgoObserver(AlgoObserver):
         into restart.pth to the learner's `pbt_history` with `in_process: True` (on rank 0, which
         saves the learner's checkpoints), restarts the member's grace window (`initial_frame`; its
         saves say `replaceable: false` until `start_after` frames have passed), records the
-        outcome `in_process` in decisions.jsonl and keeps training. The
-        subclass must apply the values on every rank (rank 0 broadcasts them, e.g. after
-        `super().after_steps()`), and should call `_reset_objective_window()` on every rank: the
-        next iteration then ranks the member by episodes played with the new values.
+        outcome `in_process` in decisions.jsonl and keeps training.
+
+        The base applies it under `pbt.self_mutation: in_process` when every changed key is an
+        `agent.params.config` value the learner's `set_param` takes (`A2CBase.SET_PARAMS`):
+        `after_steps` then broadcasts the new values, and every rank sets them before this
+        epoch's update (`_apply_in_process`). Env and extra_params values, which apply when the
+        env is built, and central_value_config values restart the member, as does the default
+        'restart'. A subclass that applies the values itself returns True without calling this
+        method; the base then broadcasts none, and the subclass must apply them on every rank
+        (rank 0 broadcasts them, e.g. after `super().after_steps()`) and should call
+        `_reset_objective_window()` on every rank: the next iteration then ranks the member by
+        episodes played with the new values.
         """
-        return False
+        if self.cfg.self_mutation != "in_process":
+            return False
+        settable = getattr(self.algo, "SET_PARAMS", ())
+        fixed = sorted(key for key in changed
+                       if not key.startswith(_CONFIG_PREFIX) or key[len(_CONFIG_PREFIX):] not in settable)
+        if fixed:
+            print(f"Policy {self.cfg.policy_idx}: {fixed} can't change in the running process: the self-mutation "
+                  f"restarts the member")
+            return False
+        self._mutate_in_process = True
+        return True
 
     def _forced_stamp(self):
         """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls, best records,
@@ -918,8 +980,7 @@ class PbtAlgoObserver(AlgoObserver):
         (max_epochs or max_frames, the nearer one) ends the run; None without either limit.
 
         `after_steps` runs before the epoch's frames are added to `algo.frame`, and the run ends
-        after the epoch that reaches a limit: in the last epoch this is <= 0, and no later
-        `after_steps` would act on a restart flag.
+        after the epoch that reaches a limit: in the last epoch this is <= 0.
         """
         algo = self.algo
         epoch_frames = self._epoch_frames()

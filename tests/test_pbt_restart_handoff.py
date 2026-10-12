@@ -111,10 +111,6 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
     algo = MemberAlgo(tmp_path, 20_500, 160)
     obs.after_init(algo)
     obs.pbt_it, obs.initial_frame = 19, 0
-    obs.process_infos({"episode": {"success": 1.0}}, None)
-    obs.after_steps()                                       # iteration 20: transfer from member 0
-    assert obs.restart_flag.item() == 1 and obs.restart_source == 0
-
     execs = []
 
     def fake_execv(path, argv):
@@ -122,8 +118,10 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
         raise ExecCalled()
 
     monkeypatch.setattr(os, "execv", fake_execv)
+    obs.process_infos({"episode": {"success": 1.0}}, None)
     with pytest.raises(ExecCalled):
-        obs.after_steps()                                   # the next step re-execs
+        obs.after_steps()                                   # iteration 20: a transfer from member 0, re-exec'd now
+    assert obs.restart_flag.item() == 1 and obs.restart_source == 0
     [(path, argv, environ)] = execs
     assert path == argv[0]
     assert algo.writer.closed
