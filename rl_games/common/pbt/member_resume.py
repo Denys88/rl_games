@@ -4,10 +4,12 @@
         [--format json|shell] [--checkpoint-arg NAME]
 
 `json` (the default) prints the dict, or null when the member's directory holds nothing to resume
-from. `shell` prints the payload's export and a `set --` that appends the checkpoint argument, the
-params and, for a retried restart, its seed to the positional parameters, for a launcher to eval
-before it runs the member's command (argparse options and Hydra overrides take the last value);
-nothing when there is nothing to resume from (the command then starts fresh):
+from. `shell` prints the exports of the payload and of a retried restart's `environ` (its wandb
+run), and a `set --` that appends the checkpoint argument, the params and, for a retried restart,
+its seed to the positional parameters, for a launcher to eval before it runs the member's command
+(argparse options and Hydra overrides take the last value; the launch-only `restart_drop_args`
+stay: `python -m rl_games.common.pbt.supervise` removes them); nothing when there is nothing to
+resume from (the command then starts fresh):
 
     set -- python train.py --policy-idx 3 ...          # the member's launch command
     eval "$(python -m rl_games.common.pbt.member_resume --workspace ws --policy-idx 3 --format shell)"
@@ -46,6 +48,8 @@ def main(argv=None) -> int:
             appended.append(f"{resume['seed_arg']}={resume['seed']}")
         payload = json.dumps(resume["payload"], default=pbt_utils.json_default)
         print(f"export {pbt_utils.RESTART_ENV_VAR}={shlex.quote(payload)}")
+        for key, value in resume["environ"].items():
+            print(f"export {key}={shlex.quote(str(value))}")
         print(f'set -- "$@" {shlex.join(appended)}')
     return 0
 

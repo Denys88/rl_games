@@ -407,7 +407,7 @@ def _check_finite_weights(state, what) -> None:
 
 
 def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params, *, replaceable=True,
-                        checkpoint_arg=None, extra=None):
+                        checkpoint_arg=None, extra=None, restart_drop_args=None):
     """Save a PBT checkpoint (.pth and .yaml) with policy state, score, and metadata (rank 0 only).
 
     The yaml is plain YAML: a value it can't hold plainly (a numpy scalar from a custom mutation
@@ -416,7 +416,9 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
     finite one. Both files are written to a temp name and renamed, the .pth first, so readers
     never see partial files or a yaml without its checkpoint. `replaceable: false` keeps the
     member out of its peers' worst group while it can't act on a replacement (see `member_status`).
-    `checkpoint_arg`, the train script's checkpoint argument, is recorded for `member_resume`.
+    `checkpoint_arg`, the train script's checkpoint argument, and `restart_drop_args`, its
+    launch-only arguments (`pbt.restart_drop_args`, when there are any), are recorded for
+    `member_resume`.
     With the learner's PBT state (`algo.pbt_state`, set by the observer) the yaml also records
     the member's `restart_count` and the code and setup it runs (`identity_mismatches`). `time`
     is the wall clock of the save (see `member_status`).
@@ -439,6 +441,8 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
             "replaceable": bool(replaceable),
             "checkpoint_arg": checkpoint_arg,
         }
+        if restart_drop_args:
+            data["restart_drop_args"] = dict(restart_drop_args)
         pbt_state = getattr(algo, "pbt_state", None)
         if pbt_state:
             data.update(restart_count=pbt_state["restart_count"], **pbt_state["population"])
@@ -1203,7 +1207,11 @@ TRANSFER, SELF_MUTATION, RESUME = "transfer", "self_mutation", "resume"
 # a member's record of its last restart decision, next to restart.pth in its workspace directory
 RESTART_RECORD = "restart.yaml"
 # what restart.yaml holds besides the payload's keys
-_RECORD_ONLY = ("epoch", "params", "seed", "seed_arg", "forced")
+_RECORD_ONLY = ("epoch", "params", "seed", "seed_arg", "forced", "environ")
+# the exit status of a member's rank 0 that ends for a restart (`pbt.restart_mode: exit`): EX_TEMPFAIL
+# of sysexits.h, unlike Python's (1 for an uncaught exception, 2 for a usage error), torchrun's (1
+# for a failed worker) and a shell's for a signal (128 + N)
+RESTART_EXIT_CODE = 75
 # a member's log of its PBT iterations' outcomes, one JSON object per line (`append_decision`)
 DECISIONS = "decisions.jsonl"
 _restart_info_cache: dict | None = None
@@ -1235,18 +1243,21 @@ def restart_info() -> dict | None:
       - experiment_name: the run name the member's previous process wrote into (None when its
         learner had none);
       - time (of the decision, `time.time()`) and frame_reached (the member's frame at the re-exec,
-        the rollout it had played included): the restarted process logs the restart's cost from
-        them; a resume has neither, a retried restart (`attempt`) no frame_reached;
+        or the exit of `pbt.restart_mode: exit`, the rollout it had played included): the
+        restarted process logs the restart's cost from them; a resume has neither, a retried
+        restart (`attempt`) no frame_reached;
       - attempt: a relaunch of the restart by `member_resume` (2 for the first); absent at the
         restart itself;
       - schema: the payload format. A payload from an older rl_games has none of schema,
         experiment_name, time and frame_reached.
     The member's restart.yaml (`RESTART_RECORD`), written at the decision, holds the same keys but
     frame_reached, the decision's epoch, every new param value and the seed the restart command
-    passes (`seed`, `seed_arg`). Environments can read the payload in `set_env_state` to tell a
-    population transfer from a resume. Parsed once per process; the variable is then removed
-    from the environment. After a transfer loaded in the running process (`pbt.transfer:
-    in_process`) it returns that transfer's payload, on every rank, already in `set_env_state`.
+    passes (`seed`, `seed_arg`). Under `pbt.restart_mode: exit` the member then adds frame_reached
+    and `environ`, the wandb variables an exec'd restart inherits. Environments can read the
+    payload in `set_env_state` to tell a population transfer from a resume. Parsed once per
+    process; the variable is then removed from the environment. After a transfer loaded in the
+    running process (`pbt.transfer: in_process`) it returns that transfer's payload, on every
+    rank, already in `set_env_state`.
     """
     global _restart_info_cache, _restart_info_read
     if not _restart_info_read:
@@ -1332,19 +1343,23 @@ def _load_restart_record(policy_dir, policy_idx) -> dict | None:
     return record if usable else None
 
 
-def member_resume(workspace_dir, policy_idx) -> dict | None:
+def member_resume(workspace_dir, policy_idx, *, requested=False) -> dict | None:
     """What a relaunch of member `policy_idx`, whose processes are gone, starts from; None when its
-    directory holds nothing to resume from. Returns {"checkpoint", "checkpoint_arg", "seed",
-    "seed_arg", "params", "payload", "source"}: the checkpoint and the train script's checkpoint
-    argument (the newest yaml's; None when it records none), the seed to pass as `seed_arg` (None:
-    the launch command's), the flattened params (the `key=value` overrides) to launch with, and
-    the payload to export as RL_GAMES_PBT_RESTART.
+    directory holds nothing to resume from. Returns {"checkpoint", "checkpoint_arg",
+    "restart_drop_args", "seed", "seed_arg", "params", "environ", "payload", "source"}: the
+    checkpoint, the train script's checkpoint argument and the launch-only arguments to remove
+    (the newest yaml's; None and {} when it records none), the seed to pass as `seed_arg` (None:
+    the launch command's), the flattened params (the `key=value` overrides) to launch with, the
+    environment variables to set (restart.yaml's `environ`, else {}) and the payload to export as
+    RL_GAMES_PBT_RESTART.
 
     - "restart": restart.yaml records a decision at or above the member's newest numbered
       checkpoint (iterations compared, never times): the restarted process has not saved. The
       relaunch retries the restart from restart.pth with the record's params and seed, and the
       payload is the restart's (same kind and mutated values) with the next `attempt`, which is
-      written back into restart.yaml: call this once per relaunch.
+      written back into restart.yaml: call this once per relaunch. With `requested`, the member
+      ended for this restart (`pbt.restart_mode: exit`, see `rl_games.common.pbt.supervise`): the
+      relaunch is the restart itself, its payload the one an exec'd restart gets, no attempt.
     - "checkpoint": the newest numbered checkpoint, with its yaml's params, as kind "resume"
       (nothing mutated).
     The restart count carries over (the highest restart.yaml or that yaml records), so the
@@ -1366,16 +1381,17 @@ def member_resume(workspace_dir, policy_idx) -> dict | None:
             newest = ckpt, checkpoint
             break
     record = _load_restart_record(policy_dir, policy_idx) if RESTART_RECORD in names else None
-    checkpoint_arg = newest[0].get("checkpoint_arg") if newest else None
+    launch = {"checkpoint_arg": newest[0].get("checkpoint_arg") if newest else None,
+              "restart_drop_args": (newest[0].get("restart_drop_args") if newest else None) or {}}
     restart_pth = os.path.abspath(os.path.join(policy_dir, "restart.pth"))
     if record and os.path.isfile(restart_pth) and (newest is None or record["iteration"] >= newest[0]["iteration"]):
-        attempt = int(record.get("attempt", 1)) + 1
-        write_restart_record(policy_dir, dict(record, attempt=attempt))
-        payload = dict({key: value for key, value in record.items() if key not in _RECORD_ONLY},
-                       checkpoint=restart_pth, attempt=attempt)
-        return {"checkpoint": restart_pth, "checkpoint_arg": checkpoint_arg, "seed": record.get("seed"),
-                "seed_arg": record.get("seed_arg"), "params": record["params"], "payload": payload,
-                "source": "restart"}
+        payload = dict({key: value for key, value in record.items() if key not in _RECORD_ONLY}, checkpoint=restart_pth)
+        if not requested:
+            payload.pop("frame_reached", None)        # what the dead restarted process played is unknown
+            payload["attempt"] = int(record.get("attempt", 1)) + 1
+            write_restart_record(policy_dir, dict(record, attempt=payload["attempt"]))
+        return dict(launch, checkpoint=restart_pth, seed=record.get("seed"), seed_arg=record.get("seed_arg"),
+                    params=record["params"], environ=record.get("environ") or {}, payload=payload, source="restart")
     if newest is None:
         return None
     ckpt, checkpoint = newest
@@ -1384,8 +1400,8 @@ def member_resume(workspace_dir, policy_idx) -> dict | None:
                "restart_count": max((count for count in counts if isinstance(count, int)), default=0),
                "iteration": ckpt["iteration"], "frame": ckpt["frame"], "checkpoint": checkpoint, "mutated": {},
                "experiment_name": ckpt.get("experiment_name")}
-    return {"checkpoint": checkpoint, "checkpoint_arg": checkpoint_arg, "seed": None, "seed_arg": None,
-            "params": ckpt["params"], "payload": payload, "source": "checkpoint"}
+    return dict(launch, checkpoint=checkpoint, seed=None, seed_arg=None, params=ckpt["params"], environ={},
+                payload=payload, source="checkpoint")
 
 
 def _arg_name(arg: str) -> str:
