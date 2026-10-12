@@ -520,6 +520,27 @@ class TestTies:
             holders.append(deciding[0])
         assert set(holders) == {3, 4, 5, 6, 7}                  # 1e6966a: member 3 at every iteration
 
+    def test_the_replaced_member_of_a_bottom_tie_rotates_through_the_observer(self, tmp_path):
+        """The same tie through after_steps: at each iteration every tied member decides about
+        itself on its own copy of the workspace (the members decide at the same time). One is
+        replaced, the last of the tie in the iteration's order, and another one at other
+        iterations (1e6966a: member 3 at every iteration)."""
+        replaced = []
+        for iteration in range(1, 7):
+            deciding = []
+            for reader in range(3, 8):
+                train_dir = tmp_path / f"it{iteration}_r{reader}"
+                for idx, objective in self.TIED.items():
+                    report(train_dir, idx, iteration, objective)
+                obs = observer(train_dir, reader, 8, mutation_rate=1.0)
+                iterate(obs, Algo(train_dir), iteration, self.TIED[reader])
+                if obs.restart_flag.item() == 1:
+                    deciding.append(reader)
+            order = pbt_utils.tie_break_order(WORKSPACE, iteration, 8)
+            assert deciding == [pbt_utils.rank_members(self.TIED, order)[-1]], iteration
+            replaced.append(deciding[0])
+        assert len(set(replaced)) > 1, replaced
+
     def test_without_ties_the_order_changes_nothing(self):
         objectives = {p: float(p) for p in range(8)}
         cfg = PbtCfg(num_policies=8)
