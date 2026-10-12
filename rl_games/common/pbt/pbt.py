@@ -393,14 +393,15 @@ class PbtAlgoObserver(AlgoObserver):
         process and launch (`launch_id`) and is renewed at every iteration boundary (`_heartbeat`).
 
         A plain launch refuses to start while the process the record names may still run the
-        member (`pbt_utils.owner_alive`), unless `pbt.force_owner`: two processes of one member
-        would write the same files. A process with this member's restart payload (a PBT restart,
-        a `member_resume` relaunch) takes the member over. The member's median iteration time
-        continues from the record.
+        member (`pbt_utils.owner_alive`; not once the member's exit record says that launch
+        ended), unless `pbt.force_owner`: two processes of one member would write the same files.
+        A process with this member's restart payload (a PBT restart, a `member_resume` relaunch)
+        takes the member over. The member's median iteration time continues from the record.
         """
         record = pbt_utils.read_record(self.curr_policy_dir, pbt_utils.OWNER_RECORD) or {}
+        exit_record = pbt_utils.read_record(self.curr_policy_dir, pbt_utils.EXIT_RECORD)
         takeover = getattr(self, "restart", None) is not None or self.cfg.force_owner
-        if record and not takeover and pbt_utils.owner_alive(record, self.cfg.max_member_lag):
+        if record and not takeover and pbt_utils.owner_alive(record, self.cfg.max_member_lag, exit_record):
             heartbeat = record.get("heartbeat")
             age = f"{time.time() - heartbeat:.0f} s ago" if isinstance(heartbeat, (int, float)) else "unknown"
             raise RuntimeError(
@@ -1117,7 +1118,9 @@ class PbtAlgoObserver(AlgoObserver):
         """Rank 0, when training ends normally (`reason`, one of a2c_common.EXIT_REASONS): write the
         member's exit record (exit.yaml: schema, reason, frame, epoch, time, launch_id). Peers then
         see the member as finished: ranked and a donor, never replaced. Not written once another
-        launch has taken the member over (its owner record names that launch)."""
+        launch has taken the member over (its owner record names that launch). An observer chain
+        must forward the hook (`MultiObserver` here does), or peers drop a member that ended
+        normally as stale once its heartbeat is old."""
         if self.distributed_args.rank != 0:
             return
         try:
@@ -1136,7 +1139,7 @@ class PbtAlgoObserver(AlgoObserver):
         rank), also returns True once the workspace holds this population's finished.yaml
         (`_population_finished`); a stop_fn set before train(), or since, is called first. In this
         member's last epoch by max_epochs or max_frames, when train() calls no stop_fn, it writes
-        the marker unless a member of the population has."""
+        the marker unless a member of the population has; a write that fails only warns."""
         algo = self.algo
         if self._stop_fn is None or algo.stop_fn is not self._stop_fn:
             user_stop_fn = algo.stop_fn
@@ -1150,10 +1153,14 @@ class PbtAlgoObserver(AlgoObserver):
         to_end = self._frames_to_end(frame)
         if to_end is None or to_end[0] > 0 or self._population_finished() is not None:
             return
-        pbt_utils.write_record(self.ws_dir, pbt_utils.FINISHED_MARKER, dict(
-            {"schema": pbt_utils.SCHEMA, "policy_idx": self.cfg.policy_idx, "reason": to_end[1],
-             "frame": int(frame) + self._epoch_frames(), "epoch": int(algo.epoch_num)},
-            **self._run_targets(), time=time.time()))
+        try:
+            pbt_utils.write_record(self.ws_dir, pbt_utils.FINISHED_MARKER, dict(
+                {"schema": pbt_utils.SCHEMA, "policy_idx": self.cfg.policy_idx, "reason": to_end[1],
+                 "frame": int(frame) + self._epoch_frames(), "epoch": int(algo.epoch_num)},
+                **self._run_targets(), time=time.time()))
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not write {pbt_utils.FINISHED_MARKER}: {exc!r}")
+            return
         print(f"Policy {self.cfg.policy_idx}: {to_end[1]} ends the run with this epoch, the first of the population: "
               f"wrote {pbt_utils.FINISHED_MARKER}, the other members stop at the end of their epochs")
 
@@ -1165,8 +1172,13 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _population_finished(self):
         """The workspace's finished.yaml (`pbt.stop_with_first`) when a member of this population wrote
-        it (the same `_run_targets`), else None. A marker of another run is ignored, with one warning."""
-        marker = pbt_utils.read_record(self.ws_dir, pbt_utils.FINISHED_MARKER)
+        it (the same `_run_targets`), else None. A marker of another run is ignored, with one warning.
+        A filesystem error only warns (None): the learner's stop_fn asks at every epoch."""
+        try:
+            marker = pbt_utils.read_record(self.ws_dir, pbt_utils.FINISHED_MARKER)
+        except OSError as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not read {pbt_utils.FINISHED_MARKER}: {exc!r}")
+            return None
         if marker is None:
             return None
         own = self._run_targets()
