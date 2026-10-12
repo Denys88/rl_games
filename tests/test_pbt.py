@@ -166,7 +166,7 @@ class TestObserver:
                        "mutation": {"agent.params.config.learning_rate": "mutate_float"}}
         params = {"pbt": pbt_section, "params": {"config": {"device": "cpu", "learning_rate": 3e-4}}}
         obs = PbtAlgoObserver(params, args_cli=None)
-        assert obs.env_args.get_args_list() == ["--seed=-1"]
+        assert obs.env_args.get_args_list() == []          # no --seed=-1: the restart derives one from the config
         assert obs.wandb_args.get_args_list() == []
 
 

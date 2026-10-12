@@ -9,6 +9,7 @@ import json
 import math
 import numbers
 import os
+import re
 import shutil
 import typing
 from collections.abc import Iterable, Mapping
@@ -22,7 +23,7 @@ REPLACE_RULES = ("dexpbt", "threshold")
 # the margins each replacement rule reads; the other rule ignores them
 RULE_KEYS = {
     "dexpbt": ("replace_fraction_worst", "replace_fraction_best", "replace_threshold_frac_std",
-               "replace_threshold_frac_absolute", "leader_params_prob"),
+               "replace_threshold_frac_absolute", "replace_threshold_absolute", "leader_params_prob"),
     "threshold": ("threshold_std", "threshold_abs"),
 }
 
@@ -130,7 +131,7 @@ class PbtCfg:
 
     replace_threshold_frac_absolute: float = 0.05
     """dexpbt: a transfer from the drawn donor needs a lead of more than this fraction of |donor
-    objective|; otherwise the member self-mutates; >= 0."""
+    objective| (unless `replace_threshold_absolute` is set); otherwise the member self-mutates; >= 0."""
 
     leader_params_prob: float = 0.5
     """dexpbt: probability that a replaced member mutates the source's hyperparameters rather
@@ -175,9 +176,10 @@ class PbtCfg:
     """Replace the value of `seed_arg` on each restart's command line with a seed derived from
     (that seed, policy_idx, restart count), so a member does not replay its initial random
     streams after each replacement. Only when the command has the argument: without it every
-    restart seeds as the launch did, and a restart without launch_argv always passes --seed (-1
-    when args_cli.seed is None). A seed of -1 (random per launch) is kept as is. PBT's own draws
-    (donor, mutations) come from a private generator either way."""
+    restart seeds as the launch did, except that a restart without launch_argv passes a seed
+    derived from the config seed (none for a config seed of None or -1). A seed of -1 (random per
+    launch) is kept as is. PBT's own draws (donor, mutations) come from a private generator
+    either way."""
 
     seed_arg: str = "--seed"
     """CLI name of the train script's seed argument (used by `reseed_on_restart`)."""
@@ -203,6 +205,37 @@ class PbtCfg:
     its first step. With true it deletes its own numbered files and starts over; `best/` keeps
     the earlier run's records, so a new best is recorded once it beats them."""
 
+    replace_threshold_absolute: float = 0.0
+    """dexpbt: when > 0, a transfer needs a lead of more than this many objective units in place
+    of `replace_threshold_frac_absolute` × |donor objective|, which changes with a constant added
+    to the objective; >= 0. 0 keeps DexPBT's fractional margin."""
+
+    mutation_bounds: dict[str, tuple[float, float]] = field(default_factory=dict)
+    """[lo, hi] per mutation key (two finite numbers, lo < hi): every replacement clamps the new
+    values into them, also the values it doesn't mutate (a donor's may predate the bounds); an
+    int is clamped to the integers inside. `validate()` warns about a configured value outside."""
+
+    force_outcome: str = ""
+    """For qualifying an integration, not for training: 'self', 'best' or 'donor:<idx>' makes
+    every iteration outside the grace windows and the end-of-run margin restart the member from
+    itself (a self-mutation), the best member or member idx, whatever the rule says; a
+    self-mutation that changes no value still keeps training. Every rank says so at init, and the
+    member's workspace yamls and restart.yaml carry `forced: <value>`. Empty: off."""
+
+    initial_mutation: bool = False
+    """Mutate a fresh member's `agent.params.config` values once at init, in the params the
+    observer is built with (runner.load reads them afterwards), as DexPBT does at launch: a
+    population launched from one config starts diverse. With `mutation_rate`, drawn again until
+    a value changes (at most 20 draws), from (the launch command's `seed_arg` value, policy_idx):
+    the same on every rank. Fresh: no restart payload and no numbered checkpoint in the member's
+    workspace directory."""
+
+    restart_drop_args: dict[str, int | str] = field(default_factory=dict)
+    """Launch-only arguments every restart removes from the command, as {name: nargs}: 0 for a
+    switch, N for N values, '?' for an optional one (the next argument when it starts with no '-'
+    and holds no '='); `name=value` is one argument. E.g. {'--reset-env-state': 0} for a
+    warm-start switch that must not act on restart.pth."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -215,6 +248,8 @@ class PbtCfg:
             raise ValueError(f"pbt.mutation must map flattened param names to mutation functions, "
                              f"got {self.mutation!r}")
         self.mutation = dict(self.mutation)
+        self.mutation_bounds = _to_bounds(self.mutation_bounds, self.mutation)
+        self.restart_drop_args = _to_drop_args(self.restart_drop_args)
         legacy_thresholds = self.threshold_std is not None or self.threshold_abs is not None
         if not self.replace_rule:
             self.replace_rule = "threshold" if legacy_thresholds else "dexpbt"
@@ -239,12 +274,16 @@ class PbtCfg:
             require(0.0 < getattr(self, name) <= 1.0, name, "in (0, 1]")
         for name in ("mutation_rate", "leader_params_prob"):
             require(0.0 <= getattr(self, name) <= 1.0, name, "in [0, 1]")
-        for name in ("replace_threshold_frac_std", "replace_threshold_frac_absolute"):
+        for name in ("replace_threshold_frac_std", "replace_threshold_frac_absolute", "replace_threshold_absolute"):
             require(getattr(self, name) >= 0.0, name, ">= 0")
         require(math.isfinite(self.wandb_finish_timeout) and self.wandb_finish_timeout >= 0,
                 "wandb_finish_timeout", "a finite number >= 0")
-        # a string such as 'false' would be truthy and switch the leftover check off
-        require(isinstance(self.reuse_workspace, bool), "reuse_workspace", "true or false")
+        # a string such as 'false' would be truthy and switch the option on or off
+        for name in ("reuse_workspace", "initial_mutation"):
+            require(isinstance(getattr(self, name), bool), name, "true or false")
+        donor = re.fullmatch(r"donor:([0-9]+)", self.force_outcome) if isinstance(self.force_outcome, str) else None
+        require(self.force_outcome in ("", "self", "best") or (donor and int(donor.group(1)) < self.num_policies),
+                "force_outcome", "'', 'self', 'best' or 'donor:<idx>' with idx in [0, num_policies)")
 
     @classmethod
     def from_dict(cls, d):
@@ -325,6 +364,47 @@ def _to_change_range(value):
     return tuple(sorted(bounds))
 
 
+def _to_bounds(value, mutation):
+    """`mutation_bounds` as {mutation key: (lo, hi)}: two finite numbers with lo < hi per key."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"pbt.mutation_bounds must map mutation keys to [lo, hi], got {value!r}")
+    bounds = {}
+    for key, pair in value.items():
+        if key not in mutation:
+            raise ValueError(f"pbt.mutation_bounds key {key!r} is not a key of pbt.mutation")
+        message = f"pbt.mutation_bounds of {key} must be two finite numbers lo < hi, got {pair!r}"
+        if isinstance(pair, (str, bytes)) or not isinstance(pair, Iterable):
+            raise ValueError(message)
+        try:
+            lo, hi = (_to_float("mutation_bounds", bound) for bound in pair)
+        except ValueError:
+            raise ValueError(message) from None
+        if not (math.isfinite(lo) and math.isfinite(hi) and lo < hi):
+            raise ValueError(message)
+        bounds[key] = (lo, hi)
+    return bounds
+
+
+def _to_drop_args(value):
+    """`restart_drop_args` as {argument name: nargs}, nargs an int >= 0 or '?'."""
+    message = f"pbt.restart_drop_args must map argument names to an int >= 0 or '?', got {value!r}"
+    if not isinstance(value, Mapping):
+        raise ValueError(message)
+    drop = {}
+    for name, nargs in value.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError(message)
+        if nargs != "?":
+            try:
+                nargs = _to_int("restart_drop_args", nargs)
+            except ValueError:
+                raise ValueError(message) from None
+            if nargs < 0:
+                raise ValueError(message)
+        drop[name] = nargs
+    return drop
+
+
 def settings_hash(cfg) -> str:
     """A short hash of `cfg`'s population settings (POPULATION_KEYS and its rule's RULE_KEYS).
 
@@ -344,12 +424,14 @@ def settings_hash(cfg) -> str:
 def rule_notices(cfg, section) -> list[str]:
     """Init-output lines about the replacement rule of `cfg`, built from the pbt `section` as given.
 
-    The resolved rule and its margins when `replace_rule` was not set (master's #359 configs
-    without thresholds silently moved to dexpbt), a warning for keys of the other rule (they
-    have no effect), and dexpbt's minimum population.
+    The resolved rule and the margins in use when `replace_rule` was not set (master's #359
+    configs without thresholds silently moved to dexpbt), a warning for keys of the other rule
+    (they have no effect), and dexpbt's minimum population.
     """
     lines = []
-    margins = ", ".join(f"{key} {getattr(cfg, key):g}" for key in RULE_KEYS[cfg.replace_rule])
+    # replace_threshold_absolute > 0 replaces the fractional margin
+    unused = "replace_threshold_frac_absolute" if cfg.replace_threshold_absolute > 0 else "replace_threshold_absolute"
+    margins = ", ".join(f"{key} {getattr(cfg, key):g}" for key in RULE_KEYS[cfg.replace_rule] if key != unused)
     if not section.get("replace_rule"):
         if cfg.replace_rule == "threshold":
             lines.append(f"replace_rule not set: using 'threshold' because threshold_std/threshold_abs are set "
@@ -361,7 +443,7 @@ def rule_notices(cfg, section) -> list[str]:
     if inactive:
         lines.append(f"WARNING {', '.join(inactive)} {'has' if len(inactive) == 1 else 'have'} no effect under "
                      f"replace_rule '{cfg.replace_rule}'")
-    if cfg.replace_rule == "dexpbt" and cfg.num_policies <= 2:
+    if cfg.replace_rule == "dexpbt" and cfg.num_policies <= 2 and not cfg.force_outcome:
         lines.append("WARNING the dexpbt rule needs more than max(2, num_policies // 2) members to report, so it "
                      "never replaces with num_policies <= 2; use 3+ members or replace_rule: threshold")
     return lines
@@ -458,9 +540,10 @@ def validate(params, extra_params=None, launcher_cwd=None):
     `launcher` must resolve the way os.execv will see it: an existing file relative to
     `launcher_cwd` (default: the directory restarts exec from: Hydra's original cwd inside a
     Hydra job, else the current directory), else a command on PATH; the cfg keeps the absolute
-    path. Raises ValueError naming the key, and prints a note for mutations that don't do what
-    their name suggests. The params come back as plain Python numbers (numpy scalars, 0-d
-    tensors and numeric strings converted), in config order.
+    path. Raises ValueError naming the key, prints a note for mutations that don't do what
+    their name suggests, and warns about a value outside its `mutation_bounds`. The params come
+    back as plain Python numbers (numpy scalars, 0-d tensors and numeric strings converted), in
+    config order.
 
     It touches no tensors and no environment, so a train script can call it before building
     the env; PbtAlgoObserver calls it on every rank.
@@ -488,4 +571,8 @@ def validate(params, extra_params=None, launcher_cwd=None):
     cfg.launcher = _resolve_launcher(cfg.launcher, launcher_cwd)
     for line in _no_effect_notes(cfg.mutation, flat):
         print(f"PbtCfg: {line}")
+    for key, (lo, hi) in cfg.mutation_bounds.items():
+        if not lo <= pbt_params[key] <= hi:
+            print(f"PbtCfg: WARNING {key} is {pbt_params[key]!r}, outside its mutation_bounds [{lo:g}, {hi:g}]: "
+                  f"a replacement clamps it into them")
     return cfg, pbt_params

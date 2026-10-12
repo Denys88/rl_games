@@ -54,12 +54,13 @@ class DistributedArgs:
 
 
 class EnvArgs:
-    """Environment CLI flags (Isaac Lab style) forwarded across a PBT restart."""
+    """Environment CLI flags (Isaac Lab style) forwarded across a PBT restart. Without a seed in
+    args_cli there is no --seed: the restart derives one from the config seed instead (see
+    `PbtAlgoObserver._restart_seed`)."""
 
     def __init__(self, args_cli):
         self.task = getattr(args_cli, "task", None)
-        seed = getattr(args_cli, "seed", None)
-        self.seed = seed if seed is not None else -1
+        self.seed = getattr(args_cli, "seed", None)
         self.headless = getattr(args_cli, "headless", False)
         self.num_envs = getattr(args_cli, "num_envs", None)
 
@@ -67,7 +68,8 @@ class EnvArgs:
         args = []
         if self.task is not None:
             args.append(f"--task={self.task}")
-        args.append(f"--seed={self.seed}")
+        if self.seed is not None:
+            args.append(f"--seed={self.seed}")
         if self.num_envs is not None:
             args.append(f"--num_envs={self.num_envs}")
         if self.headless:
@@ -404,7 +406,7 @@ def _check_finite_weights(state, what) -> None:
 
 
 def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params, *, replaceable=True,
-                        checkpoint_arg=None):
+                        checkpoint_arg=None, extra=None):
     """Save a PBT checkpoint (.pth and .yaml) with policy state, score, and metadata (rank 0 only).
 
     The yaml is plain YAML: a value it can't hold plainly (a numpy scalar from a custom mutation
@@ -416,11 +418,13 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
     `checkpoint_arg`, the train script's checkpoint argument, is recorded for `member_resume`.
     With the learner's PBT state (`algo.pbt_state`, set by the observer) the yaml also records
     the member's `restart_count` and the code and setup it runs (`identity_mismatches`).
+    `extra` adds fields to the yaml (`forced` of `pbt.force_outcome`); it can't replace the others.
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
         pbt_checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.yaml")
         data = {
+            **(extra or {}),
             "schema": SCHEMA,
             "iteration": curr_iter,
             "true_objective": to_float(curr_policy_score),
@@ -982,7 +986,9 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     num_outliers = int(math.floor(0.2 * len(initialized)))
     trimmed = sorted(initialized)[num_outliers:] if len(initialized) > num_outliers else initialized
     std_threshold = cfg.replace_threshold_frac_std * float(np.std(trimmed))
-    abs_threshold = cfg.replace_threshold_frac_absolute * abs(candidate_objective)
+    # in objective units when set: a fraction of |objective| changes with a constant added to it
+    abs_threshold = (cfg.replace_threshold_absolute if cfg.replace_threshold_absolute > 0
+                     else cfg.replace_threshold_frac_absolute * abs(candidate_objective))
     details.update(candidate=candidate, lead=delta, std_threshold=std_threshold, abs_threshold=abs_threshold)
     if delta > std_threshold and delta > abs_threshold:
         details["outcome"] = TRANSFER
@@ -1017,6 +1023,23 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, 
         return policy_idx, "no leaders: mutate own parameters"
     details["outcome"] = TRANSFER
     return random.choice(leaders), "underperformer"
+
+
+def select_forced(force_outcome: str, policy_idx: int, objectives: dict[int, float | None],
+                  order: list[int] | None = None) -> tuple[int | None, str]:
+    """The source `pbt.force_outcome` names, in place of a rule: this member for "self" (a
+    self-mutation), the best member for "best" (`rank_members`), member k for "donor:k"; None
+    when k has not reported."""
+    initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
+    if force_outcome == "self":
+        source = policy_idx
+    elif force_outcome == "best":
+        source = rank_members(initialized, order)[0]
+    else:
+        source = int(force_outcome.split(":", 1)[1])
+        if source not in initialized:
+            return None, f"forced outcome {force_outcome!r}: member {source} has not reported"
+    return source, f"forced outcome {force_outcome!r} (pbt.force_outcome): restart from {source}"
 
 
 # --- restart protocol ------------------------------------------------------------------------
@@ -1210,32 +1233,58 @@ def _arg_name(arg: str) -> str:
     return arg.split("=", 1)[0]
 
 
-def remove_cli_arg(args: list[str], name: str) -> list[str]:
-    """Drop every occurrence of `name` (`name=value`, or `name value` for dash-prefixed flags)."""
-    out, skip_next = [], False
-    for arg in args:
-        if skip_next:
-            skip_next = False
+def _cli_occurrences(args: list[str], name: str, nargs: int | str = 1):
+    """(start, end, values) of each occurrence of `name` in `args`: `name=value` is one argument; a
+    dash-prefixed `name` takes the `nargs` arguments after it: N for an int, for '?' the next one
+    unless it starts with '-' or holds '=' (an option or an override)."""
+    i = 0
+    while i < len(args):
+        if _arg_name(args[i]) != name:
+            i += 1
             continue
-        if _arg_name(arg) == name:
-            if "=" not in arg and name.startswith("-"):
-                skip_next = True
-            continue
-        out.append(arg)
-    return out
+        if "=" in args[i]:
+            end, values = i + 1, [args[i].split("=", 1)[1]]
+        else:
+            if not name.startswith("-"):
+                count = 0
+            elif nargs == "?":
+                count = int(i + 1 < len(args) and not args[i + 1].startswith("-") and "=" not in args[i + 1])
+            else:
+                count = nargs
+            end = min(i + 1 + count, len(args))
+            values = list(args[i + 1:end])
+        yield i, end, values
+        i = end
 
 
-def get_cli_arg(args: list[str], name: str) -> str | None:
-    """Last value of `name` in `args` (argparse semantics), or None."""
+def remove_cli_arg(args: list[str], name: str, nargs: int | str = 1) -> list[str]:
+    """Drop every occurrence of `name` with its values: `nargs` 0 for a switch, N for N values,
+    '?' for an optional value (see `_cli_occurrences`)."""
+    out, start = [], 0
+    for begin, end, _ in _cli_occurrences(args, name, nargs):
+        out += args[start:begin]
+        start = end
+    return out + list(args[start:])
+
+
+def get_cli_arg(args: list[str], name: str, nargs: int | str = 1) -> str | list[str] | None:
+    """Value of the last occurrence of `name` in `args` (argparse semantics), or None; `nargs` as in
+    `remove_cli_arg`. A switch or a '?' flag without a value gives "", nargs > 1 a list."""
     value = None
-    for i, arg in enumerate(args):
-        if _arg_name(arg) != name:
-            continue
-        if "=" in arg:
-            value = arg.split("=", 1)[1]
-        elif name.startswith("-") and i + 1 < len(args):
-            value = args[i + 1]
+    for _, _, values in _cli_occurrences(args, name, nargs):
+        if isinstance(nargs, int) and nargs > 1:
+            value = values
+        elif values:
+            value = values[0]
+        elif nargs != 1:
+            value = ""
     return value
+
+
+def missing_flags(flags: list[str], args: list[str]) -> list[str]:
+    """The flags of `flags` (`--name` or `--name=value`) whose name no argument of `args` has."""
+    present = {_arg_name(arg) for arg in args}
+    return [flag for flag in flags if _arg_name(flag) not in present]
 
 
 def derive_seed(base_seed: int, policy_idx: int, restart_count: int) -> int:
@@ -1302,11 +1351,15 @@ def member_seed(seed, policy_idx: int, stride: int = 1_000_000):
     return seed if seed == -1 else seed + int(policy_idx) * int(stride)
 
 
-def build_launch_restart_args(launch_argv, new_params, restart_from_checkpoint, checkpoint_arg="--checkpoint"):
+def build_launch_restart_args(launch_argv, new_params, restart_from_checkpoint, checkpoint_arg="--checkpoint", *,
+                              drop_args=None):
     """Restart command from the original launch argv: everything verbatim except the checkpoint
-    argument and the mutated `key=value` overrides (exact key match)."""
+    argument, the launch-only `drop_args` ({name: nargs}, `pbt.restart_drop_args`, see
+    `remove_cli_arg`) and the mutated `key=value` overrides (exact key match)."""
     out = [launch_argv[0]]
     rest = remove_cli_arg(list(launch_argv[1:]), checkpoint_arg)
+    for name, nargs in (drop_args or {}).items():
+        rest = remove_cli_arg(rest, name, nargs)
     out += [arg for arg in rest if not ("=" in arg and _arg_name(arg) in new_params)]
     out.append(f"{checkpoint_arg}={restart_from_checkpoint}")
     out += [f"{param}={value}" for param, value in new_params.items()]
