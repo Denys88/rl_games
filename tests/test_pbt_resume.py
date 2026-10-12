@@ -32,7 +32,7 @@ class StateAlgo(Algo):
         return dict(super().get_full_state_weights(), pbt=dict(self.pbt_state))
 
 
-def save(train_dir, idx, iteration, objective=1.0, restart_count=0, params=None):
+def save(train_dir, idx, iteration, objective=1.0, restart_count=0, params=None, checkpoint_arg=None):
     """Member `idx`'s PBT save at `iteration` (frame iteration * 1000), by a process with
     `restart_count` (no identity fields: the K02 checks have their own tests)."""
     directory = member_dir(train_dir, idx)
@@ -40,7 +40,7 @@ def save(train_dir, idx, iteration, objective=1.0, restart_count=0, params=None)
     params = dict(PARAMS) if params is None else params
     algo = StateAlgo(train_dir, frame=iteration * 1000, experiment_name=f"member{idx}")
     algo.pbt_state = dict(STATE, policy_idx=idx, params=params, restart_count=restart_count, population={})
-    pbt_utils.save_pbt_checkpoint(directory, objective, iteration, algo, params)
+    pbt_utils.save_pbt_checkpoint(directory, objective, iteration, algo, params, checkpoint_arg=checkpoint_arg)
 
 
 def workspace(train_dir):
@@ -152,7 +152,12 @@ def test_a_restart_that_has_not_saved_is_retried(tmp_path, execs):
     restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
     assert resume["source"] == "restart" and resume["checkpoint"] == restart_pth
     assert resume["params"] == record["params"] and resume["checkpoint_arg"] == "--checkpoint"
-    # the payload the parent's exec passed, with the same kind and mutated values, as attempt 2
+    # the seed the restart's command passed (derived from the launch seed), not the launch seed
+    assert (resume["seed_arg"], resume["seed"]) == ("--seed", record["seed"]) != ("--seed", 42)
+    assert f"--seed={resume['seed']}" in execs[0][1]
+    # the payload the parent's exec passed, with the same kind and mutated values, as attempt 2; the
+    # frame the parent reached at its exec is not the relaunch's
+    del payload["frame_reached"]
     assert resume["payload"] == dict(payload, attempt=2)
     assert load_record(tmp_path)["attempt"] == 2               # counted for the next relaunch
     assert pbt_utils.member_resume(workspace(tmp_path), 3)["payload"]["attempt"] == 3
@@ -170,7 +175,7 @@ def test_a_restart_that_saved_resumes_from_its_newest_checkpoint(tmp_path, execs
     assert resume["payload"] == {"schema": 1, "kind": "resume", "policy_idx": 3, "source_policy": 3,
                                  "restart_count": 1, "iteration": 7, "frame": 7000, "checkpoint": newest,
                                  "mutated": {}, "experiment_name": "member3"}
-    assert resume["checkpoint_arg"] == "--checkpoint"           # the record's, though it is older
+    assert resume["seed"] is None                               # the launch command's seed
     assert "attempt" not in load_record(tmp_path)
 
 
@@ -212,7 +217,6 @@ def test_a_malformed_record_resumes_from_the_numbered_checkpoint(tmp_path, text)
         fobj.write(text)
     resume = pbt_utils.member_resume(workspace(tmp_path), 3)
     assert resume["source"] == "checkpoint" and resume["payload"]["kind"] == "resume"
-    assert resume["checkpoint_arg"] is None
 
 
 def test_a_record_without_its_restart_pth_resumes_from_the_numbered_checkpoint(tmp_path, execs):
@@ -240,6 +244,18 @@ def test_nothing_to_resume(tmp_path):
     with open(os.path.join(member_dir(tmp_path), pbt_utils.DECISIONS), "w", encoding="utf-8") as fobj:
         fobj.write("{}\n")
     assert pbt_utils.member_resume(workspace(tmp_path), 3) is None
+
+
+def test_the_checkpoint_argument_is_the_members_own(tmp_path):
+    """Every workspace yaml records the train script's checkpoint argument: a member that never
+    restarted relaunches with it too (a Hydra override here)."""
+    for idx, objective in ((0, 1.0), (1, 0.5), (2, 0.25)):
+        save(tmp_path, idx, 5, objective)
+    obs = observer(tmp_path, 3, 4, checkpoint_arg="checkpoint")
+    decide(obs, Algo(tmp_path, epoch_num=40), 5, 5.0)              # the best member: no restart
+    assert obs.restart_flag.item() == 0
+    resume = pbt_utils.member_resume(workspace(tmp_path), 3)
+    assert resume["source"] == "checkpoint" and resume["checkpoint_arg"] == "checkpoint"
 
 
 def test_paths_are_this_hosts(tmp_path, execs):
@@ -382,17 +398,21 @@ def test_cli_shell_output_appends_the_arguments_and_exports_the_payload(tmp_path
     record = load_record(tmp_path)
     argv, payload = shell_launch("--workspace", workspace(tmp_path), "--policy-idx", "3", "--format", "shell")
     restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
+    # the retried restart's seed comes last: argparse options and Hydra overrides take the last value
     assert argv == ["python", "train.py", "--seed", "42", f"--checkpoint={restart_pth}",
-                    *(f"{key}={value}" for key, value in record["params"].items())]
+                    *(f"{key}={value}" for key, value in record["params"].items()), f"--seed={record['seed']}"]
     assert payload["kind"] == "transfer" and payload["attempt"] == 2 and payload["checkpoint"] == restart_pth
 
 
 def test_cli_shell_output_takes_the_checkpoint_argument_name(tmp_path):
-    save(tmp_path, 3, 4, restart_count=1)
-    argv, payload = shell_launch("--workspace", workspace(tmp_path), "--policy-idx", "3", "--format", "shell",
-                                 "--checkpoint-arg", "checkpoint")              # a Hydra override
-    assert argv[4] == "checkpoint=" + os.path.join(member_dir(tmp_path), "000004.pth")
-    assert payload["kind"] == "resume"
+    save(tmp_path, 3, 4, restart_count=1, checkpoint_arg="checkpoint")           # a Hydra override
+    checkpoint = os.path.join(member_dir(tmp_path), "000004.pth")
+    args = ("--workspace", workspace(tmp_path), "--policy-idx", "3", "--format", "shell")
+    argv, payload = shell_launch(*args)
+    assert argv[4] == f"checkpoint={checkpoint}" and payload["kind"] == "resume"
+    assert sorted(argv[5:]) == sorted(f"{key}={value}" for key, value in PARAMS.items())     # no seed: a resume
+    argv, _ = shell_launch(*args, "--checkpoint-arg=--load")                      # the CLI's name wins
+    assert argv[4] == f"--load={checkpoint}"
 
 
 def test_cli_shell_output_is_empty_without_anything_to_resume(tmp_path):

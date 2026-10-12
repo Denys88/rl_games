@@ -167,8 +167,9 @@ def test_restart_record_equals_the_payload_and_the_childs_restart_info(tmp_path,
     payload = json.loads(raw)
     assert (payload["schema"], payload["kind"], payload["experiment_name"]) == (1, kind, "member3_12-02-03-04")
     assert (payload["policy_idx"], payload["source_policy"]) == (3, obs.restart_source)
-    assert {key: record[key] for key in payload} == payload
-    assert set(record) - set(payload) == {"epoch", "params", "seed", "checkpoint_arg"}
+    # the payload's keys but the frame the member reached at the re-exec, and the record's own
+    assert {key: record.get(key) for key in payload} == dict(payload, frame_reached=None)
+    assert set(record) - set(payload) == {"epoch", "params", "seed", "seed_arg"}
 
     restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
     assert record["checkpoint"] == restart_pth and os.path.isabs(record["checkpoint"])
@@ -219,6 +220,7 @@ def test_record_seed_is_the_seed_the_restart_command_passes(tmp_path, execs, mon
     record = load_record(tmp_path)
     argv, _ = reexec(obs, execs)
     seed_arg = pbt.get("seed_arg", "--seed")
+    assert record["seed_arg"] == seed_arg
     if seed == "derived":
         base = 5 if args_cli is not None else 42
         assert record["seed"] == int(pbt_utils.get_cli_arg(argv, seed_arg)) == pbt_utils.derive_seed(base, 3, 1)
@@ -272,7 +274,7 @@ def test_a_subclass_that_replaces_pbt_iteration_gets_the_record(tmp_path, execs)
     _, raw = reexec(obs, execs)
     payload = json.loads(raw)
     assert payload["kind"] == "transfer" and payload["mutated"] == {LR: 1e-3}
-    assert {key: record[key] for key in payload} == payload
+    assert {key: record.get(key) for key in payload} == dict(payload, frame_reached=None)
     assert record["params"] == {LR: 1e-3, ENT: PARAMS[ENT]} and record["epoch"] == 39
 
 

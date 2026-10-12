@@ -17,7 +17,7 @@ import pytest
 import torch
 import yaml
 
-from rl_games.common.pbt import PbtAlgoObserver, pbt_utils
+from rl_games.common.pbt import PbtAlgoObserver, pbt_cfg, pbt_utils
 from rl_games.common.pbt.pbt_cfg import PbtCfg, settings_hash
 from tests.test_pbt_records import (ENT, INTERVAL, LR, PARAMS, Algo, child_process, decide, execs,  # noqa: F401
                                     member_dir, reexec, restore_environ)
@@ -129,6 +129,14 @@ class TestSettingsHash:
     def test_threshold_margins_change_it_under_the_threshold_rule(self):
         assert self.digest(threshold_std=0.2) != self.digest(threshold_std=0.3)
 
+    def test_a_setting_added_later_keeps_the_hash_at_its_default(self, monkeypatch):
+        """A population setting a later version adds (start_after stands for one) leaves the hash of a
+        config at its default unchanged: restarts exec the current checkout, and an upgrade under a
+        running population must not make its restarted members foreign. Another value still does."""
+        before = self.digest()
+        monkeypatch.setattr(pbt_cfg, "POPULATION_KEYS", pbt_cfg.POPULATION_KEYS + ("start_after",))
+        assert self.digest() == before and self.digest(start_after=5000) != before
+
 
 def test_rl_games_version(monkeypatch):
     assert pbt_utils.rl_games_version() == importlib.metadata.version("rl_games")
@@ -188,11 +196,12 @@ class TestGitCommit:
         assert pbt_utils.git_commit(tmp_path) is None
 
     def test_this_checkout(self):
-        proc = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, stdout=subprocess.PIPE,
+        proc = subprocess.run(["git", "rev-parse", "--show-toplevel", "HEAD"], cwd=REPO, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, text=True)
-        if proc.returncode != 0:
+        top, _, head = proc.stdout.strip().partition("\n")
+        if proc.returncode != 0 or os.path.realpath(top) != os.path.realpath(REPO):    # e.g. a copy inside a checkout
             pytest.skip("not a git checkout")
-        assert pbt_utils.git_commit() == proc.stdout.strip()
+        assert pbt_utils.git_commit() == head
 
 
 # ---------------------------------------------------------------------------------------------
@@ -251,7 +260,8 @@ def test_a_new_value_warns_again(tmp_path, capsys):
 
 @pytest.mark.parametrize("key, value", [("rl_games_version", "1.6.5"), ("git_commit", SHA),
                                         ("precision", {"mixed_precision": "fp16", "torch_compile": True})])
-def test_other_differences_only_warn_once(tmp_path, capsys, key, value):
+def test_other_differences_only_warn_once(tmp_path, capsys, monkeypatch, key, value):
+    monkeypatch.setattr(pbt_utils, "git_commit", lambda root=None: "f" * 40)   # known also outside a checkout
     first_decision(tmp_path, {0: (9.0, {key: value}), 1: (5.0, {}), 2: (4.0, {})}, rounds=3)
     out = capsys.readouterr().out
     assert out.count("WARNING member 0") == 1 and key in out and "left out" not in out
@@ -368,6 +378,7 @@ def test_no_restart_lines(tmp_path, case, outcome):
     assert line["outcome"] == outcome and obs.restart_flag.item() == 0
     if outcome == "in_process":
         assert line["mutated"] == obs.pbt_params != PARAMS
+        assert obs.algo.pbt_state["params"] == obs.pbt_params       # the learner's next checkpoints carry them
     if outcome == "too_few_reported":
         assert line["reported"] == (3 if "num_policies" in case else 0)
 
@@ -445,11 +456,14 @@ def test_a_subclass_with_its_own_iteration_writes_no_line(tmp_path):
 def test_the_restarted_process_logs_what_the_restart_cost(tmp_path, execs):
     reports(tmp_path, DONORS)
     obs = member(tmp_path, mutation_rate=1.0)
-    decide(obs, Algo(tmp_path, epoch_num=40, curr_frames=64), 5, 1.0)
+    algo = Algo(tmp_path, epoch_num=40, curr_frames=64)
+    decide(obs, algo, 5, 1.0)
     record = load_yaml(tmp_path, "restart.yaml")
+    algo.frame += 64                                        # the decision epoch's update; the next epoch re-execs
     _, raw = reexec(obs, execs)
     payload = json.loads(raw)
-    assert payload["time"] == record["time"] and payload["epoch_frames"] == record["epoch_frames"] == 64
+    assert payload["time"] == record["time"] and payload["frame_reached"] == 5005 + 2 * 64
+    assert "frame_reached" not in record                    # known at the re-exec only
 
     time.sleep(0.05)
     child = child_process(raw, tmp_path)
@@ -458,12 +472,12 @@ def test_the_restarted_process_logs_what_the_restart_cost(tmp_path, execs):
     child.after_steps()                                     # its first step, after restoring restart.pth
     seconds = algo.writer.values("pbt/restart_seconds")
     assert len(seconds) == 1 and 0.05 <= seconds[0] < 60
-    assert algo.writer.values("pbt/frames_discarded") == [64]      # the decision epoch's rollout
+    assert algo.writer.values("pbt/frames_discarded") == [128]     # the decision epoch's rollout and the next
     steps = {step for tag, _, step in algo.writer.scalars}
     assert steps == {child._summary_step(payload["frame"])}
     line = decisions(tmp_path)[-1]
     assert line["outcome"] == "restarted" and line["kind"] == "transfer" and line["source"] == obs.restart_source
-    assert line["seconds"] == pytest.approx(seconds[0]) and line["frames_discarded"] == 64
+    assert line["seconds"] == pytest.approx(seconds[0]) and line["frames_discarded"] == 128
     assert (line["iteration"], line["frame"], line["attempt"]) == (5, 5005, None)
 
 

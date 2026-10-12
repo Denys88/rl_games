@@ -136,8 +136,8 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
                 "experiment_name": "exp"}
     assert {key: payload.get(key) for key in expected} == expected
     with open(ws / "003" / "restart.yaml", encoding="utf-8") as fobj:
-        record = yaml.safe_load(fobj)                       # written at the decision
-    assert {key: record[key] for key in payload} == payload
+        record = yaml.safe_load(fobj)                       # written at the decision, without the re-exec's frame
+    assert {key: record.get(key) for key in payload} == dict(payload, frame_reached=None)
     checkpoint_args = [arg for arg in argv if arg.startswith("--checkpoint")]
     assert checkpoint_args == [f"--checkpoint={restart_pth}"]
     cli = config_overrides(argv)

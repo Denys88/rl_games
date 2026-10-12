@@ -320,11 +320,11 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _take_learner_state(self):
         """First step of the process, every rank: the restore replaced the learner's PBT state with
-        the checkpoint's (or none). Without a restart payload (a resume by hand) a state of this
-        member carries its restart count on, so its next restarts derive new seeds. The learner then
-        takes this process's state again."""
+        the checkpoint's (or none). The restart count continues from a state of this member when it
+        is higher than this process's (a resume by hand: no payload), so the member's next restarts
+        derive new seeds. The learner then takes this process's state again."""
         restored = getattr(self.algo, "pbt_state", None)
-        if getattr(self, "restart", None) is None and restored and restored.get("policy_idx") == self.cfg.policy_idx:
+        if restored and restored.get("policy_idx") == self.cfg.policy_idx:
             self.restart_count = max(self.restart_count, int(restored.get("restart_count", 0)))
         self.algo.pbt_state = self._pbt_state()
 
@@ -582,13 +582,14 @@ class PbtAlgoObserver(AlgoObserver):
     def _record_restart(self, frame):
         """Rank 0, first step of a process started with a restart payload: log what the restart cost,
         `pbt/restart_seconds` (since the decision) and `pbt/frames_discarded` (what the member had
-        played past the restart's frame when it decided: the decision epoch's rollout, which this
-        process plays again), and append a `restarted` line to decisions.jsonl. A resume has no
-        decision: its line has neither number."""
+        played past this process's restored `frame` when it re-exec'd, which this process plays
+        again), and append a `restarted` line to decisions.jsonl. A resume has no decision: its
+        line has neither number; a retried restart (`member_resume`) has no frames, as what its
+        dead process played is unknown."""
         info = self.restart
-        decided, epoch_frames = info.get("time"), info.get("epoch_frames")
+        decided, reached = info.get("time"), info.get("frame_reached")
         seconds = None if decided is None else time.time() - float(decided)
-        frames = None if epoch_frames is None else int(info["frame"]) + int(epoch_frames) - int(frame)
+        frames = None if reached is None else int(reached) - int(frame)
         writer = getattr(self.algo, "writer", None)
         for tag, value in (("pbt/restart_seconds", seconds), ("pbt/frames_discarded", frames)):
             if writer is not None and value is not None:
@@ -636,7 +637,7 @@ class PbtAlgoObserver(AlgoObserver):
         ending = to_end is not None and to_end[0] < max(cfg.start_after, cfg.interval_steps)
         try:
             pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params,
-                                          replaceable=not (in_grace or ending))
+                                          replaceable=not (in_grace or ending), checkpoint_arg=cfg.checkpoint_arg)
             ckpts = pbt_utils.load_pbt_ckpts(self.ws_dir, cfg.policy_idx, cfg.num_policies, self.pbt_it)
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
             # what this member's yamls said where members 2+ iterations behind are (see member_status)
@@ -1019,14 +1020,14 @@ class PbtAlgoObserver(AlgoObserver):
               f"logs to a new run {new_id}", flush=True)
 
     def _restart_payload(self, new_params, restart_from_checkpoint):
-        """The restart payload the child reads as `pbt_utils.restart_info()` (see there): the
-        decision's attributes set by `_pbt_iteration` (`restart_source`, `restart_frame`,
-        `restart_mutated`) and `after_steps` (`restart_time`), defaulting to a restart of this
-        member from `restart_from_checkpoint` with `new_params` mutated at the current frame and
-        time. `epoch_frames` lets the child count the frames the restart discarded."""
+        """The restart payload the child reads as `pbt_utils.restart_info()` (see there), without the
+        `frame_reached` the re-exec adds: the decision's attributes set by `_pbt_iteration`
+        (`restart_source`, `restart_frame`, `restart_mutated`) and `after_steps` (`restart_time`),
+        defaulting to a restart of this member from `restart_from_checkpoint` with `new_params`
+        mutated at the current frame and time."""
         source = getattr(self, "restart_source", self.cfg.policy_idx)
         return {
-            "schema": pbt_utils.RESTART_SCHEMA,
+            "schema": pbt_utils.SCHEMA,
             "kind": pbt_utils.restart_kind(self.cfg.policy_idx, source),
             "policy_idx": self.cfg.policy_idx,
             "source_policy": source,
@@ -1037,22 +1038,21 @@ class PbtAlgoObserver(AlgoObserver):
             "mutated": getattr(self, "restart_mutated", new_params),
             "experiment_name": getattr(self.algo, "experiment_name", None),
             "time": getattr(self, "restart_time", None) or time.time(),
-            "epoch_frames": self._epoch_frames(),
         }
 
     def _restart_record(self):
         """The member's restart.yaml for the decision `_pbt_iteration` just took: the restart
         payload, the last completed `epoch` (restart.pth's: the decision runs in after_steps,
-        before the epoch's update), every new param value (`params`), the `seed` the restart
-        command passes (`_restart_seed`; None when it keeps its own) and the train script's
-        `checkpoint_arg` (for `pbt_utils.member_resume`). Plain JSON types, as the child reads
-        the payload."""
+        before the epoch's update), every new param value (`params`) and the `seed` the restart
+        command passes as `seed_arg` (`_restart_seed`; None when it keeps its own), with which
+        `pbt_utils.member_resume` retries the restart. Plain JSON types, as the child reads the
+        payload."""
         new_params = {param: pbt_utils.plain_number(value) for param, value in self.new_params.items()}
         checkpoint = self.restart_from_checkpoint
         record = dict(self._restart_payload(new_params, checkpoint),
                       epoch=int(self.algo.epoch_num) - 1, params=new_params,
                       seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)),
-                      checkpoint_arg=self.cfg.checkpoint_arg)
+                      seed_arg=self.cfg.seed_arg)
         return json.loads(json.dumps(record, default=pbt_utils.json_default))
 
     def _save_restart_record(self):
@@ -1085,8 +1085,10 @@ class PbtAlgoObserver(AlgoObserver):
         print(f"previous command line args: {self.launch_argv if self.launch_argv is not None else sys.argv}")
         command = self._restart_command(new_params, restart_from_checkpoint)
 
-        os.environ[pbt_utils.RESTART_ENV_VAR] = json.dumps(self._restart_payload(new_params, restart_from_checkpoint),
-                                                           default=pbt_utils.json_default)
+        # the member's frame, this epoch's rollout included: the child logs what it plays again past restart.pth's
+        payload = dict(self._restart_payload(new_params, restart_from_checkpoint),
+                       frame_reached=int(self.algo.frame) + self._epoch_frames())
+        os.environ[pbt_utils.RESTART_ENV_VAR] = json.dumps(payload, default=pbt_utils.json_default)
 
         self.algo.writer.flush()
         self.algo.writer.close()
