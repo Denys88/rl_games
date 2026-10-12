@@ -12,7 +12,9 @@ import sys
 import threading
 import traceback
 from collections import deque
+from typing import NamedTuple
 
+import numpy as np
 import torch
 import torch.distributed as dist
 
@@ -25,6 +27,30 @@ _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 
 # prefix of the algo-config keys among the flattened mutable params
 _CONFIG_PREFIX = "agent.params.config."
+
+
+class _PooledWindow(NamedTuple):
+    """The objective windows of all ranks and their episode counts since the last PBT iteration."""
+
+    total: float       # objective sum over the windows
+    count: int         # episodes in the windows
+    known: bool        # every rank's window is full
+    stale_ranks: int   # ranks without a finite objective since the last iteration
+    failed_ranks: int  # stale ranks that finished a window of episodes since then, none with one
+    valid: int         # episodes since then with a finite objective
+    nonfinite: int     # ... with a NaN or infinite one
+    unread: int        # ... on steps whose objective could not be read
+    ranks: int         # world size (1 without distributed)
+
+
+def _num_finished(done_indices) -> int:
+    """Episodes a step finished: one per done index, one sample without indices."""
+    if done_indices is None:
+        return 1
+    try:
+        return int(done_indices.numel()) if torch.is_tensor(done_indices) else int(np.size(done_indices))
+    except (TypeError, ValueError):
+        return 0
 
 
 def build_restart_args(cli_args, new_params, restart_from_checkpoint,
@@ -136,7 +162,14 @@ class PbtAlgoObserver(AlgoObserver):
         self._window_size = max(1, self.cfg.objective_window)
         self._consecutive_errors = 0
         self._last_objective_error = None
-        self._warned_iteration = None
+        # this rank's finished episodes since the last PBT iteration: with a finite objective (in
+        # the window), with a NaN/inf one, and on steps whose objective could not be read
+        self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
+        # non-finite or unreadable episodes without a finite one that make a rank failed (diverged)
+        self._failed_episodes = self._window_size
+        self._iteration_ran = False  # an iteration ran in this process
+        self._wait_iteration = None  # the boundary the next iteration waits at
+        self._failed_boundaries = 0  # consecutive boundaries waited at with a failed rank
 
         if self.distributed_args.rank == 0:
             for line in rule_notices(self.cfg, params["pbt"]):
@@ -206,8 +239,12 @@ class PbtAlgoObserver(AlgoObserver):
                 "PBT supports the PPO agents (a2c_continuous, a2c_discrete); SAC never calls the observer's "
                 "after_steps, so PBT would silently do nothing")
         self.algo = algo
+        num_envs = max(1, int(getattr(algo, "num_actors", 1) or 1))
         if self.cfg.objective_window <= 0:
-            self._window_size = max(1, int(getattr(algo, "num_actors", 1) or 1))
+            self._window_size = num_envs
+        # a full window and an episode per env: a few envs diverging between the episodes of the
+        # others don't make a failed rank
+        self._failed_episodes = max(self._window_size, num_envs)
         if self.distributed_args.rank != 0:
             return
 
@@ -219,21 +256,29 @@ class PbtAlgoObserver(AlgoObserver):
     def process_infos(self, infos, done_indices):
         """Accumulate the objective of finished episodes into a window of recent episodes.
 
-        `self.score` is this rank's mean over the window.
+        `self.score` is this rank's mean over the window. An episode whose objective is NaN or
+        infinite is left out on its own (see `pbt_utils.episode_stats`). For the iteration gate
+        the rank counts its finished episodes since the last PBT iteration: with a finite
+        objective, with a non-finite one, and on steps whose objective could not be read.
         """
         value = infos
         num_agents = int(getattr(getattr(self, "algo", None), "num_agents", 1) or 1)
         try:
             for part in self.cfg.objective.split("."):
                 value = value[part]
-            total, count = pbt_utils.episode_sum_count(value, done_indices, num_agents)
+            total, count, nonfinite = pbt_utils.episode_stats(value, done_indices, num_agents)
         except (KeyError, TypeError, IndexError, ValueError, RuntimeError) as exc:
             # the address may not resolve on every step (or every backend); keep the previous
             # score, and report the last failure if no objective arrives by an iteration boundary
             self._last_objective_error = repr(exc)
+            self._interval_unread += _num_finished(done_indices)
             return
-        if count == 0 or not math.isfinite(total):
+        if count and not math.isfinite(total):
+            nonfinite, count = nonfinite + count, 0  # finite values whose sum overflows
+        self._interval_nonfinite += nonfinite
+        if count == 0:
             return
+        self._interval_valid += count
         self._window.append((total, count))
         self._window_sum += total
         self._window_count += count
@@ -247,15 +292,26 @@ class PbtAlgoObserver(AlgoObserver):
         return self.distributed_args.distributed and dist.is_available() and dist.is_initialized()
 
     def _pooled_window(self, distributed):
-        """(sum, count, known) of the episode windows of all ranks; known once every rank's is full."""
-        full = self._window_count >= self._window_size
-        if not distributed:
-            return self._window_sum, self._window_count, full
-        sums = torch.tensor([self._window_sum, float(self._window_count), float(full)],
-                            dtype=torch.float64, device=self.device)
-        dist.all_reduce(sums, op=dist.ReduceOp.SUM)
-        total, count, full_ranks = sums.tolist()
-        return total, count, int(full_ranks) == dist.get_world_size()
+        """The episode windows of all ranks and their episode counts since the last PBT iteration,
+        pooled in the one all-reduce every rank makes per step (see `_PooledWindow`).
+
+        A rank is stale without a finite objective since the last iteration, and failed when it
+        is stale although it finished a full window of episodes since then, and at least one
+        per env (all non-finite or unreadable: a diverged policy, not episodes yet to end).
+        """
+        fresh = self._interval_valid > 0
+        failed = not fresh and self._interval_nonfinite + self._interval_unread >= self._failed_episodes
+        local = [self._window_sum, self._window_count, self._window_count >= self._window_size, fresh, failed,
+                 self._interval_valid, self._interval_nonfinite, self._interval_unread]
+        ranks = 1
+        if distributed:
+            sums = torch.tensor([float(v) for v in local], dtype=torch.float64, device=self.device)
+            dist.all_reduce(sums, op=dist.ReduceOp.SUM)
+            local, ranks = sums.tolist(), dist.get_world_size()
+        total, count, full_ranks, fresh_ranks, failed_ranks, valid, nonfinite, unread = local
+        return _PooledWindow(total=float(total), count=int(count), known=int(full_ranks) == ranks,
+                             stale_ranks=ranks - int(fresh_ranks), failed_ranks=int(failed_ranks), valid=int(valid),
+                             nonfinite=int(nonfinite), unread=int(unread), ranks=ranks)
 
     def after_steps(self):
         """Main PBT tick executed every train step.
@@ -265,12 +321,13 @@ class PbtAlgoObserver(AlgoObserver):
                when it is set. The first step after a (re)start then only sets the PBT
                cadence from the restored frame, and rank 0 checks the member directory
                (`_check_member_dir`).
-            2) All ranks: pool the objective window across ranks and track the best pooled
-               objective of the iteration.
-            3) On the PBT cadence (`interval_steps`), once every rank has a full window, rank 0
-               saves a checkpoint, loads the population, logs, and applies the replacement
-               rule (after the `initial_delay` / `start_after` grace windows). Until the
-               windows are full the iteration is retried on every step.
+            2) All ranks: pool the objective windows and episode counts across ranks and
+               track the best pooled objective of the iteration.
+            3) On the PBT cadence (`interval_steps`), once every rank has a full window and a
+               finite objective since the last iteration, rank 0 saves a checkpoint, loads the
+               population, logs, and applies the replacement rule (after the `initial_delay` /
+               `start_after` grace windows). Until then the iteration is retried on every step
+               without advancing `pbt_it` (see `_wait_for_objective`).
         """
         distributed = self._distributed()
         if distributed:
@@ -292,28 +349,69 @@ class PbtAlgoObserver(AlgoObserver):
                 self._check_member_dir(frame)
             return
 
-        total, count, known = self._pooled_window(distributed)
-        if known:
-            objective = total / count
+        pooled = self._pooled_window(distributed)
+        if pooled.known:
+            objective = pooled.total / pooled.count
             if self.best_in_iteration is None or objective > self.best_in_iteration:
                 self.best_in_iteration = objective
 
-        if frame // self.cfg.interval_steps <= self.pbt_it:
+        iteration = frame // self.cfg.interval_steps
+        if iteration <= self.pbt_it:
             return
-        if not known:
-            iteration = frame // self.cfg.interval_steps
-            if self.distributed_args.rank == 0 and self._warned_iteration != iteration:
-                self._warned_iteration = iteration
-                print(f"Policy {self.cfg.policy_idx}: WARNING PBT iteration {iteration} waits for objective "
-                      f"'{self.cfg.objective}': {int(count)} finished episodes counted, "
-                      f"{self._window_size} per rank needed; last lookup error: {self._last_objective_error}")
+        if not pooled.known or pooled.stale_ranks:
+            # decided on pooled values: every rank waits (or raises) at the same step
+            self._wait_for_objective(iteration, pooled)
             return
 
-        self.pbt_it = frame // self.cfg.interval_steps
+        self.pbt_it = iteration
+        # the next iteration needs a new objective on every rank; its warnings report its own lookup errors
+        self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
+        self._iteration_ran, self._wait_iteration, self._failed_boundaries = True, None, 0
+        self._last_objective_error = None
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
         if self.distributed_args.rank != 0:
             return
-        self._pbt_iteration(total / count, best_in_iteration, frame)
+        self._pbt_iteration(pooled.total / pooled.count, best_in_iteration, frame)
+
+    def _wait_for_objective(self, iteration, pooled):
+        """The iteration due at boundary `iteration` waits: a rank's window is not full yet, or a
+        rank has no finite objective since the last iteration (its episodes are still running,
+        or their objective is NaN or missing). `after_steps` retries it at every step.
+
+        Rank 0 warns once per boundary. Once an iteration has run in this process, every rank
+        raises after `max_consecutive_errors` boundaries in a row at which a rank had failed
+        (finished a full window of episodes, and one per env, since the last iteration, none
+        with a finite objective): a diverged member would otherwise train on without ever saving
+        or being replaced. Boundaries that only wait for episodes to end don't count. Pooled
+        values: every rank decides alike.
+        """
+        if iteration == self._wait_iteration:
+            return
+        self._wait_iteration = iteration
+        cfg = self.cfg
+        if self._iteration_ran:
+            self._failed_boundaries = self._failed_boundaries + 1 if pooled.failed_ranks else 0
+        counts = (f"{pooled.valid} finite, {pooled.nonfinite} non-finite and {pooled.unread} unreadable episodes "
+                  f"since iteration {self.pbt_it}")
+        if self._failed_boundaries >= cfg.max_consecutive_errors:
+            raise RuntimeError(
+                f"PBT objective '{cfg.objective}': {self._failed_boundaries} consecutive iteration boundaries at "
+                f"which {pooled.failed_ranks} of {pooled.ranks} ranks had finished episodes without a finite "
+                f"objective (max_consecutive_errors): a diverged policy, or infos that no longer carry the "
+                f"objective; {counts}; last lookup error: {self._last_objective_error}")
+        if self.distributed_args.rank != 0:
+            return
+        if pooled.known:
+            ranks = f" on {pooled.stale_ranks} of {pooled.ranks} ranks" if pooled.ranks > 1 else ""
+            what = f"a new objective '{cfg.objective}'{ranks}: {counts}"
+        else:
+            what = (f"objective '{cfg.objective}': {pooled.count} finished episodes counted, {self._window_size} "
+                    f"per rank needed ({pooled.nonfinite} non-finite and {pooled.unread} unreadable dropped)")
+        stops = (f"; the member stops at {cfg.max_consecutive_errors} boundaries in a row at which a rank finished "
+                 f"episodes without a finite objective ({self._failed_boundaries} so far)"
+                 if self._failed_boundaries else "")
+        print(f"Policy {cfg.policy_idx}: WARNING PBT iteration {iteration} waits for {what}; "
+              f"last lookup error: {self._last_objective_error}{stops}")
 
     def _check_member_dir(self, frame):
         """Rank 0, first step of the process: make the member directory this run's own.
@@ -419,8 +517,8 @@ class PbtAlgoObserver(AlgoObserver):
                   f"continuing with the current weights")
             return
 
-        for param, value in new_params.items():
-            self.algo.writer.add_scalar(f"pbt/{param}", value, frame)
+        # at the x of this iteration's current values: the plot steps to the new ones (as IsaacGymEnvs)
+        self._write_params(self.algo.writer, new_params, self._summary_step(frame))
         self.algo.writer.flush()
 
         self.new_params = new_params
@@ -432,19 +530,45 @@ class PbtAlgoObserver(AlgoObserver):
         self.restart_flag[0] = 1
         self.printer.print_mutation_diff(base_params, new_params)
 
+    def _summary_step(self, frame=None):
+        """x of the pbt/* scalars: the x of this epoch's `rewards/step` point (env steps).
+
+        `after_steps` runs before the learner adds the epoch's frames (`curr_frames`, on every
+        rank with multi_gpu) to `algo.frame`, which counts agent steps. `frame` defaults to
+        `algo.frame`; the cadence, the grace windows and the workspace keep counting it.
+        """
+        algo = self.algo
+        frame = int(algo.frame if frame is None else frame)
+        curr_frames = int(getattr(algo, "curr_frames", 0) or 0)
+        if getattr(algo, "multi_gpu", False):
+            curr_frames *= int(getattr(algo, "world_size", 1) or 1)
+        return (frame + curr_frames) // max(1, int(getattr(algo, "num_agents", 1) or 1))
+
     def _write_summaries(self, score, initialized, frame):
+        """The iteration's pbt/* scalars at `_summary_step(frame)`: objective, population best,
+        rank, restart count and the current value of every numeric mutable param."""
         writer = getattr(self.algo, "writer", None)
         if writer is None:
             return
+        step = self._summary_step(frame)
         if score > _UNINITIALIZED_VALUE:
-            writer.add_scalar("pbt/objective", score, frame)
+            writer.add_scalar("pbt/objective", score, step)
         if initialized:
-            writer.add_scalar("pbt/00_best_objective", max(initialized.values()), frame)
+            writer.add_scalar("pbt/00_best_objective", max(initialized.values()), step)
             if self.cfg.policy_idx in initialized:
                 rank = 1 + sorted(initialized.values(), reverse=True).index(initialized[self.cfg.policy_idx])
-                writer.add_scalar("pbt/rank", rank, frame)
-        writer.add_scalar("pbt/restart_count", self.restart_count, frame)
+                writer.add_scalar("pbt/rank", rank, step)
+        writer.add_scalar("pbt/restart_count", self.restart_count, step)
+        self._write_params(writer, self.pbt_params, step)
         writer.flush()
+
+    @staticmethod
+    def _write_params(writer, params, step):
+        """`pbt/<param>` for every numeric value in `params` (numpy and torch scalars as numbers)."""
+        for param, value in params.items():
+            value = pbt_utils.plain_number(value)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                writer.add_scalar(f"pbt/{param}", value, step)
 
     def _get_launcher(self):
         """The executable used to re-exec training: `pbt.launcher` from config, else sys.executable."""

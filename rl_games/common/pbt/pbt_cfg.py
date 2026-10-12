@@ -73,7 +73,9 @@ class PbtCfg:
     the observer raise without it); there is no portable default (info layouts differ per backend). Examples:
     'episode.Episode_Reward/success' (Isaac Lab-style nested infos), 'scores' (flat dicts).
     A per-env tensor is read at the finished envs; a scalar is taken as the mean over the
-    envs that finished on that step. If reward is stationary, a term that corresponds to
+    envs that finished on that step. Episodes with a NaN or infinite value are left out, and
+    an iteration waits until every rank has a finite value since the previous one (see
+    `max_consecutive_errors`). If reward is stationary, a term that corresponds to
     task success is usually enough; with non-stationary rewards or curricula, prefer a true
     task objective that ranks curriculum progress first."""
 
@@ -153,8 +155,11 @@ class PbtCfg:
     """CLI name of the train script's seed argument (used by `reseed_on_restart`)."""
 
     max_consecutive_errors: int = 5
-    """Raise after this many consecutive PBT iterations fail to save/load checkpoints,
-    instead of silently training without PBT (>= 1)."""
+    """Raise after this many consecutive PBT iterations fail to save/load checkpoints, or after
+    this many iteration boundaries in a row at which a rank had finished a full window of
+    episodes, and one per env, since the process's last iteration, none with a finite
+    objective (a diverged member), instead of silently training without PBT (>= 1). Waiting
+    for episodes to end, or for the first iteration after a (re)start, never counts."""
 
     wandb_finish_timeout: float = 120.0
     """Seconds a restart waits for the open wandb run to finish before re-executing (a finite

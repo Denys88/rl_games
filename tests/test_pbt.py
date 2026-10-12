@@ -291,9 +291,10 @@ class TestBandLogic:
         monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
         monkeypatch.setattr(pbt_utils, "maybe_save_best", lambda *a, **k: False)
-        obs._window_sum, obs._window_count = 1.0, 1
+        obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
         random.seed(seed)
         obs.after_steps()
+        assert obs.pbt_it == 1                             # the iteration ran: no vacuous pass
         return obs
 
     def test_underperformer_gets_replacement_and_restart_flag(self, tmp_path, monkeypatch):
@@ -538,9 +539,10 @@ class TestGraceWindows:
         monkeypatch.setattr(pbt_utils, "load_pbt_ckpts", lambda *a, **k: ckpts)
         monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
-        obs._window_sum, obs._window_count = 1.0, 1
+        obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
         random.seed(0)
         obs.after_steps()
+        assert obs.pbt_it == frame // obs.cfg.interval_steps   # the iteration ran: no vacuous pass
         return obs
 
     def test_start_after_blocks_fresh_restart(self, tmp_path, monkeypatch):
