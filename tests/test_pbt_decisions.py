@@ -383,6 +383,19 @@ def test_no_restart_lines(tmp_path, case, outcome):
         assert line["reported"] == (3 if "num_policies" in case else 0)
 
 
+@pytest.mark.parametrize("force, objectives, pbt, outcome", [
+    ("self", DONORS, {}, "self_mutation"),                  # far behind the donors
+    ("donor:2", CLOSE, {}, "transfer"),                     # a lead the rule finds too small
+    ("donor:1", {0: 5.0, 2: 3.0}, {}, "forced"),            # the donor has not reported: no restart
+    ("self", DONORS, {"start_after": 100_000}, "grace"),
+])
+def test_forced_lines(tmp_path, force, objectives, pbt, outcome):
+    """Under pbt.force_outcome every line says so, as the workspace yamls do."""
+    obs, line = run_iteration(tmp_path, objectives, force_outcome=force, mutation_rate=1.0, **pbt)
+    assert (line["outcome"], line["forced"]) == (outcome, force)
+    assert obs.restart_flag.item() == (outcome in ("self_mutation", "transfer"))
+
+
 def test_ending_line(tmp_path):
     _, line = run_iteration(tmp_path, DONORS, algo=Algo(tmp_path, epoch_num=40, max_epochs=40, curr_frames=100))
     assert (line["outcome"], line["frames_left"], line["limit"]) == ("ending", 0, "max_epochs")

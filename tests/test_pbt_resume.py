@@ -128,13 +128,13 @@ def test_a_restart_decision_writes_the_recipients_identity(tmp_path, execs):
 # ---------------------------------------------------------------------------------------------
 # member_resume picks what a relaunch of a dead member starts from
 
-def restart_decision(train_dir, execs):
+def restart_decision(train_dir, execs, **pbt):
     """Member 3 saves iterations 3 and 5, then decides a transfer at iteration 5: restart.yaml and
     restart.pth are written, and the restarted process dies before its first save."""
     save(train_dir, 3, 3, 0.5)
     for idx, objective in ((0, 5.0), (1, 4.0), (2, 3.0)):
         save(train_dir, idx, 5, objective)
-    obs = observer(train_dir, 3, 4, mutation_rate=1.0)
+    obs = observer(train_dir, 3, 4, mutation_rate=1.0, **pbt)
     decide(obs, Algo(train_dir, epoch_num=40, experiment_name="member3"), 5, 1.0)
     _, raw = reexec(obs, execs)
     return json.loads(raw)
@@ -161,6 +161,14 @@ def test_a_restart_that_has_not_saved_is_retried(tmp_path, execs):
     assert resume["payload"] == dict(payload, attempt=2)
     assert load_record(tmp_path)["attempt"] == 2               # counted for the next relaunch
     assert pbt_utils.member_resume(workspace(tmp_path), 3)["payload"]["attempt"] == 3
+
+
+def test_a_retried_forced_restart_passes_the_restarts_payload(tmp_path, execs):
+    """restart.yaml's `forced` stamp (pbt.force_outcome) stays in the record."""
+    payload = restart_decision(tmp_path, execs, force_outcome="donor:1")
+    assert load_record(tmp_path)["forced"] == "donor:1" and payload["source_policy"] == 1
+    del payload["frame_reached"]
+    assert pbt_utils.member_resume(workspace(tmp_path), 3)["payload"] == dict(payload, attempt=2)
 
 
 def test_a_restart_that_saved_resumes_from_its_newest_checkpoint(tmp_path, execs):

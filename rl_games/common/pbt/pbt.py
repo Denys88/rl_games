@@ -672,10 +672,11 @@ class PbtAlgoObserver(AlgoObserver):
         numbers. Outcomes: those of the rule ("not_worst", "too_few_reported", "kept" by the
         interval's best objective, "transfer", "self_mutation", with the worst and top groups, the
         candidate, its lead and the thresholds), "grace", "ending", "no_op", "in_process", "error",
-        "stale" (an iteration waiting for its objective) and "restarted" (`_record_restart`). A
-        line that can't be written only warns."""
+        "stale" (an iteration waiting for its objective), "restarted" (`_record_restart`) and
+        "forced" (`pbt.force_outcome` names a donor that has not reported). Under
+        `pbt.force_outcome` every line carries `forced`. A line that can't be written only warns."""
         line = dict({"schema": pbt_utils.SCHEMA, "time": time.time(), "iteration": int(iteration),
-                     "frame": int(frame), "objective": objective}, **decision)
+                     "frame": int(frame), "objective": objective}, **self._forced_stamp(), **decision)
         try:
             pbt_utils.append_decision(self.curr_policy_dir, line)
         except Exception as exc:
@@ -888,9 +889,9 @@ class PbtAlgoObserver(AlgoObserver):
         return False
 
     def _forced_stamp(self):
-        """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls, best records and
-        restart.yaml when it is set, else {}: a forced member's records must not pass for a
-        population's."""
+        """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls, best records,
+        restart.yaml and decisions.jsonl lines when it is set, else {}: a forced member's records
+        must not pass for a population's."""
         return {"forced": self.cfg.force_outcome} if self.cfg.force_outcome else {}
 
     def _reset_objective_window(self):

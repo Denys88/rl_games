@@ -956,7 +956,7 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     thresholds.
     """
     if cfg.force_outcome:
-        return select_forced(cfg.force_outcome, policy_idx, objectives, order)
+        return select_forced(cfg.force_outcome, policy_idx, objectives, order, details=details)
     details = {} if details is None else details
     n = cfg.num_policies
     values = {p: UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p] for p in range(n)}
@@ -1012,7 +1012,7 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, 
     `outcome` ("not_worst", "transfer" or "self_mutation"), the band (`lower`, `upper`) and the
     `leaders`."""
     if cfg.force_outcome:
-        return select_forced(cfg.force_outcome, policy_idx, objectives)
+        return select_forced(cfg.force_outcome, policy_idx, objectives, details=details)
     details = {} if details is None else details
     initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
     values = list(initialized.values())
@@ -1036,10 +1036,12 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, 
 
 
 def select_forced(force_outcome: str, policy_idx: int, objectives: dict[int, float | None],
-                  order: list[int] | None = None) -> tuple[int | None, str]:
+                  order: list[int] | None = None, *, details=None) -> tuple[int | None, str]:
     """The source `pbt.force_outcome` names, in place of the rule (`select_dexpbt` and
     `select_threshold` return it): this member for "self" (a self-mutation), the best member for
-    "best" (`rank_members`), member k for "donor:k"; None when k has not reported."""
+    "best" (`rank_members`), member k for "donor:k"; None when k has not reported. `details`, a
+    dict, receives the `outcome`: "transfer" or "self_mutation", or "forced" for None."""
+    details = {} if details is None else details
     initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
     if force_outcome == "self":
         source = policy_idx
@@ -1048,7 +1050,9 @@ def select_forced(force_outcome: str, policy_idx: int, objectives: dict[int, flo
     else:
         source = int(force_outcome.split(":", 1)[1])
         if source not in initialized:
+            details["outcome"] = "forced"
             return None, f"forced outcome {force_outcome!r}: member {source} has not reported"
+    details["outcome"] = restart_kind(policy_idx, source)
     return source, f"forced outcome {force_outcome!r} (pbt.force_outcome): restart from {source}"
 
 
@@ -1061,7 +1065,7 @@ TRANSFER, SELF_MUTATION, RESUME = "transfer", "self_mutation", "resume"
 # a member's record of its last restart decision, next to restart.pth in its workspace directory
 RESTART_RECORD = "restart.yaml"
 # what restart.yaml holds besides the payload's keys
-_RECORD_ONLY = ("epoch", "params", "seed", "seed_arg")
+_RECORD_ONLY = ("epoch", "params", "seed", "seed_arg", "forced")
 # a member's log of its PBT iterations' outcomes, one JSON object per line (`append_decision`)
 DECISIONS = "decisions.jsonl"
 _restart_info_cache: dict | None = None
