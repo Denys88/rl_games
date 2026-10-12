@@ -15,8 +15,8 @@ import torch.distributed as dist
 
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
-from rl_games.common.pbt.mutation import MUTATION_FUNCS, mutate
-from rl_games.common.pbt.pbt_cfg import PbtCfg
+from rl_games.common.pbt.mutation import mutate
+from rl_games.common.pbt.pbt_cfg import PbtCfg, rule_notices, validate  # noqa: F401 (PbtCfg: public here since #359)
 
 _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 
@@ -66,7 +66,11 @@ class PbtAlgoObserver(AlgoObserver):
     """
 
     def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None):
-        """Initialize observer, print the mutation table, and allocate the restart flag.
+        """Validate the PBT setup, print the rule and the mutation table, and allocate the restart flag.
+
+        Every rank runs the same checks (`validate()`, single-node members) before any
+        collective, so an invalid setup fails at init on every rank instead of at the first
+        restart on rank 0.
 
         Args:
             params (dict): Full agent/task params (Hydra style), containing a "pbt" section.
@@ -77,10 +81,13 @@ class PbtAlgoObserver(AlgoObserver):
                 captured before argparse/Hydra rewrite `sys.argv`.
             extra_params (dict | None): Additional mutable values outside the agent params,
                 keyed by their `key=value` override name (e.g. `env.rewards.success.weight`).
+
+        Raises:
+            ValueError: invalid PBT config (see `validate()`), or a distributed member whose
+                ranks span several nodes.
         """
         super().__init__()
         self.printer = pbt_utils.PbtTablePrinter()
-        self.dir = params["pbt"]["directory"]
         self.launch_argv = list(launch_argv) if launch_argv is not None else None
 
         self.rendering_args = pbt_utils.RenderingArgs(args_cli)
@@ -88,11 +95,15 @@ class PbtAlgoObserver(AlgoObserver):
         self.wandb_args = pbt_utils.WandbArgs(args_cli if self.launch_argv is None else None)
         self.env_args = pbt_utils.EnvArgs(args_cli)
         self.distributed_args = pbt_utils.DistributedArgs(args_cli)
-        self.cfg = PbtCfg.from_dict(params["pbt"])
-        if not self.cfg.objective:
-            raise ValueError(
-                "pbt.objective is required: a dotted address into env infos, "
-                "e.g. 'episode.Episode_Reward/success' (Isaac Lab) or 'scores' (flat infos)")
+        self.cfg, self.pbt_params = validate(params, extra_params)
+        self.dir = self.cfg.directory  # kept for compatibility; the workspace is <train_dir>/<workspace>
+        if self.distributed_args.distributed and "LOCAL_WORLD_SIZE" in os.environ:
+            local_world_size, world_size = int(os.environ["LOCAL_WORLD_SIZE"]), int(os.environ.get("WORLD_SIZE", "1"))
+            if local_world_size != world_size:
+                raise ValueError(
+                    f"PBT members must run on a single node: LOCAL_WORLD_SIZE={local_world_size} differs from "
+                    f"WORLD_SIZE={world_size}. A restart re-execs the whole member from rank 0 as "
+                    f"torch.distributed.run --nnodes=1 --nproc_per_node=WORLD_SIZE, i.e. on rank 0's node")
         self.pbt_it = -1  # dummy value, stands for "not initialized"
         self.initial_frame = 0
         self.score = _UNINITIALIZED_VALUE
@@ -105,23 +116,24 @@ class PbtAlgoObserver(AlgoObserver):
         self._last_objective_error = None
         self._warned_iteration = None
 
-        flat = pbt_utils.flatten_dict({"agent": params})
-        flat.update(extra_params or {})
-        self.pbt_params = pbt_utils.filter_params(flat, self.cfg.mutation)
-        missing = sorted(set(self.cfg.mutation) - set(self.pbt_params))
-        if missing:
-            raise ValueError(f"pbt.mutation keys not found in the params or extra_params: {missing}")
-        unknown = sorted({fn for fn in self.cfg.mutation.values() if fn not in MUTATION_FUNCS})
-        if unknown:
-            raise ValueError(f"unknown pbt.mutation functions {unknown}; available: {sorted(MUTATION_FUNCS)}")
-        if self.cfg.replace_rule == "dexpbt" and self.cfg.num_policies <= 2:
-            print("PbtAlgoObserver: WARNING the dexpbt rule needs more than max(2, num_policies // 2) members "
-                  "to report, so it never replaces with num_policies <= 2; use 3+ members or replace_rule: threshold")
+        if self.distributed_args.rank == 0:
+            for line in rule_notices(self.cfg, params["pbt"]):
+                print(f"PbtAlgoObserver: {line}")
+            if not self.cfg.enabled:
+                print("PbtAlgoObserver: WARNING pbt.enabled is False, but the observer runs PBT whenever it is "
+                      "attached; train scripts read the flag to decide whether to attach it")
+            algo_config = params.get("params", {}).get("config", {})
+            if algo_config.get("population_based_training"):
+                print("PbtAlgoObserver: note: params.config.population_based_training is an older, separate switch: "
+                      "it does not enable this PBT (attaching the observer does); it adds '_pbt_<pbt_idx>' to the "
+                      "experiment name unless full_experiment_name is set, and rate-limits summaries through "
+                      "IntervalSummaryWriter"
+                      + ("" if "pbt_idx" in algo_config else
+                         "; params.config.pbt_idx is missing, so the agent will raise KeyError('pbt_idx')"))
         if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not self.distributed_args.distributed:
             print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: the restart flag "
                   "is not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
 
-        assert len(self.pbt_params) > 0, "[DANGER]: Dictionary that contains params to mutate is empty"
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
 
         info = pbt_utils.restart_info()
@@ -151,7 +163,16 @@ class PbtAlgoObserver(AlgoObserver):
 
         Args:
             algo: rl_games algorithm object (provides writer, train_dir, frame counter, etc.).
+
+        Raises:
+            NotImplementedError: for SAC, which never calls `after_steps` (PBT would do nothing).
         """
+        from rl_games.algos_torch.sac_agent import SACAgent  # lazy: only this check needs the SAC module
+
+        if isinstance(algo, SACAgent):
+            raise NotImplementedError(
+                "PBT supports the PPO agents (a2c_continuous, a2c_discrete); SAC never calls the observer's "
+                "after_steps, so PBT would silently do nothing")
         self.algo = algo
         if self.cfg.objective_window <= 0:
             self._window_size = max(1, int(getattr(algo, "num_actors", 1) or 1))
