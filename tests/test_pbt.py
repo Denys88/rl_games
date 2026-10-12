@@ -449,15 +449,7 @@ class TestWorkspaceSafety:
         ckpts = pbt_utils.load_pbt_ckpts(str(tmp_path), 0, 1, 2)
         assert ckpts[0]["iteration"] == 1
 
-    def test_cleanup_ignores_stopped_members(self, tmp_path):
-        pdir = tmp_path / "000"
-        pdir.mkdir()
-        for it in range(1, 41):
-            pbt_utils.save_pbt_checkpoint(str(pdir), 1.0, it, FakeAlgo(), {"agent.lr": 1e-4})
-        live = yaml.safe_load((pdir / "000040.yaml").read_text())
-        dead = dict(live, iteration=2)                     # a member that stopped at iteration 2
-        pbt_utils.cleanup({0: live, 1: dead}, str(pdir), keep_back=5, max_yaml=50)
-        assert min(int(p.stem) for p in pdir.glob("*.yaml")) == 36
+    # cleanup with laggards and stopped members: tests/test_pbt_workspace.py::TestCleanup
 
     def test_prepare_restart_checkpoint_keeps_member_frame(self, tmp_path):
         src = tmp_path / "src.pth"
@@ -474,7 +466,10 @@ class TestWorkspaceSafety:
         assert pbt_utils.maybe_save_best(str(tmp_path), 0, 3.0, 3, 300, str(ckpt), {})
         meta = yaml.safe_load((tmp_path / "best" / "best.yaml").read_text())
         assert meta["policy_idx"] == 0 and meta["iteration"] == 3 and os.path.isfile(meta["checkpoint"])
-        assert sorted(p.name for p in (tmp_path / "best").glob("*.pth")) == ["best_p000_000003.pth"]
+        assert pbt_utils.population_best(str(tmp_path)) == meta
+        # the owner keeps its previous copy too: a view written concurrently may still name it
+        assert sorted(p.name for p in (tmp_path / "best").glob("*.pth")) == ["best_p000_000001.pth",
+                                                                         "best_p000_000003.pth"]
 
     def test_malformed_yaml_skipped_without_retry_delay(self, tmp_path):
         import time

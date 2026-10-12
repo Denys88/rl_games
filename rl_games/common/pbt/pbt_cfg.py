@@ -162,6 +162,13 @@ class PbtCfg:
     timeout or an error it logs to a new run `<run id>-r<restart count>` (the old run may
     still be uploading)."""
 
+    reuse_workspace: bool = False
+    """Let a fresh launch (no checkpoint, not a PBT restart) start in a member directory that
+    holds numbered checkpoints of an earlier run. Workspace files are named by iteration only,
+    so peers would read those as the member's current state: by default the member raises at
+    its first step. With true it deletes its own numbered files and starts over; `best/` keeps
+    the earlier run's records, so a new best is recorded once it beats them."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -202,6 +209,8 @@ class PbtCfg:
             require(getattr(self, name) >= 0.0, name, ">= 0")
         require(math.isfinite(self.wandb_finish_timeout) and self.wandb_finish_timeout >= 0,
                 "wandb_finish_timeout", "a finite number >= 0")
+        # a string such as 'false' would be truthy and switch the leftover check off
+        require(isinstance(self.reuse_workspace, bool), "reuse_workspace", "true or false")
 
     @classmethod
     def from_dict(cls, d):
