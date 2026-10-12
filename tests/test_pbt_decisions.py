@@ -74,7 +74,7 @@ def test_workspace_yamls_record_the_member(tmp_path, execs):
     assert saved["schema"] == 1 and saved["restart_count"] == 0
     assert {key: saved[key] for key in obs.population} == obs.population == {
         "rl_games_version": importlib.metadata.version("rl_games"), "git_commit": pbt_utils.git_commit(),
-        "code_fingerprint": "fp-1", "settings": settings_hash(obs.cfg),
+        "code_fingerprint": "fp-1", "settings": settings_hash(obs.cfg), "interval_unit": "frames",
         "precision": {"mixed_precision": "off", "torch_compile": True}}
     assert load_yaml(tmp_path, "restart.yaml")["schema"] == 1
 

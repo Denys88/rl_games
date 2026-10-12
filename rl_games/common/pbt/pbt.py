@@ -26,7 +26,7 @@ from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
 from rl_games.common.pbt.mutation import clamp_to_bounds, mutate
 from rl_games.common.pbt.pbt_cfg import (  # noqa: F401 (PbtCfg: public here since #359)
-    PbtCfg, rule_notices, settings_hash, validate)
+    PbtCfg, load_objective_fn, rule_notices, settings_hash, validate)
 
 _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 
@@ -133,7 +133,8 @@ class PbtAlgoObserver(AlgoObserver):
     its first member to finish (`_watch_population_end`).
     """
 
-    def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None, code_fingerprint=None):
+    def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None, code_fingerprint=None,
+                 objective_fn=None):
         """Validate the PBT setup, print the rule and the mutation table, and allocate the restart flag.
 
         Every rank runs the same checks (`validate()`, single-node members) before any
@@ -153,6 +154,9 @@ class PbtAlgoObserver(AlgoObserver):
             code_fingerprint (str | None): An identifier of the integration's code (e.g. a hash of
                 its sources). Workspace yamls record it, and a member that reads another one from
                 a peer leaves that peer out of its ranking (`_foreign_members`).
+            objective_fn (callable | None): The objective function as a function object, in
+                place of `pbt.objective_fn` (see `PbtCfg.objective_fn`): fn(infos, done_indices,
+                num_agents, algo), called at every env step.
 
         Raises:
             ValueError: invalid PBT config (see `validate()`), or a distributed member whose
@@ -170,7 +174,10 @@ class PbtAlgoObserver(AlgoObserver):
         self.env_args = pbt_utils.EnvArgs(args_cli)
         self.distributed_args = pbt_utils.DistributedArgs(args_cli)
         # a relative launcher is resolved where the restart execs from
-        self.cfg, self.pbt_params = validate(params, extra_params, launcher_cwd=self.launch_cwd)
+        self.cfg, self.pbt_params = validate(params, extra_params, launcher_cwd=self.launch_cwd,
+                                             objective_fn=objective_fn)
+        # None: process_infos looks up pbt.objective
+        self._objective_fn = objective_fn if objective_fn is not None else load_objective_fn(self.cfg.objective_fn)
         self.dir = self.cfg.directory  # kept for compatibility; the workspace is <train_dir>/<workspace>
         if self.distributed_args.distributed and "LOCAL_WORLD_SIZE" in os.environ:
             local_world_size, world_size = int(os.environ["LOCAL_WORLD_SIZE"]), int(os.environ.get("WORLD_SIZE", "1"))
@@ -454,12 +461,14 @@ class PbtAlgoObserver(AlgoObserver):
     def _population(self, algo):
         """What this member runs, recorded in its workspace yamls and learner checkpoints (K02): the
         rl_games version and git commit, the integration's `code_fingerprint`, the hash of the
-        population settings (`settings_hash`) and the learner's precision (the resolved mixed
-        precision and the torch_compile setting). See `_foreign_members`."""
+        population settings (`settings_hash`), the unit its iterations count (`interval_unit`) and
+        the learner's precision (the resolved mixed precision and the torch_compile setting). See
+        `_foreign_members`."""
         mixed_precision = {torch.float16: "fp16", torch.bfloat16: "bf16"}.get(getattr(algo, "amp_dtype", None), "off")
         torch_compile = (getattr(algo, "config", None) or {}).get("torch_compile", True)  # the runner's default
         return {"rl_games_version": pbt_utils.rl_games_version(), "git_commit": pbt_utils.git_commit(),
                 "code_fingerprint": self.code_fingerprint, "settings": settings_hash(self.cfg),
+                "interval_unit": self.cfg.interval_unit,
                 "precision": {"mixed_precision": mixed_precision, "torch_compile": torch_compile}}
 
     def _pbt_state(self, params=None, restart_count=None):
@@ -489,25 +498,40 @@ class PbtAlgoObserver(AlgoObserver):
     def process_infos(self, infos, done_indices):
         """Accumulate the objective of finished episodes into a window of recent episodes.
 
-        `self.score` is this rank's mean over the window. An episode whose objective is NaN or
-        infinite is left out on its own (see `pbt_utils.episode_stats`). For the iteration gate
-        the rank counts its finished episodes since the last PBT iteration: with a finite
-        objective, with a non-finite one, and on steps whose objective could not be read. Until
-        it has a finite one, it also marks the envs that ended an episode.
+        The objective is `pbt.objective` looked up in `infos`, or the objective function's value
+        (`pbt.objective_fn`), whose exceptions propagate. `self.score` is this rank's mean over
+        the window. An episode whose objective is NaN or infinite is left out on its own (see
+        `pbt_utils.episode_stats`). For the iteration gate the rank counts its finished episodes
+        since the last PBT iteration: with a finite objective, with a non-finite one, and on steps
+        without one (it could not be read, or the function returned None). Until it has a finite
+        one, it also marks the envs that ended an episode.
         """
-        value = infos
-        num_agents = int(getattr(getattr(self, "algo", None), "num_agents", 1) or 1)
-        try:
-            for part in self.cfg.objective.split("."):
-                value = value[part]
-            total, count, nonfinite = pbt_utils.episode_stats(value, done_indices, num_agents)
-        except (KeyError, TypeError, IndexError, ValueError, RuntimeError) as exc:
-            # the address may not resolve on every step (or every backend); keep the previous
-            # score, and report the last failure if no objective arrives by an iteration boundary
-            self._last_objective_error = repr(exc)
+        algo = getattr(self, "algo", None)
+        num_agents = int(getattr(algo, "num_agents", 1) or 1)
+        stats = error = None
+        if self._objective_fn is not None:
+            # the user's code: an exception is a bug, not an objective missing on this step
+            value = self._objective_fn(infos, done_indices, num_agents, algo)
+            if value is None:
+                error = f"{self._objective_name()} returned None"
+            else:
+                stats = pbt_utils.episode_stats(value, done_indices, num_agents)
+        else:
+            try:
+                value = infos
+                for part in self.cfg.objective.split("."):
+                    value = value[part]
+                stats = pbt_utils.episode_stats(value, done_indices, num_agents)
+            except (KeyError, TypeError, IndexError, ValueError, RuntimeError) as exc:
+                error = repr(exc)  # the address may not resolve on every step (or every backend)
+        if stats is None:
+            # keep the previous score, and report the last failure if no objective arrives by an
+            # iteration boundary
+            self._last_objective_error = error
             self._interval_unread += _num_finished(done_indices)
             self._mark_failed_envs(done_indices, num_agents)
             return
+        total, count, nonfinite = stats
         if count and not math.isfinite(total):
             nonfinite, count = nonfinite + count, 0  # finite values whose sum overflows
         self._interval_nonfinite += nonfinite
@@ -524,6 +548,12 @@ class PbtAlgoObserver(AlgoObserver):
             self._window_sum -= old_total
             self._window_count -= old_count
         self.score = self._window_sum / self._window_count
+
+    def _objective_name(self):
+        """The objective in messages: `pbt.objective`, or the objective function."""
+        if self._objective_fn is None:
+            return self.cfg.objective
+        return self.cfg.objective_fn or getattr(self._objective_fn, "__qualname__", repr(self._objective_fn))
 
     def _mark_failed_envs(self, done_indices, num_agents):
         """Mark the envs that ended an episode on a step without a finite objective. Only needed
@@ -573,22 +603,23 @@ class PbtAlgoObserver(AlgoObserver):
 
         Flow:
             1) The first step after a (re)start only sets the PBT cadence from the restored
-               frame and gives the learner this process's PBT state again
+               frame (or epoch) and gives the learner this process's PBT state again
                (`_take_learner_state`); rank 0 checks the member directory
                (`_check_member_dir`), and a restarted process logs the restart's cost
                (`_record_restart`).
             2) All ranks: pool the objective windows and episode counts across ranks and
                track the best pooled objective of the iteration.
-            3) On the PBT cadence (`interval_steps`), once every rank has a full window and a
-               finite objective since the last iteration, rank 0 renews the member's owner record
-               (`_heartbeat`), saves a checkpoint, loads the population, logs, and applies the
-               replacement rule (`_pbt_iteration`), with the global `random` module swapped to the
-               member's private generator (`_draw_rng`). Until then the iteration is retried on
-               every step without advancing `pbt_it` (see `_wait_for_objective`). When the
-               iteration decided a restart (the flag is set), rank 0 writes the member's
-               restart.yaml (`_save_restart_record`), unless the population has finished
-               (`pbt.stop_with_first`); then it appends the iteration's outcome to decisions.jsonl
-               (`_append_decision`).
+            3) On the PBT cadence (`interval_steps` frames or epochs, see `_progress`), once
+               every rank has a full window and a finite objective since the last iteration,
+               rank 0 renews the member's owner record (`_heartbeat`), saves a checkpoint, loads
+               the population, logs, and applies the replacement rule (`_pbt_iteration`), with
+               the global `random` module swapped to the member's private generator
+               (`_draw_rng`). Until then the iteration is retried on every step without
+               advancing `pbt_it` (see `_wait_for_objective`). When the iteration decided a
+               restart (the flag is set), rank 0 writes the member's restart.yaml
+               (`_save_restart_record`), unless the population has finished
+               (`pbt.stop_with_first`); then it appends the iteration's outcome to
+               decisions.jsonl (`_append_decision`).
             4) All ranks, at the iteration: act on rank 0's decision (`_sync_decision`): the
                member restarts before this epoch's update, or applies an in-process
                self-mutation. Then rank 0 raises if another launch took the member over.
@@ -597,12 +628,13 @@ class PbtAlgoObserver(AlgoObserver):
         """
         distributed = self._distributed()
         frame = self.algo.frame
+        progress = self._progress(frame)
         if self.cfg.stop_with_first and self.distributed_args.rank == 0:
             self._watch_population_end(frame)
         if self.pbt_it == -1:
-            # first step after (re)start: the checkpoint restore has already set the frame
-            self.pbt_it = frame // self.cfg.interval_steps
-            self.initial_frame = frame
+            # first step after (re)start: the checkpoint restore has already set the frame and epoch
+            self.pbt_it = progress // self.cfg.interval_steps
+            self.initial_frame = progress
             self._take_learner_state()
             if self.distributed_args.rank == 0:
                 self._check_member_dir(frame)
@@ -616,7 +648,7 @@ class PbtAlgoObserver(AlgoObserver):
             if self.best_in_iteration is None or objective > self.best_in_iteration:
                 self.best_in_iteration = objective
 
-        iteration = frame // self.cfg.interval_steps
+        iteration = progress // self.cfg.interval_steps
         if iteration <= self.pbt_it:
             return
         if not pooled.known or pooled.stale_ranks:
@@ -700,7 +732,8 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _draw_rng(self):
         """The generator of PBT's draws, created at the first iteration from the config seed, the
-        member, the restart count and the frame this process started at (`pbt_utils.draw_rng`)."""
+        member, the restart count and the frame (or epoch, `_progress`) this process started at
+        (`pbt_utils.draw_rng`)."""
         if getattr(self, "_rng", None) is None:
             self._rng = pbt_utils.draw_rng(getattr(self, "_seed", None), self.cfg.policy_idx,
                                            getattr(self, "restart_count", 0), getattr(self, "initial_frame", 0))
@@ -726,13 +759,13 @@ class PbtAlgoObserver(AlgoObserver):
         if iteration == self._wait_iteration:
             return
         self._wait_iteration = iteration
-        cfg = self.cfg
+        cfg, name = self.cfg, self._objective_name()
         self._failed_boundaries = self._failed_boundaries + 1 if pooled.failed_ranks else 0
         counts = (f"{pooled.valid} finite, {pooled.nonfinite} non-finite and {pooled.unread} unreadable episodes "
                   f"since iteration {self.pbt_it}")
         if self._failed_boundaries >= cfg.max_consecutive_errors:
             raise RuntimeError(
-                f"PBT objective '{cfg.objective}': {self._failed_boundaries} consecutive iteration boundaries at "
+                f"PBT objective '{name}': {self._failed_boundaries} consecutive iteration boundaries at "
                 f"which {pooled.failed_ranks} of {pooled.ranks} ranks had no finite objective although every env "
                 f"had ended an episode (max_consecutive_errors): a diverged policy, or infos that no longer carry "
                 f"the objective; {counts}; last lookup error: {self._last_objective_error}")
@@ -746,9 +779,9 @@ class PbtAlgoObserver(AlgoObserver):
             "unread": pooled.unread, "stale_ranks": pooled.stale_ranks})
         if pooled.known:
             ranks = f" on {pooled.stale_ranks} of {pooled.ranks} ranks" if pooled.ranks > 1 else ""
-            what = f"a new objective '{cfg.objective}'{ranks}: {counts}"
+            what = f"a new objective '{name}'{ranks}: {counts}"
         else:
-            what = (f"objective '{cfg.objective}': {pooled.count} finished episodes counted, {self._window_size} "
+            what = (f"objective '{name}': {pooled.count} finished episodes counted, {self._window_size} "
                     f"per rank needed ({pooled.nonfinite} non-finite and {pooled.unread} unreadable dropped)")
         stops = (f"; the member stops at {cfg.max_consecutive_errors} boundaries in a row at which a rank had no "
                  f"finite objective although every env had ended an episode ({self._failed_boundaries} so far)"
@@ -842,25 +875,26 @@ class PbtAlgoObserver(AlgoObserver):
         `pbt.force_outcome` names).
 
         No decision inside the grace windows (`start_after` since the process started or a
-        self-mutation was applied, `initial_delay` since the start of training), nor when the
-        run ends before a restart could pay off (`_frames_to_end`) or the population has finished
-        (`pbt.stop_with_first`); the member's yaml says `replaceable: false` then, so peers keep it
-        out of their worst group. The new values are clamped into `mutation_bounds`. A
-        self-mutation that changes no value keeps training; one with changes goes to
-        `_apply_self_mutation` first, and restarts unless that applied it. A restart marks this
-        iteration's yaml not replaceable once restart.pth is written: peers read it until the
-        restarted process saves. Peers that run other code or another population setup
-        (`_foreign_members`), and stale ones (`pbt.max_member_lag`, `pbt_utils.member_status`), are
-        left out.
+        self-mutation was applied, `initial_delay` since the start of training, in frames or
+        epochs: `_progress`), nor when the run ends before a restart could pay off (`_to_end`) or
+        the population has finished (`pbt.stop_with_first`); the member's yaml says
+        `replaceable: false` then, so peers keep it out of their worst group. The new values are
+        clamped into `mutation_bounds`. A self-mutation that changes no value keeps training; one
+        with changes goes to `_apply_self_mutation` first, and restarts unless that applied it. A
+        restart marks this iteration's yaml not replaceable once restart.pth is written: peers
+        read it until the restarted process saves. Peers that run other code or another
+        population setup (`_foreign_members`), and stale ones (`pbt.max_member_lag`,
+        `pbt_utils.member_status`), are left out.
 
         Returns the iteration's outcome, which `after_steps` appends to decisions.jsonl (and records
         a restart in restart.yaml): {"outcome": ...} with the rule's numbers, see `_append_decision`.
         """
-        cfg = self.cfg
-        frame_left = (self.pbt_it + 1) * cfg.interval_steps - frame
-        print(f"Policy {cfg.policy_idx}, frames_left {frame_left}, PBT it {self.pbt_it}, objective {score:.6g}")
-        in_grace = frame - self.initial_frame < cfg.start_after or frame < cfg.initial_delay
-        to_end = self._frames_to_end(frame)
+        cfg, unit = self.cfg, self.cfg.interval_unit
+        progress = self._progress(frame)
+        left = (self.pbt_it + 1) * cfg.interval_steps - progress
+        print(f"Policy {cfg.policy_idx}, {unit}_left {left}, PBT it {self.pbt_it}, objective {score:.6g}")
+        in_grace = progress - self.initial_frame < cfg.start_after or progress < cfg.initial_delay
+        to_end = self._to_end(frame)
         if cfg.stop_with_first and self._population_finished() is not None:
             to_end = (0, pbt_utils.FINISHED_MARKER)
         ending = to_end is not None and to_end[0] < max(cfg.start_after, cfg.interval_steps)
@@ -918,15 +952,15 @@ class PbtAlgoObserver(AlgoObserver):
                 print(f"Policy {cfg.policy_idx}: exception {exc!r} while saving the population-best checkpoint")
 
         if in_grace:
-            print(f"Policy {cfg.policy_idx}: within the grace window (frame {frame}, restarted at "
+            print(f"Policy {cfg.policy_idx}: within the grace window (at {progress} {unit}, restarted at "
                   f"{self.initial_frame}, start_after {cfg.start_after}, initial_delay {cfg.initial_delay})")
             return {"outcome": "grace"}
         if ending:
-            print(f"Policy {cfg.policy_idx}: {to_end[0]} frames left after this epoch before {to_end[1]} ends the "
+            print(f"Policy {cfg.policy_idx}: {to_end[0]} {unit} left after this epoch before {to_end[1]} ends the "
                   f"run, fewer than max(start_after, interval_steps) = {max(cfg.start_after, cfg.interval_steps)}: "
                   f"no replacement this close to the end (a restarted member could not leave its grace window "
                   f"or reach another iteration)")
-            return {"outcome": "ending", "frames_left": to_end[0], "limit": to_end[1]}
+            return {"outcome": "ending", f"{unit}_left": to_end[0], "limit": to_end[1]}
 
         details = {}  # the rule's outcome and numbers
         # with pbt.force_outcome either rule returns the source it names (pbt_utils.select_forced)
@@ -966,9 +1000,9 @@ class PbtAlgoObserver(AlgoObserver):
                 if isinstance(history, list):
                     history.append(dict(history_entry, in_process=True))
                 # the grace window starts over; the saves in it say replaceable: false
-                self.initial_frame = int(frame)
-                print(f"Policy {cfg.policy_idx}: self-mutation applied in process, no restart; grace window from "
-                      f"frame {self.initial_frame}")
+                self.initial_frame = progress
+                print(f"Policy {cfg.policy_idx}: self-mutation applied in process, no restart; the grace window "
+                      f"restarts at {self.initial_frame} {unit}")
                 return dict(details, outcome="in_process", mutated=changed)
         try:
             # the values this restart mutated from: the child's restore then moves an inherited
@@ -1045,8 +1079,8 @@ class PbtAlgoObserver(AlgoObserver):
         values as `pbt_params` (`_set_pbt_params`), logs them, appends the entry a restart puts
         into restart.pth to the learner's `pbt_history` with `in_process: True` (on rank 0, which
         saves the learner's checkpoints), restarts the member's grace window (`initial_frame`; its
-        saves say `replaceable: false` until `start_after` frames have passed), records the
-        outcome `in_process` in decisions.jsonl and keeps training.
+        saves say `replaceable: false` until `start_after` frames or epochs have passed), records
+        the outcome `in_process` in decisions.jsonl and keeps training.
 
         The base applies it under `pbt.self_mutation: in_process` when every changed key is an
         `agent.params.config` value the learner's `set_param` takes (`A2CBase.SET_PARAMS`):
@@ -1095,6 +1129,22 @@ class PbtAlgoObserver(AlgoObserver):
         if getattr(algo, "multi_gpu", False):
             curr_frames *= int(getattr(algo, "world_size", 1) or 1)
         return curr_frames
+
+    def _progress(self, frame):
+        """The member's progress at this `after_steps` in `pbt.interval_unit`, which the cadence,
+        the grace windows (`initial_frame` holds the start in it) and the end-of-run margin count:
+        `frame`, the frames of the completed epochs, or the completed epochs, `epoch_num - 1`
+        (after_steps runs in epoch `epoch_num`, before its update). A restart keeps both:
+        restart.pth holds the last completed epoch and its frame."""
+        return int(self.algo.epoch_num) - 1 if self.cfg.interval_unit == "epochs" else int(frame)
+
+    def _to_end(self, frame):
+        """`_frames_to_end` in `pbt.interval_unit`: with epochs, the frames left in epochs, rounded
+        up (the epoch that passes max_frames is played in full)."""
+        to_end = self._frames_to_end(frame)
+        if to_end is None or self.cfg.interval_unit != "epochs":
+            return to_end
+        return -(-to_end[0] // self._epoch_frames()), to_end[1]
 
     def _frames_to_end(self, frame):
         """(frames, limit): the frames this member trains after the current epoch before `limit`

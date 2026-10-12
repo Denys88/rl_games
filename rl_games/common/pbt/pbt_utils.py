@@ -530,8 +530,9 @@ def mark_not_replaceable(policy_dir) -> str | None:
 # --- what a member runs (K02) -----------------------------------------------------------------
 
 # fields whose difference makes a peer foreign: the integration's code, or another population setup
-# (pbt_cfg.settings_hash); a different rl_games_version, git_commit or precision only warns
-FOREIGN_KEYS = ("code_fingerprint", "settings")
+# (pbt_cfg.settings_hash; interval_unit is part of it, listed by name for the warning); a different
+# rl_games_version, git_commit or precision only warns
+FOREIGN_KEYS = ("code_fingerprint", "settings", "interval_unit")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
@@ -570,9 +571,9 @@ def git_commit(root=None) -> str | None:
 
 def identity_mismatches(ckpt, own) -> dict[str, tuple]:
     """{field: (the peer's value, own value)} for the fields of `own` (the reader's rl_games_version,
-    git_commit, code_fingerprint, settings and precision) whose value in the peer's workspace yaml
-    `ckpt` differs. A field missing or None on either side is unknown and never differs: yamls of
-    older versions, members without a fingerprint."""
+    git_commit, code_fingerprint, settings, interval_unit and precision) whose value in the peer's
+    workspace yaml `ckpt` differs. A field missing or None on either side is unknown and never
+    differs: yamls of older versions, members without a fingerprint."""
     return {key: (ckpt[key], mine) for key, mine in own.items()
             if mine is not None and ckpt.get(key) is not None and ckpt[key] != mine}
 
