@@ -634,21 +634,30 @@ def owner_record(launch_id, restart_count, started, iteration_seconds=None) -> d
             "started": float(started), "heartbeat": time.time(), "iteration_seconds": iteration_seconds}
 
 
-def owner_alive(record, max_member_lag) -> bool:
-    """Whether the process an owner record names may still run the member. On this host (same
-    hostname and boot): a process other than this one runs with the recorded pid and start time
-    (an exec'd restart keeps the pid). On another host, or this one before a reboot: its heartbeat
+def owner_alive(record, max_member_lag, exit_record=None) -> bool:
+    """Whether the process an owner record names may still run the member. Not when the member's
+    exit record (`exit_record`) says that launch ended its training: its launch_id, written at or
+    after the last heartbeat. On this host (same hostname and boot): a process other than this one
+    runs with the recorded pid and start time (an exec'd restart keeps the pid; a zombie, exited
+    but not reaped yet, doesn't run). On another host, or this one before a reboot: its heartbeat
     is within max_member_lag of its recorded iteration times, or 10 minutes when either is unknown
     or 0."""
+    heartbeat, exit_record = record.get("heartbeat"), exit_record or {}
+    ended = exit_record.get("time")
+    if (exit_record.get("launch_id") == record.get("launch_id") and _is_number(ended) and _is_number(heartbeat)
+            and ended >= heartbeat):
+        return False
     if record.get("host") == socket.gethostname() and record.get("boot_id") == _boot_id():
         pid = record.get("pid")
         if pid == os.getpid():
             return False
         try:
-            return abs(psutil.Process(int(pid)).create_time() - float(record.get("create_time"))) < 1.0
+            process = psutil.Process(int(pid))
+            return (process.status() != psutil.STATUS_ZOMBIE
+                    and abs(process.create_time() - float(record.get("create_time"))) < 1.0)
         except (psutil.Error, TypeError, ValueError):
             return False
-    seconds, heartbeat = record.get("iteration_seconds"), record.get("heartbeat")
+    seconds = record.get("iteration_seconds")
     window = (max_member_lag * seconds if max_member_lag and _is_number(seconds) and seconds > 0
               else _OWNER_WINDOW_SECONDS)
     return _is_number(heartbeat) and time.time() - heartbeat < window
@@ -656,13 +665,18 @@ def owner_alive(record, max_member_lag) -> bool:
 
 def member_activity(policy_dir) -> dict:
     """What a member's directory says about its processes, for `member_status`: {"heartbeat": its
-    owner record's heartbeat, "ended": its exit record's time, or None}. {} without a readable
-    owner record: a member of an older rl_games, whose liveness is unknown."""
+    owner record's heartbeat, "ended": its exit record's time, "saved": the `time` of its newest
+    workspace yaml, of any iteration (each None when unknown)}. A member ahead of the reader saves
+    above the yaml the reader loads. {} without a readable owner record: a member of an older
+    rl_games, whose liveness is unknown."""
     owner = read_record(policy_dir, OWNER_RECORD)
     if owner is None or not _is_number(owner.get("heartbeat")):
         return {}
     ended = (read_record(policy_dir, EXIT_RECORD) or {}).get("time")
-    return {"heartbeat": owner["heartbeat"], "ended": ended if _is_number(ended) else None}
+    yamls = {it: p for it, paths in _numbered_files(policy_dir).items() for p in paths if p.suffix == ".yaml"}
+    saved = (_load_workspace_yaml(yamls[max(yamls)]) or {}).get("time") if yamls else None
+    return {"heartbeat": owner["heartbeat"], "ended": ended if _is_number(ended) else None,
+            "saved": saved if _is_number(saved) else None}
 
 
 # a member's status in a reader's view (`member_status`); only REPLACEABLE members take worst slots.
@@ -696,10 +710,12 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
     - "finished": its exit record is newer than its owner record's heartbeat (`activity`, from
       `member_activity`): it ended its training normally. Ranked and a donor, never replaceable;
     - "stale": no sign of life for more than `lag` seconds (max_member_lag × the reader's median
-      iteration wall time), neither a heartbeat nor the `time` of its yaml: the observer leaves it
-      out of the ranking, the donors, the spread and the reported count;
-    - "waiting": a heartbeat within `lag` seconds, but its yaml is 2 or more iterations behind and
-      older than that: it waits for its objective, or starts up. It can't act on a replacement soon;
+      iteration wall time), neither a heartbeat nor a new yaml (the `time` of its newest yaml, of
+      any iteration): the observer leaves it out of the ranking, the donors, the spread and the
+      reported count;
+    - "waiting": a heartbeat within `lag` seconds, but no new yaml for longer than that, and the
+      yaml the reader loads is 2 or more iterations behind: it waits for its objective, or starts
+      up. It can't act on a replacement soon;
     - "not replaceable": its newest yaml says `replaceable: false` (restarting, in a grace window
       or near the end of its run);
     - "behind": its newest yaml is 2 or more iterations behind the reader's, and its objective
@@ -731,7 +747,8 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
         reader_there = _objective_at(reader_objectives, ckpt["iteration"]) if lagging else None
         member = (activity or {}).get(policy) or {}
         heartbeat, ended = member.get("heartbeat"), member.get("ended")
-        saved = ckpt.get("time") if _is_number(ckpt.get("time")) else None
+        # its newest save: the newest yaml of any iteration (`activity`), at least the one loaded
+        saved = max((t for t in (member.get("saved"), ckpt.get("time")) if _is_number(t)), default=None)
         timed = heartbeat is not None and lag is not None
         if not _is_number(objective) or objective <= UNINITIALIZED_VALUE:
             status[policy] = NOT_REPORTED

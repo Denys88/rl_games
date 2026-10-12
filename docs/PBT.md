@@ -61,7 +61,11 @@ train script must:
    afterwards, and splits the population;
 7. for a multi-GPU member, pass an `args_cli` with `distributed=True`
    ([Multi-GPU members](#multi-gpu-members));
-8. register custom mutation functions at import ([Mutation functions](#mutation-functions)).
+8. register custom mutation functions at import ([Mutation functions](#mutation-functions));
+9. combine observers with `rl_games.common.pbt.MultiObserver`, or forward every `AlgoObserver`
+   hook: a member whose observer misses `after_train` writes no exit record when its run ends, and
+   its peers then drop it as dead (`max_member_lag`) instead of keeping it ranked as finished.
+   Isaac Lab's `isaaclab_rl` `MultiObserver` forwards neither `after_train` nor `before_steps`.
 
 ```python
 import sys

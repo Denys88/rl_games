@@ -4,6 +4,7 @@ the owner record each member's rank 0 renews at every iteration boundary and che
 finish (`stop_with_first`, O02). CPU only; os.execv is captured."""
 
 import datetime
+import errno
 import os
 import socket
 import subprocess
@@ -50,11 +51,11 @@ def owner(train_dir, idx, *, heartbeat_age=5.0, **fields):
     write(os.path.join(member_dir(train_dir, idx), pbt_utils.OWNER_RECORD), record)
 
 
-def exited(train_dir, idx, *, age):
-    """Member `idx`'s exit record, `age` seconds old."""
+def exited(train_dir, idx, *, age, **fields):
+    """Member `idx`'s exit record, `age` seconds old, of the launch `owner` records."""
     write(os.path.join(member_dir(train_dir, idx), pbt_utils.EXIT_RECORD),
-          {"schema": 1, "reason": "max_epochs", "frame": 5000, "epoch": 40, "time": time.time() - age,
-           "launch_id": f"launch-{idx}"})
+          dict({"schema": 1, "reason": "max_epochs", "frame": 5000, "epoch": 40, "time": time.time() - age,
+                "launch_id": f"launch-{idx}"}, **fields))
 
 
 def age_yaml(train_dir, idx, iteration, age):
@@ -122,8 +123,9 @@ class TestMemberStatus:
     def ckpt(self, iteration=10, age=5.0, **fields):
         return dict({"true_objective": 1.0, "iteration": iteration, "time": self.NOW - age}, **fields)
 
-    def alive(self, age=5.0, ended=None):
-        return {"heartbeat": self.NOW - age, "ended": None if ended is None else self.NOW - ended}
+    def alive(self, age=5.0, ended=None, saved=None):
+        return {"heartbeat": self.NOW - age, "ended": None if ended is None else self.NOW - ended,
+                "saved": None if saved is None else self.NOW - saved}
 
     def test_states(self):
         ckpts = {0: self.ckpt(), 1: self.ckpt(age=3600), 2: self.ckpt(iteration=3, age=3600), 3: self.ckpt(age=3600),
@@ -141,6 +143,13 @@ class TestMemberStatus:
         activity = {0: self.alive(), 1: self.alive(3600)}
         assert pbt_utils.member_status(ckpts, 10, activity=activity, lag=600, now=self.NOW) == {0: "waiting", 1: "OK"}
 
+    def test_a_new_yaml_above_the_one_loaded_counts(self):
+        """Members ahead of the reader: their newest yaml (`saved`), above the reader's iteration, is
+        new, the yaml the reader loads old. Neither waits, nor is stale."""
+        ckpts = {0: self.ckpt(iteration=3, age=3600), 1: self.ckpt(age=3600)}
+        activity = {0: self.alive(saved=5), 1: self.alive(3600, saved=5)}
+        assert pbt_utils.member_status(ckpts, 10, activity=activity, lag=600, now=self.NOW) == {0: "OK", 1: "OK"}
+
     def test_without_a_known_lag_no_member_is_judged_by_time(self):
         ckpts = {1: self.ckpt(age=3600), 2: self.ckpt(iteration=3, age=3600), 3: self.ckpt(age=3600)}
         activity = {1: self.alive(3600), 2: self.alive(), 3: self.alive(3600, ended=3500)}
@@ -152,13 +161,16 @@ class TestMemberStatus:
         assert pbt_utils.member_status(ckpts, 10, activity={0: self.alive(5, ended=60)}, lag=600,
                                        now=self.NOW) == {0: "OK"}
 
-    def test_member_activity_reads_the_owner_and_exit_records(self, tmp_path):
+    def test_member_activity_reads_the_records_and_the_newest_yaml(self, tmp_path):
         assert pbt_utils.member_activity(member_dir(tmp_path, 0)) == {}           # no directory
         report(tmp_path, 0, 5, 1.0)
         assert pbt_utils.member_activity(member_dir(tmp_path, 0)) == {}           # no owner record
         owner(tmp_path, 0, heartbeat_age=30)
+        report(tmp_path, 0, 7, 1.0)
+        age_yaml(tmp_path, 0, 7, 100)
         activity = pbt_utils.member_activity(member_dir(tmp_path, 0))
         assert activity["ended"] is None and time.time() - activity["heartbeat"] == pytest.approx(30, abs=5)
+        assert time.time() - activity["saved"] == pytest.approx(100, abs=5)      # iteration 7's, the newest
         exited(tmp_path, 0, age=10)
         assert time.time() - pbt_utils.member_activity(member_dir(tmp_path, 0))["ended"] == pytest.approx(10, abs=5)
         with open(os.path.join(member_dir(tmp_path, 0), pbt_utils.OWNER_RECORD), "w") as fobj:
@@ -217,6 +229,25 @@ def test_a_member_without_new_yamls_waits_while_its_heartbeat_is_fresh(tmp_path,
     assert summary_status(capsys.readouterr().out, 1) == status
 
 
+@pytest.mark.parametrize("max_member_lag", [10, 0])
+def test_a_member_ahead_of_a_lagging_reader_keeps_its_worst_slot(tmp_path, capsys, max_member_lag):
+    """Member 1 saves at iteration 40, 20 ahead of the reader, which loads its yaml of iteration 18
+    (it skipped 19 and 20), saved 22 iterations ago. It saves new yamls, so it doesn't wait, and
+    below the reader at iteration 18 (0.5 < 0.8) it keeps the worst slot (R01), as without liveness."""
+    for idx, objective in ((0, 5.0), (2, 4.0)):
+        report(tmp_path, idx, 20, objective)
+        owner(tmp_path, idx)
+    report(tmp_path, 1, 18, 0.5)
+    age_yaml(tmp_path, 1, 18, 22 * 60)
+    report(tmp_path, 1, 40, 6.0)
+    owner(tmp_path, 1)
+    report(tmp_path, 3, 18, 0.8)
+    decide(reader(tmp_path, max_member_lag=max_member_lag), Algo(tmp_path, epoch_num=40), 20, 1.0)
+    line = decisions(tmp_path)[-1]
+    assert (line["outcome"], line["worst"]) == ("not_worst", [1])
+    assert summary_status(capsys.readouterr().out, 1) == "OK"
+
+
 def test_max_member_lag_0_judges_no_member_by_time(tmp_path, capsys):
     peers(tmp_path, {0: 9.0, 1: 2.0, 2: 1.9}, dead=(0,))
     decide(reader(tmp_path, max_member_lag=0), Algo(tmp_path, epoch_num=40), 5, 1.0)
@@ -258,6 +289,18 @@ def live_process():
     proc.wait()
 
 
+@pytest.fixture
+def zombie():
+    """A process of this host that has exited, and that its parent (this test) has not reaped yet."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    deadline = time.time() + 30
+    while psutil.Process(proc.pid).status() != psutil.STATUS_ZOMBIE:
+        assert time.time() < deadline
+        time.sleep(0.01)
+    yield proc
+    proc.wait()
+
+
 def this_host(pid, create_time):
     return {"host": socket.gethostname(), "boot_id": pbt_utils._boot_id(), "pid": pid, "create_time": create_time}
 
@@ -291,10 +334,13 @@ def test_a_restart_or_member_resume_relaunch_takes_the_member_over(tmp_path, liv
     assert load_owner(tmp_path)["launch_id"] == obs.launch_id and load_owner(tmp_path)["restart_count"] == 2
 
 
-def test_a_dead_owner_is_taken_over(tmp_path, live_process):
+def test_a_dead_owner_is_taken_over(tmp_path, live_process, zombie):
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
     owner(tmp_path, 3, **this_host(dead.pid, time.time() - 60))
+    launch(tmp_path)
+    # exited, but not reaped by its parent yet
+    owner(tmp_path, 3, **this_host(zombie.pid, psutil.Process(zombie.pid).create_time()))
     launch(tmp_path)
     # the pid runs, but it is another process than the one recorded (the pid was reused)
     owner(tmp_path, 3, **this_host(live_process.pid, psutil.Process(live_process.pid).create_time() - 100))
@@ -317,6 +363,22 @@ def test_an_owner_on_another_host_runs_while_its_heartbeat_is_recent(tmp_path, a
             launch(tmp_path, max_member_lag=max_member_lag)
     else:
         launch(tmp_path, max_member_lag=max_member_lag)
+
+
+@pytest.mark.parametrize("launch_id, age, refused", [
+    ("launch-3", 60, False),        # the owner's launch ended normally, after its last heartbeat
+    ("launch-2", 60, True),         # an exit record of another launch
+    ("launch-3", 180, True),        # the owner's launch trained on after it (a heartbeat since)
+])
+def test_an_owner_whose_launch_ended_is_taken_over(tmp_path, launch_id, age, refused):
+    """The owner on another host, its heartbeat 2 minutes old (within 10 of its iterations)."""
+    owner(tmp_path, 3, heartbeat_age=120)
+    exited(tmp_path, 3, age=age, launch_id=launch_id)
+    if refused:
+        with pytest.raises(RuntimeError, match="may still run"):
+            launch(tmp_path)
+    else:
+        launch(tmp_path)
 
 
 def test_the_owners_iteration_time_carries_over(tmp_path):
@@ -432,6 +494,49 @@ def test_the_others_stop_at_the_end_of_their_next_epoch(tmp_path):
     assert exit_reason(tmp_path, 1) == "stop_fn"
 
 
+def test_a_stop_fn_set_during_training_is_chained_too(tmp_path):
+    """The user's stop_fn replaces itself after epoch 1: the next step wraps the new one, which is
+    called first, and the marker written meanwhile stops the member at the end of epoch 2."""
+    observer, agent = cartpole(tmp_path, 1, max_epochs=10)
+    calls = []
+
+    def second(algo):
+        calls.append(("second", algo.epoch_num))
+        finished(tmp_path, observer.cfg, max_epochs=10, max_frames=agent.max_frames)   # member 0 ends the run
+        return False
+
+    def first(algo):
+        calls.append(("first", algo.epoch_num))
+        algo.stop_fn = second
+        return False
+
+    agent.stop_fn = first
+    agent.train()
+    assert agent.epoch_num == 2 and calls == [("first", 1), ("second", 2)]
+    assert exit_reason(tmp_path, 1) == "stop_fn"
+
+
+def test_a_filesystem_error_on_the_marker_only_warns(tmp_path, monkeypatch, capsys):
+    """finished.yaml that can't be read or written (EIO on NFS): the member trains to its end, as
+    without the marker, and warns."""
+    _, agent = cartpole(tmp_path, 0)
+
+    def failing(function):
+        def call(directory, name, *args):
+            if name == pbt_utils.FINISHED_MARKER:
+                raise OSError(errno.EIO, "Input/output error")
+            return function(directory, name, *args)
+        return call
+
+    monkeypatch.setattr(pbt_utils, "read_record", failing(pbt_utils.read_record))
+    monkeypatch.setattr(pbt_utils, "write_record", failing(pbt_utils.write_record))
+    agent.train()
+    assert agent.epoch_num == 3 and exit_reason(tmp_path, 0) == "max_epochs"
+    out = capsys.readouterr().out
+    for verb in ("read", "write"):
+        assert f"WARNING could not {verb} {pbt_utils.FINISHED_MARKER}" in out
+
+
 @pytest.mark.parametrize("other_run", [{"max_epochs": 50}, {"settings": "0123456789ab"}])
 def test_a_marker_of_another_run_is_ignored(tmp_path, capsys, other_run):
     observer, agent = cartpole(tmp_path, 1)
@@ -474,16 +579,24 @@ def test_a_restart_decided_once_the_population_finished_is_dropped(tmp_path, exe
     assert not os.path.exists(os.path.join(member_dir(tmp_path), pbt_utils.RESTART_RECORD))
 
 
-@pytest.mark.parametrize("reuse_workspace, age, removed", [(True, 100, True), (False, 100, False), (True, -100, False)])
-def test_a_fresh_launch_over_a_reused_workspace_removes_an_earlier_runs_marker(tmp_path, reuse_workspace, age,
-                                                                              removed):
-    """A marker written before the launch (age > 0) belongs to the run the workspace held; one
-    written since, by a member of this run."""
+@pytest.mark.parametrize("start, reuse_workspace, age, removed", [
+    ("fresh", True, 100, True), ("fresh", False, 100, False), ("fresh", True, -100, False),
+    ("restart", True, 100, False), ("resume", True, 100, False)])
+def test_only_a_fresh_launch_over_a_reused_workspace_removes_an_earlier_runs_marker(tmp_path, start, reuse_workspace,
+                                                                                   age, removed):
+    """A marker written before a fresh launch (age > 0) belongs to the run the workspace held; one
+    written since, by a member of this run. A PBT restart or a resume continues this run: a marker
+    written while it was down is its population's."""
+    if start == "restart":
+        os.environ[pbt_utils.RESTART_ENV_VAR] = (
+            '{"policy_idx": 3, "source_policy": 0, "restart_count": 1, "iteration": 4, "frame": 4000, '
+            '"checkpoint": "/r.pth", "mutated": {}, "kind": "transfer"}')
+        pbt_utils._reset_restart_info_cache()
     obs = member(tmp_path, stop_with_first=True, reuse_workspace=reuse_workspace)
-    algo = Algo(tmp_path, stop_fn=None)
+    algo = Algo(tmp_path, frame=0 if start == "fresh" else 4 * INTERVAL, stop_fn=None)
     obs.after_init(algo)
     finished(tmp_path, obs.cfg, age=age)
-    obs.after_steps()                                           # the first step: a fresh launch
+    obs.after_steps()                                           # the process's first step
     assert os.path.exists(marker_path(tmp_path)) is not removed
 
 

@@ -255,19 +255,21 @@ class PbtCfg:
     """Liveness, in the deciding member's median iteration wall times (>= 0). A member without a
     sign of life for longer, neither a heartbeat in its owner record (owner.yaml, renewed at every
     iteration boundary) nor a new workspace yaml, is stale: left out of the ranking, the donors,
-    the spread and the reported count. One with a recent heartbeat whose yaml, 2+ iterations
-    behind, is older than that waits (for its objective, or at a start-up): ranked and a donor,
-    but not replaceable. A member whose exit record (exit.yaml) is newer than its heartbeat has
-    finished: ranked and a donor, never replaceable. 0 judges no member by time. Members of an
-    older rl_games (no owner record) are never stale. Clocks are assumed synchronized."""
+    the spread and the reported count. One with a recent heartbeat but no new yaml for longer,
+    whose yaml at the deciding member's iteration is 2+ iterations behind, waits (for its
+    objective, or at a start-up): ranked and a donor, but not replaceable. A member whose exit
+    record (exit.yaml) is newer than its heartbeat has finished: ranked and a donor, never
+    replaceable. 0 judges no member by time. Members of an older rl_games (no owner record) are
+    never stale. Clocks are assumed synchronized."""
 
     force_owner: bool = False
     """Start even when the member's owner record names a process that may still run it: on this
     host its pid with the recorded start time, on another host a heartbeat within max_member_lag
-    of its iteration times (10 minutes when unknown). A plain launch refuses then, as two processes
-    of one member would write the same files; a PBT restart or a relaunch with the member's restart
-    payload (member_resume) takes over without the check. The other process, if it still runs,
-    stops at its next iteration boundary."""
+    of its iteration times (10 minutes when unknown), unless the member's exit record says that
+    launch ended. A plain launch refuses then, as two processes of one member would write the
+    same files; a PBT restart or a relaunch with the member's restart payload (member_resume)
+    takes over without the check. The other process, if it still runs, stops at its next
+    iteration boundary."""
 
     stop_with_first: bool = False
     """End the population with its first member to finish: in its last epoch (by max_epochs or
