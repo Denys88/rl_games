@@ -1,6 +1,6 @@
 """PBT restart hand-off in one process: the decision, restart.pth, the RL_GAMES_PBT_RESTART
-payload, the exec'd command and the restarted member's restore must agree. Only os.execv is
-replaced. Also the fp16 GradScaler state (#383) across a PBT restore, on CPU."""
+payload, restart.yaml, the exec'd command and the restarted member's restore must agree. Only
+os.execv is replaced. Also the fp16 GradScaler state (#383) across a PBT restore, on CPU."""
 
 import json
 import os
@@ -8,6 +8,7 @@ import types
 
 import pytest
 import torch
+import yaml
 
 from rl_games.common.pbt import PbtAlgoObserver, pbt_utils
 from tests.test_critical_fixes import make_cartpole_agent, make_cartpole_runner
@@ -129,10 +130,14 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
     restart_pth = str(ws / "003" / "restart.pth")
 
     payload = json.loads(environ[pbt_utils.RESTART_ENV_VAR])
-    expected = {"policy_idx": 3, "source_policy": 0, "restart_count": 1, "iteration": 20,
-                "frame": 20_500, "checkpoint": restart_pth,
-                "mutated": {LR: 4e-4, ENT: 0.02}}           # the params that differ from the donor's
+    expected = {"schema": 1, "kind": "transfer", "policy_idx": 3, "source_policy": 0, "restart_count": 1,
+                "iteration": 20, "frame": 20_500, "checkpoint": restart_pth,
+                "mutated": {LR: 4e-4, ENT: 0.02},           # the params that differ from the donor's
+                "experiment_name": "exp"}
     assert {key: payload.get(key) for key in expected} == expected
+    with open(ws / "003" / "restart.yaml", encoding="utf-8") as fobj:
+        record = yaml.safe_load(fobj)                       # written at the decision
+    assert {key: record[key] for key in payload} == payload
     checkpoint_args = [arg for arg in argv if arg.startswith("--checkpoint")]
     assert checkpoint_args == [f"--checkpoint={restart_pth}"]
     cli = config_overrides(argv)

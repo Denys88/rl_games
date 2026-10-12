@@ -930,23 +930,53 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg) 
 # --- restart protocol ------------------------------------------------------------------------
 
 RESTART_ENV_VAR = "RL_GAMES_PBT_RESTART"
+# version of the restart payload's format, also of restart.yaml's
+RESTART_SCHEMA = 1
+# restart kinds: from another member's checkpoint, or from the member's own with mutated values
+TRANSFER, SELF_MUTATION = "transfer", "self_mutation"
+# a member's record of its last restart decision, next to restart.pth in its workspace directory
+RESTART_RECORD = "restart.yaml"
 _restart_info_cache: dict | None = None
 _restart_info_read = False
 
 
-def restart_info() -> dict | None:
-    """Transfer metadata when this process is a PBT restart, else None.
+def restart_kind(policy_idx, source_policy) -> str:
+    """The kind of a restart of member `policy_idx` from member `source_policy`'s checkpoint:
+    "self_mutation" from its own, else "transfer"."""
+    return SELF_MUTATION if source_policy == policy_idx else TRANSFER
 
-    Keys: policy_idx, source_policy, restart_count, iteration, frame, checkpoint and
-    `mutated` ({flattened param: new value} for params that differ from the source's).
-    Environments can read it in `set_env_state` to tell a population transfer from a
-    resume. Parsed once per process; the variable is then removed from the environment.
+
+def restart_info() -> dict | None:
+    """The PBT restart payload when this process is a PBT restart, else None: a fresh launch or a
+    plain resume (from a learner checkpoint, also from restart.pth when relaunched by hand).
+
+    Keys (`schema` 1):
+      - kind: "transfer" (restarted from another member's checkpoint) or "self_mutation" (from the
+        member's own, with mutated values). Integrations branch on `kind`, not on `is not None`: a
+        self-mutation keeps the member's weights, and later versions may add kinds. A payload from
+        an older rl_games has none; it is set from `source_policy == policy_idx` then;
+      - policy_idx (the member restarted; the observer ignores a payload of another member),
+        source_policy, restart_count (this process's: 1 at the member's first restart),
+        iteration and frame of the decision, checkpoint (the member's restart.pth, absolute);
+      - mutated: {flattened param: new value} for the params that differ from the source's;
+      - experiment_name: the run name the member's previous process wrote into (None when its
+        learner had none);
+      - schema: the payload format. A payload from an older rl_games has neither schema nor
+        experiment_name.
+    The member's restart.yaml (`RESTART_RECORD`) holds the same keys and the decision's epoch,
+    every new param value, the seed and the time. Environments can read the payload in
+    `set_env_state` to tell a population transfer from a resume. Parsed once per process; the
+    variable is then removed from the environment.
     """
     global _restart_info_cache, _restart_info_read
     if not _restart_info_read:
         _restart_info_read = True
         raw = os.environ.pop(RESTART_ENV_VAR, None)
-        _restart_info_cache = json.loads(raw) if raw else None
+        info = json.loads(raw) if raw else None
+        if isinstance(info, dict) and "kind" not in info:
+            # a restart without a source is from the member's own checkpoint (as the parent defaults it)
+            info["kind"] = restart_kind(info.get("policy_idx"), info.get("source_policy", info.get("policy_idx")))
+        _restart_info_cache = info
     return _restart_info_cache
 
 
@@ -954,6 +984,37 @@ def _reset_restart_info_cache() -> None:
     """Test helper: forget the parsed restart info."""
     global _restart_info_cache, _restart_info_read
     _restart_info_cache, _restart_info_read = None, False
+
+
+def write_restart_record(policy_dir, record) -> str:
+    """Write a member's restart record (`RESTART_RECORD` in its workspace directory `policy_dir`)
+    as plain YAML through a temp file and a rename; returns its path. Only the member writes it,
+    at a restart decision once restart.pth is written. Workspace loaders and cleanup read numbered
+    files only, so they ignore it."""
+    path = os.path.join(policy_dir, RESTART_RECORD)
+    _atomic_write_yaml(path, record)
+    return os.path.abspath(path)
+
+
+def remove_restart_record_above(policy_dir, iteration) -> int | None:
+    """Delete the member's restart record when it records a decision above `iteration`; returns
+    that decision's iteration, None when there is no such record (none, at or below `iteration`,
+    or unreadable). For a process that is no PBT restart (a fresh launch, a resume from an older
+    checkpoint): the record belongs to a run, or a future, the member doesn't continue, as its
+    numbered files above `iteration` do."""
+    path = os.path.join(policy_dir, RESTART_RECORD)
+    loaded = _read_text_and_ctime(path)
+    if loaded is None:
+        return None
+    try:
+        record = yaml.safe_load(loaded[0])
+    except yaml.YAMLError:
+        return None
+    decided = record.get("iteration") if isinstance(record, dict) else None
+    if isinstance(decided, bool) or not isinstance(decided, int) or decided <= iteration:
+        return None
+    Path(path).unlink(missing_ok=True)
+    return decided
 
 
 def _arg_name(arg: str) -> str:
