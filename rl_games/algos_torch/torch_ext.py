@@ -1,5 +1,6 @@
 import math
 import time
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
@@ -377,9 +378,53 @@ def get_mean(v):
     return mean
 
 
-def default_mixed_precision():
-    """bf16 autocast default: on for CUDA GPUs with native bf16 support."""
-    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+_HALF_DTYPES = {'fp16': torch.float16, 'float16': torch.float16, 'half': torch.float16,
+                'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16}
+_OFF_NAMES = ('false', '0', 'no', 'off', 'none', 'fp32', 'tf32')
+_ON_NAMES = ('true', '1', 'yes', 'on')
+
+
+def resolve_mixed_precision(value, device='cuda'):
+    """Map the `mixed_precision` config value to an autocast dtype, or None.
+
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). 'fp16':
+    float16 autocast with loss scaling. 'bf16', or True / 1 for 1.x configs:
+    bfloat16. Strings from CLI or Hydra overrides ('true', 'False', '0') map
+    the same way. Half precision needs a CUDA device; elsewhere it resolves
+    to None.
+    """
+    if isinstance(value, str):
+        name = value.strip().lower()
+        if name in _OFF_NAMES:
+            return None
+        if name in _ON_NAMES:
+            value = True
+        elif name in _HALF_DTYPES:
+            value = _HALF_DTYPES[name]
+    if value is None or value is False or (type(value) is int and value == 0):
+        return None
+    if value is True or (type(value) is int and value == 1):
+        warnings.warn("mixed_precision: True selects bf16. At small sigma bf16 rounding adds "
+                      "a KL of 0.01-0.03 per update and noise in the PPO ratio; "
+                      "use mixed_precision: fp16 instead.", stacklevel=2)
+        value = torch.bfloat16
+    if value not in (torch.float16, torch.bfloat16):
+        raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
+    if not str(device).startswith('cuda'):
+        warnings.warn(f"mixed_precision needs a CUDA device; running {device} without autocast.",
+                      stacklevel=2)
+        return None
+    return value
+
+
+def autocast(dtype):
+    """Autocast context for a dtype from resolve_mixed_precision; a no-op for None."""
+    return torch.amp.autocast('cuda', enabled=dtype is not None, dtype=dtype or torch.bfloat16)
+
+
+def grad_scaler(dtype):
+    """Loss scaler for fp16. bf16 has fp32's exponent range and needs none."""
+    return torch.amp.GradScaler('cuda', enabled=dtype == torch.float16)
 
 
 class AverageMeter(nn.Module):

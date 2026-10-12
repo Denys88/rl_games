@@ -34,6 +34,35 @@ params:
 
 **Ray note:** `torch.set_num_threads()` only affects the trainer process. Ray workers (`RayWorker`) are separate processes that use their own default thread count. This setting does NOT propagate to Ray workers.
 
+## Precision (under `config:`)
+
+### `mixed_precision`
+
+Selects autocast for the policy and critic forward passes, in rollouts and in updates. Default: `False`. Applies to: PPO, the central value network, SAC.
+
+| Value | Matmuls | Loss scaling |
+|---|---|---|
+| `False` | TF32: fp32 weights, 10-bit mantissa inputs | none |
+| `fp16` | float16 autocast | `GradScaler` |
+| `bf16` | bfloat16 autocast | none |
+
+`True` selects `bf16` and warns. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
+
+Keep the default for continuous control. bf16 keeps 8 significant bits, so it rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.1, that rounding adds noise to the PPO ratio and a KL of 0.01 to 0.03 per update at any learning rate. With `lr_schedule: adaptive`, the rate then falls to `min_lr`. fp16 rounds 8 times finer and does neither.
+
+| Rounding noise before any update | sigma 0.19 | sigma 0.067 | sigma 0.024 |
+|---|---|---|---|
+| Samples outside the PPO clip range, bf16 | 0.1 % | 7.8 % | 57 % |
+| Samples outside the PPO clip range, fp16 | 0.0 % | 0.0 % | 0.0 % |
+
+| MicroDuck task, 4096 envs | bf16 | TF32 |
+|---|---|---|
+| Velocity, final return (2 seeds) | 136.1, 138.3 | 149.7, 148.1 |
+| Ball walk, final return (seed 42) | 13.8 | 25.0 |
+| Training throughput, frames/s | 130.1k | 133.4k |
+
+Use `fp16` when the network update dominates the iteration time, for example with image encoders. With small MLPs the simulator dominates and TF32 is as fast.
+
 ## Adaptive LR (under `config:`)
 
 ### `schedule_type`
