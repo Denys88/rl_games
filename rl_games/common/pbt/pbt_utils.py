@@ -199,8 +199,9 @@ def to_float(value) -> float:
 def plain_number(value):
     """A numpy or torch scalar as the Python number it holds; anything else unchanged.
 
-    Custom mutation functions may return numpy scalars (np.clip gives np.int64): the restart
-    passes plain numbers on the command line and in the JSON payload.
+    Custom mutation functions may return numpy scalars (np.clip gives np.int64): `mutate()`
+    returns plain numbers, and the restart passes plain numbers on the command line and in the
+    JSON payload.
     """
     if type(value) in (bool, int, float, str) or not callable(getattr(value, "item", None)):
         return value
@@ -508,36 +509,106 @@ def mark_not_replaceable(policy_dir) -> str | None:
 REPLACEABLE, NOT_REPLACEABLE, BEHIND, NOT_REPORTED = "OK", "not replaceable", "behind", "—"
 
 
-def member_status(checkpoints: dict[int, dict | None], reader_iteration: int) -> dict[int, str]:
+def _lagging(ckpt, reader_iteration) -> bool:
+    """Whether a loaded workspace yaml is 2 or more iterations behind the reader's iteration."""
+    iteration = ckpt.get("iteration") if isinstance(ckpt, Mapping) else None
+    return isinstance(iteration, int) and not isinstance(iteration, bool) and iteration < reader_iteration - 1
+
+
+def _objective_at(objectives, iteration):
+    """The objective of the newest entry of `objectives` ({iteration: objective}) at or below
+    `iteration`, or None."""
+    below = [it for it in (objectives or {}) if it <= iteration]
+    return objectives[max(below)] if below else None
+
+
+def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
+                  reader_objectives: Mapping[int, float] | None = None) -> dict[int, str]:
     """Each member's status as the reader of `checkpoints` (`load_pbt_ckpts` at `reader_iteration`)
     sees it, for the replacement rule and the checkpoint summary:
 
     - "—": no checkpoint with an objective at or below the reader's iteration;
     - "not replaceable": its newest yaml says `replaceable: false` (restarting, in a grace window
       or near the end of its run);
-    - "behind": its newest yaml is 2 or more iterations behind the reader's (a restart starting
-      up, a stalled member);
-    - "OK": replaceable. A yaml without the field (1e6966a) is replaceable.
+    - "behind": its newest yaml is 2 or more iterations behind the reader's, and its objective
+      there is not below the reader's own at those frames: the reader's newest yaml at or below
+      its iteration, the one it reads of the reader (`reader_objectives`, the reader's objectives
+      by yaml iteration, from `load_reader_objectives`). Its older objective may still rank below
+      the reader's newer one: it would take the worst slot of a reader that is worse at equal
+      frames, while in its own view that reader is the worse one, and neither would be replaced;
+    - "OK": replaceable. A yaml without the field (1e6966a) is replaceable, and so is a member 2+
+      iterations behind that is below the reader at its iteration, or that the reader has no yaml
+      at or below to compare with: it keeps its place in the ranking, as in IsaacGymEnvs, and in
+      its own view it ranks below the reader too.
+
+    A restart keeps the member's frame, so a member whose restarts took 2 intervals or more stays
+    behind for good. Both views compare the same two yamls; the reader's predates any change it
+    made since (a transfer, a self-mutation).
     """
     status = {}
     for policy, ckpt in checkpoints.items():
         ckpt = ckpt if isinstance(ckpt, Mapping) else {}
-        objective, iteration = ckpt.get("true_objective"), ckpt.get("iteration")
+        objective = ckpt.get("true_objective")
+        # the reader's objective at the iteration of a member 2+ behind (None: not that far behind)
+        reader_there = _objective_at(reader_objectives, ckpt["iteration"]) if _lagging(ckpt, reader_iteration) else None
         if not _is_number(objective) or objective <= UNINITIALIZED_VALUE:
             status[policy] = NOT_REPORTED
         elif ckpt.get("replaceable") is False:
             status[policy] = NOT_REPLACEABLE
-        elif isinstance(iteration, int) and iteration < reader_iteration - 1:
+        elif reader_there is not None and objective >= reader_there:
             status[policy] = BEHIND
         else:
             status[policy] = REPLACEABLE
     return status
 
 
-def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int) -> set[int]:
+def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int, *,
+                        reader_objectives: Mapping[int, float] | None = None) -> set[int]:
     """The members that may take a worst slot in this reader's view: status "OK" in `member_status`."""
-    return {policy for policy, status in member_status(checkpoints, reader_iteration).items()
-            if status == REPLACEABLE}
+    status = member_status(checkpoints, reader_iteration, reader_objectives=reader_objectives)
+    return {policy for policy, value in status.items() if value == REPLACEABLE}
+
+
+def _load_workspace_yaml(path) -> dict | None:
+    """A workspace yaml, loaded and type-checked as `load_pbt_ckpts` does; None when it is gone or
+    malformed."""
+    loaded = safe_filesystem_op(_read_text_and_ctime, path)
+    if loaded is None:
+        return None
+    try:
+        ckpt = yaml.safe_load(loaded[0])
+    except yaml.YAMLError:
+        return None
+    return ckpt if _valid_pbt_checkpoint(ckpt) else None
+
+
+def load_reader_objectives(policy_dir, checkpoints: dict[int, dict | None], reader_iteration: int) -> dict[int, float]:
+    """The reader's own objectives that `member_status` compares the members 2+ iterations behind
+    with: for each such member in `checkpoints`, the reader's newest valid yaml in `policy_dir` at
+    or below that member's iteration, the one that member reads of the reader (`load_pbt_ckpts`).
+    Returns {yaml iteration: objective}; reads nothing when no member is that far behind. Cleanup
+    keeps these yamls: it deletes nothing above the slowest member's iteration minus `keep_back`,
+    nor the newest yaml at or below that iteration. (rank 0 only)
+    """
+    lagging = sorted({ckpt["iteration"] for ckpt in checkpoints.values() if _lagging(ckpt, reader_iteration)})
+    if not lagging or not os.path.isdir(policy_dir):
+        return {}
+    yamls = sorted((it, path) for it, paths in _numbered_files(policy_dir).items() for path in paths
+                   if path.suffix == ".yaml")
+    objectives, malformed = {}, set()
+    for iteration in lagging:
+        for own, path in reversed([entry for entry in yamls if entry[0] <= iteration]):
+            if own in objectives:
+                break
+            if own in malformed:
+                continue
+            ckpt = _load_workspace_yaml(path)
+            if ckpt is None:
+                malformed.add(own)
+                continue
+            objectives[own] = ckpt["true_objective"]
+            break
+    return objectives
 
 
 _KEEP_NEWEST = 10  # cleanup never thins a member's newest iterations (IsaacGymEnvs)
@@ -792,10 +863,10 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     The members are ranked by objective (see `rank_members`; `order` breaks ties). The worst
     group is the last ceil(replace_fraction_worst * n) members of the ranking that reported and
     are in `eligible` (every member that reported when None; see `replaceable_members`):
-    IsaacGymEnvs takes the last of the whole ranking, where a member that never reported, or
-    one that can't act on a replacement now, holds a slot a member that can act needs. Every
-    member that reported stays ranked, counts for the `> max(2, n // 2)` gate and can be the
-    donor.
+    IsaacGymEnvs takes the last of the whole ranking, where a member that never reported, one
+    that can't act on a replacement now, or one 2+ iterations behind that ranks low only by its
+    older objective, holds a slot a member that can act needs. Every member that reported stays
+    ranked, counts for the `> max(2, n // 2)` gate and can be the donor.
 
     Returns (source, reason): None keeps training; `policy_idx` restarts from its own
     checkpoint with mutated parameters; any other index restarts from that member.

@@ -7,6 +7,8 @@ import random
 from collections.abc import Callable
 from typing import Any
 
+from rl_games.common.pbt.pbt_utils import plain_number
+
 
 def mutate_float(x: float, change_min: float = 1.1, change_max: float = 1.5) -> float:
     """Multiply or divide by a random factor in [change_min, change_max]."""
@@ -56,7 +58,12 @@ def mutate(
     mutation_rate: float,
     change_range: tuple[float, float],
 ) -> dict[str, Any]:
-    """Mutate whitelisted params. Integer params need an integer rule (mutate_mini_epochs)."""
+    """Mutate whitelisted params. Integer params need an integer rule (mutate_mini_epochs).
+
+    A numpy or torch scalar from a custom function comes back as the Python number it holds
+    (np.clip returns np.float64): the values become the member's params, which its workspace
+    yamls (plain YAML) and the restart command hold as plain numbers.
+    """
     cmin, cmax = change_range
     out: dict[str, Any] = {}
     for name, val in params.items():
@@ -68,5 +75,5 @@ def mutate(
         fn = MUTATION_FUNCS.get(fn_name)
         if fn is None:
             raise KeyError(f"Unknown mutation function: {fn_name!r}")
-        out[name] = fn(val, change_min=cmin, change_max=cmax)
+        out[name] = plain_number(fn(val, change_min=cmin, change_max=cmax))
     return out
