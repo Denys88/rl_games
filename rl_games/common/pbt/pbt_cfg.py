@@ -26,7 +26,8 @@ RULE_KEYS = {
     "threshold": ("threshold_std", "threshold_abs"),
 }
 
-# the settings every member of a population shares, with its rule's (RULE_KEYS): see settings_hash
+# the settings every member of a population shares, with its rule's (RULE_KEYS): see settings_hash. A key
+# added here later needs a default that keeps the earlier behaviour: configs at it keep their hash
 POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "replace_rule")
 
 # IsaacGymEnvs pbt keys without a counterpart of the same name
@@ -330,10 +331,13 @@ def settings_hash(cfg) -> str:
     Members write it into their workspace yamls; one that reads another hash from a peer leaves
     that peer out of its ranking: they run different populations (e.g. `interval_steps` edited
     for some members of a running population). Per-member settings (policy_idx, mutation, grace
-    windows) don't enter it.
+    windows) don't enter it, nor do settings at their PbtCfg default: restarts exec the current
+    checkout, and a setting a later version adds must not split a population running across the
+    upgrade.
     """
-    keys = POPULATION_KEYS + RULE_KEYS[cfg.replace_rule]
-    text = json.dumps({key: getattr(cfg, key) for key in keys}, sort_keys=True)
+    defaults = {f.name: f.default for f in fields(cfg)}
+    settings = {key: getattr(cfg, key) for key in POPULATION_KEYS + RULE_KEYS[cfg.replace_rule]}
+    text = json.dumps({key: value for key, value in settings.items() if value != defaults[key]}, sort_keys=True)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
