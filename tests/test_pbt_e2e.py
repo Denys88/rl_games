@@ -301,8 +301,6 @@ def test_restart_records_agree_with_the_children(population):
     """`restart_info()` names the kind of every restart, and each member's restart.yaml records
     its last restart as its child received, restored and trained with it."""
     children = [(idx, child) for idx, _, child in restarts(population)]
-    if not any("kind" in child["restart"] for _, child in children):
-        pytest.skip("this rl_games' restart_info() reports no kind of restart (nor writes restart.yaml)")
     for idx, child in children:
         info = child["restart"]
         assert info["kind"] == ("self_mutation" if info["source_policy"] == idx else "transfer"), info
