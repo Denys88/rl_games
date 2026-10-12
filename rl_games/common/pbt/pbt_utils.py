@@ -217,13 +217,16 @@ def json_default(value):
     return number
 
 
-def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, int]:
-    """Objective contribution of one step: (sum over finished episodes, number of episodes).
+def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int, int]:
+    """Objective of the episodes that finished on one step: (sum, count) over the episodes with
+    a finite value, and the number of finished episodes whose value is NaN or infinite.
 
     `done_indices` are agent indices (env * num_agents), one per finished env, as rl_games
-    passes them to observers. A per-env tensor/array is read at those envs. A scalar is taken
-    as the mean over the envs that finished on this step (Isaac Lab episode logs), so it is
-    weighted by their count; without `done_indices` it counts as one sample.
+    passes them to observers. A per-env tensor/array is read at those envs, and a non-finite
+    entry drops only its own episode: one diverged env must not discard the episodes the
+    other envs finished on the same step. A scalar is taken as the mean over the envs that
+    finished on this step (Isaac Lab episode logs), so it is weighted by their count, and a
+    non-finite one drops all of them. Without `done_indices` every element is one sample.
     """
     n_done = None
     if done_indices is not None:
@@ -231,24 +234,39 @@ def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, 
         n_done = int(idx.shape[0])
     per_env = (torch.is_tensor(value) and value.numel() > 1) or (isinstance(value, np.ndarray) and value.size > 1)
     if per_env:
-        size = int(value.numel()) if torch.is_tensor(value) else int(value.size)
-        if n_done is None:
-            total = value.detach().float().sum().item() if torch.is_tensor(value) else value.sum()
-            return float(total), size
         if n_done == 0:
-            return 0.0, 0
-        env_idx = torch.as_tensor(idx).cpu().long() // max(1, int(num_agents))
-        if int(env_idx.min()) < 0 or int(env_idx.max()) >= size:
-            # checked on the host: an out-of-range CUDA index is a device-side assert
-            raise IndexError(f"done env index {int(env_idx.max())} out of range for a per-env objective of size {size}")
-        if torch.is_tensor(value):
-            picked = value.reshape(-1)[env_idx.to(value.device)]
-            return float(picked.detach().float().sum().item()), n_done
-        return float(value.reshape(-1)[env_idx.numpy()].sum()), n_done
+            return 0.0, 0, 0
+        picked = value.reshape(-1)
+        if n_done is not None:
+            size = int(picked.shape[0])
+            env_idx = torch.as_tensor(idx).cpu().long() // max(1, int(num_agents))
+            if int(env_idx.min()) < 0 or int(env_idx.max()) >= size:
+                # checked on the host: an out-of-range CUDA index is a device-side assert
+                raise IndexError(f"done env index {int(env_idx.max())} out of range for a per-env objective "
+                                 f"of size {size}")
+            picked = picked[env_idx.to(picked.device)] if torch.is_tensor(picked) else picked[env_idx.numpy()]
+        if torch.is_tensor(picked):
+            picked = picked.detach().double()
+            finite = torch.isfinite(picked)
+            # one device sync for both numbers
+            total, count = torch.stack([picked.masked_fill(~finite, 0.0).sum(), finite.sum().double()]).tolist()
+        else:
+            picked = np.asarray(picked, dtype=np.float64)
+            finite = np.isfinite(picked)
+            total, count = picked[finite].sum(), finite.sum()
+        count = int(count)
+        return float(total), count, int(picked.shape[0]) - count
     scalar = to_float(value)
-    if n_done is None:
-        return scalar, 1
-    return scalar * n_done, n_done
+    episodes = 1 if n_done is None else n_done
+    if not math.isfinite(scalar):
+        return 0.0, 0, episodes
+    return scalar * episodes, episodes, 0
+
+
+def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, int]:
+    """(sum, count) over the finished episodes with a finite objective, see `episode_stats`."""
+    total, count, _ = episode_stats(value, done_indices, num_agents)
+    return total, count
 
 
 def _read_text_and_ctime(path):
