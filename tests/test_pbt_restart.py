@@ -6,6 +6,7 @@ import io
 import json
 import os
 import random
+import signal
 import string
 import subprocess
 import sys
@@ -72,14 +73,19 @@ def member(tmp_path, args_cli=None, launch_argv=None, **pbt):
 
 @pytest.fixture
 def execs(monkeypatch):
-    """os.execv replaced by a recorder: (path, argv, environ, cwd) per call, then ExecCalled."""
+    """os.execv replaced by a recorder: (path, argv, environ, cwd) per call, then ExecCalled.
+    os._exit raises instead of ending pytest; tests that expect it patch it themselves."""
     calls = []
 
     def fake_execv(path, argv):
         calls.append((path, list(argv), dict(os.environ), os.getcwd()))
         raise ExecCalled()
 
+    def fake_exit(code):
+        raise AssertionError(f"unexpected os._exit({code})")
+
     monkeypatch.setattr(os, "execv", fake_execv)
+    monkeypatch.setattr(os, "_exit", fake_exit)
     return calls
 
 
@@ -131,10 +137,10 @@ class TestEnvDump:
 
 class StubRun:
     def __init__(self, run_id="abc123", finish=None):
-        self.id, self.finish_calls, self._finish = run_id, 0, finish
+        self.id, self.finish_threads, self._finish = run_id, [], finish
 
     def finish(self):
-        self.finish_calls += 1
+        self.finish_threads.append(threading.current_thread())
         if self._finish is not None:
             self._finish()
 
@@ -144,6 +150,17 @@ def install_wandb(monkeypatch, run):
     stub.run = run
     monkeypatch.setitem(sys.modules, "wandb", stub)
     return stub
+
+
+def restore_signal_handler():
+    """What wandb's console="redirect" does in finish(): signal.signal, which raises ValueError
+    off the main thread."""
+    sig = getattr(signal, "SIGWINCH", signal.SIGINT)
+    signal.signal(sig, signal.getsignal(sig) or signal.SIG_DFL)
+
+
+def fail_finish():
+    raise RuntimeError("upload failed")
 
 
 class TestWandb:
@@ -158,56 +175,98 @@ class TestWandb:
         [(_, argv, environ, _)] = execs
         assert "WANDB_RUN_ID" not in environ and "--track" in argv
 
-    def test_clean_finish_resumes_the_same_run(self, tmp_path, monkeypatch, execs):
-        run = StubRun()
+    def test_clean_finish_resumes_the_same_run(self, tmp_path, monkeypatch, capsys, execs):
+        watchdogs = []
+        run = StubRun(finish=lambda: watchdogs.extend(
+            t for t in threading.enumerate() if t.name == "pbt-wandb-watchdog"))
         install_wandb(monkeypatch, run)
         monkeypatch.delenv("WANDB_RUN_ID", raising=False)
         monkeypatch.delenv("WANDB_RESUME", raising=False)
         monkeypatch.setenv("WANDB_SERVICE", "3-123-unix-/tmp/wandb/socket")
         restart(member(tmp_path, launch_argv=["train.py"]))
         [(_, _, environ, _)] = execs
-        assert run.finish_calls == 1
+        assert run.finish_threads == [threading.main_thread()]
+        assert [t.daemon for t in watchdogs] == [True]        # the timeout watchdog never keeps a process alive
         assert environ["WANDB_RUN_ID"] == "abc123" and environ["WANDB_RESUME"] == "allow"
         assert environ["WANDB_INIT_TIMEOUT"] == "300"
         assert environ["WANDB_SERVICE"] == "3-123-unix-/tmp/wandb/socket"    # the child reuses the service
+        assert "WARNING wandb" not in capsys.readouterr().out
 
-    def test_stuck_finish_times_out_and_the_child_starts_a_new_run(self, tmp_path, monkeypatch, capsys, execs):
-        released = threading.Event()
-        run = StubRun(finish=lambda: released.wait(5))
+    def test_finish_that_needs_the_main_thread_resumes_the_same_run(self, tmp_path, monkeypatch, capsys, execs):
+        # console="redirect": a finish() off the main thread raises, and every restart split the run
+        install_wandb(monkeypatch, StubRun(finish=restore_signal_handler))
+        monkeypatch.delenv("WANDB_RUN_ID", raising=False)
+        monkeypatch.setenv("WANDB_SERVICE", "3-123-unix-/tmp/wandb/socket")
+        restart(member(tmp_path, launch_argv=["train.py"]))
+        [(_, _, environ, _)] = execs
+        assert environ["WANDB_RUN_ID"] == "abc123"
+        assert environ["WANDB_SERVICE"] == "3-123-unix-/tmp/wandb/socket"
+        assert "WARNING wandb" not in capsys.readouterr().out
+
+    def test_stuck_finish_restarts_from_the_watchdog_with_a_new_run(self, tmp_path, monkeypatch, capsys, execs):
+        """finish() blocks the main thread (wandb unreachable): after the timeout the watchdog thread
+        execs the restart itself while finish() still blocks, and the main thread never execs."""
+        exec_tried = threading.Event()
+        run = StubRun(finish=lambda: exec_tried.wait(5))      # returns once the watchdog tried to exec
         install_wandb(monkeypatch, run)
         monkeypatch.delenv("WANDB_RUN_ID", raising=False)
         monkeypatch.setenv("WANDB_RESUME", "must")
         monkeypatch.setenv("WANDB_SERVICE", "3-123-unix-/tmp/wandb/socket")
+        callers, exits = [], []
+        record = os.execv
+
+        def execv(path, argv):
+            callers.append((threading.current_thread(), time.monotonic() - t0))
+            record(path, argv)                                # raises ExecCalled: an exec that failed
+
+        def exit_(code):
+            exits.append(code)
+            exec_tried.set()
+
+        monkeypatch.setattr(os, "execv", execv)
+        monkeypatch.setattr(os, "_exit", exit_)
         obs = member(tmp_path, launch_argv=["train.py"], wandb_finish_timeout=0.2)
-        try:
-            t0 = time.monotonic()
-            restart(obs)
-            elapsed = time.monotonic() - t0
-        finally:
-            released.set()
-        [(_, _, environ, _)] = execs
-        assert elapsed < 1.0
+        t0 = time.monotonic()
+        # a real exec replaces the process; the fake one returns, so the main thread reports it
+        with pytest.raises(RuntimeError, match="watchdog"):
+            obs._restart_with_new_params({LR: 1e-4}, "/ws/000/restart.pth")
+        [(_, _, environ, _)] = execs                           # exactly one exec
+        [(caller, after)] = callers
+        assert caller.name == "pbt-wandb-watchdog" and after < 1.0
+        assert run.finish_threads == [threading.main_thread()]
+        assert exits == [1]                                    # a failed exec ends the member instead of hanging
         assert "WANDB_SERVICE" not in environ                 # else the child's wandb.init hangs
         assert environ["WANDB_RUN_ID"] == "abc123-r1"         # a new run: the old service may still write abc123
         assert environ["WANDB_RESUME"] == "allow"
         assert "did not finish within 0.2" in capsys.readouterr().out
 
     def test_failing_finish_still_execs(self, tmp_path, monkeypatch, capsys, execs):
-        def fail():
-            raise RuntimeError("upload failed")
-
-        install_wandb(monkeypatch, StubRun(finish=fail))
+        install_wandb(monkeypatch, StubRun(finish=fail_finish))
         monkeypatch.setenv("WANDB_SERVICE", "3-123-unix-/tmp/wandb/socket")
         monkeypatch.delenv("WANDB_RUN_ID", raising=False)
         restart(member(tmp_path, launch_argv=["train.py"]))
         [(_, _, environ, _)] = execs
         assert "WANDB_SERVICE" not in environ and environ["WANDB_RUN_ID"] == "abc123-r1"
-        assert "upload failed" in capsys.readouterr().out
+        assert "finish raised RuntimeError('upload failed')" in capsys.readouterr().out
+
+    def test_interrupted_finish_stops_the_member(self, tmp_path, monkeypatch, execs):
+        # Ctrl+C while wandb finishes: no restart, now or when the watchdog's timeout passes
+        def interrupt():
+            raise KeyboardInterrupt
+
+        install_wandb(monkeypatch, StubRun(finish=interrupt))
+        exits = []
+        monkeypatch.setattr(os, "_exit", exits.append)
+        obs = member(tmp_path, launch_argv=["train.py"], wandb_finish_timeout=0.05)
+        with pytest.raises(KeyboardInterrupt):
+            obs._restart_with_new_params({LR: 1e-4}, "/ws/000/restart.pth")
+        time.sleep(0.3)
+        assert execs == [] and exits == []
 
     def test_new_run_id_does_not_grow_across_restarts(self, tmp_path, monkeypatch, execs):
-        install_wandb(monkeypatch, StubRun(run_id="abc123-r1", finish=lambda: time.sleep(1)))
+        install_wandb(monkeypatch, StubRun(run_id="abc123-r1", finish=fail_finish))
         monkeypatch.setenv("WANDB_RUN_ID", "abc123-r1")
-        obs = member(tmp_path, launch_argv=["train.py"], wandb_finish_timeout=0.05)
+        obs = member(tmp_path, launch_argv=["train.py"])
         obs.restart_count = 2
         restart(obs)
         assert execs[0][2]["WANDB_RUN_ID"] == "abc123-r3"
@@ -236,9 +295,26 @@ class TestTorchrun:
 
 # --- Hydra job chdir, absolute script path, -m launches -----------------------------------
 
+class MissingMandatoryValue(Exception):
+    """Like omegaconf's: not a subclass of any builtin exception but Exception."""
+
+
 def install_hydra(monkeypatch, original_cwd, output_dir, initialized=True):
-    """Stub of the Hydra API the observer reads, injected through sys.modules."""
-    runtime = types.SimpleNamespace(output_dir=str(output_dir), cwd=str(original_cwd))
+    """Stub of the Hydra API the observer reads, injected through sys.modules. `output_dir` None
+    leaves `runtime.output_dir` out (Hydra < 1.2); an exception as `output_dir` or `original_cwd`
+    is raised when it is read (omegaconf raises MissingMandatoryValue for a field left unset)."""
+
+    class Runtime:
+        cwd = str(original_cwd)
+
+    if isinstance(output_dir, Exception):
+        def read_output_dir(self):
+            raise output_dir
+
+        Runtime.output_dir = property(read_output_dir)
+    elif output_dir is not None:
+        Runtime.output_dir = str(output_dir)
+    runtime = Runtime()
 
     class HydraConfig:
         @staticmethod
@@ -254,6 +330,8 @@ def install_hydra(monkeypatch, original_cwd, output_dir, initialized=True):
     def get_original_cwd():
         if not initialized:
             raise ValueError("get_original_cwd() must only be used after HydraConfig is initialized")
+        if isinstance(original_cwd, Exception):
+            raise original_cwd
         return str(original_cwd)
 
     hydra, core = types.ModuleType("hydra"), types.ModuleType("hydra.core")
@@ -352,6 +430,50 @@ class TestLaunchDir:
         restart(member(tmp_path, launch_argv=["scripts/missing.py"]))
         assert execs[0][1][1] == "scripts/missing.py"
 
+    def test_hydra_before_1_2_pins_the_cwd_as_the_run_dir(self, tmp_path, monkeypatch, launch_dir, execs):
+        # Hydra < 1.2 has no runtime.output_dir and always runs the job in its run dir
+        run_dir = launch_dir / "outputs" / "2026-10-12" / "02-00-00"
+        install_hydra(monkeypatch, launch_dir, None)
+        monkeypatch.chdir(run_dir)
+        record_chdir(monkeypatch)
+        obs = member(tmp_path, launch_argv=["train.py"])
+        assert (obs.launch_cwd, obs.hydra_run_dir) == (str(launch_dir), str(run_dir))
+        restart(obs)
+        assert execs[0][1][-1] == f"hydra.run.dir={run_dir}"
+
+    def test_run_dir_is_pinned_only_when_it_is_the_cwd(self, tmp_path, monkeypatch, launch_dir):
+        # the documented condition: Hydra changed into its run dir; a job that changed into a
+        # directory of its own (here below the run dir) keeps its command
+        run_dir = launch_dir / "outputs" / "2026-10-12" / "02-00-00"
+        (run_dir / "sub").mkdir()
+        install_hydra(monkeypatch, launch_dir, run_dir)
+        monkeypatch.chdir(run_dir / "sub")
+        obs = member(tmp_path, launch_argv=["train.py"])
+        assert (obs.launch_cwd, obs.hydra_run_dir) == (str(launch_dir), None)
+
+    def test_hydra_config_set_by_hand_does_not_stop_the_member(self, tmp_path, monkeypatch, launch_dir):
+        # compose API plus HydraConfig.instance().set_config(cfg): no job ran, and reading the
+        # unset runtime.output_dir raises omegaconf's MissingMandatoryValue
+        install_hydra(monkeypatch, launch_dir, MissingMandatoryValue("hydra.runtime.output_dir"))
+        monkeypatch.chdir(launch_dir)
+        obs = member(tmp_path, launch_argv=["train.py"])
+        assert (obs.launch_cwd, obs.hydra_run_dir) == (str(launch_dir), None)
+
+    def test_unreadable_original_cwd_keeps_the_cwd(self, tmp_path, monkeypatch, launch_dir):
+        install_hydra(monkeypatch, MissingMandatoryValue("hydra.runtime.cwd"), launch_dir / "outputs")
+        monkeypatch.chdir(launch_dir)
+        assert pbt_utils.launch_dirs() == (str(launch_dir), None)
+
+    def test_failed_chdir_still_restarts(self, tmp_path, monkeypatch, launch_dir, capsys, execs):
+        # the other ranks have exited already: a launch dir removed meanwhile must not kill the member
+        monkeypatch.chdir(launch_dir)
+        obs = member(tmp_path, launch_argv=["train.py"])
+        obs.launch_cwd = str(tmp_path / "removed")
+        restart(obs)
+        [(_, _, _, cwd)] = execs
+        assert cwd == str(launch_dir)
+        assert "WARNING cannot return to the launch directory" in capsys.readouterr().out
+
     @pytest.mark.parametrize("path, value", [
         ("/home/u/proj/outputs/2026-10-12/02-00-00", "/home/u/proj/outputs/2026-10-12/02-00-00"),
         ("/home/u/My Proj (copy)/out", "'/home/u/My Proj (copy)/out'"),
@@ -409,6 +531,52 @@ def test_real_exec_flushes_and_restarts_from_the_launch_dir(tmp_path):
     assert json.loads(child["payload"])["checkpoint"] == "/ws/restart.pth"
 
 
+def test_real_exec_from_the_wandb_watchdog(tmp_path):
+    """wandb's finish() restores a signal handler (console="redirect") and then never returns
+    (wandb unreachable): the watchdog thread really execs; the child is the same process, on a
+    new run without the old wandb service, and the parent's warning reached the pipe."""
+    (tmp_path / "member.py").write_text(
+        "import json, os, signal, sys, threading, types\n"
+        "if sys.argv[1:2] == ['child']:\n"
+        "    print('CHILD ' + json.dumps({'pid': os.getpid(), 'run_id': os.environ.get('WANDB_RUN_ID'),\n"
+        "                                 'service': os.environ.get('WANDB_SERVICE')}))\n"
+        "    sys.exit(0)\n"
+        "print('PARENT ' + json.dumps({'pid': os.getpid()}))\n"
+        "class Run:\n"
+        "    id = 'abc123'\n"
+        "    def finish(self):\n"
+        "        sig = getattr(signal, 'SIGWINCH', signal.SIGINT)\n"
+        "        signal.signal(sig, signal.getsignal(sig) or signal.SIG_DFL)\n"
+        "        threading.Event().wait()\n"
+        "wandb = types.ModuleType('wandb')\n"
+        "wandb.run = Run()\n"
+        "sys.modules['wandb'] = wandb\n"
+        "os.environ['WANDB_SERVICE'] = '3-123-unix-/tmp/wandb/socket'\n"
+        "from rl_games.common.pbt import PbtAlgoObserver\n"
+        "params = {'pbt': {'policy_idx': 0, 'num_policies': 3, 'directory': '.', 'objective': 'obj',\n"
+        "                  'wandb_finish_timeout': 0.3,\n"
+        "                  'mutation': {'agent.params.config.learning_rate': 'mutate_float'}},\n"
+        "          'params': {'config': {'device': 'cpu', 'learning_rate': 3e-4}}}\n"
+        "obs = PbtAlgoObserver(params, launch_argv=['member.py', 'child'])\n"
+        "class W:\n"
+        "    def flush(self): pass\n"
+        "    def close(self): pass\n"
+        "obs.algo = types.SimpleNamespace(frame=4096, epoch_num=3, writer=W())\n"
+        "obs.pbt_it = 4\n"
+        "obs._restart_with_new_params({'agent.params.config.learning_rate': 1e-4}, '/ws/restart.pth')\n")
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES="", PYTHONPATH=REPO)
+    env.pop("PYTHONUNBUFFERED", None)
+    for var in (pbt_utils.RESTART_ENV_VAR, "WANDB_RUN_ID", "WANDB_RESUME"):
+        env.pop(var, None)
+    proc = subprocess.run([sys.executable, "member.py"], cwd=tmp_path, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout[-3000:]
+    assert "wandb run abc123 did not finish within 0.3 s" in proc.stdout
+    [parent] = [json.loads(line[7:]) for line in proc.stdout.splitlines() if line.startswith("PARENT ")]
+    [child] = [json.loads(line[6:]) for line in proc.stdout.splitlines() if line.startswith("CHILD ")]
+    assert child == {"pid": parent["pid"], "run_id": "abc123-r1", "service": None}
+
+
 # --- payload and environment handed to the child -------------------------------------------
 
 class TestRestartEnvironment:
@@ -416,10 +584,39 @@ class TestRestartEnvironment:
     def test_path_dedup_keeps_one_empty_entry(self, tmp_path, monkeypatch, execs):
         monkeypatch.setenv("PYTHONPATH", ":/a:/a:/b:")
         monkeypatch.setenv("LD_LIBRARY_PATH", "/x::/y:/x")
+        monkeypatch.setenv("OMNI_USD_RESOLVER_MDL_BUILTIN_PATHS", ":")  # `export X=$X:$Y` with both unset
         restart(member(tmp_path, launch_argv=["train.py"]))
         environ = execs[0][2]
         assert environ["PYTHONPATH"] == ":/a:/b"               # an empty entry is the cwd
         assert environ["LD_LIBRARY_PATH"] == "/x::/y"
+        assert environ["OMNI_USD_RESOLVER_MDL_BUILTIN_PATHS"] == ":"   # "" would be no entry at all
+
+    @pytest.mark.parametrize("value, deduped", [
+        (":", ":"), ("::", ":"), (":/a", ":/a"), ("/a:", "/a:"), ("/a::/a:", "/a:"), ("/a:/b:/a", "/a:/b"), ("", ""),
+    ])
+    def test_dedup_path_list(self, value, deduped):
+        sep = os.pathsep
+        assert pbt_utils.dedup_path_list(value.replace(":", sep)) == deduped.replace(":", sep)
+
+    @pytest.mark.parametrize("run", [None, StubRun()], ids=["no wandb run", "wandb run"])
+    def test_observer_built_without_init_restarts(self, tmp_path, monkeypatch, execs, run):
+        # DexLab's tests build the observer with object.__new__ and set only what a restart read
+        # before the launch directory existed; it restarts from the current directory
+        install_wandb(monkeypatch, run)
+        monkeypatch.delenv("WANDB_RUN_ID", raising=False)
+        monkeypatch.chdir(tmp_path)
+        obs = object.__new__(PbtAlgoObserver)
+        obs.cfg = types.SimpleNamespace(policy_idx=3, launcher="/bin/true", seed_arg="--seed",
+                                        reseed_on_restart=False, checkpoint_arg="--checkpoint")
+        obs.launch_argv = ["scripts/train.py", "--seed=7", "agent.params.config.full_experiment_name=r_p3"]
+        obs.restart_count, obs.pbt_it = 0, 4
+        obs.algo = types.SimpleNamespace(frame=1000, writer=Writer())
+        obs.wandb_args = types.SimpleNamespace(enabled=False)
+        obs.distributed_args = types.SimpleNamespace(distributed=False)
+        restart(obs, {"agent.params.config.e_clip": 0.2}, "/ws/003/000004.pth")
+        [(path, argv, environ, cwd)] = execs
+        assert path == "/bin/true" and argv[1] == "scripts/train.py" and cwd == str(tmp_path)
+        assert environ.get("WANDB_RUN_ID") == (None if run is None else "abc123")
 
     def test_numpy_and_torch_scalars_reach_the_child_as_numbers(self, tmp_path, execs):
         obs = member(tmp_path, launch_argv=["train.py"])
