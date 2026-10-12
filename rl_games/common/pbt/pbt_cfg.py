@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
 
 from rl_games.common.pbt.mutation import MUTATION_FUNCS
-from rl_games.common.pbt.pbt_utils import flatten_dict
+from rl_games.common.pbt.pbt_utils import flatten_dict, launch_dirs
 
 REPLACE_RULES = ("dexpbt", "threshold")
 
@@ -370,12 +370,14 @@ def _no_effect_notes(mutation, flat):
 
 def _resolve_launcher(launcher, cwd=None):
     """Absolute path of what os.execv will run for `launcher`: an existing file relative to `cwd`
-    (default: the current directory), else a command on PATH. Empty stays empty (sys.executable)."""
+    (default: the launch directory restarts exec from, see `pbt_utils.launch_dirs`: Hydra's
+    original cwd inside a Hydra job, else the current directory), else a command on PATH.
+    Empty stays empty (sys.executable)."""
     if not launcher:
         return launcher
     if not isinstance(launcher, str):
         raise ValueError(f"pbt.launcher must be a path or a command name, got {launcher!r}")
-    base = os.fspath(cwd) if cwd else os.getcwd()
+    base = os.fspath(cwd) if cwd else launch_dirs()[0]
     path = os.path.join(base, launcher)
     if os.path.isfile(path):
         if not os.access(path, os.X_OK):
@@ -394,10 +396,11 @@ def validate(params, extra_params=None, launcher_cwd=None):
     as PbtAlgoObserver does. Every mutation key must resolve to a finite number, every mutation
     function must exist and suit its value (integer settings need an integer function), and
     `launcher` must resolve the way os.execv will see it: an existing file relative to
-    `launcher_cwd` (default: the current directory), else a command on PATH; the cfg keeps the
-    absolute path. Raises ValueError naming the key, and prints a note for mutations that don't
-    do what their name suggests. The params come back as plain Python numbers (numpy scalars,
-    0-d tensors and numeric strings converted), in config order.
+    `launcher_cwd` (default: the directory restarts exec from: Hydra's original cwd inside a
+    Hydra job, else the current directory), else a command on PATH; the cfg keeps the absolute
+    path. Raises ValueError naming the key, and prints a note for mutations that don't do what
+    their name suggests. The params come back as plain Python numbers (numpy scalars, 0-d
+    tensors and numeric strings converted), in config order.
 
     It touches no tensors and no environment, so a train script can call it before building
     the env; PbtAlgoObserver calls it on every rank.

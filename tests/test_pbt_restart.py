@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 import torch
 
+import rl_games.common.pbt as rl_pbt
 from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
 
 LR = "agent.params.config.learning_rate"
@@ -412,6 +413,36 @@ class TestLaunchDir:
         [(_, argv, _, _)] = execs
         assert "hydra.run.dir=outputs/mine" in argv and sum("hydra.run.dir" in a for a in argv) == 1
         assert chdirs[-2] == ("chdir", str(launch_dir))
+
+    def test_relative_launcher_resolves_from_the_launch_dir(self, tmp_path, monkeypatch, launch_dir, execs):
+        # the restart execs from the launch dir, so validate() resolves a relative launcher there,
+        # not in the run dir a Hydra 1.1 job runs in (where ./python.sh does not exist)
+        launcher = launch_dir / "python.sh"
+        launcher.write_text("#!/bin/sh\n")
+        launcher.chmod(0o755)
+        run_dir = launch_dir / "outputs" / "2026-10-12" / "02-00-00"
+        install_hydra(monkeypatch, launch_dir, run_dir)
+        monkeypatch.chdir(run_dir)
+        record_chdir(monkeypatch)
+        obs = member(tmp_path, launch_argv=["train.py"], launcher="./python.sh")
+        assert obs.cfg.launcher == str(launcher)
+        restart(obs)
+        assert execs[0][0] == str(launcher)
+
+    def test_validate_resolves_the_launcher_from_the_launch_dir(self, monkeypatch, launch_dir):
+        # train scripts call validate() before building the env: it agrees with the observer
+        launcher = launch_dir / "python.sh"
+        launcher.write_text("#!/bin/sh\n")
+        launcher.chmod(0o755)
+        run_dir = launch_dir / "outputs" / "2026-10-12" / "02-00-00"
+        install_hydra(monkeypatch, launch_dir, run_dir)
+        monkeypatch.chdir(run_dir)
+        params = {"pbt": {"objective": "obj", "launcher": "./python.sh", "mutation": {LR: "mutate_float"}},
+                  "params": {"config": {"learning_rate": 3e-4}}}
+        cfg, _ = rl_pbt.validate(params)
+        assert cfg.launcher == str(launcher)
+        cfg, _ = rl_pbt.validate(params, launcher_cwd=str(launch_dir))
+        assert cfg.launcher == str(launcher)
 
     def test_without_hydra_the_launch_dir_is_the_init_cwd(self, tmp_path, monkeypatch, launch_dir, execs):
         monkeypatch.delitem(sys.modules, "hydra", raising=False)
