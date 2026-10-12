@@ -104,7 +104,8 @@ class PbtCfg:
     replace_fraction_worst: float = 0.125
     """dexpbt: fraction of the population (rounded up) eligible for replacement, in (0, 1]: the
     members ranked last among those that reported and can be replaced now (not restarting, in a
-    grace window, near the end of their run or 2+ iterations behind)."""
+    grace window or near the end of their run), leaving out a member 2+ iterations behind that
+    was not below the deciding member at its iteration (see `pbt_utils.member_status`)."""
 
     replace_fraction_best: float = 0.3
     """dexpbt: fraction of the population (rounded up) that replacements are drawn from, in (0, 1]."""

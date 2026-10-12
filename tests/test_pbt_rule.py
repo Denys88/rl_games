@@ -1,7 +1,8 @@
 """PBT replacement rule: PBT's draws from a private generator (F04); a worst group of the members
-that reported and can act on a replacement, every reported member still ranked (F09, R01); ties
-broken per iteration (R03); no restart for a self-mutation that changes nothing (F07) or near the
-end of training (H07); the in-process self-mutation hook. CPU only."""
+that reported and can act on a replacement, every reported member still ranked, a member 2+
+iterations behind compared at its own iteration (F09, R01); ties broken per iteration (R03); no
+restart for a self-mutation that changes nothing (F07) or near the end of training (H07); the
+in-process self-mutation hook. CPU only."""
 
 import json
 import math
@@ -15,6 +16,7 @@ import torch
 import yaml
 
 from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
+from rl_games.common.pbt.mutation import MUTATION_FUNCS, mutate
 from tests.test_pbt_workspace import YAML_1E6966A
 
 CONFIG = "agent.params.config."
@@ -196,12 +198,57 @@ class TestPrivateDraws:
         assert second == reference.random()                     # the private stream went on
         assert random.getstate() == outer                       # restored after an exception too
 
+    def test_one_process_draws_on_from_its_stream(self, tmp_path):
+        """The generator is made once per process: each iteration draws on from it. Rebuilt from the
+        same key at every iteration, it would draw the same values every time."""
+        for peer, objective in ((1, 1.0), (2, 0.5)):
+            for iteration in (1, 2, 3):
+                report(tmp_path, peer, iteration, objective)
+        obs = observer(tmp_path, 0, 3, cls=RecordingDraws)
+        algo = Algo(tmp_path)
+        for iteration in (1, 2, 3):
+            iterate(obs, algo, iteration, 2.0)                  # the best member: the rule draws nothing
+        stream = pbt_utils.draw_rng(42, 0, 0, 0)
+        assert obs.draws == [stream.random() for _ in range(3)]
+
+    def test_a_no_op_self_mutation_is_not_repeated(self, tmp_path, capsys):
+        """The worst member's self-mutation changes nothing (mutation_rate 0.2 on 2 keys: 64% of the
+        draws); its next iterations draw anew until one changes a value and it restarts. With the
+        same draws at every iteration it would keep training on its old values for good."""
+        obs = observer(tmp_path, 3, 4, seed=3, mutation_rate=0.2)
+        algo = Algo(tmp_path)
+        no_ops = 0
+        for iteration in range(1, 13):
+            for peer, objective in zip((0, 1, 2), (1.02, 1.01, 1.005)):     # leads too small for a donor
+                report(tmp_path, peer, iteration, objective)
+            iterate(obs, algo, iteration, 1.0)
+            if obs.restart_flag.item():
+                break
+            assert "no-op self-mutation" in capsys.readouterr().out
+            no_ops += 1
+        assert no_ops > 0                                       # seed 3: the first draws changed nothing
+        assert obs.restart_flag.item() == 1 and obs.restart_source == 3 and obs.new_params != PARAMS
+
     def test_launch_argv_without_the_seed_argument_is_noticed(self, tmp_path, capsys):
         observer(tmp_path, 0, 3, launch_argv=["train.py", "task=Lift"])
         assert "launch_argv has no --seed argument" in capsys.readouterr().out
         observer(tmp_path, 0, 3, launch_argv=["train.py", "task=Lift", "--seed", "42"])
         observer(tmp_path, 0, 3)                                 # the legacy path passes --seed itself
+        for seed in (None, -1):                                 # a new random seed at every launch: no replay
+            observer(tmp_path, 0, 3, seed=seed, launch_argv=["train.py", "task=Lift"])
         assert "launch_argv has no --seed argument" not in capsys.readouterr().out
+
+
+class RecordingDraws(PbtAlgoObserver):
+    """Records one draw from the global `random` at the start of every PBT iteration (rank 0)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.draws = []
+
+    def _pbt_iteration(self, score, best_in_iteration, frame):
+        self.draws.append(random.random())
+        super()._pbt_iteration(score, best_in_iteration, frame)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -294,12 +341,14 @@ class TestReplaceable:
     def test_a_restarting_member_lets_the_next_worst_be_replaced(self, tmp_path):
         for idx, objective in enumerate([5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0]):
             report(tmp_path, idx, 5, objective)
+        report(tmp_path, 7, 4, 0.5)                             # member 7's previous save
         member7 = observer(tmp_path, 7, 8)
         iterate(member7, Algo(tmp_path), 5, 1.0)                # the worst: replaced from a top member
         assert member7.restart_flag.item() == 1
         marked = saved_yaml(tmp_path, 7, 5)
         assert marked["replaceable"] is False                   # peers read it until the restart saves
         assert (marked["iteration"], marked["true_objective"], marked["params"]) == (5, 1.0, PARAMS)
+        assert saved_yaml(tmp_path, 7, 4)["replaceable"] is True           # only the newest is marked
         assert not list((tmp_path / WORKSPACE / "007").glob("*.tmp*"))     # rewritten through a temp + rename
         # iteration 6: member 7's restarted process has not saved yet; member 6 is the worst that can act
         for idx, objective in enumerate([5.2, 4.7, 4.2, 3.7, 3.2, 2.7]):
@@ -325,25 +374,78 @@ class TestReplaceable:
         assert member7.restart_flag.item() == 0
         assert saved_yaml(tmp_path, 7, 5)["replaceable"] is True
 
-    def test_members_two_iterations_behind_take_no_worst_slot(self, tmp_path):
-        # member 3 is slow: it reached iteration 5, the others report up to 7
-        for iteration in (5, 6, 7):
-            for idx, objective in enumerate([9.0, 8.0, 7.0, 1.0, 6.0, 5.0, 2.0]):
-                if idx != 3 or iteration == 5:
-                    report(tmp_path, idx, iteration, objective)
-        cfg = PbtCfg(num_policies=7)
+    @pytest.mark.parametrize("quality3, decider", [
+        (3.0, 6),                                               # member 3 leads member 6 at iteration 5
+        (1.0, 3),                                               # member 3 trails member 6 at iteration 5
+    ])
+    def test_a_slow_member_and_a_faster_one_agree_at_equal_frames(self, tmp_path, quality3, decider):
+        """Member 3 is slow (iteration 5, the others 7) and the objective grows 1 per iteration, so
+        its older objective ranks below member 6's newer one either way. Each of the two decides
+        about itself, member 3 at iteration 5 where it reads member 6's yaml 5: exactly one of them
+        decides, the one that is worse at equal frames. 1e6966a let member 3 hold member 6's worst
+        slot also when member 3 led (nobody was replaced); ruling every member 2+ iterations behind
+        out of the worst group made member 6 decide also when member 3 trailed (both decided)."""
+        quality = {0: 9.0, 1: 8.0, 2: 7.0, 3: quality3, 4: 6.0, 5: 5.0, 6: 2.5}
+        for idx, q in quality.items():
+            for iteration in ((5,) if idx == 3 else (5, 6) if idx == 6 else (5, 6, 7)):
+                report(tmp_path, idx, iteration, q + iteration)
+        member6 = observer(tmp_path, 6, 7)
+        iterate(member6, Algo(tmp_path), 7, quality[6] + 7)
+        member3 = observer(tmp_path, 3, 7)
+        iterate(member3, Algo(tmp_path), 5, quality3 + 5)
+        decided = [p for p, obs in ((3, member3), (6, member6)) if obs.restart_flag.item() == 1]
+        assert decided == [decider]
 
-        def decide(reader, iteration):
-            ckpts = pbt_utils.load_pbt_ckpts(os.path.join(tmp_path, WORKSPACE), reader, 7, iteration)
-            objectives = {p: c["true_objective"] for p, c in ckpts.items()}
-            eligible = pbt_utils.replaceable_members(ckpts, iteration)
-            random.seed(0)
-            return pbt_utils.select_dexpbt(objectives, reader, objectives[reader], objectives[reader], cfg,
-                                           eligible=eligible)
+    def test_members_lagging_after_their_restarts_keep_their_worst_slots(self, tmp_path, capsys):
+        """A restart keeps the member's frame (DexPBT), so its start-up leaves the member behind for
+        good. Members 4-7 restarted and reached iteration 17, members 0-3 never did and reached 20;
+        the objective grows 0.05 per iteration, and at equal frames the members rank 0 > 1 > ... > 7.
+        Member 3 (4th of 8) must get no decision: the laggards are worse at equal frames and keep
+        their worst slots, as in IsaacGymEnvs. Member 7 decides about itself at its own iteration."""
+        def objective(idx, iteration):
+            return 1.0 - 0.1 * idx + 0.05 * iteration
 
-        assert decide(6, 7)[0] is not None                      # member 3 is 2 behind: member 6 has the slot
-        assert "not among the worst [3]" in decide(6, 6)[1]     # 1 behind: still replaceable
-        assert decide(3, 5)[0] is not None                      # the laggard's own decision is unchanged
+        for idx in range(8):
+            for iteration in range(15, (19 if idx == 3 else 20 if idx < 3 else 17) + 1):
+                report(tmp_path, idx, iteration, objective(idx, iteration))
+        member3 = observer(tmp_path, 3, 8)
+        iterate(member3, Algo(tmp_path), 20, objective(3, 20))
+        out = capsys.readouterr().out
+        assert member3.restart_flag.item() == 0 and "not among the worst [7]" in out
+        assert table_status(out) == {p: "OK" for p in range(8)}
+        member7 = observer(tmp_path, 7, 8)
+        iterate(member7, Algo(tmp_path), 18, objective(7, 18))
+        assert member7.restart_flag.item() == 1
+
+    def test_a_member_two_iterations_behind_is_compared_at_its_iteration(self):
+        def ckpt(iteration, objective):
+            return {"iteration": iteration, "true_objective": objective}
+
+        # the reader (member 0) is at iteration 10; it saved at 4, 6, 8 and 10 (it waited at the others)
+        ckpts = {0: ckpt(10, 5.0), 1: ckpt(7, 3.0), 2: ckpt(7, 2.0), 3: ckpt(9, 1.0), 4: ckpt(7, 2.5), 5: None,
+                 6: ckpt(3, 9.0), 7: ckpt(8, 4.5)}
+        reader = {4: 1.0, 6: 2.5, 8: 4.0, 10: 5.0}
+        # at iteration 7 the laggards read the reader's yaml 6 (2.5): 1 led it, 4 tied, 2 trailed;
+        # 7 is 2 behind and led yaml 8; 3 is 1 behind, ranked as it stands; the reader has no yaml
+        # at or below 6's iteration 3
+        assert pbt_utils.member_status(ckpts, 10, reader_objectives=reader) == {
+            0: "OK", 1: "behind", 2: "OK", 3: "OK", 4: "behind", 5: "—", 6: "OK", 7: "behind"}
+        assert pbt_utils.replaceable_members(ckpts, 10, reader_objectives=reader) == {0, 2, 3, 6}
+        # nothing to compare with: every member that reported is ranked as it stands (IsaacGymEnvs)
+        assert pbt_utils.replaceable_members(ckpts, 10) == {0, 1, 2, 3, 4, 6, 7}
+
+    def test_load_reader_objectives_reads_what_the_laggards_read(self, tmp_path):
+        for iteration, objective in ((3, 1.0), (5, 2.0), (6, 3.0), (9, 4.0), (12, 5.0)):
+            report(tmp_path, 0, iteration, objective)
+        directory = os.path.join(tmp_path, WORKSPACE, "000")
+        with open(os.path.join(directory, "000006.yaml"), "w") as fobj:
+            fobj.write("iteration: [")                          # malformed: a peer reads yaml 5 instead
+        ckpts = {0: {"iteration": 12}, 1: {"iteration": 7}, 2: {"iteration": 8}, 3: {"iteration": 10},
+                 4: {"iteration": 2}, 5: {"iteration": 11}, 6: None}
+        # members 1 and 2 read yaml 5, member 3 yaml 9, member 4 none; member 5 is 1 behind
+        assert pbt_utils.load_reader_objectives(directory, ckpts, 12) == {5: 2.0, 9: 4.0}
+        assert pbt_utils.load_reader_objectives(directory, {0: {"iteration": 12}, 1: {"iteration": 11}}, 12) == {}
+        assert pbt_utils.load_reader_objectives(os.path.join(tmp_path, "gone"), ckpts, 12) == {}
 
     def test_a_member_in_a_grace_window_says_so_and_takes_no_worst_slot(self, tmp_path):
         for idx, objective in enumerate([5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0]):
@@ -388,11 +490,13 @@ class TestReplaceable:
     def test_the_summary_shows_each_member_status(self, tmp_path, capsys):
         report(tmp_path, 0, 6, 5.0)
         report(tmp_path, 1, 6, 4.0, replaceable=False)
-        report(tmp_path, 2, 4, 3.0)
-        obs = observer(tmp_path, 4, 5)                          # member 3 never reported
+        report(tmp_path, 2, 4, 3.0)                             # 2 behind, ahead of member 4's yaml 4
+        report(tmp_path, 5, 4, 1.0)                             # 2 behind, behind member 4's yaml 4
+        report(tmp_path, 4, 4, 2.5)
+        obs = observer(tmp_path, 4, 6)                          # member 3 never reported
         iterate(obs, Algo(tmp_path), 6, 2.0)
         assert table_status(capsys.readouterr().out) == {0: "OK", 1: "not replaceable", 2: "behind", 3: "—",
-                                                         4: "OK"}
+                                                         4: "OK", 5: "OK"}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -578,14 +682,20 @@ class InProcess(PbtAlgoObserver):
         return True
 
 
-def self_mutating(train_dir, cls=PbtAlgoObserver, **pbt):
-    """Member 3 of 4 at iteration 5, the worst by a lead too small for a donor."""
+def self_mutating(train_dir, cls=PbtAlgoObserver, algo=None, **pbt):
+    """Member 3 of 4 at iteration 5, the worst by a lead too small for a donor; `algo`: learner
+    attributes."""
     for peer, objective in zip((0, 1, 2), (1.02, 1.01, 1.005)):
         report(train_dir, peer, 5, objective)
     obs = observer(train_dir, 3, 4, cls=cls, **pbt)
-    algo = Algo(train_dir)
-    iterate(obs, algo, 5, 1.0)
-    return obs, algo
+    learner = Algo(train_dir, **(algo or {}))
+    iterate(obs, learner, 5, 1.0)
+    return obs, learner
+
+
+def clipped(x, **kwargs):
+    """A custom mutation function as users write them: np.clip returns a numpy scalar."""
+    return np.clip(x * 1.3, 1e-5, 1e-2)
 
 
 class TestSelfMutationHook:
@@ -618,6 +728,31 @@ class TestSelfMutationHook:
         iterate(transfer, Algo(tmp_path / "transfer"), 5, 1.0)
         assert transfer.applied == [] and transfer.restart_flag.item() == 1
 
+    def test_an_in_process_mutation_is_recorded_like_a_restart(self, tmp_path):
+        """The learner's pbt_history (saved in its checkpoints, rank 0) gets the entry a restart puts
+        into restart.pth, marked in_process."""
+        self_mutating(tmp_path / "restart", mutation_rate=1.0)
+        restart_state = torch.load(restart_pth(tmp_path / "restart", 3), weights_only=False)
+        [restart_entry] = restart_state["pbt_history"]
+        _, algo = self_mutating(tmp_path / "hook", cls=InProcess, mutation_rate=1.0, algo={"pbt_history": []})
+        assert algo.pbt_history == [dict(restart_entry, in_process=True)]
+        assert restart_entry == {"policy_idx": 3, "source_policy": 3, "frame": 5005, "objective": 1.0,
+                                 "source_objective": 1.0}
+
+    def test_numpy_values_applied_in_process_are_saved(self, tmp_path, monkeypatch, capsys):
+        """A custom mutation function's numpy scalar, applied in process: the member's next save
+        holds it as a plain number (a numpy scalar made every later save fail, and the member stop
+        after max_consecutive_errors)."""
+        monkeypatch.setitem(MUTATION_FUNCS, "mutate_clipped", clipped)
+        obs, algo = self_mutating(tmp_path, cls=InProcess, mutation_rate=1.0, mutation={LR: "mutate_clipped"})
+        applied = obs.pbt_params[LR]
+        assert type(applied) is float and applied == pytest.approx(3.9e-4)
+        for peer, objective in zip((0, 1, 2), (1.02, 1.01, 1.005)):
+            report(tmp_path, peer, 6, objective)
+        iterate(obs, algo, 6, 1.0)
+        assert "exception" not in capsys.readouterr().out
+        assert saved_yaml(tmp_path, 3, 6)["params"][LR] == applied
+
     def test_reset_objective_window(self, tmp_path):
         obs = observer(tmp_path, 0, 3, objective_window=4)
         for value in (1.0, 0.0, 1.0):
@@ -625,5 +760,21 @@ class TestSelfMutationHook:
         obs.best_in_iteration = 0.9
         obs._reset_objective_window()
         assert (obs._window_count, obs._window_sum, obs.best_in_iteration) == (0, 0.0, None)
+        assert obs.score == pbt_utils.UNINITIALIZED_VALUE
         obs.process_infos({"episode": {"success": 0.25}}, None)
         assert obs.score == 0.25 and obs._window_count == 1     # the new episodes only
+        for value in (0.5, 0.75, 1.0, 0.0, 0.5):                # past the window: the oldest new ones drop
+            obs.process_infos({"episode": {"success": value}}, None)
+        assert obs.score == pytest.approx((0.75 + 1.0 + 0.0 + 0.5) / 4) and len(obs._window) == 4
+
+
+def test_mutate_returns_plain_numbers(monkeypatch):
+    """Workspace yamls and restart commands hold plain numbers: a custom function's numpy or torch
+    scalar comes back as the Python number it holds."""
+    monkeypatch.setitem(MUTATION_FUNCS, "mutate_clipped", clipped)
+    monkeypatch.setitem(MUTATION_FUNCS, "mutate_count", lambda x, **kwargs: np.int64(x + 1))
+    monkeypatch.setitem(MUTATION_FUNCS, "mutate_tensor", lambda x, **kwargs: torch.tensor(x * 2.0))
+    params = {LR: 3e-4, "n": 4, "c": 0.5, "kept": 0.1}
+    mutated = mutate(params, {LR: "mutate_clipped", "n": "mutate_count", "c": "mutate_tensor"}, 1.0, (1.1, 1.5))
+    assert mutated == {LR: pytest.approx(3.9e-4), "n": 5, "c": 1.0, "kept": 0.1}
+    assert [type(mutated[key]) for key in (LR, "n", "c")] == [float, int, float]

@@ -193,17 +193,19 @@ class PbtAlgoObserver(AlgoObserver):
                   "(sys.orig_argv): restarts rebuild the command from sys.argv and args_cli and drop the other "
                   "launch flags; pass launch_argv=list(sys.argv) captured before sys.argv is rewritten, or "
                   "['-m', '<module>', *sys.argv[1:]] for a `python -m` launch")
+        # PBT's draws come from a generator private to this member and process start (`_draw_rng`)
+        self._seed = params.get("params", {}).get("seed")
+        self._rng = None
         seed_arg = self.cfg.seed_arg
+        # a seed of None or -1 is drawn anew at every launch: nothing replays then
         if (self.launch_argv is not None and self.distributed_args.rank == 0 and self.cfg.reseed_on_restart
-                and seed_arg and pbt_utils.get_cli_arg(self.launch_argv, seed_arg) is None):
+                and seed_arg and pbt_utils.get_cli_arg(self.launch_argv, seed_arg) is None
+                and not pbt_utils._random_per_launch(self._seed)):
             print(f"PbtAlgoObserver: NOTICE launch_argv has no {seed_arg} argument: every restart seeds torch, "
                   f"numpy and the environment with the launch seed again, so their random streams replay after "
                   f"each restart (PBT's own draws come from a private generator); pass {seed_arg} on the command "
                   f"line, or set pbt.seed_arg to the name it uses (e.g. seed for a Hydra override), and each "
                   f"restart gets a seed derived from it")
-        # PBT's draws come from a generator private to this member and process start (`_draw_rng`)
-        self._seed = params.get("params", {}).get("seed")
-        self._rng = None
 
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
 
@@ -514,6 +516,8 @@ class PbtAlgoObserver(AlgoObserver):
                                           replaceable=not (in_grace or ending))
             ckpts = pbt_utils.load_pbt_ckpts(self.ws_dir, cfg.policy_idx, cfg.num_policies, self.pbt_it)
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
+            # what this member's yamls said where members 2+ iterations behind are (see member_status)
+            own_objectives = pbt_utils.load_reader_objectives(self.curr_policy_dir, ckpts, self.pbt_it)
         except Exception as exc:
             self._consecutive_errors += 1
             print(f"Policy {cfg.policy_idx}: exception {exc!r} in PBT checkpoint save/load "
@@ -524,7 +528,7 @@ class PbtAlgoObserver(AlgoObserver):
             return
         self._consecutive_errors = 0
 
-        status = pbt_utils.member_status(ckpts, self.pbt_it)
+        status = pbt_utils.member_status(ckpts, self.pbt_it, reader_objectives=own_objectives)
         sumry = {i: None if c is None else {k: v for k, v in c.items() if k != "params"} for i, c in ckpts.items()}
         self.printer.print_ckpt_summary(sumry, status=status)
         unreported = sorted(p for p, s in status.items() if s == pbt_utils.NOT_REPORTED)
@@ -575,6 +579,9 @@ class PbtAlgoObserver(AlgoObserver):
         use_source_params = cfg.replace_rule == "threshold" or random.random() < cfg.leader_params_prob
         base_params = source_params if use_source_params else self.pbt_params
         new_params = mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range)
+        # the decision in the learner's pbt_history (its checkpoints' PBT provenance)
+        history_entry = {"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
+                         "objective": float(score), "source_objective": float(objectives[source])}
         if source == cfg.policy_idx:
             changed = {k: v for k, v in new_params.items() if self.pbt_params.get(k) != v}
             if not changed:
@@ -588,6 +595,10 @@ class PbtAlgoObserver(AlgoObserver):
                 self.printer.print_mutation_diff(self.pbt_params, new_params,
                                                  header="Mutated params (applied in process)")
                 self.pbt_params = new_params
+                # the learner's next checkpoints record it, as restart.pth records a restart (rank 0 saves them)
+                history = getattr(self.algo, "pbt_history", None)
+                if isinstance(history, list):
+                    history.append(dict(history_entry, in_process=True))
                 # the grace window starts over; the saves in it say replaceable: false
                 self.initial_frame = int(frame)
                 print(f"Policy {cfg.policy_idx}: self-mutation applied in process, no restart; grace window from "
@@ -605,8 +616,7 @@ class PbtAlgoObserver(AlgoObserver):
                 # this runs in after_steps, after update_epoch and before the epoch's update and
                 # frame increment: the member's frame belongs to the last completed epoch
                 epoch=int(self.algo.epoch_num) - 1,
-                history_entry={"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
-                               "objective": float(score), "source_objective": float(objectives[source])},
+                history_entry=history_entry,
                 config_hparams=config_hparams or None,
                 last_mean_rewards=float(self.algo.last_mean_rewards) if fixed_name else None)
         except Exception as exc:
@@ -641,11 +651,13 @@ class PbtAlgoObserver(AlgoObserver):
         Called on rank 0 inside `_pbt_iteration` for a self-mutation (the member keeps its own
         weights) that changes some values, before anything is written for a restart. `changed`
         maps each changed flattened param to its new value. On True the observer takes the new
-        values as `pbt_params`, logs them, restarts the member's grace window (`initial_frame`;
-        its saves say `replaceable: false` until `start_after` frames have passed) and keeps
-        training. The subclass must apply the values on every rank (rank 0 broadcasts them, e.g.
-        after `super().after_steps()`), and should call `_reset_objective_window()` on every rank:
-        the next iteration then ranks the member by episodes played with the new values.
+        values as `pbt_params`, logs them, appends the entry a restart puts into restart.pth to
+        the learner's `pbt_history` with `in_process: True` (on rank 0, which saves the learner's
+        checkpoints), restarts the member's grace window (`initial_frame`; its saves say
+        `replaceable: false` until `start_after` frames have passed) and keeps training. The
+        subclass must apply the values on every rank (rank 0 broadcasts them, e.g. after
+        `super().after_steps()`), and should call `_reset_objective_window()` on every rank: the
+        next iteration then ranks the member by episodes played with the new values.
         """
         return False
 
