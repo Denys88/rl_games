@@ -115,7 +115,8 @@ class PbtAlgoObserver(AlgoObserver):
         self.wandb_args = pbt_utils.WandbArgs(args_cli if self.launch_argv is None else None)
         self.env_args = pbt_utils.EnvArgs(args_cli)
         self.distributed_args = pbt_utils.DistributedArgs(args_cli)
-        self.cfg, self.pbt_params = validate(params, extra_params)
+        # a relative launcher is resolved where the restart execs from
+        self.cfg, self.pbt_params = validate(params, extra_params, launcher_cwd=self.launch_cwd)
         self.dir = self.cfg.directory  # kept for compatibility; the workspace is <train_dir>/<workspace>
         if self.distributed_args.distributed and "LOCAL_WORLD_SIZE" in os.environ:
             local_world_size, world_size = int(os.environ["LOCAL_WORLD_SIZE"]), int(os.environ.get("WORLD_SIZE", "1"))
@@ -123,7 +124,8 @@ class PbtAlgoObserver(AlgoObserver):
                 raise ValueError(
                     f"PBT members must run on a single node: LOCAL_WORLD_SIZE={local_world_size} differs from "
                     f"WORLD_SIZE={world_size}. A restart re-execs the whole member from rank 0 as "
-                    f"torch.distributed.run --nnodes=1 --nproc_per_node=WORLD_SIZE, i.e. on rank 0's node")
+                    f"torch.distributed.run --standalone --nnodes=1 --nproc_per_node=WORLD_SIZE, i.e. on rank 0's "
+                    f"node")
         self.pbt_it = -1  # dummy value, stands for "not initialized"
         self.initial_frame = 0
         self.score = _UNINITIALIZED_VALUE
