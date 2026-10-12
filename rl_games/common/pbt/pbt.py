@@ -927,7 +927,8 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _save_restart_record(self):
         """Rank 0, at a restart decision (restart.pth written, the flag set): write the member's
-        restart.yaml (`pbt_utils.write_restart_record`). Nothing reads it yet; it tells what the
+        restart.yaml (`pbt_utils.write_restart_record`). Nothing acts on its content yet, except
+        `_check_member_dir`, which removes a record above a relaunch's iteration; it tells what the
         restart was when its process is gone. A record that can't be written doesn't stop the
         restart; an older one is removed then, as it would describe another restart.pth."""
         try:
