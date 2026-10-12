@@ -276,7 +276,12 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
-        _atomic_torch_save(algo.get_full_state_weights(), checkpoint_file)
+        state = algo.get_full_state_weights()
+        if "epoch" in state:
+            # called in after_steps, after update_epoch and before the epoch's update and frame
+            # increment: the weights and frame belong to the last completed epoch
+            state["epoch"] = int(algo.epoch_num) - 1
+        _atomic_torch_save(state, checkpoint_file)
         pbt_checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.yaml")
 
         pbt_checkpoint = {
@@ -373,16 +378,27 @@ def cleanup(checkpoints: dict[int, dict], policy_dir, keep_back: int = 20, max_y
             groups.pop(it, None)
 
 
-def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry, epoch=None) -> str:
+def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry, epoch=None, *,
+                               config_hparams=None, last_mean_rewards=None) -> str:
     """Copy the source checkpoint into this member's workspace for the restart.
 
     The copy survives the source's cleanup, keeps this member's frame (DexPBT) and epoch
-    counters, and appends `history_entry` to the checkpoint's `pbt_history`.
+    counters, and appends `history_entry` to the checkpoint's `pbt_history`. When given,
+    `config_hparams` replaces the stored configured values key by key (the restart's
+    pre-mutation values: the restore then moves an inherited adaptive LR by this restart's
+    mutation factor only), and `last_mean_rewards` the best-reward watermark (the member's
+    own, when it keeps writing into the same run directory).
     """
     state = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
     state["frame"] = int(frame)
     if epoch is not None:
         state["epoch"] = int(epoch)
+    if config_hparams:
+        stored = dict(state.get("config_hparams") or {})
+        stored.update({key: float(value) for key, value in config_hparams.items()})
+        state["config_hparams"] = stored
+    if last_mean_rewards is not None:
+        state["last_mean_rewards"] = float(last_mean_rewards)
     state["pbt_history"] = list(state.get("pbt_history", [])) + [history_entry]
     restart_checkpoint = os.path.join(policy_dir, "restart.pth")
     _atomic_torch_save(state, restart_checkpoint)

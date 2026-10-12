@@ -20,8 +20,7 @@ from rl_games.common.pbt.pbt_cfg import PbtCfg
 
 _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 
-# prefix of mutable algo-config keys; restarts use it to tell rl_games which config values
-# must win over the checkpoint's runtime copies
+# prefix of the algo-config keys among the flattened mutable params
 _CONFIG_PREFIX = "agent.params.config."
 
 
@@ -137,17 +136,15 @@ class PbtAlgoObserver(AlgoObserver):
         self.restart_flag = torch.tensor([0], device=self.device)
 
     def before_init(self, base_name, config, experiment_name):
-        """On a PBT restart, mark mutated algo-config keys so the checkpoint restore keeps them.
+        """On a PBT restart of this member, set `config['pbt_restart']`.
 
-        rl_games restores runtime copies of some config values (learning rate, entropy
-        coefficient) from checkpoints; for mutated values the new config must win.
+        The checkpoint holds a trained policy (the member's or a donor's), so the runner keeps
+        its sigma instead of applying the launch command's `--sigma`. Every rank inherits the
+        restart payload, so all ranks agree. Mutated values need no marking: the restore takes
+        a hyperparameter from the config whenever it differs from the checkpoint's stored one.
         """
-        if self.restart is None:
-            return
-        keys = [k[len(_CONFIG_PREFIX):] for k in self.restart.get("mutated", {})
-                if k.startswith(_CONFIG_PREFIX) and "." not in k[len(_CONFIG_PREFIX):]]
-        if keys:
-            config["pbt_restart_overrides"] = keys
+        if self.restart is not None:
+            config["pbt_restart"] = True
 
     def after_init(self, algo):
         """Keep the algo on every rank; rank 0 creates this policy's workspace folder.
@@ -314,10 +311,21 @@ class PbtAlgoObserver(AlgoObserver):
         base_params = source_params if use_source_params else self.pbt_params
         new_params = mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range)
         try:
+            # the values this restart mutated from: the child's restore then moves an inherited
+            # adaptive LR by this restart's mutation factor only (1 when nothing was mutated)
+            config_hparams = {key: float(base_params[_CONFIG_PREFIX + key])
+                              for key in ("learning_rate", "entropy_coef") if _CONFIG_PREFIX + key in base_params}
+            # a fixed run name keeps nn/<name>.pth across restarts: keep the member's watermark
+            fixed_name = (getattr(self.algo, "config", None) or {}).get("full_experiment_name")
             restart_checkpoint = pbt_utils.prepare_restart_checkpoint(
-                ckpts[source]["checkpoint"], self.curr_policy_dir, frame, epoch=int(self.algo.epoch_num),
+                ckpts[source]["checkpoint"], self.curr_policy_dir, frame,
+                # this runs in after_steps, after update_epoch and before the epoch's update and
+                # frame increment: the member's frame belongs to the last completed epoch
+                epoch=int(self.algo.epoch_num) - 1,
                 history_entry={"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
-                               "objective": float(score), "source_objective": float(objectives[source])})
+                               "objective": float(score), "source_objective": float(objectives[source])},
+                config_hparams=config_hparams or None,
+                last_mean_rewards=float(self.algo.last_mean_rewards) if fixed_name else None)
         except Exception as exc:
             # the source checkpoint may have been cleaned up meanwhile: keep training as is
             print(f"Policy {cfg.policy_idx}: exception {exc!r} while preparing the restart checkpoint; "
@@ -389,8 +397,8 @@ class PbtAlgoObserver(AlgoObserver):
 
         Notes:
             - The child reads the metadata via `pbt_utils.restart_info()` (env var
-              `RL_GAMES_PBT_RESTART`); rl_games uses it to keep mutated config values over the
-              checkpoint's, and environments can use it in `set_env_state`.
+              `RL_GAMES_PBT_RESTART`); rl_games uses it to mark the restart (`pbt_restart`:
+              the checkpoint's sigma is kept), and environments can use it in `set_env_state`.
             - On distributed runs, assigns a fresh master port and forwards distributed args.
         """
         print(f"previous command line args: {self.launch_argv if self.launch_argv is not None else sys.argv}")

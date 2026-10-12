@@ -1,4 +1,5 @@
 import copy
+import math
 import os
 
 from rl_games.common import vecenv
@@ -202,6 +203,10 @@ class A2CBase(BaseAlgorithm):
     def __init__(self, base_name, params):
 
         self.config = config = params['config']
+        # the LR schedule this run was configured with: the multi-GPU setup below sets
+        # lr_schedule None on non-zero ranks (Identity scheduler, LR broadcast from rank 0),
+        # so decisions every rank must take alike (the checkpoint restore) read this one
+        self._configured_lr_schedule = config.get('lr_schedule')
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
@@ -351,10 +356,11 @@ class A2CBase(BaseAlgorithm):
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
+            min_lr, max_lr = self._adaptive_lr_bounds()
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
-                min_lr=config.get('min_lr', 1e-6),
-                max_lr=config.get('max_lr', 1e-2),
+                min_lr=min_lr,
+                max_lr=max_lr,
                 lr_multiplier=config.get('lr_multiplier', 1.5))
 
         elif self.linear_lr:
@@ -498,6 +504,9 @@ class A2CBase(BaseAlgorithm):
         self.play_time = 0
         self.epoch_num = 0
         self.curr_frames = 0
+        # PBT lineage of the current weights (IsaacGymEnvs format): restored from checkpoints
+        # and saved again, so it survives the member's own saves
+        self.pbt_history = []
         # allows us to specify a folder where all experiments will reside
         self.train_dir = config.get('train_dir', 'runs')
 
@@ -703,6 +712,12 @@ class A2CBase(BaseAlgorithm):
 
         # if self.has_central_value:
         #    self.central_value_net.update_lr(lr)
+
+    def _adaptive_lr_bounds(self):
+        """(min_lr, max_lr) of the adaptive LR schedule, from the config: the scheduler and the
+        checkpoint restore share them, and every rank has them (non-zero ranks have no
+        AdaptiveScheduler). Cast here: YAML 1.1 reads a bare exponent ('1e-5') as a string."""
+        return float(self.config.get('min_lr', 1e-6)), float(self.config.get('max_lr', 1e-2))
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -984,6 +999,13 @@ class A2CBase(BaseAlgorithm):
         # adaptive walk from the config LR (KL spike after late resumes)
         state['last_lr'] = self.last_lr
         state['entropy_coef'] = self.entropy_coef
+        # the values this run was configured with: a restore compares them with its own
+        # config to tell a changed hyperparameter (a PBT mutation, an edited resume) from
+        # the runtime state above (see _restore_hyperparameters)
+        state['config_hparams'] = {'learning_rate': float(self.config['learning_rate']),
+                                   'entropy_coef': float(self.config['entropy_coef'])}
+        if self.pbt_history:
+            state['pbt_history'] = list(self.pbt_history)
 
         return state
 
@@ -1022,19 +1044,65 @@ class A2CBase(BaseAlgorithm):
             else:
                 self.config['capability_manifest'] = weights['capability_manifest']
 
-        # old checkpoints lack these keys: keep config-derived values then.
-        # A PBT restart passes mutated values on the command line; those must win.
-        pbt_overrides = set(self.config.get('pbt_restart_overrides', ()))
-        if 'learning_rate' not in pbt_overrides:
-            self.last_lr = weights.get('last_lr', self.last_lr)
-        else:
-            for param_group in self.optimizer.param_groups:
-                param_group['lr'] = self.last_lr
-        if 'entropy_coef' not in pbt_overrides:
-            self.entropy_coef = weights.get('entropy_coef', self.entropy_coef)
+        self._restore_hyperparameters(weights)
+        self.pbt_history = list(weights.get('pbt_history', []))
 
         # central-value stats load after set_weights ran; re-seed everything
         self._seed_stats_sync_snapshots()
+
+    def _restore_hyperparameters(self, weights):
+        """LR, entropy coefficient and weight decay after the optimizer state was loaded.
+
+        The config is the source of truth for hyperparameters; the checkpoint contributes the
+        adaptive LR walk and a linear schedule's position while the config value equals the one
+        stored in `config_hparams` (the run's configured values, or a PBT restart's pre-mutation
+        values). A changed learning_rate moves the adaptive LR by the same factor, within
+        [min_lr, max_lr]. Checkpoints without `config_hparams` keep their runtime values. Works
+        for any restart (rl_games' PBT, observers that only pass the mutated values on the
+        command line, an edited resume) and decides on the configured schedule, so every rank
+        restores the same values (non-zero ranks run with lr_schedule None).
+        """
+        stored = weights.get('config_hparams') or {}
+
+        def changed(key, value):
+            return key in stored and not math.isclose(float(stored[key]), value, rel_tol=1e-9, abs_tol=0.0)
+
+        schedule = self._configured_lr_schedule
+        lr_cfg = float(self.config['learning_rate'])
+        lr = weights.get('last_lr')
+        if lr is None or schedule not in ('adaptive', 'linear'):
+            lr = lr_cfg                       # no runtime state (identity), or none saved
+        elif schedule == 'adaptive':
+            lr = float(lr)
+            if changed('learning_rate', lr_cfg):
+                stored_lr = float(stored['learning_rate'])
+                lr = lr * lr_cfg / stored_lr if stored_lr > 0 else lr_cfg
+                min_lr, max_lr = self._adaptive_lr_bounds()
+                lr = min(max(lr, min_lr), max_lr)
+        elif changed('learning_rate', lr_cfg):
+            lr = lr_cfg                       # linear: the new schedule takes over at its next step
+        else:
+            lr = float(lr)
+        self.last_lr = lr
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+
+        ent_cfg = float(self.config['entropy_coef'])
+        entropy = weights.get('entropy_coef')
+        linear_entropy = schedule == 'linear' and self.config.get('schedule_entropy', False)
+        if entropy is None or not linear_entropy or changed('entropy_coef', ent_cfg):
+            entropy = ent_cfg
+        self.entropy_coef = float(entropy)
+
+        # no runtime state: the config wins over the values load_state_dict put back. The
+        # critic's LR is its config value too: its schedule restarts (its epoch isn't restored)
+        for param_group in self.optimizer.param_groups:
+            param_group['weight_decay'] = self.weight_decay
+        if self.has_central_value:
+            critic = self.central_value_net
+            for param_group in critic.optimizer.param_groups:
+                param_group['weight_decay'] = critic.weight_decay
+                param_group['lr'] = critic.lr
 
     def set_central_value_function_weights(self, weights):
         self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
@@ -1777,8 +1845,7 @@ class ContinuousA2CBase(A2CBase):
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         self.sync_running_stats()
-        min_lr = self.config.get('min_lr', 1e-6)
-        max_lr = self.config.get('max_lr', 1e-2)
+        min_lr, max_lr = self._adaptive_lr_bounds()
         self.scheduler_stats = {
             'scheduler_kl': torch_ext.mean_list(schedule_kls).item() if schedule_kls else float('nan'),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),

@@ -139,8 +139,12 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
     assert cli == pytest.approx({"learning_rate": 4e-4, "entropy_coef": 0.02})
 
     state = torch.load(restart_pth, map_location="cpu", weights_only=False)
-    assert (state["frame"], state["epoch"]) == (20_500, 160)       # the member's, not 50_000/400
+    # the member's counters, not 50_000/400; the decision ran in after_steps of epoch 160,
+    # before its update: epoch 159 is the last completed one
+    assert (state["frame"], state["epoch"]) == (20_500, 159)
     assert (state["last_lr"], state["entropy_coef"]) == pytest.approx((3e-4, 0.005))  # the donor's
+    # the values the restart mutated from (the member's own params), not the donor's 3e-4/0.005
+    assert state["config_hparams"] == pytest.approx({"learning_rate": 4e-4, "entropy_coef": 0.02})
     history = state["pbt_history"][-1]
     assert (history["policy_idx"], history["source_policy"], history["frame"]) == (3, 0, 20_500)
 
@@ -151,12 +155,13 @@ def test_transfer_hands_off_to_the_restarted_member(tmp_path, monkeypatch):
                             args_cli=types.SimpleNamespace())
     assert child.restart_count == 1 and child.restart["source_policy"] == 0
     agent = make_member_agent(child, tmp_path, **cli)
+    assert agent.config["pbt_restart"] is True          # the runner keeps the checkpoint's sigma
     agent.restore(checkpoint_args[0].split("=", 1)[1])
     # the command line's values, not the donor's 3e-4 and 0.005 from restart.pth
     assert agent.entropy_coef == pytest.approx(0.02)
     assert agent.last_lr == pytest.approx(4e-4)
     assert all(group["lr"] == pytest.approx(4e-4) for group in agent.optimizer.param_groups)
-    assert (agent.frame, agent.epoch_num) == (20_500, 160)
+    assert (agent.frame, agent.epoch_num) == (20_500, 159)
 
 
 class TestScalerRestore:
@@ -184,8 +189,7 @@ class TestScalerRestore:
             str(tmp_path / "000" / "000003.pth"), str(tmp_path / "001"), frame=4096, epoch=7,
             history_entry={"policy_idx": 1, "source_policy": 0})
 
-        member = make_cartpole_agent(learning_rate=5e-4, entropy_coef=0.02,
-                                     pbt_restart_overrides=["learning_rate"])
+        member = make_cartpole_agent(learning_rate=5e-4, entropy_coef=0.02)
         self._cpu_scaler(member)
         member.restore(restart)
         assert member.scaler.state_dict() == self.DONOR_SCALER       # scale and growth tracker
