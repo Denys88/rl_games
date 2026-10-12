@@ -219,7 +219,7 @@ class TestUnknownKeys:
             PbtCfg.from_dict(ige)
         msg = str(exc.value)
         assert "change_min" in msg and "change_max" in msg and "change_range: [min, max]" in msg
-        assert "dbg_mode" in msg and "not supported" in msg
+        assert "dbg_mode" in msg and "force_outcome" in msg
 
 
 # the pbt sections that ship today, copied verbatim; DexLab's _lstm section is identical to _mlp

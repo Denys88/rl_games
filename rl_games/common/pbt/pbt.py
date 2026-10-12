@@ -250,17 +250,26 @@ class PbtAlgoObserver(AlgoObserver):
 
         Every rank decides and draws alike, before any process group exists. Fresh: no restart
         payload for the member and no numbered checkpoint in its workspace directory, which every
-        rank lists before rank 0 saves the first. The generator is seeded with the launch
-        command's `seed_arg` value and the member, not with params['seed'], to which train scripts
-        add the rank. A draw that changes no value is drawn again, at most 20 times. Env keys and
-        extra_params keep their values: the env they apply to is built from its own config.
+        rank lists before rank 0 saves the first; rank 0 says when checkpoints there (a relaunch's,
+        or an earlier run's under `reuse_workspace`) skip the mutation. The generator is seeded
+        with the launch command's `seed_arg` value and the member, not with params['seed'], to
+        which train scripts add the rank. A draw that changes no value is drawn again, at most 20
+        times. Env keys and extra_params keep their values: the env they apply to is built from
+        its own config.
         """
         cfg = self.cfg
-        config = params.get("params", {}).get("config", {})
-        member_dir = os.path.join(config.get("train_dir", "runs"), cfg.workspace, f"{cfg.policy_idx:03d}")
-        if self.restart is not None or (os.path.isdir(member_dir) and pbt_utils.saved_iterations(member_dir)):
+        if self.restart is not None:
             return
         rank0 = self.distributed_args.rank == 0
+        config = params.get("params", {}).get("config", {})
+        member_dir = os.path.join(config.get("train_dir", "runs"), cfg.workspace, f"{cfg.policy_idx:03d}")
+        saved = pbt_utils.saved_iterations(member_dir) if os.path.isdir(member_dir) else []
+        if saved:
+            if rank0:
+                print(f"PbtAlgoObserver: no initial mutation: {member_dir} holds checkpoints (iterations "
+                      f"{saved[0]}..{saved[-1]}), so this launch counts as a relaunch of the member and keeps its "
+                      f"values; delete the member directories to start a population over with initial mutations")
+            return
         current = {key: value for key, value in self.pbt_params.items() if key.startswith(_CONFIG_PREFIX)}
         kept = [key for key in self.pbt_params if key not in current]
         if kept and rank0:
@@ -738,7 +747,7 @@ class PbtAlgoObserver(AlgoObserver):
         if best_policy == cfg.policy_idx:
             try:
                 pbt_utils.maybe_save_best(self.ws_dir, cfg.policy_idx, initialized[best_policy], self.pbt_it, frame,
-                                          ckpts[best_policy]["checkpoint"], self.pbt_params)
+                                          ckpts[best_policy]["checkpoint"], self.pbt_params, extra=self._forced_stamp())
             except Exception as exc:
                 print(f"Policy {cfg.policy_idx}: exception {exc!r} while saving the population-best checkpoint")
 
@@ -754,10 +763,8 @@ class PbtAlgoObserver(AlgoObserver):
             return {"outcome": "ending", "frames_left": to_end[0], "limit": to_end[1]}
 
         details = {}  # the rule's outcome and numbers
-        if cfg.force_outcome:
-            # no gate, worst group or best-in-iteration check: one member can qualify an integration
-            source, reason = pbt_utils.select_forced(cfg.force_outcome, cfg.policy_idx, objectives, order)
-        elif cfg.replace_rule == "dexpbt":
+        # with pbt.force_outcome either rule returns the source it names (pbt_utils.select_forced)
+        if cfg.replace_rule == "dexpbt":
             eligible = {p for p, s in status.items() if s == pbt_utils.REPLACEABLE}
             source, reason = pbt_utils.select_dexpbt(objectives, cfg.policy_idx, score, best_in_iteration, cfg,
                                                      eligible=eligible, order=order, details=details)
@@ -881,8 +888,9 @@ class PbtAlgoObserver(AlgoObserver):
         return False
 
     def _forced_stamp(self):
-        """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls and restart.yaml when
-        it is set, else {}: a forced member's records must not pass for a population's."""
+        """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls, best records and
+        restart.yaml when it is set, else {}: a forced member's records must not pass for a
+        population's."""
         return {"forced": self.cfg.force_outcome} if self.cfg.force_outcome else {}
 
     def _reset_objective_window(self):

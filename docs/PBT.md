@@ -629,7 +629,7 @@ Log lines of rank 0:
 | `wandb_finish_timeout` | `120.0` | float, finite, >= 0 | Seconds a restart waits for wandb's `run.finish()` ([wandb](#wandb)). |
 | `reuse_workspace` | `false` | bool | Let a fresh launch start over a member directory that holds an earlier run's files ([Reusing a workspace](#reusing-a-workspace)). |
 | `replace_threshold_absolute` | `0.0` | float >= 0 | dexpbt: when > 0, the lead a transfer needs in objective units, in place of `replace_threshold_frac_absolute`'s fraction. |
-| `mutation_bounds` | `{}` | map of mutation key to `[lo, hi]` | Every replacement clamps the new values into these bounds; ints stay ints. |
+| `mutation_bounds` | `{}` | map of mutation key to `[lo, hi]` | Every replacement clamps the new values into these bounds; an integer param into the integers inside. |
 | `force_outcome` | `""` | `""`, `self`, `best`, `donor:<idx>` | Qualification only: every iteration outside the grace windows restarts from this source, whatever the rule says. |
 | `initial_mutation` | `false` | bool | A fresh member mutates its `agent.params.config` values once at init. |
 | `restart_drop_args` | `{}` | map of argument name to nargs (int >= 0 or `?`) | Launch-only arguments every restart removes from the command. |

@@ -35,7 +35,8 @@ POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "
 _IGE_KEYS = {
     "change_min": "use change_range: [min, max]",
     "change_max": "use change_range: [min, max]",
-    "dbg_mode": "not supported",
+    "dbg_mode": "remove it; force_outcome: self, best or donor:<idx> is the counterpart of dbg_mode: True, "
+                "for qualifying an integration",
 }
 
 
@@ -212,15 +213,20 @@ class PbtCfg:
 
     mutation_bounds: dict[str, tuple[float, float]] = field(default_factory=dict)
     """[lo, hi] per mutation key (two finite numbers, lo < hi): every replacement clamps the new
-    values into them, also the values it doesn't mutate (a donor's may predate the bounds); an
-    int is clamped to the integers inside. `validate()` warns about a configured value outside."""
+    values into them, also the values it doesn't mutate (a donor's may predate the bounds). An
+    integer param (an int that mutate_mini_epochs or a custom function mutates) is clamped to the
+    integers inside: `validate()` raises when there is none, and warns about a configured value
+    outside. The base `_pbt_iteration` and `initial_mutation` apply them; a subclass that
+    replaces `_pbt_iteration` calls `mutation.clamp_to_bounds` itself."""
 
     force_outcome: str = ""
     """For qualifying an integration, not for training: 'self', 'best' or 'donor:<idx>' makes
     every iteration outside the grace windows and the end-of-run margin restart the member from
     itself (a self-mutation), the best member or member idx, whatever the rule says; a
-    self-mutation that changes no value still keeps training. Every rank says so at init, and the
-    member's workspace yamls and restart.yaml carry `forced: <value>`. Empty: off."""
+    self-mutation that changes no value still keeps training. It takes the rule's place in
+    `pbt_utils.select_dexpbt` and `select_threshold`, so a subclass whose `_pbt_iteration` calls
+    them gets it too. Every rank says so at init, and the member's workspace yamls, best records
+    and restart.yaml carry `forced: <value>`. Empty: off."""
 
     initial_mutation: bool = False
     """Mutate a fresh member's `agent.params.config` values once at init, in the params the
@@ -228,7 +234,8 @@ class PbtCfg:
     population launched from one config starts diverse. With `mutation_rate`, drawn again until
     a value changes (at most 20 draws), from (the launch command's `seed_arg` value, policy_idx):
     the same on every rank. Fresh: no restart payload and no numbered checkpoint in the member's
-    workspace directory."""
+    workspace directory, not even an earlier run's that `reuse_workspace` lets it delete (rank 0
+    says so)."""
 
     restart_drop_args: dict[str, int | str] = field(default_factory=dict)
     """Launch-only arguments every restart removes from the command, as {name: nargs}: 0 for a
@@ -541,9 +548,10 @@ def validate(params, extra_params=None, launcher_cwd=None):
     `launcher_cwd` (default: the directory restarts exec from: Hydra's original cwd inside a
     Hydra job, else the current directory), else a command on PATH; the cfg keeps the absolute
     path. Raises ValueError naming the key, prints a note for mutations that don't do what
-    their name suggests, and warns about a value outside its `mutation_bounds`. The params come
-    back as plain Python numbers (numpy scalars, 0-d tensors and numeric strings converted), in
-    config order.
+    their name suggests, and warns about a value outside its `mutation_bounds`, which become the
+    integers inside them for an integer param (an int that mutate_mini_epochs or a custom
+    function mutates). The params come back as plain Python numbers (numpy scalars, 0-d tensors
+    and numeric strings converted), in config order.
 
     It touches no tensors and no environment, so a train script can call it before building
     the env; PbtAlgoObserver calls it on every rank.
@@ -572,7 +580,14 @@ def validate(params, extra_params=None, launcher_cwd=None):
     for line in _no_effect_notes(cfg.mutation, flat):
         print(f"PbtCfg: {line}")
     for key, (lo, hi) in cfg.mutation_bounds.items():
-        if not lo <= pbt_params[key] <= hi:
-            print(f"PbtCfg: WARNING {key} is {pbt_params[key]!r}, outside its mutation_bounds [{lo:g}, {hi:g}]: "
+        value, fn_name = pbt_params[key], cfg.mutation[key]
+        if isinstance(value, int) and (fn_name == "mutate_mini_epochs" or not _is_builtin(fn_name)):
+            # an integer param (the other built-in functions return floats): the integers inside
+            if math.ceil(lo) > math.floor(hi):
+                raise ValueError(f"pbt.mutation_bounds of {key} must hold an integer ({key} is an integer param), "
+                                 f"got [{lo:g}, {hi:g}]")
+            lo, hi = cfg.mutation_bounds[key] = math.ceil(lo), math.floor(hi)
+        if not lo <= value <= hi:
+            print(f"PbtCfg: WARNING {key} is {value!r}, outside its mutation_bounds [{lo:g}, {hi:g}]: "
                   f"a replacement clamps it into them")
     return cfg, pbt_params

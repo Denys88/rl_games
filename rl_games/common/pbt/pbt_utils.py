@@ -818,7 +818,8 @@ def _top_record(records) -> dict | None:
 def population_best(workspace_dir) -> dict | None:
     """The best record in <workspace>/best: the highest objective whose checkpoint copy exists, or
     None. A dict with the keys of `best.yaml` (schema, policy_idx, iteration, frame, true_objective,
-    params, checkpoint, source_checkpoint); `checkpoint` is the copy's path on this host's mount.
+    params, checkpoint, source_checkpoint, and `forced` from a member under `pbt.force_outcome`);
+    `checkpoint` is the copy's path on this host's mount.
 
     Authoritative: `best.yaml` is a view of it, rebuilt by several members, that can lag behind
     for a while on a shared filesystem.
@@ -873,14 +874,16 @@ def _drop_old_best(best_dir, policy_idx, records, gone) -> None:
             pass
 
 
-def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, checkpoint, params) -> bool:
+def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, checkpoint, params, *,
+                    extra=None) -> bool:
     """Record a new population best in <workspace>/best (called by the population-best member).
 
     Returns whether `objective` beat `population_best()` and was recorded. The member writes its
     own files under new names: the copy `best_p<idx>_<it>.pth`, then the record `p<idx>_<it>.yaml`
     naming it (each to a temp name, then renamed), so no member replaces another's file and a
     listed record's copy exists. Then it rebuilds the view `best.yaml` and deletes its own older
-    records and copies (see `_drop_old_best`).
+    records and copies (see `_drop_old_best`). `extra` adds fields to the record and the view
+    (`forced` of `pbt.force_outcome`); it can't replace the others.
     """
     best_dir = os.path.join(workspace_dir, "best")
     os.makedirs(best_dir, exist_ok=True)
@@ -894,6 +897,7 @@ def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, chec
     best_checkpoint = os.path.join(best_dir, f"best_{stem}.pth")
     # a value plain YAML can't hold raises here, before any file is written
     text = yaml.safe_dump({
+        **(extra or {}),
         "schema": SCHEMA, "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
         "true_objective": objective, "params": params,
         "checkpoint": os.path.abspath(best_checkpoint), "source_checkpoint": os.path.abspath(checkpoint),
@@ -941,7 +945,8 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     IsaacGymEnvs takes the last of the whole ranking, where a member that never reported, one
     that can't act on a replacement now, or one 2+ iterations behind that ranks low only by its
     older objective, holds a slot a member that can act needs. Every member that reported stays
-    ranked, counts for the `> max(2, n // 2)` gate and can be the donor.
+    ranked, counts for the `> max(2, n // 2)` gate and can be the donor. `pbt.force_outcome`
+    replaces the rule (`select_forced`), also in a subclass whose `_pbt_iteration` calls this.
 
     Returns (source, reason): None keeps training; `policy_idx` restarts from its own
     checkpoint with mutated parameters; any other index restarts from that member. `details`, a
@@ -950,6 +955,8 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     reported count, the interval's best objective, the drawn `candidate`, its `lead` and both
     thresholds.
     """
+    if cfg.force_outcome:
+        return select_forced(cfg.force_outcome, policy_idx, objectives, order)
     details = {} if details is None else details
     n = cfg.num_policies
     values = {p: UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p] for p in range(n)}
@@ -1001,8 +1008,11 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
 def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, *,
                      details=None) -> tuple[int | None, str]:
     """Band rule: underperformers restart from a random leader, or from themselves without leaders.
-    `details`, a dict, receives the `outcome` ("not_worst", "transfer" or "self_mutation"), the
-    band (`lower`, `upper`) and the `leaders`."""
+    `pbt.force_outcome` replaces it, as in `select_dexpbt`. `details`, a dict, receives the
+    `outcome` ("not_worst", "transfer" or "self_mutation"), the band (`lower`, `upper`) and the
+    `leaders`."""
+    if cfg.force_outcome:
+        return select_forced(cfg.force_outcome, policy_idx, objectives)
     details = {} if details is None else details
     initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
     values = list(initialized.values())
@@ -1027,9 +1037,9 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, 
 
 def select_forced(force_outcome: str, policy_idx: int, objectives: dict[int, float | None],
                   order: list[int] | None = None) -> tuple[int | None, str]:
-    """The source `pbt.force_outcome` names, in place of a rule: this member for "self" (a
-    self-mutation), the best member for "best" (`rank_members`), member k for "donor:k"; None
-    when k has not reported."""
+    """The source `pbt.force_outcome` names, in place of the rule (`select_dexpbt` and
+    `select_threshold` return it): this member for "self" (a self-mutation), the best member for
+    "best" (`rank_members`), member k for "donor:k"; None when k has not reported."""
     initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
     if force_outcome == "self":
         source = policy_idx

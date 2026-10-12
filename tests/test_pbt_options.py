@@ -86,10 +86,20 @@ def up(x, **kwargs):
     return x * 1.5
 
 
+def bounded(config, mutations, bounds, extra_params=None):
+    """validate() of an agent `config` with `mutations` bounded by `bounds`: (cfg, params)."""
+    return validate({"params": {"config": config},
+                     "pbt": {"objective": "x", "mutation": mutations, "mutation_bounds": bounds}}, extra_params)
+
+
 class TestMutationBounds:
 
-    def test_every_value_is_clamped_and_ints_stay_ints(self):
-        bounds = {LR: (1e-4, 5e-4), MINI: (1.5, 6.5), ENT: (0.0, 0.1)}
+    def test_every_value_is_clamped_and_integer_params_stay_ints(self):
+        cfg, values = bounded({"learning_rate": 3e-4, "mini_epochs": 4, "entropy_coef": 0.05},
+                              {LR: "mutate_float", MINI: "mutate_mini_epochs", ENT: "mutate_float"},
+                              {LR: [1e-4, 5e-4], MINI: [1.5, 6.5], ENT: [0.0, 0.1]})
+        bounds = cfg.mutation_bounds
+        assert bounds[MINI] == (2, 6)                               # the integers inside
         # values a mutation left alone are clamped too: a donor's may predate the bounds
         assert mutation.clamp_to_bounds({LR: 1e-2, MINI: 8, ENT: 0.05, "other": 7.0}, bounds) == {
             LR: 5e-4, MINI: 6, ENT: 0.05, "other": 7.0}
@@ -97,9 +107,35 @@ class TestMutationBounds:
         assert clamped == {LR: 1e-4, MINI: 2, ENT: 0.0} and type(clamped[MINI]) is int
         random.seed(0)
         for _ in range(50):
-            out = mutation.clamp_to_bounds(
-                mutate({LR: 3e-4, MINI: 4}, {LR: "mutate_float", MINI: "mutate_mini_epochs"}, 1.0, (1.1, 2.0)), bounds)
+            out = mutation.clamp_to_bounds(mutate(values, cfg.mutation, 1.0, (1.1, 2.0)), bounds)
             assert 1e-4 <= out[LR] <= 5e-4 and 2 <= out[MINI] <= 6 and type(out[MINI]) is int
+
+    def test_a_float_param_written_as_an_int_gets_a_float_bound(self, tmp_path):
+        """rl_games' configs write entropy_coef: 0 and critic_coef: 4 (YAML ints): mutated or not,
+        they are clamped to their float bounds, not to the integers inside (none here)."""
+        critic = CONFIG + "critic_coef"
+        cfg, values = bounded({"entropy_coef": 0, "critic_coef": 4}, {ENT: "mutate_float", critic: "mutate_float"},
+                              {ENT: [1e-4, 1e-2], critic: [0.5, 0.9]})
+        assert values == {ENT: 0, critic: 4}
+        assert mutation.clamp_to_bounds(values, cfg.mutation_bounds) == {ENT: 1e-4, critic: 0.9}
+        random.seed(0)
+        assert mutation.clamp_to_bounds(mutate(values, cfg.mutation, 1.0, (1.1, 2.0)), cfg.mutation_bounds) == {
+            ENT: 1e-4, critic: 0.9}
+        obs = observer(tmp_path, 0, 1, force_outcome="self", mutation_rate=0.0, mutation_bounds={ENT: [1e-4, 1e-2]})
+        obs.pbt_params[ENT] = 0                                     # as validate() reads entropy_coef: 0
+        iterate(obs, Algo(tmp_path), 1, 1.0)
+        assert obs.restart_flag.item() == 1 and obs.new_params[ENT] == 1e-4
+
+    @pytest.mark.parametrize("key, fn", [(MINI, "mutate_mini_epochs"), ("env.episodes", "mutate_up")])
+    def test_an_integer_param_is_clamped_to_the_integers_inside(self, monkeypatch, key, fn):
+        """An int stepped by mutate_mini_epochs or a custom function keeps integer values; bounds
+        without an integer inside raise."""
+        monkeypatch.setitem(MUTATION_FUNCS, "mutate_up", up)
+        cfg, _ = bounded({"mini_epochs": 4}, {key: fn}, {key: [1.5, 6.5]}, {"env.episodes": 4})
+        assert cfg.mutation_bounds[key] == (2, 6)
+        assert type(mutation.clamp_to_bounds({key: 8}, cfg.mutation_bounds)[key]) is int
+        with pytest.raises(ValueError, match="pbt.mutation_bounds"):
+            bounded({"mini_epochs": 4}, {key: fn}, {key: [2.2, 2.8]}, {"env.episodes": 4})
 
     def test_bounds_are_converted(self):
         cfg = PbtCfg(mutation={LR: "mutate_float"}, mutation_bounds={LR: ["1e-5", 1e-3]})
@@ -143,6 +179,15 @@ class TestMutationBounds:
         assert obs.new_params == {LR: PARAMS[LR], ENT: pytest.approx(PARAMS[ENT] * 1.5)}
         assert set(obs.restart_mutated) == {ENT}
 
+    def test_a_donor_value_the_mutation_left_alone_is_clamped(self, tmp_path):
+        donor_dir = os.path.join(tmp_path, "pbt_workspace", "001")
+        os.makedirs(donor_dir)
+        pbt_utils.save_pbt_checkpoint(donor_dir, 3.0, 5, Algo(tmp_path, 5000), {LR: 1e-2, ENT: PARAMS[ENT]})
+        obs = observer(tmp_path, 0, 2, force_outcome="donor:1", mutation_rate=0.0, leader_params_prob=1.0,
+                       mutation_bounds={LR: [1e-4, 5e-4]})
+        iterate(obs, Algo(tmp_path), 5, 1.0)
+        assert obs.restart_source == 1 and obs.new_params[LR] == 5e-4 and obs.restart_mutated == {LR: 5e-4}
+
 
 # ---------------------------------------------------------------------------------------------
 # G15: a forced outcome, for qualifying an integration
@@ -158,6 +203,24 @@ class TestForcedOutcome:
             assert saved_yaml(tmp_path, 0, iteration)["forced"] == "self"
             assert restart_record(tmp_path, 0)["forced"] == "self"
             obs.restart_flag[0] = 0                                 # as if the restarted process went on
+        # the population best's record and the best.yaml view, which users take as the result
+        best_dir = os.path.join(tmp_path, "pbt_workspace", "best")
+        for name in ("p000_000001.yaml", "best.yaml"):
+            with open(os.path.join(best_dir, name), encoding="utf-8") as fobj:
+                assert yaml.safe_load(fobj)["forced"] == "self"
+
+    def test_the_rules_take_the_forced_source(self):
+        """A subclass that replaces _pbt_iteration (DexLab's) selects through select_dexpbt or
+        select_threshold, called positionally: both return the forced source where the rule keeps
+        mid-pack member 0."""
+        objectives = {0: 2.0, 1: 1.0, 2: 3.0}
+        for force, source in (("self", 0), ("best", 2), ("donor:1", 1)):
+            cfg = PbtCfg(num_policies=3, force_outcome=force)
+            assert pbt_utils.select_dexpbt(objectives, 0, 2.0, 2.0, cfg)[0] == source
+            cfg = PbtCfg(num_policies=3, replace_rule="threshold", force_outcome=force)
+            assert pbt_utils.select_threshold(objectives, 0, cfg)[0] == source
+        assert pbt_utils.select_dexpbt(objectives, 0, 2.0, 2.0, PbtCfg(num_policies=3))[0] is None
+        assert pbt_utils.select_threshold(objectives, 0, PbtCfg(num_policies=3, replace_rule="threshold"))[0] is None
 
     def test_a_forced_self_mutation_that_changes_nothing_keeps_training(self, tmp_path, capsys):
         obs = observer(tmp_path, 0, 1, force_outcome="self", mutation_rate=0.0)
@@ -264,7 +327,7 @@ class TestInitialMutation:
         other, _ = fresh_member(tmp_path, launch_seed="7")
         assert other.pbt_params != draws[0][0]
 
-    def test_a_restart_and_a_member_with_checkpoints_keep_their_values(self, tmp_path, monkeypatch):
+    def test_a_restart_and_a_member_with_checkpoints_keep_their_values(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setenv(pbt_utils.RESTART_ENV_VAR, json.dumps({
             "policy_idx": 0, "source_policy": 0, "restart_count": 1, "iteration": 3, "frame": 3005,
             "checkpoint": "/ws/000/restart.pth", "mutated": {}}))
@@ -272,9 +335,17 @@ class TestInitialMutation:
         obs, params = fresh_member(tmp_path)
         assert obs.restart is not None and config_values(params) == CONFIGURED
         pbt_utils._reset_restart_info_cache()
-        report(tmp_path, 0, 3, 1.0)                                 # a relaunch: the member has saved before
-        obs, params = fresh_member(tmp_path)
+        capsys.readouterr()
+        # a relaunch, or an earlier run's files that reuse_workspace lets a fresh launch delete: rank 0 says
+        # why the values stay as configured
+        report(tmp_path, 0, 3, 1.0)
+        obs, params = fresh_member(tmp_path, reuse_workspace=True)
         assert config_values(params) == CONFIGURED and obs.pbt_params[LR] == PARAMS[LR]
+        assert "no initial mutation" in capsys.readouterr().out
+
+    def test_the_switch_is_true_or_false(self):
+        with pytest.raises(ValueError, match="pbt.initial_mutation"):
+            PbtCfg(initial_mutation="false")
 
     def test_a_draw_that_changes_nothing_is_drawn_again(self, tmp_path, monkeypatch, capsys):
         calls = []
@@ -373,6 +444,13 @@ class TestDroppedArguments:
         command = member(restart_drop_args={"--reset-env-state": 0})._restart_command({LR: 1e-4}, "/r.pth")
         assert "--reset-env-state" not in command and "task=Lift" in command
 
+    def test_the_legacy_path_does_not_append_a_dropped_flag_again(self, monkeypatch):
+        """It appends only the args_cli flags the launch command lacks: a dropped one it had stays out."""
+        monkeypatch.setattr(sys, "argv", ["train.py", "--video", "task=Lift"])
+        args_cli = types.SimpleNamespace(video=True, video_length=200, video_interval=2000)
+        command = member(args_cli=args_cli, restart_drop_args={"--video": 0})._restart_command({LR: 1e-4}, "/r.pth")
+        assert "--video" not in command and "task=Lift" in command
+
     def test_specs_are_converted(self):
         cfg = PbtCfg(restart_drop_args={"--x": "2", "--y": "?", "--z": 0.0})
         assert cfg.restart_drop_args == {"--x": 2, "--y": "?", "--z": 0}
@@ -459,3 +537,9 @@ def test_the_legacy_restart_seed(monkeypatch, reseed, cli_seed, config_seed, exp
     obs = member(args_cli=types.SimpleNamespace(seed=cli_seed), seed=config_seed, reseed_on_restart=reseed)
     command = obs._restart_command({LR: 1e-4}, "/ws/000/restart.pth")
     assert [arg for arg in command if arg.startswith("--seed")] == ([] if expected is None else [f"--seed={expected}"])
+
+
+def test_a_launch_argv_without_a_seed_restarts_without_one():
+    """Only the legacy path derives a seed from the config seed: a launch argv is re-run as given."""
+    command = member(launch_argv=["train.py", "task=Lift"], seed=42)._restart_command({LR: 1e-4}, "/ws/000/restart.pth")
+    assert not [arg for arg in command if arg.startswith("--seed")]
