@@ -20,6 +20,7 @@ from tests.test_pbt_records import (ENT, LR, PARAMS, Algo, ExecCalled, decide, e
                                     report, restore_environ)
 
 CONFIG = "agent.params.config."
+MINI_EPOCHS = CONFIG + "mini_epochs"
 CLOSE = {0: 1.02, 1: 1.01, 2: 1.005}        # member 3 at 1.0: a lead too small for a donor, a self-mutation
 
 
@@ -41,7 +42,7 @@ def member(train_dir, mutation=None, extra_params=None, **pbt):
     section = dict({"policy_idx": 3, "num_policies": 4, "interval_steps": 1000, "objective": "episode.success",
                     "objective_window": 1, "mutation_rate": 1.0, "self_mutation": "in_process",
                     "mutation": mutation or {LR: "mutate_float", ENT: "mutate_float"}}, **pbt)
-    config = {"device": "cpu", "learning_rate": PARAMS[LR], "entropy_coef": PARAMS[ENT],
+    config = {"device": "cpu", "learning_rate": PARAMS[LR], "entropy_coef": PARAMS[ENT], "mini_epochs": 2,
               "central_value_config": {"learning_rate": 1e-3}}
     return PbtAlgoObserver({"pbt": section, "params": {"seed": 42, "config": config}},
                            args_cli=types.SimpleNamespace(), launch_argv=["train.py", "--seed", "42"],
@@ -87,9 +88,23 @@ def test_the_grace_window_starts_over(tmp_path):
     assert len(algo.set_calls) == 2
 
 
+def test_rank_0_keeps_the_ints_it_drew(tmp_path):
+    """The values travel as floats; rank 0 keeps those its decision drew: its yamls and restart
+    commands hand mini_epochs to learners, whose range(mini_epochs) takes no float."""
+    for idx, objective in CLOSE.items():
+        report(tmp_path, idx, 5, objective)
+    obs, algo = member(tmp_path, mutation={MINI_EPOCHS: "mutate_mini_epochs"}, start_after=2000), Learner(tmp_path)
+    decide(obs, algo, 5, 1.0)
+    decide(obs, algo, 6, 1.0)                                   # the save after the change
+    with open(os.path.join(member_dir(tmp_path), "000006.yaml"), encoding="utf-8") as fobj:
+        saved = yaml.safe_load(fobj)["params"][MINI_EPOCHS]
+    assert saved in (1, 3) and type(saved) is type(obs.pbt_params[MINI_EPOCHS]) is int
+
+
 @pytest.mark.parametrize("key, extra_params", [
-    ("env.rewards.success.weight", {"env.rewards.success.weight": 2.0}),     # applies when the env is built
-    (CONFIG + "central_value_config.learning_rate", None),                  # ... when the critic is
+    # applies when the env is built (past len(CONFIG) the key reads 'gamma', a set_param name)
+    ("env.rewards.success.gamma", {"env.rewards.success.gamma": 0.5}),
+    (CONFIG + "central_value_config.learning_rate", None),                  # applies when the critic is built
 ])
 def test_a_value_the_running_learner_cannot_take_restarts(tmp_path, execs, capsys, key, extra_params):
     for idx, objective in CLOSE.items():
@@ -209,7 +224,8 @@ def test_a_restart_execs_in_its_decision_epoch_before_the_update(tmp_path, execs
 def _ddp_member(rank, world_size, port, workdir):
     """One rank of a 2-rank CartPole member (gloo, DDP on CPU, a different env seed per rank; 32
     frames per epoch): a self-mutation of grad_norm, mini_epochs and learning_rate (adaptive) at
-    epoch 5 applied in process, then one that restarts. Results: <workdir>/<scenario>_rank<r>.pt."""
+    epoch 5 applied in process; two at epochs 3 and 5, the first from the member's own yaml
+    (`twice`); then one that restarts. Results: <workdir>/<scenario>_rank<r>.pt."""
     os.environ.update(RANK=str(rank), LOCAL_RANK=str(rank), WORLD_SIZE=str(world_size))
     import torch.distributed as dist
     dist.init_process_group("gloo", rank=rank, world_size=world_size, init_method=f"tcp://127.0.0.1:{port}",
@@ -217,11 +233,13 @@ def _ddp_member(rank, world_size, port, workdir):
     dist.init_process_group = lambda *args, **kwargs: None   # the learner asks for NCCL: the group is up
     torch.cuda.set_device = lambda *args: None                # setup_multi_gpu pins the rank's GPU
     exit_process = os._exit
-    for scenario in ("in_process", "restart"):
+    for scenario, pbt in (("in_process", {"start_after": 96}),
+                          ("twice", {"start_after": 0, "leader_params_prob": 1.0}),
+                          ("restart", {"start_after": 96, "self_mutation": "restart"})):   # ends the process
         observer, agent = cartpole_member(
             os.path.join(workdir, scenario), ["grad_norm", "mini_epochs", "learning_rate"], distributed=True,
-            pbt={"interval_steps": 64, "start_after": 96, "self_mutation": scenario}, multi_gpu=True,
-            full_experiment_name=f"{scenario}_{rank}", **SCHEDULES["adaptive"])
+            pbt=dict(pbt, interval_steps=64), multi_gpu=True, full_experiment_name=f"{scenario}_{rank}",
+            **SCHEDULES["adaptive"])
         updates, resets = [], []
         train_actor_critic, reset = agent.train_actor_critic, observer._reset_objective_window
         agent.train_actor_critic = lambda batch: updates.append(agent.epoch_num) or train_actor_critic(batch)
@@ -250,6 +268,13 @@ def test_two_ranks_apply_an_in_process_self_mutation_alike_and_restart_together(
     assert r0["params"] == r1["params"] == {CONFIG + "grad_norm": grad_norm, CONFIG + "mini_epochs": mini_epochs,
                                             CONFIG + "learning_rate": learning_rate}
     assert r0["resets"] == r1["resets"] == [5]                  # every rank's objective window starts over
+    # after the first change rank 0's params are in its yaml's key order, rank 1's in the config's: the
+    # second change's values still reach the same keys on both ranks
+    t0, t1 = (torch.load(tmp_path / f"twice_rank{rank}.pt", weights_only=False) for rank in (0, 1))
+    assert outcomes(tmp_path / "twice") == ["in_process", "in_process", "ending"]
+    assert list(t0["params"]) != list(t1["params"])
+    assert all(torch.equal(t0["model"][key], t1["model"][key]) for key in t0["model"])
+    assert t0["lrs"] == t1["lrs"] and t0["values"] == t1["values"] and t0["params"] == t1["params"]
     # a restart decision takes both ranks down in its epoch, before the update
     e0, e1 = (torch.load(tmp_path / f"restart_rank{rank}.pt", weights_only=False) for rank in (0, 1))
     assert (e0["epoch"], e0["frame"]) == (e1["epoch"], e1["frame"]) == (5, 128)

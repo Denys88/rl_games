@@ -592,9 +592,10 @@ class PbtAlgoObserver(AlgoObserver):
     def _apply_in_process(self, changed):
         """Every rank: set the changed `agent.params.config` values of an in-process self-mutation
         on the learner, in key order, with `algo.set_param` (rank-symmetric: every rank changes
-        the same values), take them as this member's params (rank 0's `_pbt_iteration` already
-        has), and start the objective window over: the next iteration ranks the member on
-        episodes played with them."""
+        the same values), take them as this member's params, and start the objective window
+        over: the next iteration ranks the member on episodes played with them. Rank 0 keeps the
+        values its `_pbt_iteration` took: the broadcast carries floats, and rank 0's yamls and
+        restart commands need an integer param such as mini_epochs as an int."""
         for key in sorted(changed):
             self.algo.set_param(key[len(_CONFIG_PREFIX):], changed[key])
         if self.distributed_args.rank != 0:
