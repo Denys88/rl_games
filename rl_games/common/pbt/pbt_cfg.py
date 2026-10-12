@@ -35,16 +35,19 @@ _IGE_KEYS = {
 @dataclass
 class PbtCfg:
     """
-    Population-Based Training (PBT) configuration.
+    Population-Based Training (PBT) configuration; docs/PBT.md has the full reference.
 
     Two replacement rules are available (`replace_rule`):
       - "dexpbt" (default): rank the population; a member in the worst `replace_fraction_worst`
-        restarts from a random member of the best `replace_fraction_best` when the gap is large
-        enough, otherwise it restarts from itself with mutated parameters (DexPBT), unless the
-        mutation changed no value.
+        of the members that can be replaced now restarts from a random member of the best
+        `replace_fraction_best` when the gap is large enough, otherwise it restarts from itself
+        with mutated parameters (DexPBT), unless the mutation changed no value.
       - "threshold": underperformers (score < min(mean - threshold_std*std, mean - threshold_abs))
         restart from a random leader (score > max(mean + threshold_std*std, mean + threshold_abs)).
     On replacement, selected hyperparameters are mutated by a random factor in `change_range`.
+
+    Frames (`interval_steps`, `start_after`, `initial_delay`) are the learner's `frame`: agent
+    steps summed over the member's ranks.
 
     Numeric fields are converted by their declared type and range-checked at construction, so
     every rank fails the same way at init: YAML loaders deliver `2e7` and `1e-3` as strings and
@@ -67,10 +70,11 @@ class PbtCfg:
     scripts may use it to place the run (Isaac Lab-style scripts put their log root under it)."""
 
     workspace: str = "pbt_workspace"
-    """Subfolder under the training dir to isolate this PBT run."""
+    """The population's workspace directory, `<train_dir>/<workspace>`: every member of a
+    population runs with the same train_dir and workspace."""
 
     objective: str = ""
-    """Dotted address of the scalar objective inside env infos — required (`validate()` and
+    """Dotted address of the objective inside env infos — required (`validate()` and
     the observer raise without it); there is no portable default (info layouts differ per backend). Examples:
     'episode.Episode_Reward/success' (Isaac Lab-style nested infos), 'scores' (flat dicts).
     A per-env tensor is read at the finished envs; a scalar is taken as the mean over the
@@ -82,19 +86,22 @@ class PbtCfg:
 
     objective_window: int = 0
     """Number of most recent finished episodes (per rank) averaged into the objective.
-    0 = the rank's number of environments (DexPBT)."""
+    0 = the rank's number of environments: the size of DexPBT's estimator, which averages each
+    env's latest episode instead (envs weigh equally there, episodes here)."""
 
     interval_steps: int = 100_000
-    """Environment steps between PBT iterations (save, compare, replace/mutate); > 0."""
+    """Frames between PBT iterations (save, compare, replace/mutate); > 0."""
 
     start_after: int = 0
-    """Environment steps a member trains after each (re)start, or a self-mutation applied in
-    process, before it can be replaced. Scores right after a restart still mostly measure the
-    source policy, not the mutation. No replacement is decided either with fewer than
-    max(start_after, interval_steps) steps left before max_epochs/max_frames end the run."""
+    """Frames a member trains after each process start (a fresh launch, a resume or a restart),
+    or a self-mutation applied in process, before it can be replaced. Scores right after a
+    restart still mostly measure the source policy, not the mutation. No replacement is decided
+    either with fewer than max(start_after, interval_steps) frames left before max_epochs or
+    max_frames end the run."""
 
     initial_delay: int = 0
-    """Environment steps from the start of training before any member can be replaced."""
+    """Frames from the start of training (the member's frame, which a restart keeps) before the
+    member can be replaced."""
 
     replace_rule: str = ""
     """'dexpbt' (rank-based) or 'threshold' (mean ± band), see the class docstring. Empty:
@@ -131,7 +138,8 @@ class PbtCfg:
     """Per-parameter probability of mutation when a policy is replaced, in [0, 1]."""
 
     change_range: tuple[float, float] = (1.1, 2.0)
-    """Lower and upper bound of the multiplicative change factor: two finite numbers > 0 (sorted)."""
+    """Lower and upper bound of the multiplicative change factor: two finite numbers > 0 (sorted).
+    mutate_discount ignores it (it steps 1 - x by a factor in [1.1, 1.2])."""
 
     mutation: dict[str, str] = field(default_factory=dict)
     """Which parameters to mutate on restart, mapping flattened param address to mutation function:
@@ -140,7 +148,8 @@ class PbtCfg:
             "agent.params.config.grad_norm": "mutate_float",
             "agent.params.config.gamma": "mutate_discount",
         }
-    Every key must resolve to a config value (or an `extra_params` entry of the observer).
+    Must not be empty. Every key must resolve to a config value (or an `extra_params` entry of
+    the observer).
     """
 
     launcher: str = ""
@@ -153,10 +162,12 @@ class PbtCfg:
     """CLI name of the train script's checkpoint argument; restarts pass `<name>=<path>`."""
 
     reseed_on_restart: bool = True
-    """Give every restart a new seed derived from (seed, policy_idx, restart count) on its
-    command line (`seed_arg`), so a member does not replay its initial random streams after
-    each replacement. A seed of -1 (random per launch) is kept as is. PBT's own draws (donor,
-    mutations) come from a private generator either way."""
+    """Replace the value of `seed_arg` on each restart's command line with a seed derived from
+    (that seed, policy_idx, restart count), so a member does not replay its initial random
+    streams after each replacement. Only when the command has the argument: without it every
+    restart seeds as the launch did, and a restart without launch_argv always passes --seed (-1
+    when args_cli.seed is None). A seed of -1 (random per launch) is kept as is. PBT's own draws
+    (donor, mutations) come from a private generator either way."""
 
     seed_arg: str = "--seed"
     """CLI name of the train script's seed argument (used by `reseed_on_restart`)."""
