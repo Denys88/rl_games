@@ -10,6 +10,7 @@ import random
 import re
 import sys
 import threading
+import time
 import traceback
 from collections import deque
 from typing import NamedTuple
@@ -106,6 +107,10 @@ class PbtAlgoObserver(AlgoObserver):
     set, the script path made absolute, and `hydra.run.dir` pinned to the run dir inside a
     Hydra job that changed into it. The restart runs from the launch directory (Hydra's
     original cwd inside a Hydra job), see `pbt_utils.launch_dirs`.
+
+    The restarted process receives the decision as `pbt_utils.restart_info()`; the member's
+    `restart.yaml`, written at the decision next to `restart.pth`, records it with every new
+    param value, the seed and the epoch (`_restart_record`).
     """
 
     def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None):
@@ -237,7 +242,9 @@ class PbtAlgoObserver(AlgoObserver):
             config["pbt_restart"] = True
 
     def after_init(self, algo):
-        """Keep the algo on every rank; rank 0 creates this policy's workspace folder.
+        """Keep the algo on every rank; rank 0 creates this policy's workspace folder. In a PBT
+        restart rank 0 notices when the learner's `experiment_name` differs from the one the
+        member's previous process wrote into (the payload's): a new run directory.
 
         Args:
             algo: rl_games algorithm object (provides writer, train_dir, frame counter, etc.).
@@ -260,6 +267,14 @@ class PbtAlgoObserver(AlgoObserver):
         self._failed_envs = np.zeros(num_envs, dtype=bool)
         if self.distributed_args.rank != 0:
             return
+
+        previous = (getattr(self, "restart", None) or {}).get("experiment_name")
+        current = getattr(algo, "experiment_name", None)
+        if previous and current and previous != current:
+            print(f"Policy {self.cfg.policy_idx}: NOTICE this restarted process writes into run directory "
+                  f"'{current}', the member's previous process into '{previous}': each launch gets a new experiment "
+                  f"name (a timestamp), so the member's summaries and nn/ checkpoints are split across run "
+                  f"directories; give each member a fixed full_experiment_name on every launch")
 
         self.root_dir = algo.train_dir
         self.ws_dir = os.path.join(self.root_dir, self.cfg.workspace)
@@ -363,7 +378,8 @@ class PbtAlgoObserver(AlgoObserver):
                population, logs, and applies the replacement rule (`_pbt_iteration`), with the
                global `random` module swapped to the member's private generator (`_draw_rng`).
                Until then the iteration is retried on every step without advancing `pbt_it`
-               (see `_wait_for_objective`).
+               (see `_wait_for_objective`). When the iteration decided a restart (the flag is
+               set), rank 0 writes the member's restart.yaml (`_save_restart_record`).
         """
         distributed = self._distributed()
         if distributed:
@@ -412,6 +428,9 @@ class PbtAlgoObserver(AlgoObserver):
         # also in a subclass that replaces _pbt_iteration and calls `random` itself
         with pbt_utils.swap_random_state(self._draw_rng()):
             self._pbt_iteration(pooled.total / pooled.count, best_in_iteration, frame)
+        # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
+        if self.restart_flag.cpu().item() == 1:
+            self._save_restart_record()
 
     def _draw_rng(self):
         """The generator of PBT's draws, created at the first iteration from the config seed, the
@@ -473,13 +492,15 @@ class PbtAlgoObserver(AlgoObserver):
         unless `pbt.reuse_workspace` is set; this step's only collective (the restart flag
         broadcast) is behind it, and torchrun then stops the other ranks. Otherwise this member's
         files above its current iteration are deleted: a relaunch from an older checkpoint, or
-        reused leftovers.
+        reused leftovers. So is a restart.yaml of a decision above the current iteration, unless
+        this process is a PBT restart (the record is then its own).
         """
         directory = getattr(self, "curr_policy_dir", None)
         if directory is None or not os.path.isdir(directory):
             return
         saved = pbt_utils.saved_iterations(directory)
-        fresh = getattr(self, "restart", None) is None and frame == 0
+        restart = getattr(self, "restart", None)
+        fresh = restart is None and frame == 0
         if fresh and saved and not getattr(self.cfg, "reuse_workspace", False):
             raise RuntimeError(
                 f"Policy {self.cfg.policy_idx}: {directory} holds PBT checkpoints of an earlier run (iterations "
@@ -492,6 +513,11 @@ class PbtAlgoObserver(AlgoObserver):
             print(f"Policy {self.cfg.policy_idx}: removed iterations {removed[0]}..{removed[-1]} ({len(removed)}) "
                   f"above iteration {self.pbt_it} from {directory}: an earlier run left them, and peers would read "
                   f"them as this member's current state")
+        decided = pbt_utils.remove_restart_record_above(directory, self.pbt_it) if restart is None else None
+        if decided is not None:
+            print(f"Policy {self.cfg.policy_idx}: removed {pbt_utils.RESTART_RECORD} of a restart decided at "
+                  f"iteration {decided}, above iteration {self.pbt_it}, from {directory}: this process does not "
+                  f"continue that run")
 
     def _pbt_iteration(self, score, best_in_iteration, frame):
         """One PBT iteration on rank 0: save this member's checkpoint, load the population's, log,
@@ -504,6 +530,7 @@ class PbtAlgoObserver(AlgoObserver):
         that changes no value keeps training; one with changes goes to `_apply_self_mutation`
         first, and restarts unless that applied it. A restart marks this iteration's yaml not
         replaceable once restart.pth is written: peers read it until the restarted process saves.
+        The decision is recorded in restart.yaml by `after_steps` once this returns.
         """
         cfg = self.cfg
         frame_left = (self.pbt_it + 1) * cfg.interval_steps - frame
@@ -745,33 +772,49 @@ class PbtAlgoObserver(AlgoObserver):
         """The executable used to re-exec training: `pbt.launcher` from config, else sys.executable."""
         return self.cfg.launcher or sys.executable
 
+    def _restart_script_args(self, new_params, restart_from_checkpoint):
+        """The restart's script arguments (script path first) before the seed is replaced: the
+        launch argv, or on the legacy path `sys.argv` and `args_cli`'s flags, with the checkpoint
+        argument and the new params."""
+        cfg = self.cfg
+        if self.launch_argv is not None:
+            return pbt_utils.build_launch_restart_args(
+                self.launch_argv, new_params, restart_from_checkpoint, cfg.checkpoint_arg)
+        modified_args = build_restart_args(sys.argv, new_params, restart_from_checkpoint,
+                                           self.wandb_args, self.rendering_args, cfg.checkpoint_arg)
+        script_args = [modified_args[0]] + self.env_args.get_args_list() + modified_args[1:]
+        if self.distributed_args.distributed:
+            script_args.append("--distributed")
+        return script_args
+
+    def _restart_seed(self, script_args):
+        """The seed the restart command passes as `seed_arg` in place of the one in `script_args`
+        (`_restart_script_args`): derived from it, the member and the restart count
+        (`pbt_utils.derive_seed`; -1 stays -1). None when the command keeps its seed:
+        `reseed_on_restart` off, no `seed_arg` in it, or a value that is not an integer."""
+        cfg = self.cfg
+        base = pbt_utils.get_cli_arg(script_args, cfg.seed_arg) if cfg.reseed_on_restart and cfg.seed_arg else None
+        if base is None:
+            return None
+        try:
+            return pbt_utils.derive_seed(int(base), cfg.policy_idx, self.restart_count + 1)
+        except ValueError:
+            return None
+
     def _restart_command(self, new_params, restart_from_checkpoint):
         """Full re-exec command: launcher, optional torch.distributed.run prefix, script args.
 
-        The script path is made absolute (see `pbt_utils.absolute_script_path`), and inside a
-        Hydra job that changed into its run dir the command pins `hydra.run.dir` to it.
+        The seed argument is replaced by `_restart_seed`'s, the script path is made absolute (see
+        `pbt_utils.absolute_script_path`), and inside a Hydra job that changed into its run dir
+        the command pins `hydra.run.dir` to it.
         """
         cfg = self.cfg
         new_params = {param: pbt_utils.plain_number(value) for param, value in new_params.items()}
-        if self.launch_argv is not None:
-            script_args = pbt_utils.build_launch_restart_args(
-                self.launch_argv, new_params, restart_from_checkpoint, cfg.checkpoint_arg)
-        else:
-            modified_args = build_restart_args(sys.argv, new_params, restart_from_checkpoint,
-                                               self.wandb_args, self.rendering_args, cfg.checkpoint_arg)
-            script_args = [modified_args[0]] + self.env_args.get_args_list() + modified_args[1:]
-            if self.distributed_args.distributed:
-                script_args.append("--distributed")
-
-        base = pbt_utils.get_cli_arg(script_args, cfg.seed_arg) if cfg.reseed_on_restart and cfg.seed_arg else None
-        if base is not None:
-            try:
-                seed = pbt_utils.derive_seed(int(base), cfg.policy_idx, self.restart_count + 1)
-            except ValueError:
-                seed = None
-            if seed is not None:
-                script_args = [script_args[0]] + pbt_utils.remove_cli_arg(script_args[1:], cfg.seed_arg)
-                script_args.append(f"{cfg.seed_arg}={seed}")
+        script_args = self._restart_script_args(new_params, restart_from_checkpoint)
+        seed = self._restart_seed(script_args)
+        if seed is not None:
+            script_args = [script_args[0]] + pbt_utils.remove_cli_arg(script_args[1:], cfg.seed_arg)
+            script_args.append(f"{cfg.seed_arg}={seed}")
 
         script_args = pbt_utils.absolute_script_path(script_args, self._launch_cwd())
         hydra_run_dir = getattr(self, "hydra_run_dir", None)
@@ -850,13 +893,60 @@ class PbtAlgoObserver(AlgoObserver):
         print(f"Policy {self.cfg.policy_idx}: WARNING wandb run {run_id} {failure}; the restarted process "
               f"logs to a new run {new_id}", flush=True)
 
+    def _restart_payload(self, new_params, restart_from_checkpoint):
+        """The restart payload the child reads as `pbt_utils.restart_info()` (see there): the
+        decision's attributes set by `_pbt_iteration` (`restart_source`, `restart_frame`,
+        `restart_mutated`), defaulting to a restart of this member from `restart_from_checkpoint`
+        with `new_params` mutated at the current frame."""
+        source = getattr(self, "restart_source", self.cfg.policy_idx)
+        return {
+            "schema": pbt_utils.RESTART_SCHEMA,
+            "kind": pbt_utils.restart_kind(self.cfg.policy_idx, source),
+            "policy_idx": self.cfg.policy_idx,
+            "source_policy": source,
+            "restart_count": self.restart_count + 1,
+            "iteration": self.pbt_it,
+            "frame": getattr(self, "restart_frame", int(self.algo.frame)),
+            "checkpoint": restart_from_checkpoint,
+            "mutated": getattr(self, "restart_mutated", new_params),
+            "experiment_name": getattr(self.algo, "experiment_name", None),
+        }
+
+    def _restart_record(self):
+        """The member's restart.yaml for the decision `_pbt_iteration` just took: the restart
+        payload, the last completed `epoch` (restart.pth's: the decision runs in after_steps,
+        before the epoch's update), every new param value (`params`), the `seed` the restart
+        command passes (`_restart_seed`; None when it keeps its own) and the wall-clock `time`
+        (seconds since the epoch). Plain JSON types, as the child reads the payload."""
+        new_params = {param: pbt_utils.plain_number(value) for param, value in self.new_params.items()}
+        checkpoint = self.restart_from_checkpoint
+        record = dict(self._restart_payload(new_params, checkpoint),
+                      epoch=int(self.algo.epoch_num) - 1, params=new_params,
+                      seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)), time=time.time())
+        return json.loads(json.dumps(record, default=pbt_utils.json_default))
+
+    def _save_restart_record(self):
+        """Rank 0, at a restart decision (restart.pth written, the flag set): write the member's
+        restart.yaml (`pbt_utils.write_restart_record`). Nothing reads it yet; it tells what the
+        restart was when its process is gone. A record that can't be written doesn't stop the
+        restart; an older one is removed then, as it would describe another restart.pth."""
+        try:
+            pbt_utils.write_restart_record(self.curr_policy_dir, self._restart_record())
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not write {pbt_utils.RESTART_RECORD}: {exc!r}")
+            try:
+                os.remove(os.path.join(self.curr_policy_dir, pbt_utils.RESTART_RECORD))
+            except OSError:
+                pass
+
     def _restart_with_new_params(self, new_params, restart_from_checkpoint):
         """Re-exec the current process with the restart command and the transfer metadata.
 
         Notes:
             - The child reads the metadata via `pbt_utils.restart_info()` (env var
-              `RL_GAMES_PBT_RESTART`); rl_games uses it to mark the restart (`pbt_restart`:
-              the checkpoint's sigma is kept), and environments can use it in `set_env_state`.
+              `RL_GAMES_PBT_RESTART`, `_restart_payload`); rl_games uses it to mark the restart
+              (`pbt_restart`: the checkpoint's sigma is kept), and environments can use it in
+              `set_env_state`.
             - An open wandb run is finished first (see `_finish_wandb`).
             - Distributed members restart under torch.distributed.run with a standalone rendezvous.
             - The command runs from the launch directory (`launch_cwd`).
@@ -864,15 +954,8 @@ class PbtAlgoObserver(AlgoObserver):
         print(f"previous command line args: {self.launch_argv if self.launch_argv is not None else sys.argv}")
         command = self._restart_command(new_params, restart_from_checkpoint)
 
-        os.environ[pbt_utils.RESTART_ENV_VAR] = json.dumps({
-            "policy_idx": self.cfg.policy_idx,
-            "source_policy": getattr(self, "restart_source", self.cfg.policy_idx),
-            "restart_count": self.restart_count + 1,
-            "iteration": self.pbt_it,
-            "frame": getattr(self, "restart_frame", int(self.algo.frame)),
-            "checkpoint": restart_from_checkpoint,
-            "mutated": getattr(self, "restart_mutated", new_params),
-        }, default=pbt_utils.json_default)
+        os.environ[pbt_utils.RESTART_ENV_VAR] = json.dumps(self._restart_payload(new_params, restart_from_checkpoint),
+                                                           default=pbt_utils.json_default)
 
         self.algo.writer.flush()
         self.algo.writer.close()
