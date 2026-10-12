@@ -54,8 +54,11 @@ python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
 (about 30 s), with forced objectives (`--fake-objective`): member 2 always ranks last, alternately
 far behind (a transfer from member 0) and close behind (a self-mutation). It checks the restarts
 (same process, restart info, command, checkpoint, frame and epoch counters), that every restarted
-process trains with its new values, that restarts draw different mutations, and that no secret
-from the environment reaches a log:
+process trains with its new values, that restarts draw different mutations, that no member logs a
+failure it trained on (an exception the observer caught), that member 0 holds the population best,
+and that no secret from the environment reaches a log. A single LSTM member with the
+qualification's settings also runs PBT iterations scored by the default objective, the episode
+return:
 
 ```bash
 python -m pytest tests/test_pbt_e2e.py
@@ -72,7 +75,8 @@ bash examples/pbt/run_nccl_qualification.sh --lstm              # LSTM policies
 ```
 
 Each run starts 3 members (`--members`) of 2 ranks (`--nproc`), rank r of every member on the r-th
-GPU of `CUDA_VISIBLE_DEVICES` (default 0,1), on the dexpbt rule with mutation_rate 0.5,
+GPU of `CUDA_VISIBLE_DEVICES` (default the first `--nproc` GPUs: `--nproc 4` on a node with 4 or
+more takes GPUs 0-3), on the dexpbt rule with mutation_rate 0.5, the adaptive LR schedule,
 torch_compile on and the input and value normalizers on. The last member restarts at nearly every
 PBT iteration, alternating transfers and self-mutations. Every rank of every process reports hashes
 of its model, normalizers, optimizer and loss scaler at its first env step, after the restore and the
@@ -80,3 +84,10 @@ broadcast of the weights; `check_qualification.py` then checks that the ranks of
 that every restart restored `restart.pth` (the model, and the fp16 loss scale), that every rank ended
 normally, and prints PASS or the failures. Logs and runs go to `--out`; `--dry-run` prints the
 commands.
+
+The adaptive LR schedule is the one Isaac Lab's and DexLab's PBT configs use, and the one where the
+ranks can disagree: only rank 0 runs the scheduler (the other ranks have none and take its LR),
+while a restart restores on every rank the checkpoint's adapted LR, scaled by the restart's
+`learning_rate` mutation. The checker compares the learning rate, the optimizer's LR and its state
+hash across ranks. `--lr-schedule linear` qualifies the linear schedule the same way;
+`--lr-schedule none` (a constant LR) can't show such a disagreement.

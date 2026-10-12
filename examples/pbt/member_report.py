@@ -94,6 +94,9 @@ def start_report(observer, *, seed, checkpoint, launch_argv) -> dict:
         "pid": os.getpid(), "rl_games": os.path.dirname(os.path.abspath(rl_games.__file__)),
         "argv": list(launch_argv), "restart": restart_info(), "restart_count": observer.restart_count,
         "seed": seed, "frame": int(algo.frame), "epoch": int(algo.epoch_num), "rnn": bool(algo.is_rnn),
+        # the configured LR schedule, the same on every rank, which the restore decides on: multi-GPU
+        # ranks other than 0 run with lr_schedule None, and rank 0's scheduler sets their LR
+        "lr_schedule": getattr(algo, "_configured_lr_schedule", algo.config.get("lr_schedule")),
         "params": dict(observer.pbt_params), "mutation": dict(observer.cfg.mutation),
         "config": {key: algo.config.get(key) for key in EFFECTIVE},
         "effective": effective,
@@ -118,20 +121,29 @@ def _plain(value):
 
 
 def emit(report) -> None:
-    """Print `report` as one line. The ranks of a member share its log: the line and its newline
-    go out in one write, so another rank's line can't land between them (print writes twice)."""
-    sys.stdout.write(PREFIX + json.dumps(report, sort_keys=True, default=_plain) + "\n")
+    """Print `report` as a line of its own: one write, starting with a newline. The ranks of a
+    member share its log file, and print() writes a line's text and its newline apart (torchrun
+    runs the workers unbuffered): without that newline, a report written in between would continue
+    another rank's line. Other writes to the file don't split the report's one write."""
+    sys.stdout.write("\n" + PREFIX + json.dumps(report, sort_keys=True, default=_plain) + "\n")
     sys.stdout.flush()
 
 
 def read_reports(lines) -> tuple[list[dict], int]:
-    """(reports, lines that start like a report but don't parse) in `lines`."""
+    """(reports, malformed) in `lines`. A report is the JSON object after `PREFIX` to the end of
+    its line, wherever the prefix starts (a log written without `emit`'s leading newline); a line
+    holding the prefix without one counts as malformed."""
     reports, bad = [], 0
     for line in lines:
-        if not line.startswith(PREFIX):
+        start = line.find(PREFIX)
+        if start < 0:
             continue
         try:
-            reports.append(json.loads(line[len(PREFIX):]))
+            report = json.loads(line[start + len(PREFIX):])
         except json.JSONDecodeError:
+            report = None
+        if isinstance(report, dict):
+            reports.append(report)
+        else:
             bad += 1
     return reports, bad

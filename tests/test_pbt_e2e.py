@@ -16,7 +16,11 @@ at its first env step (restart info, counters, the hyperparameters in effect, st
 what its checkpoint holds) and one at its normal exit.
 """
 
+import contextlib
+import importlib.util
+import io
 import json
+import math
 import os
 import random
 import re
@@ -70,8 +74,19 @@ def member_env():
     return env
 
 
-def read_reports(text):
-    return [json.loads(line[len(PREFIX):]) for line in text.splitlines() if line.startswith(PREFIX)]
+@pytest.fixture(scope="module")
+def member_report():
+    """examples/pbt/member_report.py: writes the reports, and reads them for the checker."""
+    spec = importlib.util.spec_from_file_location("member_report", os.path.join(EXAMPLE, "member_report.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# failures the observer logs and trains on, without a traceback: its workspace I/O (a checkpoint
+# save or load, the population best, restart.pth, the not-replaceable mark, restart.yaml) and the
+# return to the launch directory
+FAILURE_MARKERS = (": exception ", "WARNING could not", "WARNING cannot")
 
 
 class Population(NamedTuple):
@@ -80,19 +95,20 @@ class Population(NamedTuple):
     logs: dict          # member -> log text
     returncodes: dict   # member -> exit code of its last process
     reports: dict       # member -> PBT_MEMBER reports in log order
+    malformed: dict     # member -> PBT_MEMBER lines that don't parse
 
 
 def wait_for_report(path, proc, deadline):
     """Until the member logging to `path` reported its first env step, or ended."""
     while time.monotonic() < deadline and proc.poll() is None:
         with open(path) as f:
-            if any(line.startswith(PREFIX) for line in f):
+            if any(PREFIX in line for line in f):
                 return
         time.sleep(0.1)
 
 
 @pytest.fixture(scope="module")
-def population(tmp_path_factory):
+def population(tmp_path_factory, member_report):
     root = tmp_path_factory.mktemp("pbt_e2e")
     train_dir, log_dir = root / "runs", root / "logs"
     log_dir.mkdir()
@@ -124,8 +140,10 @@ def population(tmp_path_factory):
                 proc.wait()
     log_paths = {idx: str(log_dir / f"member{idx}.log") for idx in procs}
     logs = {idx: (log_dir / f"member{idx}.log").read_text() for idx in procs}
+    read = {idx: member_report.read_reports(text.splitlines()) for idx, text in logs.items()}
     return Population(str(train_dir), log_paths, logs, {idx: proc.returncode for idx, proc in procs.items()},
-                      {idx: read_reports(text) for idx, text in logs.items()})
+                      {idx: reports for idx, (reports, _) in read.items()},
+                      {idx: malformed for idx, (_, malformed) in read.items()})
 
 
 def starts(population, idx):
@@ -165,10 +183,24 @@ def test_members_exit_cleanly(population):
         log = population.logs[idx]
         assert population.returncodes[idx] == 0, log[-4000:]
         assert "Traceback" not in log, log[-4000:]
+        failures = [line for line in log.splitlines() if any(marker in line for marker in FAILURE_MARKERS)]
+        assert not failures, failures[:5]
+        assert population.malformed[idx] == 0
         assert [r["event"] for r in population.reports[idx]][-1] == "exit"
         # every process ran this checkout's rl_games (PYTHONPATH), also after a restart
         assert {os.path.realpath(r["rl_games"]) for r in starts(population, idx)} == {
             os.path.realpath(os.path.join(REPO, "rl_games"))}
+
+
+def test_the_best_member_holds_the_population_best(population):
+    """Member 0 ranks first at every iteration: the population best is its record, with a copy of
+    its checkpoint."""
+    from rl_games.common.pbt import population_best
+
+    best = population_best(os.path.join(population.train_dir, "pbt_workspace"))
+    assert best is not None
+    assert (best["policy_idx"], best["true_objective"]) == (0, 1.0), best
+    assert os.path.isfile(best["checkpoint"])
 
 
 def test_members_restart_by_exec(population):
@@ -341,32 +373,54 @@ def test_nccl_qualification_runs_members_of_two_ranks(tmp_path):
         assert os.path.realpath(argv[6]) == os.path.realpath(os.path.join(EXAMPLE, "train_member.py"))
         assert (option(argv, "--policy-idx"), option(argv, "--num-policies")) == (str(idx), "3")
         assert (option(argv, "--replace-rule"), option(argv, "--mutation-rate")) == ("dexpbt", "0.5")
+        # the adaptive LR schedule: only rank 0 runs the scheduler, and every rank must restore the
+        # same adapted LR, scaled by the restart's learning_rate mutation (the checker compares them)
         for flag in ("--distributed", "--report", "--lstm", f"{CONFIG}mixed_precision=fp16",
-                     f"{CONFIG}torch_compile=true", f"{CONFIG}normalize_input=true"):
+                     f"{CONFIG}torch_compile=true", f"{CONFIG}normalize_input=true", f"{CONFIG}lr_schedule=adaptive"):
             assert flag in argv, flag
     # the last member always ranks last, alternating transfers and self-mutations
     assert option(commands[-1], "--fake-objective").startswith("0.0,")
     assert os.path.realpath(check[1]) == os.path.realpath(CHECKER) and option(check, "--world-size") == "2"
 
 
+@pytest.mark.parametrize("choice, value", [("adaptive", "adaptive"), ("linear", "linear"), ("none", "None")])
+def test_nccl_qualification_takes_the_lr_schedule(tmp_path, choice, value):
+    *commands, _ = dry_run("run_nccl_qualification.sh", "--lr-schedule", choice, "--out", str(tmp_path))
+    for argv in commands:
+        assert [arg for arg in argv if arg.startswith(f"{CONFIG}lr_schedule=")] == [f"{CONFIG}lr_schedule={value}"]
+
+
+@pytest.mark.parametrize("args, message", [(["--lr-schedule", "cosine"], "--lr-schedule takes"),
+                                           (["--nproc", "0"], "--nproc takes"),
+                                           (["--precision", "bf16"], "--precision takes")])
+def test_nccl_qualification_rejects_bad_arguments(args, message):
+    proc = subprocess.run(["bash", os.path.join("examples", "pbt", "run_nccl_qualification.sh"), "--dry-run", *args],
+                          cwd=REPO, env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                          timeout=60)
+    assert proc.returncode == 2 and message in proc.stdout, proc.stdout
+
+
 STUB_PYTHON = """#!/bin/bash
-# stands in for python: the GPU check passes, a member prints a report line and its arguments
+# stands in for python: the GPU check passes, a member prints a report line, the GPUs it sees and
+# its arguments
 case "$1" in
   -c) exit 0 ;;
   *check_qualification.py) echo "checker $*"; exit "${STUB_CHECK_STATUS:-0}" ;;
-  *) echo 'PBT_MEMBER {}'; echo "member $*"
+  *) echo 'PBT_MEMBER {}'; echo "devices ${CUDA_VISIBLE_DEVICES-unset}"; echo "member $*"
      case "$* " in *"--policy-idx ${STUB_FAILING_MEMBER:--} "*) exit 3 ;; esac ;;
 esac
 """
 
 
 def run_with_stub_python(tmp_path, script, *args, **env):
+    """Run a launcher with STUB_PYTHON as its interpreter, in the members' environment plus `env`
+    (a None value unsets the variable)."""
     stub = tmp_path / "python"
     stub.write_text(STUB_PYTHON)
     stub.chmod(0o755)
+    env = {key: value for key, value in dict(member_env(), **env).items() if value is not None}
     return subprocess.run(["bash", os.path.join("examples", "pbt", script), "--python", str(stub), *args], cwd=REPO,
-                          env=dict(member_env(), **env), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                          timeout=120)
+                          env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
 
 
 @pytest.mark.parametrize("failing, status", [("", 0), ("1", 3)])
@@ -392,6 +446,19 @@ def test_nccl_qualification_ends_with_the_checker(tmp_path, check_status):
     assert checker.split()[-3:] == logs
 
 
+@pytest.mark.parametrize("visible, expected", [(None, "0,1,2,3"), ("4,5,6,7", "4,5,6,7")], ids=["unset", "set"])
+def test_nccl_qualification_puts_the_ranks_on_the_visible_gpus(tmp_path, visible, expected):
+    """Rank r of every member trains on the r-th visible GPU: the first --nproc GPUs unless
+    CUDA_VISIBLE_DEVICES names others."""
+    out = tmp_path / "qualification"
+    proc = run_with_stub_python(tmp_path, "run_nccl_qualification.sh", "--nproc", "4", "--out", str(out),
+                                CUDA_VISIBLE_DEVICES=visible)
+    assert proc.returncode == 0, proc.stdout
+    for idx in range(3):
+        log = (out / "logs" / f"member{idx}.log").read_text()
+        assert f"devices {expected}\n" in log and "--nproc_per_node=4" in log, log
+
+
 def test_nccl_qualification_stops_without_the_gpus(tmp_path):
     proc = subprocess.run(["bash", os.path.join("examples", "pbt", "run_nccl_qualification.sh"), "--python",
                            sys.executable, "--out", str(tmp_path / "qualification")], cwd=REPO, env=member_env(),
@@ -404,7 +471,7 @@ def test_nccl_qualification_stops_without_the_gpus(tmp_path):
 
 def _report(rank, restart_count, **changes):
     report = {"event": "start", "policy_idx": 0, "rank": rank, "world_size": 2, "pid": 100 + rank,
-              "restart_count": restart_count, "frame": 4096, "epoch": 17,
+              "restart_count": restart_count, "frame": 4096, "epoch": 17, "lr_schedule": "adaptive",
               "restart": None if restart_count == 0 else {"policy_idx": 0, "source_policy": 1,
                                                           "restart_count": restart_count},
               "effective": {"learning_rate": 3e-4, "entropy_coef": 0.01, "optimizer_lr": [3e-4]},
@@ -421,34 +488,96 @@ def _report(rank, restart_count, **changes):
     return report
 
 
+def _exits(restart_count):
+    return [{"event": "exit", "policy_idx": 0, "rank": rank, "world_size": 2, "restart_count": restart_count,
+             "frame": 8192, "epoch": 32} for rank in (0, 1)]
+
+
+def run_checker(log, *args):
+    return subprocess.run([sys.executable, CHECKER, "--world-size", "2", *args, str(log)], env=member_env(),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
+
+
 @pytest.mark.parametrize("change, message", [
     ({"state__optimizer": "c2"}, "optimizer"),
     ({"scaler_scale": 2048.0}, "scale"),
     ({"effective__learning_rate": 1e-4}, "learning_rate"),
+    ({"lr_schedule": None}, "lr_schedule"),
 ])
 def test_qualification_checker_flags_ranks_that_disagree(tmp_path, change, message):
-    exits = [{"event": "exit", "policy_idx": 0, "rank": rank, "world_size": 2, "restart_count": 1,
-              "frame": 8192, "epoch": 32} for rank in (0, 1)]
     good = [_report(0, 0), _report(1, 0), _report(0, 1), _report(1, 1)]
     for reports, expect_ok in ((good, True), (good[:3] + [_report(1, 1, **change)], False)):
         log = tmp_path / "member0.log"
-        log.write_text("".join(PREFIX + json.dumps(r) + "\n" for r in reports + exits))
-        proc = subprocess.run([sys.executable, CHECKER, "--world-size", "2", "--min-restarts", "1", str(log)],
-                              env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                              timeout=120)
+        log.write_text("".join(PREFIX + json.dumps(r) + "\n" for r in reports + _exits(1)))
+        proc = run_checker(log, "--min-restarts", "1")
         assert (proc.returncode == 0) == expect_ok, proc.stdout
         if not expect_ok:
             assert message in proc.stdout
 
 
-def test_an_lstm_member_with_normalizers_trains_on_cpu(tmp_path):
-    """The qualification's LSTM and normalizer settings start (the GPU run can't run in CI)."""
+def test_qualification_checker_reports_a_restart_without_its_checkpoint(tmp_path):
+    """A restarted process that restored no checkpoint fails the check, also with --train-dir,
+    which compares the restart.pth on disk with what the last process restored."""
+    reports = [_report(0, 0), _report(1, 0), _report(0, 1, checkpoint=None), _report(1, 1, checkpoint=None)]
+    log = tmp_path / "member0.log"
+    log.write_text("".join(PREFIX + json.dumps(r) + "\n" for r in reports + _exits(1)))
+    proc = run_checker(log, "--min-restarts", "1", "--train-dir", str(tmp_path))
+    assert proc.returncode == 1 and "Traceback" not in proc.stdout, proc.stdout
+    assert "member 0 process 1 rank 0: a restart without restart info or checkpoint" in proc.stdout
+    assert proc.stdout.splitlines()[-1] == "FAIL"
+
+
+def test_reports_survive_another_ranks_unfinished_line(member_report):
+    """The ranks of a member share its log, and print() writes a line's text and its newline
+    apart (torchrun runs the workers unbuffered): a report written in between is still read, and
+    a report line that doesn't parse is counted, not dropped."""
+    report = _report(1, 0)
+    out = io.StringIO()
+    out.write("Using DistributedDataParallel for gradient sync")  # another rank's print(), before its newline
+    with contextlib.redirect_stdout(out):
+        member_report.emit(report)
+    out.write("\n")
+    lines = out.getvalue().splitlines()
+    assert PREFIX + json.dumps(report, sort_keys=True) in lines           # the report has a line of its own
+    assert member_report.read_reports(lines) == ([report], 0)
+    # written without that newline (another writer, an older log): read where the prefix starts
+    cut = "Using DistributedDataParallel for gradient sync" + PREFIX
+    assert member_report.read_reports([cut + json.dumps(report), cut + '{"event": "st']) == ([report], 1)
+
+
+def test_qualification_checker_reads_a_report_after_another_ranks_output(tmp_path):
+    lines = [PREFIX + json.dumps(_report(0, 0)),
+             "Using DistributedDataParallel for gradient sync" + PREFIX + json.dumps(_report(1, 0)),
+             *(PREFIX + json.dumps(r) for r in _exits(0))]
+    log = tmp_path / "member0.log"
+    log.write_text("\n".join(lines) + "\n")
+    proc = run_checker(log, "--min-restarts", "0")
+    assert proc.returncode == 0, proc.stdout
+    log.write_text("\n".join(lines + ["Using DistributedDataParallel" + PREFIX + '{"event": "st']) + "\n")
+    proc = run_checker(log, "--min-restarts", "0")
+    assert proc.returncode == 1 and "1 PBT_MEMBER lines don't parse" in proc.stdout, proc.stdout
+
+
+def test_an_lstm_member_scores_itself_by_its_episode_returns(tmp_path, member_report):
+    """The qualification's member settings (LSTM, normalizers, adaptive LR) train on CPU, where the
+    GPU run can't run in CI, and PBT iterations score the member by the example's own objective:
+    the episode returns gymnasium's RecordEpisodeStatistics puts into the infos, which the
+    populations above replace with --fake-objective."""
+    train_dir = tmp_path / "runs"
     proc = subprocess.run([sys.executable, SCRIPT, "--policy-idx", "0", "--num-policies", "1", "--lstm", "--report",
-                           "--max-epochs", "3", "--train-dir", str(tmp_path / "runs"), *SMALL,
-                           f"{CONFIG}normalize_input=true", f"{CONFIG}normalize_value=true"],
+                           "--interval-steps", str(EPOCH_FRAMES), "--max-epochs", "6", "--train-dir", str(train_dir),
+                           *SMALL, f"{CONFIG}normalize_input=true", f"{CONFIG}normalize_value=true",
+                           f"{CONFIG}lr_schedule=adaptive"],
                           cwd=REPO, env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                           timeout=300)
     assert proc.returncode == 0, proc.stdout[-4000:]
-    reports = read_reports(proc.stdout)
-    assert [r["event"] for r in reports] == ["start", "exit"]
-    assert reports[0]["rnn"] is True and reports[1]["epoch"] == 3
+    reports, malformed = member_report.read_reports(proc.stdout.splitlines())
+    assert [r["event"] for r in reports] == ["start", "exit"] and not malformed
+    start, done = reports
+    assert start["rnn"] is True and start["lr_schedule"] == "adaptive" and done["epoch"] == 6
+    assert start["mutation"][CONFIG + "learning_rate"] == "mutate_float"
+    # the iterations' workspace yamls: the mean return of the member's latest episodes (CartPole: >= 1 each)
+    yamls = sorted((train_dir / "pbt_workspace" / "000").glob("[0-9]*.yaml"))
+    objectives = [yaml.safe_load(path.read_text())["true_objective"] for path in yamls]
+    assert objectives and all(math.isfinite(value) and value >= 1.0 for value in objectives), (
+        objectives, proc.stdout[-4000:])

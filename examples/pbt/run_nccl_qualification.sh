@@ -9,21 +9,26 @@ REPO=$(cd "$HERE/../.." && pwd)
 usage() {
   cat <<EOF
 usage: run_nccl_qualification.sh [--members N] [--nproc N] [--precision default|fp16] [--lstm]
-                                 [--max-epochs E] [--out DIR] [--python PY] [--dry-run]
+                                 [--lr-schedule adaptive|linear|none] [--max-epochs E]
+                                 [--out DIR] [--python PY] [--dry-run]
 
 PBT with members of several ranks on one node: N members, each a torchrun job of --nproc ranks
-(rank r of every member on the r-th GPU of CUDA_VISIBLE_DEVICES, default 0,1), on the dexpbt
-rule with mutation_rate 0.5, torch_compile on and the input and value normalizers on. The
-last member always ranks last, alternately far behind (a transfer from a leader) and close
-behind (a self-mutation), so it restarts at nearly every PBT iteration. Every rank of every
-process reports its state after the restore (train_member.py --report), and
-check_qualification.py checks that the ranks agree and that every restart restored
-restart.pth, the fp16 loss scale included.
+(rank r of every member on the r-th GPU of CUDA_VISIBLE_DEVICES, default the first --nproc
+GPUs), on the dexpbt rule with mutation_rate 0.5, the adaptive LR schedule, torch_compile on and
+the input and value normalizers on. The last member always ranks last, alternately far behind
+(a transfer from a leader) and close behind (a self-mutation), so it restarts at nearly every
+PBT iteration. Every rank of every process reports its state after the restore
+(train_member.py --report), and check_qualification.py checks that the ranks agree and that
+every restart restored restart.pth, the fp16 loss scale included.
 
   --members N      population size (default 3; the dexpbt rule needs 3 or more)
   --nproc N        ranks per member (default 2)
   --precision P    default (fp32 weights, TF32 matmuls) or fp16 (autocast with loss scaling)
   --lstm           LSTM policies
+  --lr-schedule S  adaptive (default), linear or none (a constant LR). Under adaptive and
+                   linear only rank 0 runs the scheduler (the others take its LR), and every
+                   rank of a restarted member must restore the same LR from restart.pth and
+                   the new learning_rate (adaptive: the adapted LR scaled by its mutation)
   --max-epochs E   epochs per member (default 120)
   --out DIR        logs/ and runs/ of the qualification (default runs/pbt_nccl_<date>_<time>)
   --python PY      Python interpreter (default python3)
@@ -35,6 +40,7 @@ MEMBERS=3
 NPROC=2
 PRECISION=default
 LSTM=()
+LR_SCHEDULE=adaptive
 MAX_EPOCHS=120
 OUT=runs/pbt_nccl_$(date +%Y%m%d_%H%M%S)
 PY=python3
@@ -45,6 +51,7 @@ while [ $# -gt 0 ]; do
     --nproc) NPROC=$2; shift 2 ;;
     --precision) PRECISION=$2; shift 2 ;;
     --lstm) LSTM=(--lstm); shift ;;
+    --lr-schedule) LR_SCHEDULE=$2; shift 2 ;;
     --max-epochs) MAX_EPOCHS=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
     --python) PY=$2; shift 2 ;;
@@ -58,11 +65,25 @@ case "$PRECISION" in
   fp16) MIXED_PRECISION=fp16 ;;
   *) echo "run_nccl_qualification.sh: --precision takes default or fp16, got $PRECISION" >&2; exit 2 ;;
 esac
+case "$LR_SCHEDULE" in
+  adaptive|linear) ;;
+  none) LR_SCHEDULE=None ;;  # as rl_games/configs/ppo_cartpole.yaml spells the constant LR
+  *) echo "run_nccl_qualification.sh: --lr-schedule takes adaptive, linear or none, got $LR_SCHEDULE" >&2; exit 2 ;;
+esac
+case "$NPROC" in
+  ''|*[!0-9]*|0) echo "run_nccl_qualification.sh: --nproc takes a number of ranks >= 1, got $NPROC" >&2; exit 2 ;;
+esac
 if [ "$MEMBERS" -lt 3 ]; then echo "run_nccl_qualification.sh: dexpbt needs 3 or more members" >&2; exit 2; fi
 case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac
 
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES-0,1}  # an explicitly empty value hides the GPUs
+# rank r of a member trains on the r-th visible GPU: by default the first NPROC GPUs (an
+# explicitly empty CUDA_VISIBLE_DEVICES hides the GPUs)
+if [ -z "${CUDA_VISIBLE_DEVICES+set}" ]; then
+  CUDA_VISIBLE_DEVICES=0
+  for ((r = 1; r < NPROC; r++)); do CUDA_VISIBLE_DEVICES+=",$r"; done
+fi
+export CUDA_VISIBLE_DEVICES
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1}
 if [ "$DRY_RUN" = 0 ]; then
   "$PY" -c "import sys, torch; n = torch.cuda.device_count(); sys.exit(0 if n >= $NPROC else
@@ -84,7 +105,8 @@ for ((i = 0; i < MEMBERS; i++)); do
        agent.params.config.num_actors=8 agent.params.config.horizon_length=16
        agent.params.config.minibatch_size=64 agent.params.config.mini_epochs=2
        agent.params.config.normalize_input=true agent.params.config.normalize_value=true
-       agent.params.config.torch_compile=true agent.params.config.mixed_precision="$MIXED_PRECISION")
+       agent.params.config.torch_compile=true agent.params.config.mixed_precision="$MIXED_PRECISION"
+       agent.params.config.lr_schedule="$LR_SCHEDULE")
   log="$OUT/logs/member$i.log"
   if [ "$DRY_RUN" = 1 ]; then
     echo "# member $i, log $log"
