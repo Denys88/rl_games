@@ -82,6 +82,7 @@ only-include = [
     "rl_games",
     "tests",
     "benchmarks",
+    "examples",  # tests/test_pbt_e2e.py runs examples/pbt
     "docs",
     "README.md",
     "LICENSE",
