@@ -156,6 +156,12 @@ class PbtCfg:
     """Raise after this many consecutive PBT iterations fail to save/load checkpoints,
     instead of silently training without PBT (>= 1)."""
 
+    wandb_finish_timeout: float = 120.0
+    """Seconds a restart waits for the open wandb run to finish before re-executing (a finite
+    number >= 0). After a clean finish the restarted process resumes the same run; after a
+    timeout or an error it logs to a new run `<run id>-r<restart count>` (the old run may
+    still be uploading)."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -194,6 +200,8 @@ class PbtCfg:
             require(0.0 <= getattr(self, name) <= 1.0, name, "in [0, 1]")
         for name in ("replace_threshold_frac_std", "replace_threshold_frac_absolute"):
             require(getattr(self, name) >= 0.0, name, ">= 0")
+        require(math.isfinite(self.wandb_finish_timeout) and self.wandb_finish_timeout >= 0,
+                "wandb_finish_timeout", "a finite number >= 0")
 
     @classmethod
     def from_dict(cls, d):

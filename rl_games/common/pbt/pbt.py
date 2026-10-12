@@ -7,7 +7,9 @@ import json
 import math
 import os
 import random
+import re
 import sys
+import threading
 from collections import deque
 
 import torch
@@ -49,6 +51,39 @@ def _wandb_run():
     return getattr(wandb, "run", None) if wandb is not None else None
 
 
+def _finish_wandb_run(run, timeout):
+    """`run.finish()` in a daemon thread joined for `timeout` seconds: None once it returned,
+    else what went wrong. finish() can block for a long time while wandb is unreachable."""
+    result = {}
+
+    def finish():
+        try:
+            run.finish()
+            result["finished"] = True
+        except BaseException as exc:  # reported by the caller; the restart goes ahead
+            result["error"] = exc
+
+    thread = threading.Thread(target=finish, name="pbt-wandb-finish", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        return f"did not finish within {timeout:g} s"
+    if not result.get("finished"):
+        return f"finish raised {result.get('error')!r}"
+    return None
+
+
+def _flush_stdio():
+    """Flush Python's stdout/stderr: os.execv and os._exit discard buffered output, which loses
+    the last log lines when output goes to a file or a pipe."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except (OSError, ValueError):
+            pass
+
+
 class PbtAlgoObserver(AlgoObserver):
     """rl_games observer that implements Population-Based Training for a single policy process.
 
@@ -62,7 +97,8 @@ class PbtAlgoObserver(AlgoObserver):
     style, as in Isaac Lab / IsaacGymEnvs train scripts) and a checkpoint argument. Pass the
     unmodified launch command as `launch_argv` when the script rewrites `sys.argv` (e.g. for
     Hydra); the restart then re-runs it verbatim with only the checkpoint and mutated
-    overrides replaced.
+    overrides replaced. The restart runs from the launch directory (Hydra's original cwd
+    inside a Hydra job), see `pbt_utils.launch_dirs`.
     """
 
     def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None):
@@ -78,7 +114,8 @@ class PbtAlgoObserver(AlgoObserver):
                 is not given. Any argparse namespace works; missing attributes are treated as
                 disabled/absent.
             launch_argv (list[str] | None): The original script argv (script path first),
-                captured before argparse/Hydra rewrite `sys.argv`.
+                captured before argparse/Hydra rewrite `sys.argv`. For a `python -m` launch:
+                `['-m', 'pkg.module', *sys.argv[1:]]`.
             extra_params (dict | None): Additional mutable values outside the agent params,
                 keyed by their `key=value` override name (e.g. `env.rewards.success.weight`).
 
@@ -89,6 +126,8 @@ class PbtAlgoObserver(AlgoObserver):
         super().__init__()
         self.printer = pbt_utils.PbtTablePrinter()
         self.launch_argv = list(launch_argv) if launch_argv is not None else None
+        # restarts run from the launch directory, pinned to the Hydra run dir when Hydra changed into it
+        self.launch_cwd, self.hydra_run_dir = pbt_utils.launch_dirs()
 
         self.rendering_args = pbt_utils.RenderingArgs(args_cli)
         # the launch argv already carries the wandb flags
@@ -133,6 +172,11 @@ class PbtAlgoObserver(AlgoObserver):
         if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not self.distributed_args.distributed:
             print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: the restart flag "
                   "is not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
+        if self.launch_argv is None and self.distributed_args.rank == 0 and pbt_utils.argv_rewritten():
+            print("PbtAlgoObserver: NOTICE launch_argv is not set and sys.argv differs from the launch command "
+                  "(sys.orig_argv): restarts rebuild the command from sys.argv and args_cli and drop the other "
+                  "launch flags; pass launch_argv=list(sys.argv) captured before sys.argv is rewritten, or "
+                  "['-m', '<module>', *sys.argv[1:]] for a `python -m` launch")
 
         self.printer.print_params_table(self.pbt_params, header="List of params to mutate")
 
@@ -154,7 +198,12 @@ class PbtAlgoObserver(AlgoObserver):
         its sigma instead of applying the launch command's `--sigma`. Every rank inherits the
         restart payload, so all ranks agree. Mutated values need no marking: the restore takes
         a hyperparameter from the config whenever it differs from the checkpoint's stored one.
+        Rank 0 warns when the config has no `full_experiment_name`.
         """
+        if self.distributed_args.rank == 0 and not config.get("full_experiment_name"):
+            print("PbtAlgoObserver: WARNING the config has no full_experiment_name: every restart writes into a new "
+                  "timestamped run directory, and members started in the same second share one; set "
+                  "agent.params.config.full_experiment_name per member")
         if self.restart is not None:
             config["pbt_restart"] = True
 
@@ -244,6 +293,7 @@ class PbtAlgoObserver(AlgoObserver):
 
         if self.restart_flag.cpu().item() == 1:
             if self.distributed_args.rank != 0:
+                _flush_stdio()
                 os._exit(0)
             self._restart_with_new_params(self.new_params, self.restart_from_checkpoint)
             return
@@ -385,8 +435,13 @@ class PbtAlgoObserver(AlgoObserver):
         return self.cfg.launcher or sys.executable
 
     def _restart_command(self, new_params, restart_from_checkpoint):
-        """Full re-exec command: launcher, optional torch.distributed.run prefix, script args."""
+        """Full re-exec command: launcher, optional torch.distributed.run prefix, script args.
+
+        The script path is made absolute (see `pbt_utils.absolute_script_path`), and inside a
+        Hydra job that changed into its run dir the command pins `hydra.run.dir` to it.
+        """
         cfg = self.cfg
+        new_params = {param: pbt_utils.plain_number(value) for param, value in new_params.items()}
         if self.launch_argv is not None:
             script_args = pbt_utils.build_launch_restart_args(
                 self.launch_argv, new_params, restart_from_checkpoint, cfg.checkpoint_arg)
@@ -407,11 +462,36 @@ class PbtAlgoObserver(AlgoObserver):
                 script_args = [script_args[0]] + pbt_utils.remove_cli_arg(script_args[1:], cfg.seed_arg)
                 script_args.append(f"{cfg.seed_arg}={seed}")
 
+        script_args = pbt_utils.absolute_script_path(script_args, self.launch_cwd)
+        if self.hydra_run_dir is not None:
+            script_args = pbt_utils.pin_hydra_run_dir(script_args, self.hydra_run_dir)
+
         command = [self._get_launcher()]
         if self.distributed_args.distributed:
-            self.distributed_args.master_port = str(pbt_utils.find_free_port())
             command.extend(self.distributed_args.get_args_list())
         return command + script_args
+
+    def _finish_wandb(self, run):
+        """Finish the open wandb run before the re-exec; the child resumes it by id through the
+        inherited wandb service. A finish that hangs (wandb unreachable) or fails must not stop
+        the restart: after `wandb_finish_timeout` seconds the child gets its own wandb service and
+        a new run `<run id>-r<restart count>`, as the old service may still be writing this run."""
+        run_id = run.id
+        # setdefault only affects the restarted child process
+        os.environ.setdefault("WANDB_RUN_ID", run_id)  # continue with the same run id
+        os.environ.setdefault("WANDB_RESUME", "allow")  # allow wandb to resume
+        os.environ.setdefault("WANDB_INIT_TIMEOUT", "300")  # give wandb init more time to be fault tolerant
+        failure = _finish_wandb_run(run, self.cfg.wandb_finish_timeout)
+        if failure is None:
+            return
+        # replace the suffix of an earlier timed-out restart instead of appending to it
+        new_id = re.sub(r"-r\d+$", "", run_id) + f"-r{self.restart_count + 1}"
+        # an inherited service makes the child's wandb.init hang, or fail with "run ID is in use"
+        os.environ.pop("WANDB_SERVICE", None)
+        os.environ["WANDB_RUN_ID"] = new_id
+        os.environ["WANDB_RESUME"] = "allow"
+        print(f"Policy {self.cfg.policy_idx}: WARNING wandb run {run_id} {failure}; the restarted process "
+              f"logs to a new run {new_id}", flush=True)
 
     def _restart_with_new_params(self, new_params, restart_from_checkpoint):
         """Re-exec the current process with the restart command and the transfer metadata.
@@ -420,7 +500,9 @@ class PbtAlgoObserver(AlgoObserver):
             - The child reads the metadata via `pbt_utils.restart_info()` (env var
               `RL_GAMES_PBT_RESTART`); rl_games uses it to mark the restart (`pbt_restart`:
               the checkpoint's sigma is kept), and environments can use it in `set_env_state`.
-            - On distributed runs, assigns a fresh master port and forwards distributed args.
+            - An open wandb run is finished first (see `_finish_wandb`).
+            - Distributed members restart under torch.distributed.run with a standalone rendezvous.
+            - The command runs from the launch directory (`launch_cwd`).
         """
         print(f"previous command line args: {self.launch_argv if self.launch_argv is not None else sys.argv}")
         command = self._restart_command(new_params, restart_from_checkpoint)
@@ -433,39 +515,31 @@ class PbtAlgoObserver(AlgoObserver):
             "frame": getattr(self, "restart_frame", int(self.algo.frame)),
             "checkpoint": restart_from_checkpoint,
             "mutated": getattr(self, "restart_mutated", new_params),
-        })
+        }, default=pbt_utils.json_default)
 
         self.algo.writer.flush()
         self.algo.writer.close()
 
-        wandb_run = _wandb_run()
-        if self.wandb_args.enabled or wandb_run is not None:
-            import wandb
-
-            # setdefault only affects the restarted child process
-            os.environ.setdefault("WANDB_RUN_ID", wandb.run.id)  # continue with the same run id
-            os.environ.setdefault("WANDB_RESUME", "allow")  # allow wandb to resume
-            os.environ.setdefault("WANDB_INIT_TIMEOUT", "300")  # give wandb init more time to be fault tolerant
-            wandb.run.finish()
+        run = _wandb_run()
+        if run is not None:
+            self._finish_wandb(run)
 
         print("Running command:", command, flush=True)
-        print(f"Policy {self.cfg.policy_idx}: Restarting self with args {command[1:]}", flush=True)
+        print(f"Policy {self.cfg.policy_idx}: Restarting self with args {command[1:]} in {self.launch_cwd}", flush=True)
 
         pbt_utils.dump_env_sizes()
 
         # dedup PATH-like env vars so the exec'd child's environment doesn't grow across restarts
         for var in ("PATH", "PYTHONPATH", "LD_LIBRARY_PATH", "OMNI_USD_RESOLVER_MDL_BUILTIN_PATHS"):
             val = os.environ.get(var)
-            if not val or os.pathsep not in val:
-                continue
-            seen = set()
-            new_parts = []
-            for p in val.split(os.pathsep):
-                if p and p not in seen:
-                    seen.add(p)
-                    new_parts.append(p)
-            os.environ[var] = os.pathsep.join(new_parts)
+            if val and os.pathsep in val:
+                os.environ[var] = pbt_utils.dedup_path_list(val)
 
+        try:
+            os.chdir(self.launch_cwd)
+        except OSError as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING cannot return to the launch directory: {exc!r}")
+        _flush_stdio()
         os.execv(command[0], command)
 
 
