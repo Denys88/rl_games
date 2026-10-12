@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
+import psutil
 import torch
 import yaml
 
@@ -417,7 +418,8 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
     member out of its peers' worst group while it can't act on a replacement (see `member_status`).
     `checkpoint_arg`, the train script's checkpoint argument, is recorded for `member_resume`.
     With the learner's PBT state (`algo.pbt_state`, set by the observer) the yaml also records
-    the member's `restart_count` and the code and setup it runs (`identity_mismatches`).
+    the member's `restart_count` and the code and setup it runs (`identity_mismatches`). `time`
+    is the wall clock of the save (see `member_status`).
     `extra` adds fields to the yaml (`forced` of `pbt.force_outcome`); it can't replace the others.
     """
     if int(os.environ.get("RANK", "0")) == 0:
@@ -426,6 +428,7 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
         data = {
             **(extra or {}),
             "schema": SCHEMA,
+            "time": time.time(),
             "iteration": curr_iter,
             "true_objective": to_float(curr_policy_score),
             "frame": int(algo.frame),
@@ -574,9 +577,98 @@ def identity_mismatches(ckpt, own) -> dict[str, tuple]:
             if mine is not None and ckpt.get(key) is not None and ckpt[key] != mine}
 
 
+# --- a member's processes: owner and exit records (K03), liveness (G02) ----------------------
+
+# in a member's directory, written by its rank 0: the process that runs it (at init and every
+# iteration boundary) and the normal end of its training; in the workspace: the population's end
+# (pbt.stop_with_first)
+OWNER_RECORD, EXIT_RECORD, FINISHED_MARKER = "owner.yaml", "exit.yaml", "finished.yaml"
+# how long a plain launch respects an owner on another host whose iteration time is unknown
+_OWNER_WINDOW_SECONDS = 600.0
+
+
+def read_record(directory, name) -> dict | None:
+    """The record yaml `name` (owner.yaml, exit.yaml, finished.yaml) in `directory`; None when it
+    is absent or malformed. The directory is listed before the file is opened (another host may
+    have replaced it), and a listed file that is gone by then is looked up once more."""
+    for _ in range(2):
+        try:
+            if name not in os.listdir(directory):
+                return None
+        except FileNotFoundError:
+            return None
+        loaded = _read_text_and_ctime(os.path.join(directory, name))
+        if loaded is None:
+            continue
+        try:
+            record = yaml.safe_load(loaded[0])
+        except yaml.YAMLError:
+            return None
+        return record if isinstance(record, dict) else None
+    return None
+
+
+def write_record(directory, name, record) -> str:
+    """Write a record yaml as plain YAML through a temp name and a rename; returns its path."""
+    path = os.path.join(directory, name)
+    _atomic_write_yaml(path, record)
+    return path
+
+
+def _boot_id() -> str | None:
+    """This host's boot id (Linux), which a reboot changes; None elsewhere."""
+    try:
+        with open("/proc/sys/kernel/random/boot_id", encoding="ascii") as fobj:
+            return fobj.read().strip()
+    except OSError:
+        return None
+
+
+def owner_record(launch_id, restart_count, started, iteration_seconds=None) -> dict:
+    """This process as the owner of a member, the content of its OWNER_RECORD: schema, host, boot_id,
+    pid and create_time (the process start, psutil) identify the process, launch_id this launch of
+    the member, started when the launch claimed it, heartbeat now, and iteration_seconds the
+    member's median iteration wall time (None while unknown)."""
+    return {"schema": SCHEMA, "host": socket.gethostname(), "boot_id": _boot_id(), "pid": os.getpid(),
+            "create_time": psutil.Process().create_time(), "launch_id": launch_id, "restart_count": int(restart_count),
+            "started": float(started), "heartbeat": time.time(), "iteration_seconds": iteration_seconds}
+
+
+def owner_alive(record, max_member_lag) -> bool:
+    """Whether the process an owner record names may still run the member. On this host (same
+    hostname and boot): a process other than this one runs with the recorded pid and start time
+    (an exec'd restart keeps the pid). On another host, or this one before a reboot: its heartbeat
+    is within max_member_lag of its recorded iteration times, or 10 minutes when either is unknown
+    or 0."""
+    if record.get("host") == socket.gethostname() and record.get("boot_id") == _boot_id():
+        pid = record.get("pid")
+        if pid == os.getpid():
+            return False
+        try:
+            return abs(psutil.Process(int(pid)).create_time() - float(record.get("create_time"))) < 1.0
+        except (psutil.Error, TypeError, ValueError):
+            return False
+    seconds, heartbeat = record.get("iteration_seconds"), record.get("heartbeat")
+    window = (max_member_lag * seconds if max_member_lag and _is_number(seconds) and seconds > 0
+              else _OWNER_WINDOW_SECONDS)
+    return _is_number(heartbeat) and time.time() - heartbeat < window
+
+
+def member_activity(policy_dir) -> dict:
+    """What a member's directory says about its processes, for `member_status`: {"heartbeat": its
+    owner record's heartbeat, "ended": its exit record's time, or None}. {} without a readable
+    owner record: a member of an older rl_games, whose liveness is unknown."""
+    owner = read_record(policy_dir, OWNER_RECORD)
+    if owner is None or not _is_number(owner.get("heartbeat")):
+        return {}
+    ended = (read_record(policy_dir, EXIT_RECORD) or {}).get("time")
+    return {"heartbeat": owner["heartbeat"], "ended": ended if _is_number(ended) else None}
+
+
 # a member's status in a reader's view (`member_status`); only REPLACEABLE members take worst slots.
 # FOREIGN: other code or another population setup (FOREIGN_KEYS), left out of the observer's ranking
-REPLACEABLE, NOT_REPLACEABLE, BEHIND, NOT_REPORTED, FOREIGN = "OK", "not replaceable", "behind", "—", "foreign"
+REPLACEABLE, NOT_REPLACEABLE, BEHIND, WAITING, FINISHED, STALE, NOT_REPORTED, FOREIGN = (
+    "OK", "not replaceable", "behind", "waiting", "finished", "stale", "—", "foreign")
 
 
 def _lagging(ckpt, reader_iteration) -> bool:
@@ -593,11 +685,21 @@ def _objective_at(objectives, iteration):
 
 
 def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
-                  reader_objectives: Mapping[int, float] | None = None) -> dict[int, str]:
+                  reader_objectives: Mapping[int, float] | None = None, activity: Mapping[int, dict] | None = None,
+                  lag: float | None = None, now: float | None = None, foreign=()) -> dict[int, str]:
     """Each member's status as the reader of `checkpoints` (`load_pbt_ckpts` at `reader_iteration`)
     sees it, for the replacement rule and the checkpoint summary:
 
     - "—": no checkpoint with an objective at or below the reader's iteration;
+    - "foreign": in `foreign`, it runs other code or another population setup than the reader
+      (`identity_mismatches`): the observer leaves it out of the ranking, the donors and the count;
+    - "finished": its exit record is newer than its owner record's heartbeat (`activity`, from
+      `member_activity`): it ended its training normally. Ranked and a donor, never replaceable;
+    - "stale": no sign of life for more than `lag` seconds (max_member_lag × the reader's median
+      iteration wall time), neither a heartbeat nor the `time` of its yaml: the observer leaves it
+      out of the ranking, the donors, the spread and the reported count;
+    - "waiting": a heartbeat within `lag` seconds, but its yaml is 2 or more iterations behind and
+      older than that: it waits for its objective, or starts up. It can't act on a replacement soon;
     - "not replaceable": its newest yaml says `replaceable: false` (restarting, in a grace window
       or near the end of its run);
     - "behind": its newest yaml is 2 or more iterations behind the reader's, and its objective
@@ -614,15 +716,33 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
     A restart keeps the member's frame, so a member whose restarts took 2 intervals or more stays
     behind for good. Both views compare the same two yamls; the reader's predates any change it
     made since (a transfer, a self-mutation).
+
+    "finished", "stale" and "waiting" come from `activity` and the clock (`now`): a member without
+    an owner record (an older rl_games) is none of them, and with `lag` None (unknown, or
+    max_member_lag 0) no member is stale or waiting.
     """
+    now = time.time() if now is None else now
     status = {}
     for policy, ckpt in checkpoints.items():
         ckpt = ckpt if isinstance(ckpt, Mapping) else {}
         objective = ckpt.get("true_objective")
+        lagging = _lagging(ckpt, reader_iteration)
         # the reader's objective at the iteration of a member 2+ behind (None: not that far behind)
-        reader_there = _objective_at(reader_objectives, ckpt["iteration"]) if _lagging(ckpt, reader_iteration) else None
+        reader_there = _objective_at(reader_objectives, ckpt["iteration"]) if lagging else None
+        member = (activity or {}).get(policy) or {}
+        heartbeat, ended = member.get("heartbeat"), member.get("ended")
+        saved = ckpt.get("time") if _is_number(ckpt.get("time")) else None
+        timed = heartbeat is not None and lag is not None
         if not _is_number(objective) or objective <= UNINITIALIZED_VALUE:
             status[policy] = NOT_REPORTED
+        elif policy in foreign:
+            status[policy] = FOREIGN
+        elif heartbeat is not None and ended is not None and ended >= heartbeat:
+            status[policy] = FINISHED
+        elif timed and now - (heartbeat if saved is None else max(heartbeat, saved)) > lag:
+            status[policy] = STALE
+        elif timed and lagging and saved is not None and now - saved > lag:
+            status[policy] = WAITING
         elif ckpt.get("replaceable") is False:
             status[policy] = NOT_REPLACEABLE
         elif reader_there is not None and objective >= reader_there:
@@ -632,10 +752,10 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
     return status
 
 
-def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int, *,
-                        reader_objectives: Mapping[int, float] | None = None) -> set[int]:
-    """The members that may take a worst slot in this reader's view: status "OK" in `member_status`."""
-    status = member_status(checkpoints, reader_iteration, reader_objectives=reader_objectives)
+def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int, **kwargs) -> set[int]:
+    """The members that may take a worst slot in this reader's view: status "OK" in `member_status`
+    (which takes the keyword arguments)."""
+    status = member_status(checkpoints, reader_iteration, **kwargs)
     return {policy for policy, value in status.items() if value == REPLACEABLE}
 
 

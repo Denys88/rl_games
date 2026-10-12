@@ -251,6 +251,32 @@ class PbtCfg:
     and extra_params values, central_value_config values). Either way the member's grace window
     and objective window start over."""
 
+    max_member_lag: int = 10
+    """Liveness, in the deciding member's median iteration wall times (>= 0). A member without a
+    sign of life for longer, neither a heartbeat in its owner record (owner.yaml, renewed at every
+    iteration boundary) nor a new workspace yaml, is stale: left out of the ranking, the donors,
+    the spread and the reported count. One with a recent heartbeat whose yaml, 2+ iterations
+    behind, is older than that waits (for its objective, or at a start-up): ranked and a donor,
+    but not replaceable. A member whose exit record (exit.yaml) is newer than its heartbeat has
+    finished: ranked and a donor, never replaceable. 0 judges no member by time. Members of an
+    older rl_games (no owner record) are never stale. Clocks are assumed synchronized."""
+
+    force_owner: bool = False
+    """Start even when the member's owner record names a process that may still run it: on this
+    host its pid with the recorded start time, on another host a heartbeat within max_member_lag
+    of its iteration times (10 minutes when unknown). A plain launch refuses then, as two processes
+    of one member would write the same files; a PBT restart or a relaunch with the member's restart
+    payload (member_resume) takes over without the check. The other process, if it still runs,
+    stops at its next iteration boundary."""
+
+    stop_with_first: bool = False
+    """End the population with its first member to finish: in its last epoch (by max_epochs or
+    max_frames) that member writes <workspace>/finished.yaml, and every other member saves the
+    custom-stop checkpoint and stops at the end of its next epoch, through the learner's stop_fn
+    (a stop_fn set before train() is called first). No replacement is decided once the marker
+    exists. A marker with other max_epochs, max_frames or population settings (another run) is
+    ignored with a warning; a fresh launch under reuse_workspace removes one written before it."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -282,7 +308,7 @@ class PbtCfg:
         require(self.num_policies >= 1, "num_policies", ">= 1")
         require(0 <= self.policy_idx < self.num_policies, "policy_idx", f"in [0, num_policies={self.num_policies})")
         require(self.interval_steps > 0, "interval_steps", "> 0")
-        for name in ("start_after", "initial_delay", "objective_window"):
+        for name in ("start_after", "initial_delay", "objective_window", "max_member_lag"):
             require(getattr(self, name) >= 0, name, ">= 0")
         require(self.max_consecutive_errors >= 1, "max_consecutive_errors", ">= 1")
         for name in ("replace_fraction_worst", "replace_fraction_best"):
@@ -294,7 +320,7 @@ class PbtCfg:
         require(math.isfinite(self.wandb_finish_timeout) and self.wandb_finish_timeout >= 0,
                 "wandb_finish_timeout", "a finite number >= 0")
         # a string such as 'false' would be truthy and switch the option on or off
-        for name in ("reuse_workspace", "initial_mutation"):
+        for name in ("reuse_workspace", "initial_mutation", "force_owner", "stop_with_first"):
             require(isinstance(getattr(self, name), bool), name, "true or false")
         donor = re.fullmatch(r"donor:([0-9]+)", self.force_outcome) if isinstance(self.force_outcome, str) else None
         require(self.force_outcome in ("", "self", "best") or (donor and int(donor.group(1)) < self.num_policies),

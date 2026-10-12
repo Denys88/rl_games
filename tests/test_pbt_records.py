@@ -410,10 +410,10 @@ def test_loaders_and_cleanup_ignore_the_record(tmp_path):
     assert pbt_utils.saved_iterations(directory) == [1, 2, 3, 4, 5]
     # the slowest member at 99: everything up to it goes but the newest yaml it reads
     pbt_utils.cleanup({p: {"iteration": 99} for p in range(4)}, directory, keep_back=1)
-    assert sorted(os.listdir(directory)) == ["000005.pth", "000005.yaml", "decisions.jsonl", "restart.pth",
-                                             "restart.yaml"]
+    assert sorted(os.listdir(directory)) == ["000005.pth", "000005.yaml", "decisions.jsonl", "owner.yaml",
+                                             "restart.pth", "restart.yaml"]
     assert pbt_utils.remove_iterations_above(directory, 0) == [5]
-    assert sorted(os.listdir(directory)) == ["decisions.jsonl", "restart.pth", "restart.yaml"]
+    assert sorted(os.listdir(directory)) == ["decisions.jsonl", "owner.yaml", "restart.pth", "restart.yaml"]
     assert pbt_utils.mark_not_replaceable(directory) is None
     assert load_record(tmp_path)["iteration"] == 5 and obs.restart_flag.item() == 1
 
