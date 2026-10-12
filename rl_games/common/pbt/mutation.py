@@ -3,6 +3,7 @@
 # Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
+import math
 import random
 from collections.abc import Callable
 from typing import Any
@@ -76,4 +77,16 @@ def mutate(
         if fn is None:
             raise KeyError(f"Unknown mutation function: {fn_name!r}")
         out[name] = plain_number(fn(val, change_min=cmin, change_max=cmax))
+    return out
+
+
+def clamp_to_bounds(params: dict[str, Any], bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
+    """`params` with every value that has bounds (`pbt.mutation_bounds`, {key: (lo, hi)}) clamped
+    into them; an int is clamped to the integers inside, so it stays an int."""
+    out = dict(params)
+    for name, (lo, hi) in bounds.items():
+        if name in out:
+            value = out[name]
+            out[name] = (max(math.ceil(lo), min(math.floor(hi), value)) if isinstance(value, int)
+                         else min(max(value, lo), hi))
     return out

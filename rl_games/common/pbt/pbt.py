@@ -21,7 +21,7 @@ import torch.distributed as dist
 
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
-from rl_games.common.pbt.mutation import mutate
+from rl_games.common.pbt.mutation import clamp_to_bounds, mutate
 from rl_games.common.pbt.pbt_cfg import (  # noqa: F401 (PbtCfg: public here since #359)
     PbtCfg, rule_notices, settings_hash, validate)
 
@@ -56,20 +56,23 @@ def _num_finished(done_indices) -> int:
 
 
 def build_restart_args(cli_args, new_params, restart_from_checkpoint,
-                       wandb_args=None, rendering_args=None, checkpoint_arg="--checkpoint"):
+                       wandb_args=None, rendering_args=None, checkpoint_arg="--checkpoint", *, drop_args=None):
     """Rebuild the training command line for a PBT restart from `sys.argv`-style args.
 
-    Drops hydra-style ``key=value`` overrides that are being replaced by ``new_params``
-    and any existing checkpoint argument (exact name match), keeps everything else
-    verbatim, then appends the new checkpoint and the mutated params.
+    Drops hydra-style ``key=value`` overrides that are being replaced by ``new_params``, any
+    existing checkpoint argument and the launch-only `drop_args` ({name: nargs}, see
+    `pbt_utils.remove_cli_arg`; exact name match), keeps everything else verbatim, then appends
+    the new checkpoint, the wandb and rendering flags `cli_args` doesn't have (its own stay as
+    given: the command doesn't grow at every restart) and the mutated params.
     """
     out = [cli_args[0]] + pbt_utils.remove_cli_arg(list(cli_args[1:]), checkpoint_arg)
+    for name, nargs in (drop_args or {}).items():
+        out = [out[0]] + pbt_utils.remove_cli_arg(out[1:], name, nargs)
     out = [out[0]] + [arg for arg in out[1:] if not ("=" in arg and arg.split("=", 1)[0] in new_params)]
     out.append(f"{checkpoint_arg}={restart_from_checkpoint}")
-    if wandb_args is not None:
-        out.extend(wandb_args.get_args_list())
-    if rendering_args is not None:
-        out.extend(rendering_args.get_args_list())
+    for flags in (wandb_args, rendering_args):
+        if flags is not None:
+            out.extend(pbt_utils.missing_flags(flags.get_args_list(), cli_args[1:]))
     for param, value in new_params.items():
         out.append(f"{param}={value}")
     return out
@@ -202,6 +205,11 @@ class PbtAlgoObserver(AlgoObserver):
         if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not self.distributed_args.distributed:
             print("PbtAlgoObserver: WARNING WORLD_SIZE > 1 but args_cli.distributed is not set: the restart flag "
                   "is not broadcast and ranks would diverge on a restart; set args_cli.distributed=True")
+        if self.cfg.force_outcome:
+            # on every rank: no log of a forced member may pass for a PBT run
+            print(f"PbtAlgoObserver: WARNING pbt.force_outcome is {self.cfg.force_outcome!r}: every iteration outside "
+                  f"the grace windows restarts this member from the source it names, whatever the replacement rule "
+                  f"says. For qualifying an integration, not for training")
         if self.launch_argv is None and self.distributed_args.rank == 0 and pbt_utils.argv_rewritten():
             print("PbtAlgoObserver: NOTICE launch_argv is not set and sys.argv differs from the launch command "
                   "(sys.orig_argv): restarts rebuild the command from sys.argv and args_cli and drop the other "
@@ -226,6 +234,8 @@ class PbtAlgoObserver(AlgoObserver):
         info = pbt_utils.restart_info()
         self.restart = info if info is not None and info.get("policy_idx") == self.cfg.policy_idx else None
         self.restart_count = int(self.restart["restart_count"]) if self.restart else 0
+        if self.cfg.initial_mutation:
+            self._initial_mutation(params)
 
         if self.distributed_args.distributed and torch.cuda.is_available():
             # NCCL broadcast requires a CUDA tensor
@@ -233,6 +243,55 @@ class PbtAlgoObserver(AlgoObserver):
         else:
             self.device = params.get("params", {}).get("config", {}).get("device", "cpu")
         self.restart_flag = torch.tensor([0], device=self.device)
+
+    def _initial_mutation(self, params):
+        """`pbt.initial_mutation`: mutate a fresh member's `agent.params.config` values once, in
+        `params` (the train script hands them to runner.load afterwards) and in `pbt_params`.
+
+        Every rank decides and draws alike, before any process group exists. Fresh: no restart
+        payload for the member and no numbered checkpoint in its workspace directory, which every
+        rank lists before rank 0 saves the first. The generator is seeded with the launch
+        command's `seed_arg` value and the member, not with params['seed'], to which train scripts
+        add the rank. A draw that changes no value is drawn again, at most 20 times. Env keys and
+        extra_params keep their values: the env they apply to is built from its own config.
+        """
+        cfg = self.cfg
+        config = params.get("params", {}).get("config", {})
+        member_dir = os.path.join(config.get("train_dir", "runs"), cfg.workspace, f"{cfg.policy_idx:03d}")
+        if self.restart is not None or (os.path.isdir(member_dir) and pbt_utils.saved_iterations(member_dir)):
+            return
+        rank0 = self.distributed_args.rank == 0
+        current = {key: value for key, value in self.pbt_params.items() if key.startswith(_CONFIG_PREFIX)}
+        kept = [key for key in self.pbt_params if key not in current]
+        if kept and rank0:
+            print(f"PbtAlgoObserver: the initial mutation leaves {kept} as configured: only {_CONFIG_PREFIX}* "
+                  f"values apply before the learner is built")
+        if not current:
+            return
+        command = self.launch_argv if self.launch_argv is not None else sys.argv
+        seed = pbt_utils.get_cli_arg(command, cfg.seed_arg) if cfg.seed_arg else None
+        with pbt_utils.swap_random_state(random.Random(f"pbt-init:{seed}:{cfg.policy_idx}")):
+            for _ in range(20):
+                new = clamp_to_bounds(mutate(current, cfg.mutation, cfg.mutation_rate, cfg.change_range),
+                                      cfg.mutation_bounds)
+                if new != current:
+                    break
+        changed = {key: value for key, value in new.items() if value != current[key]}
+        if not changed:
+            if rank0:
+                print(f"PbtAlgoObserver: the initial mutation changed no value in 20 draws (mutation_rate "
+                      f"{cfg.mutation_rate:g}): the member starts from the configured values")
+            return
+        for key, value in changed.items():
+            *path, leaf = key[len(_CONFIG_PREFIX):].split(".")
+            node = config
+            for part in path:
+                node = node[part]
+            node[leaf] = value
+        new_params = dict(self.pbt_params, **changed)
+        if rank0:
+            self.printer.print_mutation_diff(self.pbt_params, new_params, header="Initial mutation")
+        self.pbt_params = new_params
 
     def before_init(self, base_name, config, experiment_name):
         """On a PBT restart of this member, set `config['pbt_restart']`.
@@ -615,16 +674,18 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _pbt_iteration(self, score, best_in_iteration, frame):
         """One PBT iteration on rank 0: save this member's checkpoint, load the population's, log,
-        record a new population best, and apply the replacement rule.
+        record a new population best, and apply the replacement rule (or take the source
+        `pbt.force_outcome` names).
 
         No decision inside the grace windows (`start_after` since the process started or a
         self-mutation was applied, `initial_delay` since the start of training), nor when the
         run ends before a restart could pay off (`_frames_to_end`); the member's yaml says
-        `replaceable: false` then, so peers keep it out of their worst group. A self-mutation
-        that changes no value keeps training; one with changes goes to `_apply_self_mutation`
-        first, and restarts unless that applied it. A restart marks this iteration's yaml not
-        replaceable once restart.pth is written: peers read it until the restarted process saves.
-        Peers that run other code or another population setup are left out (`_foreign_members`).
+        `replaceable: false` then, so peers keep it out of their worst group. The new values are
+        clamped into `mutation_bounds`. A self-mutation that changes no value keeps training; one
+        with changes goes to `_apply_self_mutation` first, and restarts unless that applied it. A
+        restart marks this iteration's yaml not replaceable once restart.pth is written: peers
+        read it until the restarted process saves. Peers that run other code or another
+        population setup are left out (`_foreign_members`).
 
         Returns the iteration's outcome, which `after_steps` appends to decisions.jsonl (and records
         a restart in restart.yaml): {"outcome": ...} with the rule's numbers, see `_append_decision`.
@@ -637,7 +698,8 @@ class PbtAlgoObserver(AlgoObserver):
         ending = to_end is not None and to_end[0] < max(cfg.start_after, cfg.interval_steps)
         try:
             pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params,
-                                          replaceable=not (in_grace or ending), checkpoint_arg=cfg.checkpoint_arg)
+                                          replaceable=not (in_grace or ending), checkpoint_arg=cfg.checkpoint_arg,
+                                          extra=self._forced_stamp())
             ckpts = pbt_utils.load_pbt_ckpts(self.ws_dir, cfg.policy_idx, cfg.num_policies, self.pbt_it)
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
             # what this member's yamls said where members 2+ iterations behind are (see member_status)
@@ -692,7 +754,10 @@ class PbtAlgoObserver(AlgoObserver):
             return {"outcome": "ending", "frames_left": to_end[0], "limit": to_end[1]}
 
         details = {}  # the rule's outcome and numbers
-        if cfg.replace_rule == "dexpbt":
+        if cfg.force_outcome:
+            # no gate, worst group or best-in-iteration check: one member can qualify an integration
+            source, reason = pbt_utils.select_forced(cfg.force_outcome, cfg.policy_idx, objectives, order)
+        elif cfg.replace_rule == "dexpbt":
             eligible = {p for p, s in status.items() if s == pbt_utils.REPLACEABLE}
             source, reason = pbt_utils.select_dexpbt(objectives, cfg.policy_idx, score, best_in_iteration, cfg,
                                                      eligible=eligible, order=order, details=details)
@@ -705,7 +770,8 @@ class PbtAlgoObserver(AlgoObserver):
         source_params = ckpts[source]["params"]
         use_source_params = cfg.replace_rule == "threshold" or random.random() < cfg.leader_params_prob
         base_params = source_params if use_source_params else self.pbt_params
-        new_params = mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range)
+        new_params = clamp_to_bounds(mutate(base_params, cfg.mutation, cfg.mutation_rate, cfg.change_range),
+                                     cfg.mutation_bounds)
         # the decision in the learner's pbt_history (its checkpoints' PBT provenance)
         history_entry = {"policy_idx": cfg.policy_idx, "source_policy": source, "frame": int(frame),
                          "objective": float(score), "source_objective": float(objectives[source])}
@@ -814,6 +880,11 @@ class PbtAlgoObserver(AlgoObserver):
         """
         return False
 
+    def _forced_stamp(self):
+        """`{"forced": <pbt.force_outcome>}` for the member's workspace yamls and restart.yaml when
+        it is set, else {}: a forced member's records must not pass for a population's."""
+        return {"forced": self.cfg.force_outcome} if self.cfg.force_outcome else {}
+
     def _reset_objective_window(self):
         """Start this rank's objective over: drop its window of episodes, its score and the
         iteration's best objective. The next iteration waits until every rank's window is full
@@ -900,31 +971,42 @@ class PbtAlgoObserver(AlgoObserver):
 
     def _restart_script_args(self, new_params, restart_from_checkpoint):
         """The restart's script arguments (script path first) before the seed is replaced: the
-        launch argv, or on the legacy path `sys.argv` and `args_cli`'s flags, with the checkpoint
-        argument and the new params."""
+        launch argv, or on the legacy path `sys.argv` and the `args_cli` flags it doesn't have yet,
+        with the checkpoint argument and the new params, without `restart_drop_args`."""
         cfg = self.cfg
+        # an observer built without __init__ (DexLab's tests) has a cfg without the newer keys
+        drop_args = getattr(cfg, "restart_drop_args", None)
         if self.launch_argv is not None:
             return pbt_utils.build_launch_restart_args(
-                self.launch_argv, new_params, restart_from_checkpoint, cfg.checkpoint_arg)
-        modified_args = build_restart_args(sys.argv, new_params, restart_from_checkpoint,
-                                           self.wandb_args, self.rendering_args, cfg.checkpoint_arg)
-        script_args = [modified_args[0]] + self.env_args.get_args_list() + modified_args[1:]
+                self.launch_argv, new_params, restart_from_checkpoint, cfg.checkpoint_arg, drop_args=drop_args)
+        modified_args = build_restart_args(sys.argv, new_params, restart_from_checkpoint, self.wandb_args,
+                                           self.rendering_args, cfg.checkpoint_arg, drop_args=drop_args)
+        env_args = pbt_utils.missing_flags(self.env_args.get_args_list(), sys.argv[1:])
+        script_args = [modified_args[0]] + env_args + modified_args[1:]
         if self.distributed_args.distributed:
-            script_args.append("--distributed")
+            script_args += pbt_utils.missing_flags(["--distributed"], sys.argv[1:])
         return script_args
 
     def _restart_seed(self, script_args):
         """The seed the restart command passes as `seed_arg` in place of the one in `script_args`
         (`_restart_script_args`): derived from it, the member and the restart count
-        (`pbt_utils.derive_seed`; -1 stays -1). None when the command keeps its seed:
-        `reseed_on_restart` off, no `seed_arg` in it, or a value that is not an integer."""
+        (`pbt_utils.derive_seed`; -1 stays -1). On the legacy path (no launch_argv) a command
+        without one gets a seed derived from the config seed (params['seed']) instead, never that
+        seed itself: train scripts offset it. None when the command keeps its seed:
+        `reseed_on_restart` off, no seed to derive from (a config seed of None or -1 neither), or a
+        value that is not an integer."""
         cfg = self.cfg
-        base = pbt_utils.get_cli_arg(script_args, cfg.seed_arg) if cfg.reseed_on_restart and cfg.seed_arg else None
+        if not (cfg.reseed_on_restart and cfg.seed_arg):
+            return None
+        base = pbt_utils.get_cli_arg(script_args, cfg.seed_arg)
+        config_seed = getattr(self, "_seed", None)
+        if base is None and self.launch_argv is None and not pbt_utils._random_per_launch(config_seed):
+            base = config_seed
         if base is None:
             return None
         try:
             return pbt_utils.derive_seed(int(base), cfg.policy_idx, self.restart_count + 1)
-        except ValueError:
+        except (TypeError, ValueError):
             return None
 
     def _restart_command(self, new_params, restart_from_checkpoint):
@@ -1043,16 +1125,16 @@ class PbtAlgoObserver(AlgoObserver):
     def _restart_record(self):
         """The member's restart.yaml for the decision `_pbt_iteration` just took: the restart
         payload, the last completed `epoch` (restart.pth's: the decision runs in after_steps,
-        before the epoch's update), every new param value (`params`) and the `seed` the restart
+        before the epoch's update), every new param value (`params`), the `seed` the restart
         command passes as `seed_arg` (`_restart_seed`; None when it keeps its own), with which
-        `pbt_utils.member_resume` retries the restart. Plain JSON types, as the child reads the
-        payload."""
+        `pbt_utils.member_resume` retries the restart, and `forced` under `pbt.force_outcome`.
+        Plain JSON types, as the child reads the payload."""
         new_params = {param: pbt_utils.plain_number(value) for param, value in self.new_params.items()}
         checkpoint = self.restart_from_checkpoint
         record = dict(self._restart_payload(new_params, checkpoint),
                       epoch=int(self.algo.epoch_num) - 1, params=new_params,
                       seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)),
-                      seed_arg=self.cfg.seed_arg)
+                      seed_arg=self.cfg.seed_arg, **self._forced_stamp())
         return json.loads(json.dumps(record, default=pbt_utils.json_default))
 
     def _save_restart_record(self):
