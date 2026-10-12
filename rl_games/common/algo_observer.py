@@ -16,6 +16,11 @@ class AlgoObserver:
     def process_infos(self, infos, done_indices):
         pass
 
+    def before_steps(self):
+        """PPO agents: at the start of every training epoch (epoch_num counts it already), before the
+        rollout; on every rank."""
+        pass
+
     def after_steps(self):
         pass
 
@@ -23,6 +28,12 @@ class AlgoObserver:
         pass
 
     def after_print_stats(self, frame, epoch_num, total_time):
+        pass
+
+    def after_train(self, reason):
+        """PPO agents: train() is about to return, on every rank. `reason` (the same on every rank) is
+        the first condition that held, in the order checked: 'score_to_win', 'max_epochs', 'max_frames',
+        'stop_fn'. Not called when training raises."""
         pass
 
 

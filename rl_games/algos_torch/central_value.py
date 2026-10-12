@@ -18,7 +18,7 @@ class CentralValueTrain(nn.Module):
         self, state_shape, value_size, ppo_device, num_agents, horizon_length, num_actors,
         num_actions, seq_length, normalize_value, network, config, writter, max_epochs,
         multi_gpu, zero_rnn_on_done, normalize_input_init_count=None,
-        ddp_find_unused_parameters=False
+        ddp_find_unused_parameters=False, max_frames=-1
     ):
         nn.Module.__init__(self)
         # normalize_input_init_count: the central_value_config key, else the
@@ -73,13 +73,18 @@ class CentralValueTrain(nn.Module):
         self.lr = float(config['learning_rate'])
         self.linear_lr = config.get('lr_schedule') == 'linear'
 
-        # todo: support max frames as well
-        if self.linear_lr:
+        # the learner's rule: on its epochs, else on its frames (see _learner_frames)
+        if self.linear_lr and (max_epochs != -1 or max_frames != -1):
+            use_epochs = max_epochs != -1
             self.scheduler = schedulers.LinearScheduler(self.lr,
-                max_steps=self.max_epochs,
+                max_steps=max_epochs if use_epochs else max_frames,
+                use_epochs=use_epochs,
                 apply_to_entropy=False,
                 start_entropy_coef=0)
         else:
+            if self.linear_lr:
+                print("Central value: max epochs and max frames are not set, so the linear learning rate "
+                      "schedule can't be used; switching to the constant (identity) one.")
             self.scheduler = schedulers.IdentityScheduler()
 
         self.mini_epoch = config['mini_epochs']
@@ -146,6 +151,22 @@ class CentralValueTrain(nn.Module):
                 config['lr_schedule'] = None
 
         self.dataset = datasets.PPODataset(self.batch_size, self.minibatch_size, True, self.is_rnn, self.ppo_device, self.seq_length)
+
+    def _learner_frames(self, frame):
+        """The learner's frame count for this net's: `frame` counts one rank's actors, the learner
+        (and so its max_frames) every agent on every rank."""
+        return frame * self.num_agents * self.world_size
+
+    def restore_epoch(self, epoch):
+        """Counters and `lr` as at the end of learner epoch `epoch`, for a checkpoint restore (they
+        aren't saved): this net trains once per learner epoch, so its counters follow the learner's,
+        and its LR is its schedule's value then, from the configured LR. The learner's restore
+        applies `lr` to the optimizer."""
+        self.epoch_num, self.frame = epoch, epoch * self.batch_size
+        self.lr = float(self.config['learning_rate'])
+        if epoch > 0:   # the value train_net set at that epoch, before its frame increment
+            frames = self._learner_frames(self.frame - self.batch_size)
+            self.lr, _ = self.scheduler.update(self.lr, 0, epoch, frames, 0)
 
     def update_lr(self, lr):
         if self.multi_gpu:
@@ -296,7 +317,7 @@ class CentralValueTrain(nn.Module):
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
 
         self.epoch_num += 1
-        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, self.frame, 0)
+        self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, self._learner_frames(self.frame), 0)
         self.update_lr(self.lr)
         self.frame += self.batch_size
         if self.writter is not None:

@@ -162,7 +162,7 @@ CENTRAL_VALUE = {"minibatch_size": 16, "mini_epochs": 1, "learning_rate": 1e-3, 
 @pytest.mark.parametrize("donor_decay, decay", [(0.0, 1e-3), (1e-3, 0.0)])
 def test_restore_takes_weight_decay_from_the_config(donor_decay, decay):
     """weight_decay has no runtime state; load_state_dict would otherwise impose the donor's.
-    The critic's LR is its config value too (its schedule restarts: its epoch isn't restored)."""
+    The critic's LR comes from its config too (its schedule's value at the donor's epoch 0)."""
     donor = make_cartpole_agent(weight_decay=donor_decay,
                                 central_value_config=dict(CENTRAL_VALUE, weight_decay=donor_decay, learning_rate=3e-3))
     child = make_cartpole_agent(weight_decay=decay, central_value_config=dict(CENTRAL_VALUE, weight_decay=2 * decay))

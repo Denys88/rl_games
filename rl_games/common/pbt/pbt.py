@@ -1009,6 +1009,9 @@ class MultiObserver(AlgoObserver):
     def process_infos(self, infos, done_indices):
         self._call_multi("process_infos", infos, done_indices)
 
+    def before_steps(self):
+        self._call_multi("before_steps")
+
     def after_steps(self):
         self._call_multi("after_steps")
 
@@ -1017,3 +1020,6 @@ class MultiObserver(AlgoObserver):
 
     def after_print_stats(self, frame, epoch_num, total_time):
         self._call_multi("after_print_stats", frame, epoch_num, total_time)
+
+    def after_train(self, reason):
+        self._call_multi("after_train", reason)
