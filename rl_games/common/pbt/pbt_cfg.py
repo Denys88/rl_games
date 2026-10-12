@@ -5,6 +5,7 @@
 
 import difflib
 import hashlib
+import importlib
 import json
 import math
 import numbers
@@ -29,7 +30,8 @@ RULE_KEYS = {
 
 # the settings every member of a population shares, with its rule's (RULE_KEYS): see settings_hash. A key
 # added here later needs a default that keeps the earlier behaviour: configs at it keep their hash
-POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "replace_rule")
+POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "replace_rule", "objective_fn",
+                   "interval_unit")
 
 # IsaacGymEnvs pbt keys without a counterpart of the same name
 _IGE_KEYS = {
@@ -55,8 +57,8 @@ class PbtCfg:
     On a replacement each key of `mutation` is mutated with probability `mutation_rate` by its
     mutation function (docs/PBT.md lists them; not all use `change_range`).
 
-    Frames (`interval_steps`, `start_after`, `initial_delay`) are the learner's `frame`: agent
-    steps summed over the member's ranks.
+    `interval_steps`, `start_after` and `initial_delay` count frames, the learner's `frame`: agent
+    steps summed over the member's ranks; or learner epochs (`interval_unit`).
 
     Numeric fields are converted by their declared type and range-checked at construction, so
     every rank fails the same way at init: YAML loaders deliver `2e7` and `1e-3` as strings and
@@ -83,8 +85,9 @@ class PbtCfg:
     population runs with the same train_dir and workspace."""
 
     objective: str = ""
-    """Dotted address of the objective inside env infos — required (`validate()` and
-    the observer raise without it); there is no portable default (info layouts differ per backend). Examples:
+    """Dotted address of the objective inside env infos — required unless `objective_fn` computes
+    it (`validate()` and the observer raise without either); there is no portable default (info
+    layouts differ per backend). Examples:
     'episode.Episode_Reward/success' (Isaac Lab-style nested infos), 'scores' (flat dicts).
     A per-env tensor is read at the finished envs; a scalar is taken as the mean over the
     envs that finished on that step. Episodes with a NaN or infinite value are left out, and
@@ -99,18 +102,18 @@ class PbtCfg:
     env's latest episode instead (envs weigh equally there, episodes here)."""
 
     interval_steps: int = 100_000
-    """Frames between PBT iterations (save, compare, replace/mutate); > 0."""
+    """Frames (or epochs, `interval_unit`) between PBT iterations (save, compare, replace/mutate); > 0."""
 
     start_after: int = 0
-    """Frames a member trains after each process start (a fresh launch, a resume or a restart),
-    or a self-mutation applied in process, before it can be replaced. Scores right after a
-    restart still mostly measure the source policy, not the mutation. No replacement is decided
-    either with fewer than max(start_after, interval_steps) frames left before max_epochs or
-    max_frames end the run."""
+    """Frames (or epochs) a member trains after each process start (a fresh launch, a resume or a
+    restart), or a self-mutation applied in process, before it can be replaced. Scores right after
+    a restart still mostly measure the source policy, not the mutation. No replacement is decided
+    either with fewer than max(start_after, interval_steps) frames (or epochs) left before
+    max_epochs or max_frames end the run."""
 
     initial_delay: int = 0
-    """Frames from the start of training (the member's frame, which a restart keeps) before the
-    member can be replaced."""
+    """Frames (or epochs) from the start of training (the member's frame and epoch, which a restart
+    keeps) before the member can be replaced."""
 
     replace_rule: str = ""
     """'dexpbt' (rank-based) or 'threshold' (mean ± band), see the class docstring. Empty:
@@ -279,6 +282,22 @@ class PbtCfg:
     exists. A marker with other max_epochs, max_frames or population settings (another run) is
     ignored with a warning; a fresh launch under reuse_workspace removes one written before it."""
 
+    objective_fn: str = ""
+    """'pkg.module:function' (dotted attributes after ':', as in entry points), imported at init: a
+    function that computes the objective in place of the lookup of `objective`, which may then be
+    empty (and is not read). It is called at every env step on every rank, as process_infos is,
+    as fn(infos, done_indices, num_agents, algo) with the learner as `algo`, and returns the envs'
+    objective as a looked-up value would be (a per-env tensor or array, or a scalar), or None for
+    no objective on this step (the episodes that ended count as unreadable). Its exceptions
+    propagate. The observer's `objective_fn` argument takes a function object instead."""
+
+    interval_unit: str = "frames"
+    """What `interval_steps`, `start_after` and `initial_delay` count: 'frames' (the learner's
+    `frame`) or 'epochs' (the learner's completed epochs, the same on every rank; a restart keeps
+    them). Workspace iterations count it, so a population shares it: it is one of the settings in
+    `settings_hash`, and workspace yamls record it. A subclass that replaces `_pbt_iteration`
+    compares its grace windows in it: `_progress(frame)`."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -328,6 +347,7 @@ class PbtCfg:
         require(self.force_outcome in ("", "self", "best") or (donor and int(donor.group(1)) < self.num_policies),
                 "force_outcome", "'', 'self', 'best' or 'donor:<idx>' with idx in [0, num_policies)")
         require(self.self_mutation in ("restart", "in_process"), "self_mutation", "'restart' or 'in_process'")
+        require(self.interval_unit in ("frames", "epochs"), "interval_unit", "'frames' or 'epochs'")
 
     @classmethod
     def from_dict(cls, d):
@@ -575,31 +595,60 @@ def _resolve_launcher(launcher, cwd=None):
     return os.path.abspath(found)
 
 
-def validate(params, extra_params=None, launcher_cwd=None):
+def load_objective_fn(path):
+    """The function `pbt.objective_fn` names ('pkg.module:function'), imported; None for ''.
+    ValueError when the module or the attribute can't be imported, or it is not callable."""
+    if path == "":
+        return None
+    if not isinstance(path, str) or not re.fullmatch(r"\w+(\.\w+)*:\w+(\.\w+)*", path):
+        raise ValueError(f"pbt.objective_fn must be 'pkg.module:function', got {path!r}")
+    module, attributes = path.split(":")
+    try:
+        function = importlib.import_module(module)
+        for name in attributes.split("."):
+            function = getattr(function, name)
+    except (ImportError, AttributeError) as exc:
+        raise ValueError(f"pbt.objective_fn {path!r} does not import: {exc!r}") from exc
+    if not callable(function):
+        raise ValueError(f"pbt.objective_fn {path!r} is not callable")
+    return function
+
+
+def validate(params, extra_params=None, launcher_cwd=None, *, objective_fn=None):
     """Check a PBT setup without building anything; returns (cfg, mutable params).
 
     Builds the PbtCfg from `params["pbt"]` and flattens `{"agent": params}` plus `extra_params`
-    as PbtAlgoObserver does. Every mutation key must resolve to a finite number, every mutation
-    function must exist and suit its value (integer settings need an integer function), and
-    `launcher` must resolve the way os.execv will see it: an existing file relative to
-    `launcher_cwd` (default: the directory restarts exec from: Hydra's original cwd inside a
-    Hydra job, else the current directory), else a command on PATH; the cfg keeps the absolute
-    path. Raises ValueError naming the key, prints a note for mutations that don't do what
-    their name suggests, and warns about a value outside its `mutation_bounds`, which become the
-    integers inside them for an integer param (an int that mutate_mini_epochs or a custom
-    function mutates). The params come back as plain Python numbers (numpy scalars, 0-d tensors
-    and numeric strings converted), in config order.
+    as PbtAlgoObserver does. `objective` is required unless an objective function is set:
+    `pbt.objective_fn`, which must import (`load_objective_fn`), or the observer's
+    `objective_fn` argument, passed here too (not both). Every mutation key must resolve to a
+    finite number, every mutation function must exist and suit its value (integer settings need
+    an integer function), and `launcher` must resolve the way os.execv will see it: an existing
+    file relative to `launcher_cwd` (default: the directory restarts exec from: Hydra's original
+    cwd inside a Hydra job, else the current directory), else a command on PATH; the cfg keeps
+    the absolute path. Raises ValueError naming the key, prints a note for mutations that don't
+    do what their name suggests, and warns about a value outside its `mutation_bounds`, which
+    become the integers inside them for an integer param (an int that mutate_mini_epochs or a
+    custom function mutates). The params come back as plain Python numbers (numpy scalars, 0-d
+    tensors and numeric strings converted), in config order.
 
-    It touches no tensors and no environment, so a train script can call it before building
-    the env; PbtAlgoObserver calls it on every rank.
+    It touches no tensors and no environment (it imports `pbt.objective_fn`'s module), so a
+    train script can call it before building the env; PbtAlgoObserver calls it on every rank.
     """
     section = params.get("pbt") if isinstance(params, Mapping) else None
     if not isinstance(section, Mapping):
         raise ValueError("params need a 'pbt' section with the PBT config")
     cfg = PbtCfg.from_dict(section)
-    if not isinstance(cfg.objective, str) or not cfg.objective:
-        raise ValueError("pbt.objective is required: a dotted address into env infos, "
-                         "e.g. 'episode.Episode_Reward/success' (Isaac Lab) or 'scores' (flat infos)")
+    if objective_fn is not None and cfg.objective_fn:
+        raise ValueError(f"pbt.objective_fn is {cfg.objective_fn!r} and the observer got an objective_fn as well: "
+                         f"set one of them")
+    function = objective_fn if objective_fn is not None else load_objective_fn(cfg.objective_fn)
+    if not isinstance(cfg.objective, str) or not (cfg.objective or function):
+        raise ValueError("pbt.objective is required unless an objective function is set (pbt.objective_fn or the "
+                         "observer's objective_fn): a dotted address into env infos, e.g. "
+                         "'episode.Episode_Reward/success' (Isaac Lab) or 'scores' (flat infos)")
+    if function is not None and cfg.objective:
+        print(f"PbtCfg: note: pbt.objective {cfg.objective!r} is not read: the objective function computes the "
+              f"objective")
     if not cfg.mutation:
         raise ValueError("pbt.mutation is empty: map the params to mutate to mutation functions, "
                          "e.g. {'agent.params.config.learning_rate': 'mutate_float'}")
