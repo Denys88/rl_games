@@ -5,6 +5,7 @@
 
 import contextlib
 import datetime
+import importlib.metadata
 import json
 import math
 import os
@@ -26,6 +27,10 @@ from rl_games.algos_torch.torch_ext import safe_filesystem_op, safe_save
 
 # i.e. value for target objective when it is not known
 UNINITIALIZED_VALUE = float(-1e9)
+
+# version of the formats PBT writes: workspace yamls, best records, restart.yaml and the restart
+# payload, decisions.jsonl lines. A file without one predates it.
+SCHEMA = 1
 
 
 class DistributedArgs:
@@ -407,11 +412,14 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
     finite one. Both files are written to a temp name and renamed, the .pth first, so readers
     never see partial files or a yaml without its checkpoint. `replaceable: false` keeps the
     member out of its peers' worst group while it can't act on a replacement (see `member_status`).
+    With the learner's PBT state (`algo.pbt_state`, set by the observer) the yaml also records
+    the member's `restart_count` and the code and setup it runs (`identity_mismatches`).
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
         pbt_checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.yaml")
-        text = yaml.safe_dump({
+        data = {
+            "schema": SCHEMA,
             "iteration": curr_iter,
             "true_objective": to_float(curr_policy_score),
             "frame": int(algo.frame),
@@ -420,7 +428,11 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
             "pbt_checkpoint": os.path.abspath(pbt_checkpoint_file),
             "experiment_name": algo.experiment_name,
             "replaceable": bool(replaceable),
-        })
+        }
+        pbt_state = getattr(algo, "pbt_state", None)
+        if pbt_state:
+            data.update(restart_count=pbt_state["restart_count"], **pbt_state["population"])
+        text = yaml.safe_dump(data)
         state = algo.get_full_state_weights()
         if "epoch" in state:
             # called in after_steps, after update_epoch and before the epoch's update and frame
@@ -505,8 +517,59 @@ def mark_not_replaceable(policy_dir) -> str | None:
     return path
 
 
-# a member's status in a reader's view (`member_status`); only REPLACEABLE members take worst slots
-REPLACEABLE, NOT_REPLACEABLE, BEHIND, NOT_REPORTED = "OK", "not replaceable", "behind", "—"
+# --- what a member runs (K02) -----------------------------------------------------------------
+
+# fields whose difference makes a peer foreign: the integration's code, or another population setup
+# (pbt_cfg.settings_hash); a different rl_games_version, git_commit or precision only warns
+FOREIGN_KEYS = ("code_fingerprint", "settings")
+_GIT_SHA = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+
+
+def rl_games_version() -> str:
+    """The installed rl_games distribution's version; "unknown" without one (a source tree on the path)."""
+    try:
+        return importlib.metadata.version("rl_games")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def git_commit(root=None) -> str | None:
+    """The commit checked out in the git checkout at `root` (default: the one rl_games is imported
+    from), or None: not a checkout, or unreadable. Reads `.git` without running git: a worktree's
+    or submodule's `.git` file and its `commondir`, loose and packed refs, a detached HEAD."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parents[3]
+    git = root / ".git"
+    try:
+        if git.is_file():
+            git = root / git.read_text(encoding="utf-8").split("gitdir:", 1)[1].strip()
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            ref = head[len("ref:"):].strip()
+            commondir = git / "commondir"
+            common = git / commondir.read_text(encoding="utf-8").strip() if commondir.is_file() else git
+            loose = [base / ref for base in (git, common) if (base / ref).is_file()]
+            if loose:
+                head = loose[0].read_text(encoding="utf-8").strip()
+            else:
+                packed = (common / "packed-refs").read_text(encoding="utf-8").splitlines()
+                head = next((line.split()[0] for line in packed if line.endswith(" " + ref)), "")
+    except (OSError, IndexError):
+        return None
+    return head if _GIT_SHA.fullmatch(head) else None
+
+
+def identity_mismatches(ckpt, own) -> dict[str, tuple]:
+    """{field: (the peer's value, own value)} for the fields of `own` (the reader's rl_games_version,
+    git_commit, code_fingerprint, settings and precision) whose value in the peer's workspace yaml
+    `ckpt` differs. A field missing or None on either side is unknown and never differs: yamls of
+    older versions, members without a fingerprint."""
+    return {key: (ckpt[key], mine) for key, mine in own.items()
+            if mine is not None and ckpt.get(key) is not None and ckpt[key] != mine}
+
+
+# a member's status in a reader's view (`member_status`); only REPLACEABLE members take worst slots.
+# FOREIGN: other code or another population setup (FOREIGN_KEYS), left out of the observer's ranking
+REPLACEABLE, NOT_REPLACEABLE, BEHIND, NOT_REPORTED, FOREIGN = "OK", "not replaceable", "behind", "—", "foreign"
 
 
 def _lagging(ckpt, reader_iteration) -> bool:
@@ -652,16 +715,18 @@ def cleanup(checkpoints: dict[int, dict], policy_dir, keep_back: int = 20, max_y
 
 
 def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry, epoch=None, *,
-                               config_hparams=None, last_mean_rewards=None) -> str:
+                               config_hparams=None, last_mean_rewards=None, pbt_state=None) -> str:
     """Copy the source checkpoint into this member's workspace for the restart.
 
     The copy survives the source's cleanup, keeps this member's frame (DexPBT) and epoch
     counters, and appends `history_entry` to the checkpoint's `pbt_history`. When given,
     `config_hparams` replaces the stored configured values key by key (the restart's
     pre-mutation values: the restore then moves an inherited adaptive LR by this restart's
-    mutation factor only), and `last_mean_rewards` the best-reward watermark (the member's
-    own, when it keeps writing into the same run directory). A source whose networks hold NaN
-    or inf (published by an older member) raises ValueError, and nothing is written.
+    mutation factor only), `last_mean_rewards` the best-reward watermark (the member's own,
+    when it keeps writing into the same run directory), and `pbt_state` the learner's PBT
+    state (the recipient's: a resume from restart.pth then reads this member, its new params
+    and restart count, not the donor). A source whose networks hold NaN or inf (published by
+    an older member) raises ValueError, and nothing is written.
     """
     state = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
     _check_finite_weights(state, f"restart source {source_checkpoint}")
@@ -674,6 +739,8 @@ def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_ent
         state["config_hparams"] = stored
     if last_mean_rewards is not None:
         state["last_mean_rewards"] = float(last_mean_rewards)
+    if pbt_state is not None:
+        state["pbt"] = pbt_state
     state["pbt_history"] = list(state.get("pbt_history", [])) + [history_entry]
     restart_checkpoint = os.path.join(policy_dir, "restart.pth")
     _atomic_torch_save(state, restart_checkpoint)
@@ -743,8 +810,8 @@ def _top_record(records) -> dict | None:
 
 def population_best(workspace_dir) -> dict | None:
     """The best record in <workspace>/best: the highest objective whose checkpoint copy exists, or
-    None. A dict with the keys of `best.yaml` (policy_idx, iteration, frame, true_objective, params,
-    checkpoint, source_checkpoint); `checkpoint` is the copy's path on this host's mount.
+    None. A dict with the keys of `best.yaml` (schema, policy_idx, iteration, frame, true_objective,
+    params, checkpoint, source_checkpoint); `checkpoint` is the copy's path on this host's mount.
 
     Authoritative: `best.yaml` is a view of it, rebuilt by several members, that can lag behind
     for a while on a shared filesystem.
@@ -820,7 +887,7 @@ def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, chec
     best_checkpoint = os.path.join(best_dir, f"best_{stem}.pth")
     # a value plain YAML can't hold raises here, before any file is written
     text = yaml.safe_dump({
-        "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
+        "schema": SCHEMA, "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
         "true_objective": objective, "params": params,
         "checkpoint": os.path.abspath(best_checkpoint), "source_checkpoint": os.path.abspath(checkpoint),
     })
@@ -857,7 +924,8 @@ def rank_members(objectives: dict[int, float | None], order: list[int] | None = 
 
 
 def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_objective: float,
-                  best_in_iteration: float | None, cfg, *, eligible=None, order=None) -> tuple[int | None, str]:
+                  best_in_iteration: float | None, cfg, *, eligible=None, order=None,
+                  details=None) -> tuple[int | None, str]:
     """DexPBT replacement rule.
 
     The members are ranked by objective (see `rank_members`; `order` breaks ties). The worst
@@ -869,8 +937,13 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     ranked, counts for the `> max(2, n // 2)` gate and can be the donor.
 
     Returns (source, reason): None keeps training; `policy_idx` restarts from its own
-    checkpoint with mutated parameters; any other index restarts from that member.
+    checkpoint with mutated parameters; any other index restarts from that member. `details`, a
+    dict, receives the `outcome` ("not_worst", "too_few_reported", "kept", "transfer" or
+    "self_mutation") and the numbers behind it: the worst group, the top group (`best`), the
+    reported count, the interval's best objective, the drawn `candidate`, its `lead` and both
+    thresholds.
     """
+    details = {} if details is None else details
     n = cfg.num_policies
     values = {p: UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p] for p in range(n)}
     ranked_policies = rank_members(values, order)
@@ -883,11 +956,16 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     best_policies = [p for p in ranked_policies[:replace_best] if values[p] > UNINITIALIZED_VALUE]
     worst_policies = replaceable[-replace_worst:]
 
+    details["worst"] = worst_policies
     if policy_idx not in worst_policies:
+        details["outcome"] = "not_worst"
         return None, f"not among the worst {worst_policies}"
+    details["best"] = best_policies
     if len(initialized) <= max(2, n // 2) or not best_policies:
+        details.update(outcome="too_few_reported", reported=len(initialized))
         return None, f"only {len(initialized)} of {n} members reported"
     if best_in_iteration is not None and best_in_iteration >= min(values[p] for p in best_policies):
+        details.update(outcome="kept", best_in_iteration=best_in_iteration)
         return None, f"best objective this iteration {best_in_iteration:.6g} reaches the top {best_policies}"
 
     candidate = random.choice(best_policies)
@@ -902,14 +980,21 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     trimmed = sorted(initialized)[num_outliers:] if len(initialized) > num_outliers else initialized
     std_threshold = cfg.replace_threshold_frac_std * float(np.std(trimmed))
     abs_threshold = cfg.replace_threshold_frac_absolute * abs(candidate_objective)
+    details.update(candidate=candidate, lead=delta, std_threshold=std_threshold, abs_threshold=abs_threshold)
     if delta > std_threshold and delta > abs_threshold:
+        details["outcome"] = TRANSFER
         return candidate, (f"replace from {candidate}: lead {delta:.6g} > {std_threshold:.6g}, "
                            f"{abs_threshold:.6g}{note}")
+    details["outcome"] = SELF_MUTATION
     return policy_idx, f"lead of {candidate} ({delta:.6g}) too small: mutate own parameters{note}"
 
 
-def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg) -> tuple[int | None, str]:
-    """Band rule: underperformers restart from a random leader, or from themselves without leaders."""
+def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg, *,
+                     details=None) -> tuple[int | None, str]:
+    """Band rule: underperformers restart from a random leader, or from themselves without leaders.
+    `details`, a dict, receives the `outcome` ("not_worst", "transfer" or "self_mutation"), the
+    band (`lower`, `upper`) and the `leaders`."""
+    details = {} if details is None else details
     initialized = {p: o for p, o in objectives.items() if o is not None and o > UNINITIALIZED_VALUE}
     values = list(initialized.values())
     mean_obj = float(np.mean(values))
@@ -920,10 +1005,14 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg) 
     underperformers = [p for p, o in initialized.items() if o < lower_cut]
     print(f"mean={mean_obj:.4f}, std={std_obj:.4f}, upper={upper_cut:.4f}, lower={lower_cut:.4f}")
     print(f"Leaders: {leaders} Underperformers: {underperformers}")
+    details.update(lower=lower_cut, upper=upper_cut, leaders=leaders)
     if policy_idx not in underperformers:
+        details["outcome"] = "not_worst"
         return None, "not an underperformer"
     if not leaders:
+        details["outcome"] = SELF_MUTATION
         return policy_idx, "no leaders: mutate own parameters"
+    details["outcome"] = TRANSFER
     return random.choice(leaders), "underperformer"
 
 
@@ -931,11 +1020,16 @@ def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg) 
 
 RESTART_ENV_VAR = "RL_GAMES_PBT_RESTART"
 # version of the restart payload's format, also of restart.yaml's
-RESTART_SCHEMA = 1
-# restart kinds: from another member's checkpoint, or from the member's own with mutated values
-TRANSFER, SELF_MUTATION = "transfer", "self_mutation"
+RESTART_SCHEMA = SCHEMA
+# restart kinds: from another member's checkpoint, from the member's own with mutated values, and a
+# relaunch of a member that died, from its newest checkpoint (`member_resume`)
+TRANSFER, SELF_MUTATION, RESUME = "transfer", "self_mutation", "resume"
 # a member's record of its last restart decision, next to restart.pth in its workspace directory
 RESTART_RECORD = "restart.yaml"
+# what restart.yaml holds besides the payload's keys
+_RECORD_ONLY = ("epoch", "params", "seed", "checkpoint_arg", "attempt")
+# a member's log of its PBT iterations' outcomes, one JSON object per line (`append_decision`)
+DECISIONS = "decisions.jsonl"
 _restart_info_cache: dict | None = None
 _restart_info_read = False
 
@@ -951,22 +1045,29 @@ def restart_info() -> dict | None:
     plain resume (from a learner checkpoint, also from restart.pth when relaunched by hand).
 
     Keys (`schema` 1):
-      - kind: "transfer" (restarted from another member's checkpoint) or "self_mutation" (from the
-        member's own, with mutated values). Integrations branch on `kind`, not on `is not None`: a
-        self-mutation keeps the member's weights, and later versions may add kinds. A payload from
-        an older rl_games has none; it is set from `source_policy == policy_idx` then;
+      - kind: "transfer" (restarted from another member's checkpoint), "self_mutation" (from the
+        member's own, with mutated values) or "resume" (a member that died, relaunched from its
+        newest checkpoint by `member_resume`). Integrations branch on `kind`, not on `is not
+        None`: a self-mutation or a resume keeps the member's weights, and later versions may add
+        kinds. A payload from an older rl_games has none; it is set from `source_policy ==
+        policy_idx` then;
       - policy_idx (the member restarted; the observer ignores a payload of another member),
-        source_policy, restart_count (this process's: 1 at the member's first restart),
-        iteration and frame of the decision, checkpoint (the member's restart.pth, absolute);
+        source_policy, restart_count (this process's: 1 at the member's first restart; a resume
+        keeps the member's), iteration and frame of the decision (of the checkpoint for a
+        resume), checkpoint (the member's restart.pth, or the resumed checkpoint; absolute);
       - mutated: {flattened param: new value} for the params that differ from the source's;
       - experiment_name: the run name the member's previous process wrote into (None when its
         learner had none);
-      - schema: the payload format. A payload from an older rl_games has neither schema nor
-        experiment_name.
+      - time (of the decision, `time.time()`) and epoch_frames (the member's frames per epoch):
+        the restarted process logs the restart's cost from them; a resume has neither;
+      - attempt: a relaunch of the restart by `member_resume` (2 for the first); absent at the
+        restart itself;
+      - schema: the payload format. A payload from an older rl_games has none of schema,
+        experiment_name, time and epoch_frames.
     The member's restart.yaml (`RESTART_RECORD`) holds the same keys and the decision's epoch,
-    every new param value, the seed and the time. Environments can read the payload in
-    `set_env_state` to tell a population transfer from a resume. Parsed once per process; the
-    variable is then removed from the environment.
+    every new param value, the seed and the checkpoint argument. Environments can read the
+    payload in `set_env_state` to tell a population transfer from a resume. Parsed once per
+    process; the variable is then removed from the environment.
     """
     global _restart_info_cache, _restart_info_read
     if not _restart_info_read:
@@ -1015,6 +1116,89 @@ def remove_restart_record_above(policy_dir, iteration) -> int | None:
         return None
     Path(path).unlink(missing_ok=True)
     return decided
+
+
+def append_decision(policy_dir, record) -> None:
+    """Append `record` to the member's decisions.jsonl (`DECISIONS` in `policy_dir`) as one JSON
+    line, in one os.write on an O_APPEND descriptor: appends don't interleave on a local
+    filesystem. Only the member's rank 0 appends to its file (O_APPEND is not atomic over NFS).
+    Workspace loaders and cleanup read numbered files only, so they ignore it."""
+    line = (json.dumps(record, default=json_default) + "\n").encode("utf-8")
+    fd = os.open(os.path.join(policy_dir, DECISIONS), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        os.write(fd, line)
+    finally:
+        os.close(fd)
+
+
+def _load_restart_record(policy_dir, policy_idx) -> dict | None:
+    """The member's restart.yaml when it is plain YAML recording a decision of member `policy_idx`
+    (an int `iteration`, `params` of numbers); else None."""
+    loaded = _read_text_and_ctime(os.path.join(policy_dir, RESTART_RECORD))
+    try:
+        record = yaml.safe_load(loaded[0]) if loaded is not None else None
+    except yaml.YAMLError:
+        return None
+    if not isinstance(record, dict) or record.get("policy_idx") != policy_idx:
+        return None
+    iteration, params = record.get("iteration"), record.get("params")
+    usable = (isinstance(iteration, int) and not isinstance(iteration, bool) and isinstance(params, dict)
+              and all(isinstance(key, str) and _is_number(value) for key, value in params.items()))
+    return record if usable else None
+
+
+def member_resume(workspace_dir, policy_idx) -> dict | None:
+    """What a relaunch of member `policy_idx`, whose processes are gone, starts from; None when its
+    directory holds nothing to resume from. Returns {"checkpoint", "params", "payload", "source",
+    "checkpoint_arg"}: the checkpoint and the flattened params (the `key=value` overrides) to
+    launch with, the payload to export as RL_GAMES_PBT_RESTART, and the train script's checkpoint
+    argument (restart.yaml's; None without one).
+
+    - "restart": restart.yaml records a decision at or above the member's newest numbered
+      checkpoint (iterations compared, never times): the restarted process has not saved. The
+      relaunch retries the restart from restart.pth with the record's params, and the payload is
+      the restart's (same kind and mutated values) with the next `attempt`, which is written
+      back into restart.yaml: call this once per relaunch.
+    - "checkpoint": the newest numbered checkpoint, with its yaml's params, as kind "resume"
+      (nothing mutated).
+    The restart count carries over (the highest restart.yaml or that yaml records), so the
+    relaunched member's restarts derive seeds no earlier restart used. The directory is listed
+    first, and a file that is gone or malformed is skipped for an older one. Paths are this host's.
+    """
+    policy_dir = os.path.join(workspace_dir, f"{policy_idx:03d}")
+    try:
+        names = os.listdir(policy_dir)
+    except FileNotFoundError:
+        return None
+    newest = None
+    numbered = sorted((int(os.path.splitext(name)[0]), name) for name in names
+                      if name.endswith(".yaml") and _ITERATION_STEM.fullmatch(os.path.splitext(name)[0]))
+    for _, name in reversed(numbered):
+        checkpoint = os.path.abspath(os.path.join(policy_dir, os.path.splitext(name)[0] + ".pth"))
+        ckpt = _load_workspace_yaml(os.path.join(policy_dir, name))
+        if ckpt is not None and os.path.isfile(checkpoint):
+            newest = ckpt, checkpoint
+            break
+    record = _load_restart_record(policy_dir, policy_idx) if RESTART_RECORD in names else None
+    checkpoint_arg = record.get("checkpoint_arg") if record else None
+    restart_pth = os.path.abspath(os.path.join(policy_dir, "restart.pth"))
+    if record and os.path.isfile(restart_pth) and (newest is None or record["iteration"] >= newest[0]["iteration"]):
+        attempt = int(record.get("attempt", 1)) + 1
+        write_restart_record(policy_dir, dict(record, attempt=attempt))
+        payload = dict({key: value for key, value in record.items() if key not in _RECORD_ONLY},
+                       checkpoint=restart_pth, attempt=attempt)
+        return {"checkpoint": restart_pth, "params": record["params"], "payload": payload, "source": "restart",
+                "checkpoint_arg": checkpoint_arg}
+    if newest is None:
+        return None
+    ckpt, checkpoint = newest
+    counts = [entry.get("restart_count") for entry in (ckpt, record or {})]
+    payload = {"schema": SCHEMA, "kind": RESUME, "policy_idx": policy_idx, "source_policy": policy_idx,
+               "restart_count": max((count for count in counts if isinstance(count, int)), default=0),
+               "iteration": ckpt["iteration"], "frame": ckpt["frame"], "checkpoint": checkpoint, "mutated": {},
+               "experiment_name": ckpt.get("experiment_name")}
+    return {"checkpoint": checkpoint, "params": ckpt["params"], "payload": payload, "source": "checkpoint",
+            "checkpoint_arg": checkpoint_arg}
 
 
 def _arg_name(arg: str) -> str:
