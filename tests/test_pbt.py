@@ -154,8 +154,11 @@ class TestObserver:
         import sys
         obs = make_observer(tmp_path)
         assert obs._get_launcher() == sys.executable
-        obs2 = make_observer(tmp_path, extra_pbt={"launcher": "/opt/isaac/python.sh"})
-        assert obs2._get_launcher() == "/opt/isaac/python.sh"
+        launcher = tmp_path / "python.sh"                 # the launcher must exist: checked at init
+        launcher.write_text("#!/bin/sh\n")
+        launcher.chmod(0o755)
+        obs2 = make_observer(tmp_path, extra_pbt={"launcher": str(launcher)})
+        assert obs2._get_launcher() == str(launcher)
 
     def test_args_cli_none_is_tolerated(self, tmp_path):
         pbt_section = {"enabled": True, "policy_idx": 0, "num_policies": 2,
@@ -216,10 +219,9 @@ class TestReviewFixes:
         obs.process_infos([1, 2, 3], None)               # wrong container type
         assert obs.score == 0.5
 
-    def test_unknown_cfg_keys_ignored(self, tmp_path, capsys):
-        obs = make_observer(tmp_path, extra_pbt={"bogus_key": 1, "another": "x"})
-        assert obs.cfg.num_policies == 2
-        assert "bogus_key" in capsys.readouterr().out
+    def test_unknown_cfg_keys_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="bogus_key"):
+            make_observer(tmp_path, extra_pbt={"bogus_key": 1, "another": "x"})
 
     def test_change_range_yaml_list_normalized_to_tuple(self):
         cfg = PbtCfg(change_range=[1.2, 1.8])
@@ -356,10 +358,11 @@ class TestObserverConfig:
         with pytest.raises(ValueError, match="replace_rule"):
             PbtCfg(replace_rule="bogus")
 
-    def test_band_thresholds_without_rule_keep_threshold_rule(self, capsys):
+    def test_band_thresholds_without_rule_keep_threshold_rule(self, tmp_path, capsys):
         assert PbtCfg().replace_rule == "dexpbt"
         legacy = PbtCfg(threshold_std=0.1, threshold_abs=0.025)
         assert legacy.replace_rule == "threshold" and legacy.threshold_abs == 0.025
+        make_observer(tmp_path, extra_pbt={"threshold_std": 0.1, "threshold_abs": 0.025})  # the observer says so
         assert "set replace_rule explicitly" in capsys.readouterr().out
         assert PbtCfg(threshold_std=0.1, replace_rule="dexpbt").replace_rule == "dexpbt"
         assert PbtCfg().threshold_std == 0.10 and PbtCfg().threshold_abs == 0.05
