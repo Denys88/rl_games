@@ -306,6 +306,14 @@ class PbtCfg:
     `settings_hash`, and workspace yamls record it. A subclass that replaces `_pbt_iteration`
     compares its grace windows in it: `_progress(frame)`."""
 
+    restart_mode: str = "exec"
+    """How a restart replaces the member's processes: 'exec' re-executes the restart command in
+    place (rank 0 execs it, the other ranks exit); 'exit' ends the member once restart.pth and
+    restart.yaml are written, rank 0 with status 75 (`pbt_utils.RESTART_EXIT_CODE`), for the
+    supervisor that runs the member's command (`python -m rl_games.common.pbt.supervise`) to run
+    it again from them: a multi-GPU member's launchers don't nest, and its command keeps the
+    launcher's own arguments."""
+
     def __post_init__(self):
         hints = typing.get_type_hints(type(self))
         for f in fields(self):
@@ -357,6 +365,7 @@ class PbtCfg:
         for name in ("self_mutation", "transfer"):
             require(getattr(self, name) in ("restart", "in_process"), name, "'restart' or 'in_process'")
         require(self.interval_unit in ("frames", "epochs"), "interval_unit", "'frames' or 'epochs'")
+        require(self.restart_mode in ("exec", "exit"), "restart_mode", "'exec' or 'exit'")
 
     @classmethod
     def from_dict(cls, d):

@@ -38,6 +38,9 @@ _CONFIG_PREFIX = "agent.params.config."
 # 0 keeps training
 _RESTART, _MUTATE_IN_PROCESS, _TRANSFER_IN_PROCESS = 1, 2, 3
 
+# what an exec'd restart inherits for wandb (`_finish_wandb`), recorded under restart_mode exit
+_WANDB_RESTART_VARS = ("WANDB_RUN_ID", "WANDB_RESUME", "WANDB_INIT_TIMEOUT")
+
 
 class _PooledWindow(NamedTuple):
     """The objective windows of all ranks and their episode counts since the last PBT iteration."""
@@ -137,7 +140,9 @@ class PbtAlgoObserver(AlgoObserver):
     replaced, the seed replaced when the command passes `seed_arg` and `reseed_on_restart` is
     set, the script path made absolute, and `hydra.run.dir` pinned to the run dir inside a
     Hydra job that changed into it. The restart runs from the launch directory (Hydra's
-    original cwd inside a Hydra job), see `pbt_utils.launch_dirs`.
+    original cwd inside a Hydra job), see `pbt_utils.launch_dirs`. With `pbt.restart_mode: exit`
+    the member ends instead, for its supervisor (`python -m rl_games.common.pbt.supervise`) to
+    run its command again (`_exit_for_restart`).
 
     The restarted process receives the decision as `pbt_utils.restart_info()`; the member's
     `restart.yaml`, written at the decision next to `restart.pth`, records it with every new
@@ -1002,7 +1007,7 @@ class PbtAlgoObserver(AlgoObserver):
         try:
             pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params,
                                           replaceable=not (in_grace or ending), checkpoint_arg=cfg.checkpoint_arg,
-                                          extra=self._forced_stamp())
+                                          extra=self._forced_stamp(), restart_drop_args=cfg.restart_drop_args)
             ckpts = pbt_utils.load_pbt_ckpts(self.ws_dir, cfg.policy_idx, cfg.num_policies, self.pbt_it)
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
             # what this member's yamls said where members 2+ iterations behind are (see member_status)
@@ -1599,13 +1604,13 @@ class PbtAlgoObserver(AlgoObserver):
             - An open wandb run is finished first (see `_finish_wandb`).
             - Distributed members restart under torch.distributed.run with a standalone rendezvous.
             - The command runs from the launch directory (`launch_cwd`).
+            - Under `pbt.restart_mode: exit` the process ends in place of the exec
+              (`_exit_for_restart`).
         """
         print(f"previous command line args: {self.launch_argv if self.launch_argv is not None else sys.argv}")
         command = self._restart_command(new_params, restart_from_checkpoint)
 
-        # the member's frame, this epoch's rollout included: the child logs what it plays again past restart.pth's
-        payload = dict(self._restart_payload(new_params, restart_from_checkpoint),
-                       frame_reached=int(self.algo.frame) + self._epoch_frames())
+        payload = dict(self._restart_payload(new_params, restart_from_checkpoint), frame_reached=self._frame_reached())
         os.environ[pbt_utils.RESTART_ENV_VAR] = json.dumps(payload, default=pbt_utils.json_default)
 
         self.algo.writer.flush()
@@ -1616,9 +1621,40 @@ class PbtAlgoObserver(AlgoObserver):
             self._finish_wandb(run, command)
         self._exec_restart(command)
 
+    def _frame_reached(self):
+        """The member's frame at its restart, this epoch's rollout included: the restarted process
+        logs what it plays again past restart.pth's frame."""
+        return int(self.algo.frame) + self._epoch_frames()
+
+    def _exit_for_restart(self):
+        """`pbt.restart_mode: exit` in place of the exec (rank 0): complete the member's
+        restart.yaml with what an exec'd restart gets besides its command, the payload's
+        frame_reached and the wandb variables `_finish_wandb` set (`environ`: the run to resume),
+        and end the process with `pbt_utils.RESTART_EXIT_CODE`. The supervisor that runs the
+        member's command (`python -m rl_games.common.pbt.supervise`) runs it again from the
+        record; a record that can't be written only warns (the supervisor then relaunches from
+        what the member's directory holds, `pbt_utils.member_resume`). The other ranks have
+        exited with status 0 (`_sync_decision`), as in an exec: torchrun stops every rank once
+        one fails, and rank 0 may still be finishing its wandb run."""
+        environ = {key: os.environ[key] for key in _WANDB_RESTART_VARS if key in os.environ}
+        try:
+            pbt_utils.write_restart_record(self.curr_policy_dir, dict(
+                self._restart_record(), frame_reached=self._frame_reached(), environ=environ))
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not write {pbt_utils.RESTART_RECORD}: {exc!r}")
+        print(f"Policy {self.cfg.policy_idx}: restart_mode exit: the process ends with status "
+              f"{pbt_utils.RESTART_EXIT_CODE}, for the supervisor to restart the member from "
+              f"{pbt_utils.RESTART_RECORD}", flush=True)
+        _flush_stdio()
+        os._exit(pbt_utils.RESTART_EXIT_CODE)
+
     def _exec_restart(self, command):
-        """Replace this process with `command`, run from the launch directory. Called on the main
-        thread, or by the wandb watchdog thread while finish() blocks the main thread."""
+        """Replace this process with `command`, run from the launch directory, or end it under
+        `pbt.restart_mode: exit` (`_exit_for_restart`). Called on the main thread, or by the wandb
+        watchdog thread while finish() blocks the main thread."""
+        # an observer built without __init__ (DexLab's tests) has a cfg without the newer keys
+        if getattr(self.cfg, "restart_mode", "exec") == "exit":
+            return self._exit_for_restart()
         launch_cwd = self._launch_cwd()
         print("Running command:", command, flush=True)
         print(f"Policy {self.cfg.policy_idx}: Restarting self with args {command[1:]} in {launch_cwd}", flush=True)
