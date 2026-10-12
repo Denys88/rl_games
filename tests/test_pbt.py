@@ -610,7 +610,7 @@ class TestRestartProtocol:
         cmd = obs._restart_command({}, "/new.pth")
         assert cmd[cmd.index("--seed") + 1] == "42"
 
-    def test_restart_info_roundtrip_and_config_overrides(self, tmp_path, monkeypatch):
+    def test_restart_info_roundtrip_and_restart_flag(self, tmp_path, monkeypatch):
         import json
         monkeypatch.setenv(pbt_utils.RESTART_ENV_VAR, json.dumps({
             "policy_idx": 0, "source_policy": 1, "restart_count": 2, "iteration": 5, "frame": 100,
@@ -624,7 +624,9 @@ class TestRestartProtocol:
             assert obs.restart["source_policy"] == 1 and obs.restart_count == 2
             config = {}
             obs.before_init("run", config, "exp")
-            assert config["pbt_restart_overrides"] == ["learning_rate"]
+            # the restore needs no list of mutated keys (it compares the config with the
+            # checkpoint's stored values); the flag keeps the runner's --sigma off the restart
+            assert config["pbt_restart"] is True and "pbt_restart_overrides" not in config
             other = make_observer(tmp_path, extra_pbt={"policy_idx": 1})
             assert other.restart is None                   # metadata addressed to policy 0 only
         finally:
@@ -632,32 +634,36 @@ class TestRestartProtocol:
 
 
 class TestRestoreKeepsMutatedValues:
-    """rl_games restores last_lr/entropy_coef from checkpoints; PBT-mutated values must win."""
+    """The config is the source of truth for hyperparameters; a checkpoint contributes runtime
+    state (the adaptive walk, a linear schedule's position) while the config value is the one it
+    was saved with. The full rule: tests/test_pbt_restore.py."""
 
-    def _state(self):
+    ADAPTIVE = {"lr_schedule": "adaptive", "kl_threshold": 0.008}
+    LINEAR = {"lr_schedule": "linear", "schedule_entropy": True}
+
+    def _state(self, **config):
         from tests.test_critical_fixes import make_cartpole_agent
-        src = make_cartpole_agent(learning_rate=3e-4, entropy_coef=0.01)
+        src = make_cartpole_agent(learning_rate=3e-4, entropy_coef=0.01, **config)
         src.last_lr, src.entropy_coef = 1e-4, 0.01
         return src.get_full_state_weights()
 
     def test_plain_resume_restores_runtime_values(self):
         from tests.test_critical_fixes import make_cartpole_agent
-        dst = make_cartpole_agent(learning_rate=3e-4, entropy_coef=0.02)
-        dst.set_full_state_weights(self._state())
+        dst = make_cartpole_agent(learning_rate=3e-4, entropy_coef=0.01, **self.ADAPTIVE)
+        dst.set_full_state_weights(self._state(**self.ADAPTIVE))
         assert dst.last_lr == pytest.approx(1e-4) and dst.entropy_coef == pytest.approx(0.01)
 
-    def test_pbt_overrides_win(self):
+    def test_mutated_values_win(self):
         from tests.test_critical_fixes import make_cartpole_agent
-        dst = make_cartpole_agent(learning_rate=5e-4, entropy_coef=0.02,
-                                  pbt_restart_overrides=["learning_rate", "entropy_coef"])
+        dst = make_cartpole_agent(learning_rate=5e-4, entropy_coef=0.02)
         dst.set_full_state_weights(self._state())
         assert dst.last_lr == pytest.approx(5e-4) and dst.entropy_coef == pytest.approx(0.02)
         assert all(g["lr"] == pytest.approx(5e-4) for g in dst.optimizer.param_groups)
 
-    def test_only_listed_keys_are_kept(self):
+    def test_only_changed_values_replace_runtime_state(self):
         from tests.test_critical_fixes import make_cartpole_agent
-        dst = make_cartpole_agent(learning_rate=5e-4, entropy_coef=0.02, pbt_restart_overrides=["entropy_coef"])
-        dst.set_full_state_weights(self._state())
+        dst = make_cartpole_agent(learning_rate=3e-4, entropy_coef=0.02, **self.LINEAR)
+        dst.set_full_state_weights(self._state(**self.LINEAR))
         assert dst.last_lr == pytest.approx(1e-4) and dst.entropy_coef == pytest.approx(0.02)
 
 
