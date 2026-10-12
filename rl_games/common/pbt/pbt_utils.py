@@ -251,9 +251,22 @@ def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, 
     return scalar * n_done, n_done
 
 
-def _read_text(path) -> str:
-    with open(path) as fobj:
-        return fobj.read()
+def _read_text_and_ctime(path):
+    """(text, ctime) of a file, or None when it is gone: members delete their old files while
+    others read them. Bytes that are not UTF-8 are replaced (the file is malformed, not worth a
+    retry)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fobj:
+            return fobj.read(), os.fstat(fobj.fileno()).st_ctime
+    except FileNotFoundError:
+        return None
+
+
+def _is_number(value) -> bool:
+    """A finite int or float, as plain YAML loads one (a bool is not a number here)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return isinstance(value, int) or math.isfinite(value)
 
 
 _TMP_MARK = ".tmp."
@@ -278,20 +291,18 @@ def _remove_stale_tmp(directory, max_age=_STALE_TMP_SECONDS) -> None:
                 pass
 
 
-def _load_yaml_dict(path) -> dict:
-    """A workspace YAML file as a dict; unreadable or non-dict content counts as empty."""
-    try:
-        data = yaml.load(_read_text(path), Loader=yaml.FullLoader)
-    except (OSError, yaml.YAMLError):
-        return {}
-    return data if isinstance(data, dict) else {}
+def _atomic_write_text(path, text, tag="") -> None:
+    tmp = _tmp_path(path, tag)
+    with open(tmp, "w", encoding="utf-8") as fobj:
+        fobj.write(text)
+    os.replace(tmp, path)
 
 
 def _atomic_write_yaml(path, data, tag="") -> None:
-    tmp = _tmp_path(path, tag)
-    with open(tmp, "w") as fobj:
-        yaml.dump(data, fobj)
-    os.replace(tmp, path)
+    """Write `data` as plain YAML (`yaml.safe_dump`), atomically. A value plain YAML can't hold
+    (a numpy scalar, a tensor) raises before any file exists, instead of leaving a file that no
+    reader loads."""
+    _atomic_write_text(path, yaml.safe_dump(data), tag)
 
 
 def _atomic_torch_save(state, path, tag="") -> None:
@@ -301,24 +312,64 @@ def _atomic_torch_save(state, path, tag="") -> None:
 
 
 _CKPT_KEYS = ("iteration", "true_objective", "frame", "params", "checkpoint")
+_ITERATION_STEM = re.compile(r"[0-9]+")
+
+
+def _valid_pbt_checkpoint(ckpt) -> bool:
+    """Whether a loaded workspace yaml has every key with a usable type. The ranking and the
+    mutation run outside the iteration's error handling: a wrong type there stops the member."""
+    if not isinstance(ckpt, dict) or any(k not in ckpt for k in _CKPT_KEYS):
+        return False
+    iteration, params = ckpt["iteration"], ckpt["params"]
+    return (isinstance(iteration, int) and not isinstance(iteration, bool)
+            and _is_number(ckpt["true_objective"]) and _is_number(ckpt["frame"])
+            and isinstance(ckpt["checkpoint"], str) and isinstance(params, dict)
+            and all(isinstance(key, str) and _is_number(value) for key, value in params.items()))
+
+
+def _numbered_files(policy_dir) -> dict[int, list[Path]]:
+    """A member directory's iteration files (`<iteration>.yaml`, `<iteration>.pth`) by iteration."""
+    groups: dict[int, list[Path]] = {}
+    for p in Path(policy_dir).iterdir():
+        if p.suffix in (".yaml", ".pth") and _ITERATION_STEM.fullmatch(p.stem):
+            groups.setdefault(int(p.stem), []).append(p)
+    return groups
+
+
+def _unlink_iteration(paths) -> None:
+    """Delete one iteration's files, the .yaml first: readers list the yamls, so they never pick
+    an iteration whose checkpoint is already gone."""
+    for p in sorted(paths, key=lambda p: p.suffix != ".yaml"):
+        p.unlink(missing_ok=True)
+
+
+def saved_iterations(policy_dir) -> list[int]:
+    """The iterations a member directory holds a workspace yaml for, ascending."""
+    return sorted(it for it, paths in _numbered_files(policy_dir).items() if any(p.suffix == ".yaml" for p in paths))
+
+
+def remove_iterations_above(policy_dir, iteration) -> list[int]:
+    """Delete a member's iteration files above `iteration`, each .yaml before its .pth; returns
+    the iterations removed. They belong to a run the member doesn't continue (an earlier run, or
+    the future of a relaunch from an older checkpoint): peers would read them as its current state."""
+    groups = _numbered_files(policy_dir)
+    above = sorted(it for it in groups if it > iteration)
+    for it in above:
+        _unlink_iteration(groups[it])
+    return above
 
 
 def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params):
     """Save a PBT checkpoint (.pth and .yaml) with policy state, score, and metadata (rank 0 only).
 
-    Both files are written to a temp name and renamed, so readers never see partial files.
+    The yaml is plain YAML: a value it can't hold plainly (a numpy scalar from a custom mutation
+    function) raises before anything is written. Both files are written to a temp name and
+    renamed, the .pth first, so readers never see partial files or a yaml without its checkpoint.
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
-        state = algo.get_full_state_weights()
-        if "epoch" in state:
-            # called in after_steps, after update_epoch and before the epoch's update and frame
-            # increment: the weights and frame belong to the last completed epoch
-            state["epoch"] = int(algo.epoch_num) - 1
-        _atomic_torch_save(state, checkpoint_file)
         pbt_checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.yaml")
-
-        pbt_checkpoint = {
+        text = yaml.safe_dump({
             "iteration": curr_iter,
             "true_objective": to_float(curr_policy_score),
             "frame": int(algo.frame),
@@ -326,15 +377,26 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
             "checkpoint": os.path.abspath(checkpoint_file),
             "pbt_checkpoint": os.path.abspath(pbt_checkpoint_file),
             "experiment_name": algo.experiment_name,
-        }
-        _atomic_write_yaml(pbt_checkpoint_file, pbt_checkpoint)
+        })
+        state = algo.get_full_state_weights()
+        if "epoch" in state:
+            # called in after_steps, after update_epoch and before the epoch's update and frame
+            # increment: the weights and frame belong to the last completed epoch
+            state["epoch"] = int(algo.epoch_num) - 1
+        _atomic_torch_save(state, checkpoint_file)
+        _atomic_write_text(pbt_checkpoint_file, text)
 
 
 def load_pbt_ckpts(workspace_dir, cur_policy_id, num_policies, pbt_iteration) -> dict | None:
     """
     Load the latest available PBT checkpoint for each policy (≤ current iteration).
     Returns a dict mapping policy_idx → checkpoint dict or None. (rank 0 only)
-    Files missing required keys are skipped.
+
+    Each member directory is listed first, then its yamls are read newest first. A yaml that is
+    gone by then (its owner's cleanup) or malformed (not plain YAML, a key missing or of the
+    wrong type) is skipped for the next older one, without retrying. `checkpoint` is set to the
+    .pth next to the yaml when that exists, so a workspace mounted at another path, or moved,
+    still works; else the stored path stays. `pbt_checkpoint` is the yaml read.
     """
     if int(os.environ.get("RANK", "0")) != 0:
         return None
@@ -346,70 +408,79 @@ def load_pbt_ckpts(workspace_dir, cur_policy_id, num_policies, pbt_iteration) ->
         if not os.path.isdir(policy_dir):
             continue
 
-        pbt_checkpoint_files = sorted(
-            [f for f in os.listdir(policy_dir) if f.endswith(".yaml") and f[:-5].isdigit()], reverse=True)
-        for pbt_checkpoint_file in pbt_checkpoint_files:
-            iteration = int(pbt_checkpoint_file.split(".")[0])
-            if iteration > pbt_iteration:
-                continue
-
+        candidates = []
+        for name in os.listdir(policy_dir):
+            stem, ext = os.path.splitext(name)
+            if ext == ".yaml" and _ITERATION_STEM.fullmatch(stem) and int(stem) <= pbt_iteration:
+                candidates.append((int(stem), name))
+        for _, pbt_checkpoint_file in sorted(candidates, reverse=True):
             path = os.path.join(policy_dir, pbt_checkpoint_file)
-            ctime_ts = os.path.getctime(path)
+            loaded = safe_filesystem_op(_read_text_and_ctime, path)
+            if loaded is None:
+                print(f"Policy {cur_policy_id}: {path} is gone (cleaned up by its owner); trying an older one")
+                continue
+            text, ctime_ts = loaded
             created_str = datetime.datetime.fromtimestamp(ctime_ts).strftime("%Y-%m-%d %H:%M:%S")
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(
                 f"Policy {cur_policy_id} [{now_str}]: Loading"
                 f" policy-{policy_idx} {pbt_checkpoint_file} (created at {created_str})"
             )
-            text = safe_filesystem_op(_read_text, path)
             try:
-                ckpt = yaml.load(text, Loader=yaml.FullLoader)
+                ckpt = yaml.safe_load(text)
             except yaml.YAMLError:
                 ckpt = None
-            if not isinstance(ckpt, dict) or any(k not in ckpt for k in _CKPT_KEYS):
+            if not _valid_pbt_checkpoint(ckpt):
                 print(f"Policy {cur_policy_id}: skipping malformed PBT checkpoint {path}")
                 continue
+            local_checkpoint = os.path.join(policy_dir, os.path.splitext(pbt_checkpoint_file)[0] + ".pth")
+            if os.path.isfile(local_checkpoint):
+                ckpt["checkpoint"] = os.path.abspath(local_checkpoint)
+            ckpt["pbt_checkpoint"] = os.path.abspath(path)
             checkpoints[policy_idx] = ckpt
             break
 
     return checkpoints
 
 
+_KEEP_NEWEST = 10  # cleanup never thins a member's newest iterations (IsaacGymEnvs)
+
+
 def cleanup(checkpoints: dict[int, dict], policy_dir, keep_back: int = 20, max_yaml: int = 50) -> None:
     """
-    Cleanup old checkpoints for the current policy directory (rank 0 only).
-    - Delete files older than (oldest iteration among live members - keep_back). A member
-      more than keep_back iterations behind the newest one counts as stopped and is ignored.
-    - Keep at most `max_yaml` latest YAML iterations.
+    Cleanup old checkpoints of this member (rank 0 only), as IsaacGymEnvs' DexPBT does.
+    - Delete files at or below (slowest member's iteration - keep_back), where a member without a
+      checkpoint counts as iteration 0, except the newest yaml at or below the slowest member's
+      iteration. A live member however far behind keeps finding this member at or below its own
+      iteration.
+    - Above `max_yaml` iterations, thin the older ones, never the newest 10 or the oldest: delete
+      the iteration whose removal leaves the smallest gap, until max(max_yaml, 12) are left. Disk
+      use stays bounded when a member stops, and a laggard still finds a file below it.
+    Each iteration's .yaml is deleted before its .pth.
     """
-    if int(os.environ.get("RANK", "0")) == 0:
-        iterations = [ckpt["iteration"] for ckpt in checkpoints.values() if ckpt]
-        if not iterations:
-            return
-        newest = max(iterations)
-        live = [it for it in iterations if it >= newest - keep_back]
-        threshold = max(0, min(live) - keep_back)
-        root = Path(policy_dir)
-        _remove_stale_tmp(policy_dir)
+    if int(os.environ.get("RANK", "0")) != 0:
+        return
+    slowest = min((ckpt["iteration"] if ckpt else 0 for ckpt in checkpoints.values()), default=0)
+    threshold = slowest - keep_back
+    _remove_stale_tmp(policy_dir)
+    groups = _numbered_files(policy_dir)
+    yaml_iters = sorted(it for it, paths in groups.items() if any(p.suffix == ".yaml" for p in paths))
 
-        # group files by numeric iteration (only *.yaml / *.pth)
-        groups: dict[int, list[Path]] = {}
-        for p in root.iterdir():
-            if p.suffix in (".yaml", ".pth") and p.stem.isdigit():
-                groups.setdefault(int(p.stem), []).append(p)
+    # 1) what every member is past: keep the file the slowest member reads, though
+    readable = max((it for it in yaml_iters if it <= slowest), default=None)
+    for it in sorted(it for it in groups if it <= threshold and it != readable):
+        _unlink_iteration(groups.pop(it))
+    yaml_iters = [it for it in yaml_iters if it in groups]
 
-        # 1) drop anything older than threshold
-        for it in [i for i in groups if i <= threshold]:
-            for p in groups[it]:
-                p.unlink(missing_ok=True)
-            groups.pop(it, None)
-
-        # 2) cap total YAML checkpoints: keep newest `max_yaml` iters
-        yaml_iters = sorted((i for i, ps in groups.items() if any(p.suffix == ".yaml" for p in ps)), reverse=True)
-        for it in yaml_iters[max_yaml:]:
-            for p in groups.get(it, []):
-                p.unlink(missing_ok=True)
-            groups.pop(it, None)
+    # 2) thin the old ones so that a stopped member doesn't make the directory grow
+    while len(yaml_iters) > max_yaml:
+        candidates = yaml_iters[:-_KEEP_NEWEST]
+        if len(candidates) < 3:
+            break
+        # the inner candidate whose removal leaves the smallest gap (the oldest on ties)
+        k = min(range(1, len(candidates) - 1), key=lambda j: candidates[j + 1] - candidates[j - 1])
+        _unlink_iteration(groups.pop(candidates[k]))
+        yaml_iters.remove(candidates[k])
 
 
 def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_entry, epoch=None, *,
@@ -439,42 +510,156 @@ def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_ent
     return os.path.abspath(restart_checkpoint)
 
 
-def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, checkpoint, params) -> bool:
-    """Keep a copy of the population-best checkpoint in <workspace>/best (called by the best member).
+# <workspace>/best: per-member records `p<idx>_<it>.yaml` naming copies `best_p<idx>_<it>.pth`,
+# each written once by its member; `best.yaml` is a view with the best record's content
+_BEST_VIEW = "best.yaml"
+_BEST_RECORD = re.compile(r"p([0-9]+)_([0-9]+)\.yaml")
+_BEST_COPY = re.compile(r"best_p([0-9]+)_([0-9]+)\.pth")
 
-    Checkpoint copies have unique names and `best.yaml` names the current one, so concurrent
-    writers never leave a checkpoint/metadata pair from different members.
+
+def _best_record(text, best_dir) -> dict | None:
+    """A best record (or the view) loaded from `text`; None when malformed. `checkpoint` becomes
+    the copy of that name in `best_dir` when it exists (the workspace may be mounted elsewhere)."""
+    try:
+        record = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+    if not (isinstance(record, dict) and _is_number(record.get("true_objective"))
+            and isinstance(record.get("checkpoint"), str)):
+        return None
+    local_copy = os.path.join(best_dir, os.path.basename(record["checkpoint"]))
+    if os.path.isfile(local_copy):
+        record["checkpoint"] = os.path.abspath(local_copy)
+    return record
+
+
+def _best_records(best_dir) -> tuple[dict[str, dict], set[str]]:
+    """(readable records by file name, names listed but gone) in `best_dir`.
+
+    The view `best.yaml` counts as a record too: it holds one, and it is the only record 1e6966a
+    wrote. The directory is listed before any file is opened. A listed file that is gone was
+    replaced by its owner's newer record, so the directory is listed once more for that one:
+    a missing file is skipped, never taken as "no best".
+    """
+    records, seen, gone = {}, set(), set()
+    for _ in range(2):
+        try:
+            names = os.listdir(best_dir)
+        except FileNotFoundError:
+            break
+        gone = set()
+        for name in names:
+            if name in seen or not (name == _BEST_VIEW or _BEST_RECORD.fullmatch(name)):
+                continue
+            loaded = safe_filesystem_op(_read_text_and_ctime, os.path.join(best_dir, name))
+            if loaded is None:
+                gone.add(name)
+                continue
+            seen.add(name)
+            record = _best_record(loaded[0], best_dir)
+            if record is not None:
+                records[name] = record
+        if not gone:
+            break
+    return records, gone
+
+
+def _top_record(records) -> dict | None:
+    """The highest-objective record whose checkpoint copy exists (on a tie, a record before the view)."""
+    present = [(record["true_objective"], name != _BEST_VIEW, name) for name, record in records.items()
+               if os.path.isfile(record["checkpoint"])]
+    return records[max(present)[2]] if present else None
+
+
+def population_best(workspace_dir) -> dict | None:
+    """The best record in <workspace>/best: the highest objective whose checkpoint copy exists, or
+    None. A dict with the keys of `best.yaml` (policy_idx, iteration, frame, true_objective, params,
+    checkpoint, source_checkpoint); `checkpoint` is the copy's path on this host's mount.
+
+    Authoritative: `best.yaml` is a view of it, rebuilt by several members, that can lag behind
+    for a while on a shared filesystem.
+    """
+    return _top_record(_best_records(os.path.join(workspace_dir, "best"))[0])
+
+
+def _rebuild_best_view(best_dir, tag) -> tuple[dict[str, dict], set[str]]:
+    """Point `best.yaml` at the best record; returns the last listing (see `_best_records`).
+
+    Other members rebuild it too, and a view built from an older listing may land after this
+    one: list again and rewrite until the view holds the best record (a few rounds). A view that
+    is listed but can't be read stays: it may hold a record (1e6966a's) that exists nowhere else.
+    """
+    for attempt in range(4):
+        records, gone = _best_records(best_dir)
+        top = _top_record(records)
+        if attempt == 3 or top is None or _BEST_VIEW in gone or records.get(_BEST_VIEW) == top:
+            return records, gone
+        _atomic_write_yaml(os.path.join(best_dir, _BEST_VIEW), top, tag=tag)
+
+
+def _drop_old_best(best_dir, policy_idx, records, gone) -> None:
+    """Delete this member's best records and copies, except its two best records (the new one,
+    and the previous one, which a view written concurrently may still name) and the copy the
+    view names. Records go before their copies. A copy without a record (1e6966a's, or a write
+    cut short) only goes when the view could be read."""
+    own = {}
+    for name, record in records.items():
+        match = _BEST_RECORD.fullmatch(name)
+        if match and int(match.group(1)) == policy_idx:
+            # a member's records grow in objective as it writes them, also across a relaunch
+            # that numbers its iterations lower again
+            own[name[:-len(".yaml")]] = (record["true_objective"], int(match.group(2)))
+    keep = set(sorted(own, key=own.get)[-2:])
+    view = records.get(_BEST_VIEW)
+    if view is not None:
+        keep.add(os.path.basename(view["checkpoint"])[len("best_"):-len(".pth")])
+    stale_records, stale_copies = [], []
+    for name in os.listdir(best_dir):
+        record_match, copy_match = _BEST_RECORD.fullmatch(name), _BEST_COPY.fullmatch(name)
+        if record_match and int(record_match.group(1)) == policy_idx and name[:-len(".yaml")] not in keep:
+            stale_records.append(name)
+        elif copy_match and int(copy_match.group(1)) == policy_idx:
+            stem = name[len("best_"):-len(".pth")]
+            if stem not in keep and (stem in own or _BEST_VIEW not in gone):
+                stale_copies.append(name)
+    for name in stale_records + stale_copies:
+        try:
+            os.remove(os.path.join(best_dir, name))
+        except FileNotFoundError:
+            pass
+
+
+def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, checkpoint, params) -> bool:
+    """Record a new population best in <workspace>/best (called by the population-best member).
+
+    Returns whether `objective` beat `population_best()` and was recorded. The member writes its
+    own files under new names: the copy `best_p<idx>_<it>.pth`, then the record `p<idx>_<it>.yaml`
+    naming it (each to a temp name, then renamed), so no member replaces another's file and a
+    listed record's copy exists. Then it rebuilds the view `best.yaml` and deletes its own older
+    records and copies (see `_drop_old_best`).
     """
     best_dir = os.path.join(workspace_dir, "best")
     os.makedirs(best_dir, exist_ok=True)
     _remove_stale_tmp(best_dir)
-    meta_file = os.path.join(best_dir, "best.yaml")
-    if os.path.isfile(meta_file):
-        previous = _load_yaml_dict(meta_file)
-        try:
-            previous_objective = to_float(previous.get("true_objective", UNINITIALIZED_VALUE))
-        except (TypeError, ValueError):
-            previous_objective = UNINITIALIZED_VALUE
-        if previous_objective >= objective:
-            return False
+    objective = to_float(objective)
+    current = population_best(workspace_dir)
+    if not math.isfinite(objective) or (current is not None and current["true_objective"] >= objective):
+        return False
     tag = f"p{policy_idx:03d}"
-    best_checkpoint = os.path.join(best_dir, f"best_{tag}_{iteration:06d}.pth")
+    stem = f"{tag}_{iteration:06d}"
+    best_checkpoint = os.path.join(best_dir, f"best_{stem}.pth")
+    # a value plain YAML can't hold raises here, before any file is written
+    text = yaml.safe_dump({
+        "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
+        "true_objective": objective, "params": params,
+        "checkpoint": os.path.abspath(best_checkpoint), "source_checkpoint": os.path.abspath(checkpoint),
+    })
     tmp = _tmp_path(best_checkpoint, tag)
     shutil.copyfile(checkpoint, tmp)
     os.replace(tmp, best_checkpoint)
-    _atomic_write_yaml(meta_file, tag=tag, data={
-        "policy_idx": policy_idx, "iteration": iteration, "frame": int(frame),
-        "true_objective": to_float(objective), "params": params,
-        "checkpoint": os.path.abspath(best_checkpoint), "source_checkpoint": os.path.abspath(checkpoint),
-    })
-    # drop this member's older copies that best.yaml no longer names
-    current = os.path.basename(str(_load_yaml_dict(meta_file).get("checkpoint", "")))
-    for f in os.listdir(best_dir):
-        if f.startswith(f"best_p{policy_idx:03d}_") and f.endswith(".pth") and f != current:
-            try:
-                os.remove(os.path.join(best_dir, f))
-            except FileNotFoundError:
-                pass
+    _atomic_write_text(os.path.join(best_dir, f"{stem}.yaml"), text, tag=tag)
+    records, gone = _rebuild_best_view(best_dir, tag)
+    _drop_old_best(best_dir, policy_idx, records, gone)
     return True
 
 

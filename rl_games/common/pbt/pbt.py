@@ -262,7 +262,9 @@ class PbtAlgoObserver(AlgoObserver):
 
         Flow:
             1) All ranks: sync the restart flag; non-zero ranks exit and rank 0 re-execs
-               when it is set.
+               when it is set. The first step after a (re)start then only sets the PBT
+               cadence from the restored frame, and rank 0 checks the member directory
+               (`_check_member_dir`).
             2) All ranks: pool the objective window across ranks and track the best pooled
                objective of the iteration.
             3) On the PBT cadence (`interval_steps`), once every rank has a full window, rank 0
@@ -286,6 +288,8 @@ class PbtAlgoObserver(AlgoObserver):
             # first step after (re)start: the checkpoint restore has already set the frame
             self.pbt_it = frame // self.cfg.interval_steps
             self.initial_frame = frame
+            if self.distributed_args.rank == 0:
+                self._check_member_dir(frame)
             return
 
         total, count, known = self._pooled_window(distributed)
@@ -310,6 +314,35 @@ class PbtAlgoObserver(AlgoObserver):
         if self.distributed_args.rank != 0:
             return
         self._pbt_iteration(total / count, best_in_iteration, frame)
+
+    def _check_member_dir(self, frame):
+        """Rank 0, first step of the process: make the member directory this run's own.
+
+        Workspace files are named by iteration only, so peers read whatever this directory holds
+        as this member's current state, and may copy its weights. A fresh launch (not a PBT
+        restart, frame 0 after the restore) over numbered checkpoints of an earlier run raises
+        unless `pbt.reuse_workspace` is set; this step's only collective (the restart flag
+        broadcast) is behind it, and torchrun then stops the other ranks. Otherwise this member's
+        files above its current iteration are deleted: a relaunch from an older checkpoint, or
+        reused leftovers.
+        """
+        directory = getattr(self, "curr_policy_dir", None)
+        if directory is None or not os.path.isdir(directory):
+            return
+        saved = pbt_utils.saved_iterations(directory)
+        fresh = getattr(self, "restart", None) is None and frame == 0
+        if fresh and saved and not getattr(self.cfg, "reuse_workspace", False):
+            raise RuntimeError(
+                f"Policy {self.cfg.policy_idx}: {directory} holds PBT checkpoints of an earlier run (iterations "
+                f"{saved[0]}..{saved[-1]}), and this is a fresh launch (no checkpoint, not a PBT restart): peers "
+                f"would rank them, and copy their weights, as this member's current state. Start the population "
+                f"in a new workspace (pbt.workspace or train_dir), delete the old one, or set "
+                f"pbt.reuse_workspace: true to start over it (each member then deletes its own numbered files)")
+        removed = pbt_utils.remove_iterations_above(directory, self.pbt_it)
+        if removed:
+            print(f"Policy {self.cfg.policy_idx}: removed iterations {removed[0]}..{removed[-1]} ({len(removed)}) "
+                  f"above iteration {self.pbt_it} from {directory}: an earlier run left them, and peers would read "
+                  f"them as this member's current state")
 
     def _pbt_iteration(self, score, best_in_iteration, frame):
         cfg = self.cfg
