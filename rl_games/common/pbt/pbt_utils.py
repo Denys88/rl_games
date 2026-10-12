@@ -14,6 +14,7 @@ import socket
 import sys
 import time
 from collections import OrderedDict
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -246,16 +247,12 @@ def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int,
                                  f"of size {size}")
             picked = picked[env_idx.to(picked.device)] if torch.is_tensor(picked) else picked[env_idx.numpy()]
         if torch.is_tensor(picked):
-            picked = picked.detach().double()
-            finite = torch.isfinite(picked)
-            # one device sync for both numbers
-            total, count = torch.stack([picked.masked_fill(~finite, 0.0).sum(), finite.sum().double()]).tolist()
-        else:
-            picked = np.asarray(picked, dtype=np.float64)
-            finite = np.isfinite(picked)
-            total, count = picked[finite].sum(), finite.sum()
-        count = int(count)
-        return float(total), count, int(picked.shape[0]) - count
+            # the picked values to the host (one sync) before widening them: MPS has no float64
+            picked = picked.detach().cpu().double().numpy()
+        picked = np.asarray(picked, dtype=np.float64)
+        finite = np.isfinite(picked)
+        count = int(finite.sum())
+        return float(picked[finite].sum()), count, int(picked.shape[0]) - count
     scalar = to_float(value)
     episodes = 1 if n_done is None else n_done
     if not math.isfinite(scalar):
@@ -377,12 +374,36 @@ def remove_iterations_above(policy_dir, iteration) -> list[int]:
     return above
 
 
+# the networks of a learner checkpoint: the actor-critic with its normalizers, the central value net
+_NETWORK_KEYS = ("model", "assymetric_vf_nets")
+
+
+def _check_finite_weights(state, what) -> None:
+    """Raise ValueError when a network in learner checkpoint `state` holds NaN or inf.
+
+    A diverged policy must not reach the workspace or a restart: a peer would copy it as its
+    donor, and a NaN policy trains on silently. Floating-point tensors only (integer counters
+    hold no NaN).
+    """
+    bad = []
+    for key in _NETWORK_KEYS:
+        value = state.get(key) if isinstance(state, Mapping) else None
+        for name, tensor in (value.items() if isinstance(value, Mapping) else [(None, value)]):
+            if torch.is_tensor(tensor) and tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
+                bad.append(key if name is None else f"{key}.{name}")
+    if bad:
+        more = f" and {len(bad) - 3} more" if len(bad) > 3 else ""
+        raise ValueError(f"{what}: NaN or inf in {', '.join(bad[:3])}{more} (a diverged policy)")
+
+
 def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params):
     """Save a PBT checkpoint (.pth and .yaml) with policy state, score, and metadata (rank 0 only).
 
     The yaml is plain YAML: a value it can't hold plainly (a numpy scalar from a custom mutation
-    function) raises before anything is written. Both files are written to a temp name and
-    renamed, the .pth first, so readers never see partial files or a yaml without its checkpoint.
+    function) raises before anything is written. A state whose networks hold NaN or inf raises
+    ValueError before anything is written too, so the member's newest checkpoint stays its last
+    finite one. Both files are written to a temp name and renamed, the .pth first, so readers
+    never see partial files or a yaml without its checkpoint.
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
@@ -401,6 +422,7 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
             # called in after_steps, after update_epoch and before the epoch's update and frame
             # increment: the weights and frame belong to the last completed epoch
             state["epoch"] = int(algo.epoch_num) - 1
+        _check_finite_weights(state, f"PBT checkpoint {checkpoint_file}")
         _atomic_torch_save(state, checkpoint_file)
         _atomic_write_text(pbt_checkpoint_file, text)
 
@@ -510,9 +532,11 @@ def prepare_restart_checkpoint(source_checkpoint, policy_dir, frame, history_ent
     `config_hparams` replaces the stored configured values key by key (the restart's
     pre-mutation values: the restore then moves an inherited adaptive LR by this restart's
     mutation factor only), and `last_mean_rewards` the best-reward watermark (the member's
-    own, when it keeps writing into the same run directory).
+    own, when it keeps writing into the same run directory). A source whose networks hold NaN
+    or inf (published by an older member) raises ValueError, and nothing is written.
     """
     state = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
+    _check_finite_weights(state, f"restart source {source_checkpoint}")
     state["frame"] = int(frame)
     if epoch is not None:
         state["epoch"] = int(epoch)

@@ -1,5 +1,6 @@
 """PBT objective: the per-episode finite filter, the per-rank freshness gate at iteration
-boundaries, the x axis of the pbt/* scalars and the per-iteration param scalars."""
+boundaries, no NaN or inf weights published or copied, the x axis of the pbt/* scalars and the
+per-iteration param scalars."""
 
 import json
 import os
@@ -19,6 +20,20 @@ from tests.test_pbt import BandWriter, FakeAlgo, make_observer, synthetic_ckpt
 NAN, INF = float("nan"), float("inf")
 DONE4 = torch.arange(4).reshape(-1, 1)          # every env of a 4-env rank finished
 NO_DONE = torch.zeros((0, 1), dtype=torch.long)
+
+
+class NoFloat64Tensor(torch.Tensor):
+    """A tensor on a device without float64 (MPS): asking it for float64 raises TypeError, as
+    torch does on MPS; its host copy (`.cpu()`) is a plain tensor."""
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
+        if any(arg is torch.float64 for arg in (*args, *kwargs.values())) or func is torch.Tensor.double:
+            raise TypeError("Cannot convert a MPS Tensor to float64 dtype as the MPS framework doesn't support "
+                            "float64. Please use float32 instead.")
+        result = super().__torch_function__(func, types, args, kwargs)
+        return result.as_subclass(torch.Tensor) if func is torch.Tensor.cpu else result
 
 
 class TestEpisodeStats:
@@ -43,6 +58,14 @@ class TestEpisodeStats:
 
     def test_episode_sum_count_drops_nonfinite_entries(self):
         assert pbt_utils.episode_sum_count(torch.tensor([1.0, NAN, 3.0, 4.0]), DONE4) == (8.0, 3)
+
+    def test_per_env_objective_on_a_device_without_float64(self):
+        # MPS has no float64: the finished envs' values are widened on the host
+        values = torch.tensor([1.0, NAN, 0.0, 1.0]).as_subclass(NoFloat64Tensor)
+        with pytest.raises(TypeError):
+            values.double()                                 # the emulated device refuses float64
+        assert pbt_utils.episode_stats(values, DONE4) == (2.0, 3, 1)
+        assert pbt_utils.episode_stats(values, torch.tensor([[3]])) == (1.0, 1, 0)
 
 
 def test_one_nonfinite_env_keeps_the_other_episodes_of_its_step(tmp_path):
@@ -120,6 +143,17 @@ class TestFreshObjective:
         tick(obs, algo, 200, ONES)                          # iteration 2 runs
         tick(obs, algo, 300, NANS)                          # 1 of 2 again
         assert [frame for _, frame in calls] == [100, 200] and obs.pbt_it == 2
+        tick(obs, algo, 300, ONES)                          # iteration 3 forgets the failed envs as well:
+        for frame in (400, 500):                            # env 0 alone fails, a window per boundary
+            tick(obs, algo, frame, NANS, NANS, NANS, NANS, done=DONE4[:1])
+        assert obs.pbt_it == 3
+
+    def test_samples_without_done_indices_stand_for_the_rank(self, tmp_path):
+        # a caller without done indices reports one sample per call, with no env to attribute it to
+        obs, algo, calls = member(tmp_path, max_consecutive_errors=1)
+        tick(obs, algo, 100, ONES)
+        with pytest.raises(RuntimeError, match="0 finite, 4 non-finite and 0 unreadable"):
+            tick(obs, algo, 200, *[{"episode": {"success": NAN}}] * 4, done=None)
 
     def test_waiting_for_episodes_to_finish_never_raises(self, tmp_path, capsys):
         # long episodes (e.g. synchronized time limits after a restart) leave intervals without a
@@ -144,15 +178,138 @@ class TestFreshObjective:
         with pytest.raises(RuntimeError, match="'episode.success'"):
             tick(obs, algo, 300, success(NAN, NAN, NAN, NAN), done=DONE4[3:])
 
-    def test_window_that_never_fills_never_raises(self, tmp_path, capsys):
-        # before the member's first iteration nothing counts towards the raise
+    def test_one_env_failing_on_every_step_is_not_a_failed_rank(self, tmp_path):
+        # env 0 ends an episode with a NaN objective on every step (a reset loop) while envs 1-3 are
+        # mid-episode (synchronized time limits): more failed episodes than envs, but not every env
+        obs, algo, calls = member(tmp_path, max_consecutive_errors=2)
+        tick(obs, algo, 100, ONES)
+        for frame in range(200, 700, 100):
+            tick(obs, algo, frame, NANS, NANS, done=DONE4[:1])
+        assert obs.pbt_it == 1 and len(calls) == 1
+        tick(obs, algo, 700, NANS, done=DONE4[1:])          # now every env failed: 1 of 2
+        with pytest.raises(RuntimeError, match="2 consecutive .* 1 of 1 ranks"):
+            tick(obs, algo, 800)
+
+    def test_a_failed_rank_counts_envs_not_agents(self, tmp_path):
+        # 2 agents per env: the done indices are agent indices, one per finished env
+        obs, algo, calls = member(tmp_path, max_consecutive_errors=1)
+        algo.num_agents = 2
+        tick(obs, algo, 100, ONES, done=DONE4 * 2)
+        with pytest.raises(RuntimeError, match="1 of 1 ranks"):
+            tick(obs, algo, 200, NANS, done=DONE4 * 2)
+
+    def test_nonfinite_from_the_start_raises(self, tmp_path):
+        # a restart from a diverged donor, or a resume from a diverged checkpoint: the process never
+        # runs an iteration, and its failed boundaries count all the same
+        obs, algo, calls = member(tmp_path, max_consecutive_errors=2)
+        tick(obs, algo, 100, NANS, {})                      # 1 of 2
+        with pytest.raises(RuntimeError, match=r"2 consecutive .* 0 finite, 8 non-finite and 4 unreadable"):
+            tick(obs, algo, 200, NANS)
+        assert calls == []
+
+    def test_window_that_fills_slowly_never_raises(self, tmp_path, capsys):
+        # before the first iteration as after it, episodes yet to end are not a failed rank
         obs, algo, calls = member(tmp_path, max_consecutive_errors=1)
         for frame in range(100, 600, 100):
-            tick(obs, algo, frame, NANS, {})
+            tick(obs, algo, frame, ONES, done=NO_DONE)
+        tick(obs, algo, 600, success(NAN, NAN, NAN, 1.0), done=DONE4[:3])
         assert calls == [] and obs.pbt_it == 0
         out = capsys.readouterr().out
-        assert out.count("waits for objective 'episode.success'") == 5
-        assert "0 finished episodes counted, 4 per rank needed (20 non-finite and 20 unreadable dropped)" in out
+        assert out.count("waits for objective 'episode.success'") == 6
+        assert "0 finished episodes counted, 4 per rank needed (3 non-finite and 0 unreadable dropped)" in out
+        tick(obs, algo, 600, ONES)
+        assert calls == [(1.0, 600)] and obs.pbt_it == 6
+
+    def test_infos_without_the_objective_raise(self, tmp_path):
+        obs, algo, calls = member(tmp_path, max_consecutive_errors=2)
+        tick(obs, algo, 100, ONES)
+        tick(obs, algo, 200, {"episode": {}})               # every lookup fails as envs finish: 1 of 2
+        with pytest.raises(RuntimeError, match=r"0 finite, 0 non-finite and 8 unreadable episodes since "
+                                               r"iteration 1; last lookup error: KeyError\('success'\)"):
+            tick(obs, algo, 300, {"episode": {}})
+        assert calls == [(1.0, 100)]
+
+    def test_an_overflowing_sum_counts_as_nonfinite(self, tmp_path, capsys):
+        # finite values whose sum is not: neither in the window nor a new objective
+        obs, algo, calls = member(tmp_path)
+        tick(obs, algo, 100, ONES)
+        tick(obs, algo, 200, {"episode": {"success": 1e308}})   # the mean of 4 episodes: the sum overflows
+        assert obs.pbt_it == 1 and obs.score == 1.0
+        assert "0 finite, 4 non-finite and 0 unreadable episodes since iteration 1" in capsys.readouterr().out
+
+    def test_a_warning_reports_the_lookup_errors_of_its_own_interval(self, tmp_path, capsys):
+        obs, algo, calls = member(tmp_path)
+        tick(obs, algo, 100, {}, ONES)                      # a failed lookup, then iteration 1
+        capsys.readouterr()
+        tick(obs, algo, 200, NANS)
+        assert "last lookup error: None" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------------------------
+# A diverged policy never reaches the workspace: the gate releases the first boundary after a
+# divergence in the middle of an interval (episodes that ended before it are finite), so the save
+# itself refuses NaN or inf weights, and a restart refuses a donor that holds them.
+
+class DivergingAlgo(FakeAlgo):
+    """A learner whose state has a policy network and, optionally, a central value net."""
+
+    def __init__(self, frame=0):
+        super().__init__(frame)
+        self.weights = {"mu.weight": torch.ones(2, 2), "running_mean_std.count": torch.tensor(5)}
+        self.critic = None
+
+    def get_full_state_weights(self):
+        state = {"model": {name: value.clone() for name, value in self.weights.items()}, "frame": self.frame}
+        if self.critic is not None:
+            state["assymetric_vf_nets"] = {"critic.weight": self.critic.clone()}
+        return state
+
+
+class TestFiniteWeights:
+
+    def test_nonfinite_weights_are_not_published(self, tmp_path):
+        algo = DivergingAlgo(frame=1000)
+        pbt_utils.save_pbt_checkpoint(str(tmp_path), 0.9, 1, algo, {})
+        algo.weights["mu.weight"][0, 1] = NAN
+        with pytest.raises(ValueError, match=r"model\.mu\.weight"):
+            pbt_utils.save_pbt_checkpoint(str(tmp_path), 0.9, 2, algo, {})
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["000001.pth", "000001.yaml"]
+
+    def test_nonfinite_central_value_net_is_not_published(self, tmp_path):
+        algo = DivergingAlgo()
+        algo.critic = torch.tensor([1.0, -INF])
+        with pytest.raises(ValueError, match=r"assymetric_vf_nets\.critic\.weight"):
+            pbt_utils.save_pbt_checkpoint(str(tmp_path), 0.9, 1, algo, {})
+        assert not list(tmp_path.iterdir())
+
+    def test_a_nonfinite_donor_is_not_copied(self, tmp_path):
+        # e.g. published by a member that runs an older rl_games
+        src = tmp_path / "src.pth"
+        torch.save({"frame": 5000, "model": {"mu.weight": torch.tensor([NAN, 1.0])}}, src)
+        with pytest.raises(ValueError, match=r"model\.mu\.weight"):
+            pbt_utils.prepare_restart_checkpoint(str(src), str(tmp_path), 7000, {"source_policy": 3})
+        assert not (tmp_path / "restart.pth").exists()
+
+
+def test_a_member_diverging_mid_interval_keeps_its_last_finite_checkpoint(tmp_path, capsys):
+    obs = make_observer(tmp_path, extra_pbt={"objective_window": 4, "interval_steps": 100,
+                                             "max_consecutive_errors": 2})
+    algo = DivergingAlgo()
+    algo.train_dir, algo.num_actors, algo.writer = str(tmp_path), 4, BandWriter()
+    obs.after_init(algo)
+    obs.after_steps()                                       # cadence init at frame 0
+    tick(obs, algo, 100, ONES)                              # iteration 1: finite weights
+    tick(obs, algo, 150, ONES)                              # an epoch of finite episodes, then its
+    algo.weights["mu.weight"][:] = NAN                      # update diverges
+    tick(obs, algo, 200, NANS)                              # iteration 2 runs: its save is refused
+    out = capsys.readouterr().out
+    assert obs.pbt_it == 2 and "NaN or inf in model.mu.weight" in out and "save/load (1/2)" in out
+    newest = pbt_utils.load_pbt_ckpts(obs.ws_dir, 1, 2, 2)[0]   # what a peer reads as member 0
+    assert newest["iteration"] == 1
+    assert torch.isfinite(torch.load(newest["checkpoint"], weights_only=False)["model"]["mu.weight"]).all()
+    tick(obs, algo, 300, NANS)                              # failed boundaries: 1 of 2
+    with pytest.raises(RuntimeError, match="2 consecutive"):
+        tick(obs, algo, 400, NANS)
 
 
 # ---------------------------------------------------------------------------------------------
