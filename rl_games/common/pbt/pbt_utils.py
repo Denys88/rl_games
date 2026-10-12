@@ -3,6 +3,7 @@
 # Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
+import contextlib
 import datetime
 import json
 import math
@@ -396,14 +397,15 @@ def _check_finite_weights(state, what) -> None:
         raise ValueError(f"{what}: NaN or inf in {', '.join(bad[:3])}{more} (a diverged policy)")
 
 
-def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params):
+def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, params, *, replaceable=True):
     """Save a PBT checkpoint (.pth and .yaml) with policy state, score, and metadata (rank 0 only).
 
     The yaml is plain YAML: a value it can't hold plainly (a numpy scalar from a custom mutation
     function) raises before anything is written. A state whose networks hold NaN or inf raises
     ValueError before anything is written too, so the member's newest checkpoint stays its last
     finite one. Both files are written to a temp name and renamed, the .pth first, so readers
-    never see partial files or a yaml without its checkpoint.
+    never see partial files or a yaml without its checkpoint. `replaceable: false` keeps the
+    member out of its peers' worst group while it can't act on a replacement (see `member_status`).
     """
     if int(os.environ.get("RANK", "0")) == 0:
         checkpoint_file = os.path.join(workspace_dir, f"{curr_iter:06d}.pth")
@@ -416,6 +418,7 @@ def save_pbt_checkpoint(workspace_dir, curr_policy_score, curr_iter, algo, param
             "checkpoint": os.path.abspath(checkpoint_file),
             "pbt_checkpoint": os.path.abspath(pbt_checkpoint_file),
             "experiment_name": algo.experiment_name,
+            "replaceable": bool(replaceable),
         })
         state = algo.get_full_state_weights()
         if "epoch" in state:
@@ -481,6 +484,60 @@ def load_pbt_ckpts(workspace_dir, cur_policy_id, num_policies, pbt_iteration) ->
             break
 
     return checkpoints
+
+
+def mark_not_replaceable(policy_dir) -> str | None:
+    """Rewrite this member's newest workspace yaml with `replaceable: false` (temp + rename) and
+    return its path; None without a readable one. For a member that decided to restart: peers
+    read that yaml as its state until the restarted process saves, and the member can't act on
+    a replacement meanwhile. Only the member writes its own yamls."""
+    yamls = {it: p for it, paths in _numbered_files(policy_dir).items() for p in paths if p.suffix == ".yaml"}
+    if not yamls:
+        return None
+    path = str(yamls[max(yamls)])
+    with open(path, encoding="utf-8") as fobj:
+        data = yaml.safe_load(fobj)
+    if not isinstance(data, dict):
+        return None
+    data["replaceable"] = False
+    _atomic_write_yaml(path, data)
+    return path
+
+
+# a member's status in a reader's view (`member_status`); only REPLACEABLE members take worst slots
+REPLACEABLE, NOT_REPLACEABLE, BEHIND, NOT_REPORTED = "OK", "not replaceable", "behind", "—"
+
+
+def member_status(checkpoints: dict[int, dict | None], reader_iteration: int) -> dict[int, str]:
+    """Each member's status as the reader of `checkpoints` (`load_pbt_ckpts` at `reader_iteration`)
+    sees it, for the replacement rule and the checkpoint summary:
+
+    - "—": no checkpoint with an objective at or below the reader's iteration;
+    - "not replaceable": its newest yaml says `replaceable: false` (restarting, in a grace window
+      or near the end of its run);
+    - "behind": its newest yaml is 2 or more iterations behind the reader's (a restart starting
+      up, a stalled member);
+    - "OK": replaceable. A yaml without the field (1e6966a) is replaceable.
+    """
+    status = {}
+    for policy, ckpt in checkpoints.items():
+        ckpt = ckpt if isinstance(ckpt, Mapping) else {}
+        objective, iteration = ckpt.get("true_objective"), ckpt.get("iteration")
+        if not _is_number(objective) or objective <= UNINITIALIZED_VALUE:
+            status[policy] = NOT_REPORTED
+        elif ckpt.get("replaceable") is False:
+            status[policy] = NOT_REPLACEABLE
+        elif isinstance(iteration, int) and iteration < reader_iteration - 1:
+            status[policy] = BEHIND
+        else:
+            status[policy] = REPLACEABLE
+    return status
+
+
+def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int) -> set[int]:
+    """The members that may take a worst slot in this reader's view: status "OK" in `member_status`."""
+    return {policy for policy, status in member_status(checkpoints, reader_iteration).items()
+            if status == REPLACEABLE}
 
 
 _KEEP_NEWEST = 10  # cleanup never thins a member's newest iterations (IsaacGymEnvs)
@@ -705,35 +762,69 @@ def maybe_save_best(workspace_dir, policy_idx, objective, iteration, frame, chec
     return True
 
 
+def tie_break_order(workspace: str, iteration: int, num_policies: int) -> list[int]:
+    """The member indices shuffled by a generator seeded with (workspace name, iteration): every
+    reader at `iteration` ranks equal objectives in this order, and the next iteration reorders
+    them, so a tie doesn't pin one member to the worst slot or the population best. A local
+    generator: the global `random` stream is untouched."""
+    order = list(range(num_policies))
+    random.Random(f"{workspace}:{iteration}").shuffle(order)
+    return order
+
+
+def rank_members(objectives: dict[int, float | None], order: list[int] | None = None) -> list[int]:
+    """Members from the best objective to the worst, those without one (None) last. Equal
+    objectives keep their order in `order` (a permutation of the members, see `tie_break_order`);
+    without it the higher index ranks first, as IsaacGymEnvs sorts."""
+    members = list(order) if order is not None else sorted(objectives, reverse=True)
+
+    def value(policy):
+        objective = objectives.get(policy)
+        return UNINITIALIZED_VALUE if objective is None else objective
+
+    return sorted(members, key=value, reverse=True)
+
+
 def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_objective: float,
-                  best_in_iteration: float | None, cfg) -> tuple[int | None, str]:
+                  best_in_iteration: float | None, cfg, *, eligible=None, order=None) -> tuple[int | None, str]:
     """DexPBT replacement rule.
+
+    The members are ranked by objective (see `rank_members`; `order` breaks ties). The worst
+    group is the last ceil(replace_fraction_worst * n) members of the ranking that reported and
+    are in `eligible` (every member that reported when None; see `replaceable_members`):
+    IsaacGymEnvs takes the last of the whole ranking, where a member that never reported, or
+    one that can't act on a replacement now, holds a slot a member that can act needs. Every
+    member that reported stays ranked, counts for the `> max(2, n // 2)` gate and can be the
+    donor.
 
     Returns (source, reason): None keeps training; `policy_idx` restarts from its own
     checkpoint with mutated parameters; any other index restarts from that member.
     """
     n = cfg.num_policies
-    ranked = sorted(((UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p], p) for p in range(n)),
-                    reverse=True)
-    ranked_policies = [p for _, p in ranked]
-    initialized = [o for o, _ in ranked if o > UNINITIALIZED_VALUE]
+    values = {p: UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p] for p in range(n)}
+    ranked_policies = rank_members(values, order)
+    reported = [p for p in ranked_policies if values[p] > UNINITIALIZED_VALUE]
+    initialized = [values[p] for p in reported]
+    replaceable = [p for p in reported if eligible is None or p in eligible]
 
     replace_worst = math.ceil(cfg.replace_fraction_worst * n)
     replace_best = math.ceil(cfg.replace_fraction_best * n)
-    top = [(o, p) for o, p in ranked[:replace_best] if o > UNINITIALIZED_VALUE]
-    best_policies = [p for _, p in top]
-    worst_policies = ranked_policies[-replace_worst:]
+    best_policies = [p for p in ranked_policies[:replace_best] if values[p] > UNINITIALIZED_VALUE]
+    worst_policies = replaceable[-replace_worst:]
 
     if policy_idx not in worst_policies:
         return None, f"not among the worst {worst_policies}"
-    if len(initialized) <= max(2, n // 2) or not top:
+    if len(initialized) <= max(2, n // 2) or not best_policies:
         return None, f"only {len(initialized)} of {n} members reported"
-    if best_in_iteration is not None and best_in_iteration >= min(o for o, _ in top):
+    if best_in_iteration is not None and best_in_iteration >= min(values[p] for p in best_policies):
         return None, f"best objective this iteration {best_in_iteration:.6g} reaches the top {best_policies}"
 
     candidate = random.choice(best_policies)
     candidate_objective = objectives[candidate]
     delta = candidate_objective - current_objective
+    # members ranked below this one that can't be replaced now: it may sit mid-pack
+    below = [p for p in reported[reported.index(policy_idx) + 1:] if p not in replaceable]
+    note = f" (the worst replaceable member; {below} rank lower)" if below else ""
 
     # drop the worst 20% from the spread: members that stopped improving would inflate it
     num_outliers = int(math.floor(0.2 * len(initialized)))
@@ -741,8 +832,9 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
     std_threshold = cfg.replace_threshold_frac_std * float(np.std(trimmed))
     abs_threshold = cfg.replace_threshold_frac_absolute * abs(candidate_objective)
     if delta > std_threshold and delta > abs_threshold:
-        return candidate, f"replace from {candidate}: lead {delta:.6g} > {std_threshold:.6g}, {abs_threshold:.6g}"
-    return policy_idx, f"lead of {candidate} ({delta:.6g}) too small: mutate own parameters"
+        return candidate, (f"replace from {candidate}: lead {delta:.6g} > {std_threshold:.6g}, "
+                           f"{abs_threshold:.6g}{note}")
+    return policy_idx, f"lead of {candidate} ({delta:.6g}) too small: mutate own parameters{note}"
 
 
 def select_threshold(objectives: dict[int, float | None], policy_idx: int, cfg) -> tuple[int | None, str]:
@@ -830,6 +922,44 @@ def derive_seed(base_seed: int, policy_idx: int, restart_count: int) -> int:
     if base_seed == -1:
         return -1
     return random.Random(f"{base_seed}:{policy_idx}:{restart_count}").randrange(2**31 - 1)
+
+
+def _random_per_launch(seed) -> bool:
+    """None or -1: the run takes a new random seed at every launch."""
+    try:
+        return seed is None or int(seed) == -1
+    except (TypeError, ValueError):
+        return False
+
+
+def draw_rng(seed, policy_idx: int, restart_count: int, initial_frame: int) -> random.Random:
+    """The generator of a member's PBT draws (donor pick, leader-params coin, mutations).
+
+    Seeded from (seed, member, restart count, frame the process started at): the draws differ
+    across members, restarts and resumes, and repeat for the same ones. A seed of None or -1
+    (random per launch) takes OS entropy instead. Train scripts seed the global `random` with
+    the config seed at every start: drawn from it, every restart without a seed on its command
+    line would draw the same donor and factors, and so would every member launched with the
+    same seed.
+    """
+    if _random_per_launch(seed):
+        seed = os.urandom(16).hex()
+    return random.Random(f"pbt-draws:{seed}:{policy_idx}:{restart_count}:{initial_frame}")
+
+
+@contextlib.contextmanager
+def swap_random_state(rng: random.Random):
+    """Run the block with `rng`'s state in the global `random` module, then store the state the
+    block left back into `rng` and restore the global one: code that calls `random` directly
+    (select_*, mutate(), custom MUTATION_FUNCS, subclass overrides) draws from `rng`, and the
+    global stream stays where it was."""
+    outer = random.getstate()
+    random.setstate(rng.getstate())
+    try:
+        yield rng
+    finally:
+        rng.setstate(random.getstate())
+        random.setstate(outer)
 
 
 def member_seed(seed, policy_idx: int, stride: int = 1_000_000):
@@ -972,17 +1102,20 @@ class PbtTablePrinter:
         print(header + ":")
         print(_render_table(["Parameter", "Value"], rows))
 
-    def print_ckpt_summary(self, sumry: dict[int, dict | None]):
+    def print_ckpt_summary(self, sumry: dict[int, dict | None], *, status: dict[int, str] | None = None):
+        """One row per member; `status` fills the Status column (see `member_status`; default: OK,
+        or — without a checkpoint)."""
+        status = status or {}
         headers = ["Policy", "Status", "Objective", "Iter", "Frame", "Experiment", "Checkpoint", "YAML"]
         rows = []
         for p in sorted(sumry.keys()):
             c = sumry[p]
             if c is None:
-                rows.append([p, "—", "", "", "", "", "", ""])
+                rows.append([p, status.get(p, NOT_REPORTED), "", "", "", "", "", ""])
             else:
                 rows.append([
                     p,
-                    "OK",
+                    status.get(p, REPLACEABLE),
                     self.fmt(c.get("true_objective", "")),
                     c.get("iteration", ""),
                     c.get("frame", ""),

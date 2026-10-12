@@ -318,8 +318,8 @@ def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
     learner(reference, tmp_path / "reference", max_epochs=6).train()
     assert reference.trace == [(1, 0), (2, 16), (3, 32), (4, 48), (5, 64), (6, 80)]
 
-    # members 0 and 1 report objective 10 at iteration 1; member 2 reports 0, is replaced at its
-    # first boundary (epoch 2, frame 16) and stops at the end of that epoch (max_epochs 2)
+    # members 0 and 1 report objective 10 at iteration 1; member 2 reports 0 and is replaced at its
+    # first boundary (epoch 2, frame 16); the next step (epoch 3, the last) re-execs it, recorded here
     train_dir = tmp_path / "member"
     ws = train_dir / "pbt_workspace"
     for idx in (0, 1):
@@ -333,8 +333,10 @@ def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
                  "replace_rule": "threshold", "mutation_rate": 0.0, "mutation": {LR: "mutate_float"}},
          "params": {"config": {"device": "cpu", "learning_rate": 2e-4}}},
         args_cli=types.SimpleNamespace())
-    learner(observer, train_dir, max_epochs=2).train()
-    assert observer.restart_flag.item() == 1
+    restarts = []
+    observer._restart_with_new_params = lambda params, checkpoint: restarts.append(checkpoint)
+    learner(observer, train_dir, max_epochs=3).train()
+    assert observer.restart_flag.item() == 1 and restarts == [observer.restart_from_checkpoint]
     own = torch.load(ws / "002" / "000001.pth", weights_only=False)
     assert (own["epoch"], own["frame"]) == (1, 16)                       # the member's PBT save
     restart = torch.load(observer.restart_from_checkpoint, weights_only=False)

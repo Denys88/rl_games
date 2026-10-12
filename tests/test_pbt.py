@@ -268,8 +268,8 @@ class BandWriter:
         pass
 
 
-def synthetic_ckpt(obj, idx):
-    return {"true_objective": obj, "iteration": 1, "frame": 1000,
+def synthetic_ckpt(obj, idx, iteration=1):
+    return {"true_objective": obj, "iteration": iteration, "frame": 1000,
             "params": {"agent.params.config.learning_rate": 3e-4},
             "checkpoint": f"/tmp/pbt_test/{idx}.pth",
             "pbt_checkpoint": f"/tmp/pbt_test/{idx}.yaml", "experiment_name": "e"}
@@ -277,7 +277,7 @@ def synthetic_ckpt(obj, idx):
 
 class TestBandLogic:
 
-    def _run_tick(self, tmp_path, monkeypatch, objectives, my_idx=0, seed=3):
+    def _run_tick(self, tmp_path, monkeypatch, objectives, my_idx=0):
         obs = make_observer(tmp_path, extra_pbt={"policy_idx": my_idx, "num_policies": len(objectives),
                                                  "replace_rule": "threshold"})
         algo = FakeAlgo(frame=obs.cfg.interval_steps + 5)
@@ -292,7 +292,6 @@ class TestBandLogic:
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
         monkeypatch.setattr(pbt_utils, "maybe_save_best", lambda *a, **k: False)
         obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
-        random.seed(seed)
         obs.after_steps()
         assert obs.pbt_it == 1                             # the iteration ran: no vacuous pass
         return obs
@@ -516,9 +515,9 @@ class TestDexPbtRule:
             assert source is None or objs[source] is not None
 
     def test_needs_more_than_half_reported(self):
-        # unreported members rank last, so widen the worst group to reach the reporting guard
+        # members that never reported take no worst slot: the worst reported one reaches the guard
         objs = {0: 5.0, 1: None, 2: None, 3: 1.0}
-        source, reason = pbt_utils.select_dexpbt(objs, 3, 1.0, None, self.cfg(4, replace_fraction_worst=1.0))
+        source, reason = pbt_utils.select_dexpbt(objs, 3, 1.0, None, self.cfg(4))
         assert source is None and "reported" in reason
 
 
@@ -534,13 +533,14 @@ class TestGraceWindows:
         obs.pbt_it = frame // obs.cfg.interval_steps - 1
         obs.initial_frame = initial_frame
         obs.score = 1.0
-        ckpts = {i: synthetic_ckpt(o, i) for i, o in enumerate([5.0, 4.9, 3.0, 1.0])}
+        # every member reported at this iteration (one 2+ iterations behind is not replaceable)
+        ckpts = {i: synthetic_ckpt(o, i, iteration=frame // obs.cfg.interval_steps)
+                 for i, o in enumerate([5.0, 4.9, 3.0, 1.0])}
         monkeypatch.setattr(pbt_utils, "save_pbt_checkpoint", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "load_pbt_ckpts", lambda *a, **k: ckpts)
         monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
         obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
-        random.seed(0)
         obs.after_steps()
         assert obs.pbt_it == frame // obs.cfg.interval_steps   # the iteration ran: no vacuous pass
         return obs
