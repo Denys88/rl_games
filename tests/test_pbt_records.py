@@ -168,7 +168,7 @@ def test_restart_record_equals_the_payload_and_the_childs_restart_info(tmp_path,
     assert (payload["schema"], payload["kind"], payload["experiment_name"]) == (1, kind, "member3_12-02-03-04")
     assert (payload["policy_idx"], payload["source_policy"]) == (3, obs.restart_source)
     assert {key: record[key] for key in payload} == payload
-    assert set(record) - set(payload) == {"epoch", "params", "seed", "time"}
+    assert set(record) - set(payload) == {"epoch", "params", "seed", "checkpoint_arg"}
 
     restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
     assert record["checkpoint"] == restart_pth and os.path.isabs(record["checkpoint"])
@@ -405,9 +405,10 @@ def test_loaders_and_cleanup_ignore_the_record(tmp_path):
     assert pbt_utils.saved_iterations(directory) == [1, 2, 3, 4, 5]
     # the slowest member at 99: everything up to it goes but the newest yaml it reads
     pbt_utils.cleanup({p: {"iteration": 99} for p in range(4)}, directory, keep_back=1)
-    assert sorted(os.listdir(directory)) == ["000005.pth", "000005.yaml", "restart.pth", "restart.yaml"]
+    assert sorted(os.listdir(directory)) == ["000005.pth", "000005.yaml", "decisions.jsonl", "restart.pth",
+                                             "restart.yaml"]
     assert pbt_utils.remove_iterations_above(directory, 0) == [5]
-    assert sorted(os.listdir(directory)) == ["restart.pth", "restart.yaml"]
+    assert sorted(os.listdir(directory)) == ["decisions.jsonl", "restart.pth", "restart.yaml"]
     assert pbt_utils.mark_not_replaceable(directory) is None
     assert load_record(tmp_path)["iteration"] == 5 and obs.restart_flag.item() == 1
 

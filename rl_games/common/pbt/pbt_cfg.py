@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import difflib
+import hashlib
+import json
 import math
 import numbers
 import os
@@ -23,6 +25,9 @@ RULE_KEYS = {
                "replace_threshold_frac_absolute", "leader_params_prob"),
     "threshold": ("threshold_std", "threshold_abs"),
 }
+
+# the settings every member of a population shares, with its rule's (RULE_KEYS): see settings_hash
+POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "replace_rule")
 
 # IsaacGymEnvs pbt keys without a counterpart of the same name
 _IGE_KEYS = {
@@ -317,6 +322,19 @@ def _to_change_range(value):
     if not all(math.isfinite(bound) and bound > 0 for bound in bounds):
         raise ValueError(message)
     return tuple(sorted(bounds))
+
+
+def settings_hash(cfg) -> str:
+    """A short hash of `cfg`'s population settings (POPULATION_KEYS and its rule's RULE_KEYS).
+
+    Members write it into their workspace yamls; one that reads another hash from a peer leaves
+    that peer out of its ranking: they run different populations (e.g. `interval_steps` edited
+    for some members of a running population). Per-member settings (policy_idx, mutation, grace
+    windows) don't enter it.
+    """
+    keys = POPULATION_KEYS + RULE_KEYS[cfg.replace_rule]
+    text = json.dumps({key: getattr(cfg, key) for key in keys}, sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def rule_notices(cfg, section) -> list[str]:

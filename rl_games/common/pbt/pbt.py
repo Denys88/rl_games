@@ -22,7 +22,8 @@ import torch.distributed as dist
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import pbt_utils
 from rl_games.common.pbt.mutation import mutate
-from rl_games.common.pbt.pbt_cfg import PbtCfg, rule_notices, validate  # noqa: F401 (PbtCfg: public here since #359)
+from rl_games.common.pbt.pbt_cfg import (  # noqa: F401 (PbtCfg: public here since #359)
+    PbtCfg, rule_notices, settings_hash, validate)
 
 _UNINITIALIZED_VALUE = pbt_utils.UNINITIALIZED_VALUE
 
@@ -110,10 +111,13 @@ class PbtAlgoObserver(AlgoObserver):
 
     The restarted process receives the decision as `pbt_utils.restart_info()`; the member's
     `restart.yaml`, written at the decision next to `restart.pth`, records it with every new
-    param value, the seed and the epoch (`_restart_record`).
+    param value, the seed and the epoch (`_restart_record`). Rank 0 appends each iteration's
+    outcome to the member's `decisions.jsonl` (`_append_decision`), and the learner's checkpoints
+    carry the member's PBT state (`_pbt_state`), from which `pbt_utils.member_resume` relaunches
+    a member that died.
     """
 
-    def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None):
+    def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None, code_fingerprint=None):
         """Validate the PBT setup, print the rule and the mutation table, and allocate the restart flag.
 
         Every rank runs the same checks (`validate()`, single-node members) before any
@@ -130,6 +134,9 @@ class PbtAlgoObserver(AlgoObserver):
                 `['-m', 'pkg.module', *sys.argv[1:]]`.
             extra_params (dict | None): Additional mutable values outside the agent params,
                 keyed by their `key=value` override name (e.g. `env.rewards.success.weight`).
+            code_fingerprint (str | None): An identifier of the integration's code (e.g. a hash of
+                its sources). Workspace yamls record it, and a member that reads another one from
+                a peer leaves that peer out of its ranking (`_foreign_members`).
 
         Raises:
             ValueError: invalid PBT config (see `validate()`), or a distributed member whose
@@ -175,6 +182,8 @@ class PbtAlgoObserver(AlgoObserver):
         self._failed_envs = np.zeros(1, dtype=bool)
         self._wait_iteration = None  # the boundary the next iteration waits at
         self._failed_boundaries = 0  # consecutive boundaries waited at with a failed rank
+        self.code_fingerprint = None if code_fingerprint is None else str(code_fingerprint)
+        self._identity_warnings = set()  # (peer, field, value) already warned about
 
         if self.distributed_args.rank == 0:
             for line in rule_notices(self.cfg, params["pbt"]):
@@ -242,9 +251,10 @@ class PbtAlgoObserver(AlgoObserver):
             config["pbt_restart"] = True
 
     def after_init(self, algo):
-        """Keep the algo on every rank; rank 0 creates this policy's workspace folder. In a PBT
-        restart rank 0 notices when the learner's `experiment_name` differs from the one the
-        member's previous process wrote into (the payload's): a new run directory.
+        """Keep the algo and give the learner this member's PBT state (`_pbt_state`) on every rank;
+        rank 0 creates this policy's workspace folder. In a PBT restart rank 0 notices when the
+        learner's `experiment_name` differs from the one the member's previous process wrote into
+        (the payload's): a new run directory.
 
         Args:
             algo: rl_games algorithm object (provides writer, train_dir, frame counter, etc.).
@@ -259,6 +269,8 @@ class PbtAlgoObserver(AlgoObserver):
                 "PBT supports the PPO agents (a2c_continuous, a2c_discrete); SAC never calls the observer's "
                 "after_steps, so PBT would silently do nothing")
         self.algo = algo
+        self.population = self._population(algo)
+        algo.pbt_state = self._pbt_state()
         num_envs = max(1, int(getattr(algo, "num_actors", 1) or 1))
         if self.cfg.objective_window <= 0:
             self._window_size = num_envs
@@ -280,6 +292,41 @@ class PbtAlgoObserver(AlgoObserver):
         self.ws_dir = os.path.join(self.root_dir, self.cfg.workspace)
         self.curr_policy_dir = os.path.join(self.ws_dir, f"{self.cfg.policy_idx:03d}")
         os.makedirs(self.curr_policy_dir, exist_ok=True)
+
+    def _population(self, algo):
+        """What this member runs, recorded in its workspace yamls and learner checkpoints (K02): the
+        rl_games version and git commit, the integration's `code_fingerprint`, the hash of the
+        population settings (`settings_hash`) and the learner's precision (the resolved mixed
+        precision and the torch_compile setting). See `_foreign_members`."""
+        mixed_precision = {torch.float16: "fp16", torch.bfloat16: "bf16"}.get(getattr(algo, "amp_dtype", None), "off")
+        torch_compile = (getattr(algo, "config", None) or {}).get("torch_compile", True)  # the runner's default
+        return {"rl_games_version": pbt_utils.rl_games_version(), "git_commit": pbt_utils.git_commit(),
+                "code_fingerprint": self.code_fingerprint, "settings": settings_hash(self.cfg),
+                "precision": {"mixed_precision": mixed_precision, "torch_compile": torch_compile}}
+
+    def _pbt_state(self, params=None, restart_count=None):
+        """The learner's PBT state (`A2CBase.pbt_state`, which its checkpoints carry as 'pbt'): this
+        member, its params (default `pbt_params`), its restart count (default this process's) and
+        what it runs (`population`). Workspace yamls record the count and `population` from it."""
+        return {"policy_idx": self.cfg.policy_idx, "params": dict(self.pbt_params if params is None else params),
+                "restart_count": self.restart_count if restart_count is None else restart_count,
+                "population": dict(self.population)}
+
+    def _set_pbt_params(self, new_params):
+        """Take `new_params` as this member's params, in the learner's PBT state too (its next
+        checkpoints carry them): for values applied in the running process."""
+        self.pbt_params = new_params
+        self.algo.pbt_state = self._pbt_state()
+
+    def _take_learner_state(self):
+        """First step of the process, every rank: the restore replaced the learner's PBT state with
+        the checkpoint's (or none). Without a restart payload (a resume by hand) a state of this
+        member carries its restart count on, so its next restarts derive new seeds. The learner then
+        takes this process's state again."""
+        restored = getattr(self.algo, "pbt_state", None)
+        if getattr(self, "restart", None) is None and restored and restored.get("policy_idx") == self.cfg.policy_idx:
+            self.restart_count = max(self.restart_count, int(restored.get("restart_count", 0)))
+        self.algo.pbt_state = self._pbt_state()
 
     def process_infos(self, infos, done_indices):
         """Accumulate the objective of finished episodes into a window of recent episodes.
@@ -369,8 +416,10 @@ class PbtAlgoObserver(AlgoObserver):
         Flow:
             1) All ranks: sync the restart flag; non-zero ranks exit and rank 0 re-execs
                when it is set. The first step after a (re)start then only sets the PBT
-               cadence from the restored frame, and rank 0 checks the member directory
-               (`_check_member_dir`).
+               cadence from the restored frame and gives the learner this process's PBT state
+               again (`_take_learner_state`); rank 0 checks the member directory
+               (`_check_member_dir`), and a restarted process logs the restart's cost
+               (`_record_restart`).
             2) All ranks: pool the objective windows and episode counts across ranks and
                track the best pooled objective of the iteration.
             3) On the PBT cadence (`interval_steps`), once every rank has a full window and a
@@ -379,7 +428,8 @@ class PbtAlgoObserver(AlgoObserver):
                global `random` module swapped to the member's private generator (`_draw_rng`).
                Until then the iteration is retried on every step without advancing `pbt_it`
                (see `_wait_for_objective`). When the iteration decided a restart (the flag is
-               set), rank 0 writes the member's restart.yaml (`_save_restart_record`).
+               set), rank 0 writes the member's restart.yaml (`_save_restart_record`); then it
+               appends the iteration's outcome to decisions.jsonl (`_append_decision`).
         """
         distributed = self._distributed()
         if distributed:
@@ -397,8 +447,11 @@ class PbtAlgoObserver(AlgoObserver):
             # first step after (re)start: the checkpoint restore has already set the frame
             self.pbt_it = frame // self.cfg.interval_steps
             self.initial_frame = frame
+            self._take_learner_state()
             if self.distributed_args.rank == 0:
                 self._check_member_dir(frame)
+                if getattr(self, "restart", None) is not None:
+                    self._record_restart(frame)
             return
 
         pooled = self._pooled_window(distributed)
@@ -424,13 +477,17 @@ class PbtAlgoObserver(AlgoObserver):
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
         if self.distributed_args.rank != 0:
             return
+        objective = pooled.total / pooled.count
         # PBT's draws (donor, leader-params coin, mutations) come from this member's private stream,
         # also in a subclass that replaces _pbt_iteration and calls `random` itself
         with pbt_utils.swap_random_state(self._draw_rng()):
-            self._pbt_iteration(pooled.total / pooled.count, best_in_iteration, frame)
+            decision = self._pbt_iteration(objective, best_in_iteration, frame)
         # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
         if self.restart_flag.cpu().item() == 1:
+            self.restart_time = time.time()
             self._save_restart_record()
+        if decision is not None:
+            self._append_decision(self.pbt_it, frame, objective, decision)
 
     def _draw_rng(self):
         """The generator of PBT's draws, created at the first iteration from the config seed, the
@@ -448,13 +505,13 @@ class PbtAlgoObserver(AlgoObserver):
         waits through: with synchronized time limits (every env resets at a (re)start) episodes
         end in bursts, and an interval shorter than an episode often passes without one ending.
 
-        Rank 0 warns once per boundary. Every rank raises after `max_consecutive_errors`
-        boundaries in a row at which a rank had failed (no finite objective since the last
-        iteration or the process start, although every env of the rank ended an episode, and at
-        least a window of them): a diverged member, also one that is NaN from its first step (a
-        restart or resume from a diverged checkpoint), would otherwise train on without ever
-        saving or being replaced. Boundaries that only wait for episodes to end don't count.
-        Pooled values: every rank decides alike.
+        Rank 0 warns, and appends a `stale` line to decisions.jsonl, once per boundary. Every rank
+        raises after `max_consecutive_errors` boundaries in a row at which a rank had failed (no
+        finite objective since the last iteration or the process start, although every env of
+        the rank ended an episode, and at least a window of them): a diverged member, also one
+        that is NaN from its first step (a restart or resume from a diverged checkpoint), would
+        otherwise train on without ever saving or being replaced. Boundaries that only wait for
+        episodes to end don't count. Pooled values: every rank decides alike.
         """
         if iteration == self._wait_iteration:
             return
@@ -471,6 +528,9 @@ class PbtAlgoObserver(AlgoObserver):
                 f"the objective; {counts}; last lookup error: {self._last_objective_error}")
         if self.distributed_args.rank != 0:
             return
+        self._append_decision(iteration, self.algo.frame, None, {
+            "outcome": "stale", "episodes": pooled.count, "valid": pooled.valid, "nonfinite": pooled.nonfinite,
+            "unread": pooled.unread, "stale_ranks": pooled.stale_ranks})
         if pooled.known:
             ranks = f" on {pooled.stale_ranks} of {pooled.ranks} ranks" if pooled.ranks > 1 else ""
             what = f"a new objective '{cfg.objective}'{ranks}: {counts}"
@@ -519,6 +579,39 @@ class PbtAlgoObserver(AlgoObserver):
                   f"iteration {decided}, above iteration {self.pbt_it}, from {directory}: this process does not "
                   f"continue that run")
 
+    def _record_restart(self, frame):
+        """Rank 0, first step of a process started with a restart payload: log what the restart cost,
+        `pbt/restart_seconds` (since the decision) and `pbt/frames_discarded` (what the member had
+        played past the restart's frame when it decided: the decision epoch's rollout, which this
+        process plays again), and append a `restarted` line to decisions.jsonl. A resume has no
+        decision: its line has neither number."""
+        info = self.restart
+        decided, epoch_frames = info.get("time"), info.get("epoch_frames")
+        seconds = None if decided is None else time.time() - float(decided)
+        frames = None if epoch_frames is None else int(info["frame"]) + int(epoch_frames) - int(frame)
+        writer = getattr(self.algo, "writer", None)
+        for tag, value in (("pbt/restart_seconds", seconds), ("pbt/frames_discarded", frames)):
+            if writer is not None and value is not None:
+                writer.add_scalar(tag, value, self._summary_step(frame))
+        self._append_decision(self.pbt_it, frame, None, {
+            "outcome": "restarted", "kind": info.get("kind"), "source": info.get("source_policy"),
+            "attempt": info.get("attempt"), "seconds": seconds, "frames_discarded": frames})
+
+    def _append_decision(self, iteration, frame, objective, decision):
+        """Rank 0: append an outcome to the member's decisions.jsonl (`pbt_utils.append_decision`):
+        {"schema", "time", "iteration", "frame", "objective", "outcome", ...} plus the outcome's
+        numbers. Outcomes: those of the rule ("not_worst", "too_few_reported", "kept" by the
+        interval's best objective, "transfer", "self_mutation", with the worst and top groups, the
+        candidate, its lead and the thresholds), "grace", "ending", "no_op", "in_process", "error",
+        "stale" (an iteration waiting for its objective) and "restarted" (`_record_restart`). A
+        line that can't be written only warns."""
+        line = dict({"schema": pbt_utils.SCHEMA, "time": time.time(), "iteration": int(iteration),
+                     "frame": int(frame), "objective": objective}, **decision)
+        try:
+            pbt_utils.append_decision(self.curr_policy_dir, line)
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not append to {pbt_utils.DECISIONS}: {exc!r}")
+
     def _pbt_iteration(self, score, best_in_iteration, frame):
         """One PBT iteration on rank 0: save this member's checkpoint, load the population's, log,
         record a new population best, and apply the replacement rule.
@@ -530,7 +623,10 @@ class PbtAlgoObserver(AlgoObserver):
         that changes no value keeps training; one with changes goes to `_apply_self_mutation`
         first, and restarts unless that applied it. A restart marks this iteration's yaml not
         replaceable once restart.pth is written: peers read it until the restarted process saves.
-        The decision is recorded in restart.yaml by `after_steps` once this returns.
+        Peers that run other code or another population setup are left out (`_foreign_members`).
+
+        Returns the iteration's outcome, which `after_steps` appends to decisions.jsonl (and records
+        a restart in restart.yaml): {"outcome": ...} with the rule's numbers, see `_append_decision`.
         """
         cfg = self.cfg
         frame_left = (self.pbt_it + 1) * cfg.interval_steps - frame
@@ -552,10 +648,12 @@ class PbtAlgoObserver(AlgoObserver):
             if self._consecutive_errors >= cfg.max_consecutive_errors:
                 raise RuntimeError(
                     f"PBT checkpoint save/load failed {self._consecutive_errors} times in a row") from exc
-            return
+            return {"outcome": "error", "error": repr(exc)}
         self._consecutive_errors = 0
 
+        foreign = self._foreign_members(ckpts)
         status = pbt_utils.member_status(ckpts, self.pbt_it, reader_objectives=own_objectives)
+        status.update(dict.fromkeys(foreign, pbt_utils.FOREIGN))
         sumry = {i: None if c is None else {k: v for k, v in c.items() if k != "params"} for i, c in ckpts.items()}
         self.printer.print_ckpt_summary(sumry, status=status)
         unreported = sorted(p for p, s in status.items() if s == pbt_utils.NOT_REPORTED)
@@ -564,14 +662,14 @@ class PbtAlgoObserver(AlgoObserver):
                   f"below iteration {self.pbt_it} in {self.ws_dir}), so they are not ranked: are all "
                   f"{cfg.num_policies} members (num_policies) running?")
 
-        objectives = {p: (c["true_objective"] if c else None) for p, c in ckpts.items()}
+        objectives = {p: (c["true_objective"] if c and p not in foreign else None) for p, c in ckpts.items()}
         initialized = {p: o for p, o in objectives.items() if o is not None and o > _UNINITIALIZED_VALUE}
         # equal objectives rank in an order every member shares at this iteration, new at the next
         order = pbt_utils.tie_break_order(cfg.workspace, self.pbt_it, cfg.num_policies)
         self._write_summaries(score, initialized, frame, order=order)
         if not initialized:
             print("No policies initialized; skipping PBT iteration.")
-            return
+            return {"outcome": "too_few_reported", "reported": 0}
 
         best_policy = pbt_utils.rank_members(initialized, order)[0]
         if best_policy == cfg.policy_idx:
@@ -584,23 +682,24 @@ class PbtAlgoObserver(AlgoObserver):
         if in_grace:
             print(f"Policy {cfg.policy_idx}: within the grace window (frame {frame}, restarted at "
                   f"{self.initial_frame}, start_after {cfg.start_after}, initial_delay {cfg.initial_delay})")
-            return
+            return {"outcome": "grace"}
         if ending:
             print(f"Policy {cfg.policy_idx}: {to_end[0]} frames left after this epoch before {to_end[1]} ends the "
                   f"run, fewer than max(start_after, interval_steps) = {max(cfg.start_after, cfg.interval_steps)}: "
                   f"no replacement this close to the end (a restarted member could not leave its grace window "
                   f"or reach another iteration)")
-            return
+            return {"outcome": "ending", "frames_left": to_end[0], "limit": to_end[1]}
 
+        details = {}  # the rule's outcome and numbers
         if cfg.replace_rule == "dexpbt":
             eligible = {p for p, s in status.items() if s == pbt_utils.REPLACEABLE}
             source, reason = pbt_utils.select_dexpbt(objectives, cfg.policy_idx, score, best_in_iteration, cfg,
-                                                     eligible=eligible, order=order)
+                                                     eligible=eligible, order=order, details=details)
         else:
-            source, reason = pbt_utils.select_threshold(objectives, cfg.policy_idx, cfg)
+            source, reason = pbt_utils.select_threshold(objectives, cfg.policy_idx, cfg, details=details)
         print(f"Policy {cfg.policy_idx}: {reason}")
         if source is None:
-            return
+            return details
 
         source_params = ckpts[source]["params"]
         use_source_params = cfg.replace_rule == "threshold" or random.random() < cfg.leader_params_prob
@@ -614,14 +713,14 @@ class PbtAlgoObserver(AlgoObserver):
             if not changed:
                 # a restart would cost a start-up and a new grace window for the same values
                 print(f"Policy {cfg.policy_idx}: no-op self-mutation: keep training (no value changed)")
-                return
+                return dict(details, outcome="no_op")
             if self._apply_self_mutation(changed):
                 # at the x of this iteration's current values, as a restart logs them
                 self._write_params(self.algo.writer, new_params, self._summary_step(frame))
                 self.algo.writer.flush()
                 self.printer.print_mutation_diff(self.pbt_params, new_params,
                                                  header="Mutated params (applied in process)")
-                self.pbt_params = new_params
+                self._set_pbt_params(new_params)
                 # the learner's next checkpoints record it, as restart.pth records a restart (rank 0 saves them)
                 history = getattr(self.algo, "pbt_history", None)
                 if isinstance(history, list):
@@ -630,7 +729,7 @@ class PbtAlgoObserver(AlgoObserver):
                 self.initial_frame = int(frame)
                 print(f"Policy {cfg.policy_idx}: self-mutation applied in process, no restart; grace window from "
                       f"frame {self.initial_frame}")
-                return
+                return dict(details, outcome="in_process", mutated=changed)
         try:
             # the values this restart mutated from: the child's restore then moves an inherited
             # adaptive LR by this restart's mutation factor only (1 when nothing was mutated)
@@ -645,12 +744,14 @@ class PbtAlgoObserver(AlgoObserver):
                 epoch=int(self.algo.epoch_num) - 1,
                 history_entry=history_entry,
                 config_hparams=config_hparams or None,
-                last_mean_rewards=float(self.algo.last_mean_rewards) if fixed_name else None)
+                last_mean_rewards=float(self.algo.last_mean_rewards) if fixed_name else None,
+                # a resume from restart.pth reads this member, not the source
+                pbt_state=self._pbt_state(new_params, self.restart_count + 1))
         except Exception as exc:
             # the source checkpoint may have been cleaned up meanwhile: keep training as is
             print(f"Policy {cfg.policy_idx}: exception {exc!r} while preparing the restart checkpoint; "
                   f"continuing with the current weights")
-            return
+            return dict(details, outcome="error", error=repr(exc))
 
         # at the x of this iteration's current values: the plot steps to the new ones (as IsaacGymEnvs)
         self._write_params(self.algo.writer, new_params, self._summary_step(frame))
@@ -670,6 +771,29 @@ class PbtAlgoObserver(AlgoObserver):
         except Exception as exc:
             print(f"Policy {cfg.policy_idx}: WARNING could not mark the newest workspace yaml not replaceable: "
                   f"{exc!r}")
+        return dict(details, outcome=pbt_utils.restart_kind(cfg.policy_idx, source), source=source,
+                    mutated=self.restart_mutated)
+
+    def _foreign_members(self, ckpts):
+        """The peers whose newest yaml (in `ckpts`) says they run other code (`code_fingerprint`) or
+        another population setup (`settings`) than this member: left out of the ranking, the
+        donors and the gate's count. A different rl_games version, git commit or precision only
+        warns. Each difference warns once per peer and value; a field missing on either side
+        (older yamls) is unknown (`pbt_utils.identity_mismatches`)."""
+        foreign = set()
+        for policy, ckpt in ckpts.items():
+            if policy == self.cfg.policy_idx or not ckpt:
+                continue
+            for key, (theirs, mine) in pbt_utils.identity_mismatches(ckpt, self.population).items():
+                left_out = key in pbt_utils.FOREIGN_KEYS
+                if left_out:
+                    foreign.add(policy)
+                if (policy, key, repr(theirs)) not in self._identity_warnings:
+                    self._identity_warnings.add((policy, key, repr(theirs)))
+                    left_out_note = ": it is left out of the ranking and the donors" if left_out else ""
+                    print(f"Policy {self.cfg.policy_idx}: WARNING member {policy} runs with {key} {theirs!r}, "
+                          f"this member with {mine!r}{left_out_note}")
+        return foreign
 
     def _apply_self_mutation(self, changed):
         """Hook: apply a self-mutation in the running process instead of restarting; return True
@@ -678,10 +802,11 @@ class PbtAlgoObserver(AlgoObserver):
         Called on rank 0 inside `_pbt_iteration` for a self-mutation (the member keeps its own
         weights) that changes some values, before anything is written for a restart. `changed`
         maps each changed flattened param to its new value. On True the observer takes the new
-        values as `pbt_params`, logs them, appends the entry a restart puts into restart.pth to
-        the learner's `pbt_history` with `in_process: True` (on rank 0, which saves the learner's
-        checkpoints), restarts the member's grace window (`initial_frame`; its saves say
-        `replaceable: false` until `start_after` frames have passed) and keeps training. The
+        values as `pbt_params` (`_set_pbt_params`), logs them, appends the entry a restart puts
+        into restart.pth to the learner's `pbt_history` with `in_process: True` (on rank 0, which
+        saves the learner's checkpoints), restarts the member's grace window (`initial_frame`; its
+        saves say `replaceable: false` until `start_after` frames have passed), records the
+        outcome `in_process` in decisions.jsonl and keeps training. The
         subclass must apply the values on every rank (rank 0 broadcasts them, e.g. after
         `super().after_steps()`), and should call `_reset_objective_window()` on every rank: the
         next iteration then ranks the member by episodes played with the new values.
@@ -896,8 +1021,9 @@ class PbtAlgoObserver(AlgoObserver):
     def _restart_payload(self, new_params, restart_from_checkpoint):
         """The restart payload the child reads as `pbt_utils.restart_info()` (see there): the
         decision's attributes set by `_pbt_iteration` (`restart_source`, `restart_frame`,
-        `restart_mutated`), defaulting to a restart of this member from `restart_from_checkpoint`
-        with `new_params` mutated at the current frame."""
+        `restart_mutated`) and `after_steps` (`restart_time`), defaulting to a restart of this
+        member from `restart_from_checkpoint` with `new_params` mutated at the current frame and
+        time. `epoch_frames` lets the child count the frames the restart discarded."""
         source = getattr(self, "restart_source", self.cfg.policy_idx)
         return {
             "schema": pbt_utils.RESTART_SCHEMA,
@@ -910,27 +1036,31 @@ class PbtAlgoObserver(AlgoObserver):
             "checkpoint": restart_from_checkpoint,
             "mutated": getattr(self, "restart_mutated", new_params),
             "experiment_name": getattr(self.algo, "experiment_name", None),
+            "time": getattr(self, "restart_time", None) or time.time(),
+            "epoch_frames": self._epoch_frames(),
         }
 
     def _restart_record(self):
         """The member's restart.yaml for the decision `_pbt_iteration` just took: the restart
         payload, the last completed `epoch` (restart.pth's: the decision runs in after_steps,
         before the epoch's update), every new param value (`params`), the `seed` the restart
-        command passes (`_restart_seed`; None when it keeps its own) and the wall-clock `time`
-        (seconds since the epoch). Plain JSON types, as the child reads the payload."""
+        command passes (`_restart_seed`; None when it keeps its own) and the train script's
+        `checkpoint_arg` (for `pbt_utils.member_resume`). Plain JSON types, as the child reads
+        the payload."""
         new_params = {param: pbt_utils.plain_number(value) for param, value in self.new_params.items()}
         checkpoint = self.restart_from_checkpoint
         record = dict(self._restart_payload(new_params, checkpoint),
                       epoch=int(self.algo.epoch_num) - 1, params=new_params,
-                      seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)), time=time.time())
+                      seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)),
+                      checkpoint_arg=self.cfg.checkpoint_arg)
         return json.loads(json.dumps(record, default=pbt_utils.json_default))
 
     def _save_restart_record(self):
         """Rank 0, at a restart decision (restart.pth written, the flag set): write the member's
-        restart.yaml (`pbt_utils.write_restart_record`). Nothing acts on its content yet, except
-        `_check_member_dir`, which removes a record above a relaunch's iteration; it tells what the
-        restart was when its process is gone. A record that can't be written doesn't stop the
-        restart; an older one is removed then, as it would describe another restart.pth."""
+        restart.yaml (`pbt_utils.write_restart_record`): `pbt_utils.member_resume` retries the
+        restart from it when the restarted process dies before it saves, and `_check_member_dir`
+        removes a record above a relaunch's iteration. A record that can't be written doesn't stop
+        the restart; an older one is removed then, as it would describe another restart.pth."""
         try:
             pbt_utils.write_restart_record(self.curr_policy_dir, self._restart_record())
         except Exception as exc:

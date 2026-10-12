@@ -511,6 +511,9 @@ class A2CBase(BaseAlgorithm):
         # PBT lineage of the current weights (IsaacGymEnvs format): restored from checkpoints
         # and saved again, so it survives the member's own saves
         self.pbt_history = []
+        # a PBT member's identity (policy_idx, params, restart_count, population), set by its
+        # observer; checkpoints carry it as 'pbt', and a restore takes the checkpoint's
+        self.pbt_state = None
         # allows us to specify a folder where all experiments will reside
         self.train_dir = config.get('train_dir', 'runs')
 
@@ -1028,6 +1031,8 @@ class A2CBase(BaseAlgorithm):
                                    'entropy_coef': float(self.config['entropy_coef'])}
         if self.pbt_history:
             state['pbt_history'] = list(self.pbt_history)
+        if self.pbt_state:
+            state['pbt'] = copy.deepcopy(self.pbt_state)
 
         return state
 
@@ -1070,6 +1075,7 @@ class A2CBase(BaseAlgorithm):
 
         self._restore_hyperparameters(weights)
         self.pbt_history = list(weights.get('pbt_history', []))
+        self.pbt_state = copy.deepcopy(weights.get('pbt'))
 
         # central-value stats load after set_weights ran; re-seed everything
         self._seed_stats_sync_snapshots()

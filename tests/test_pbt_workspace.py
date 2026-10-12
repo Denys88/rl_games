@@ -320,8 +320,9 @@ class TestBestRecords:
             "best.yaml", "best_p000_000003.pth", "best_p000_000005.pth", "best_p001_000002.pth",
             "p000_000003.yaml", "p000_000005.yaml", "p001_000002.yaml"]
         record = yaml.safe_load((ws / "best" / "p000_000005.yaml").read_text())
-        assert record == {"policy_idx": 0, "iteration": 5, "frame": 500, "true_objective": 5.0, "params": {LR: 3e-4},
-                          "checkpoint": str(ws / "best" / "best_p000_000005.pth"), "source_checkpoint": ckpt}
+        assert record == {"schema": 1, "policy_idx": 0, "iteration": 5, "frame": 500, "true_objective": 5.0,
+                          "params": {LR: 3e-4}, "checkpoint": str(ws / "best" / "best_p000_000005.pth"),
+                          "source_checkpoint": ckpt}
         assert view(ws) == record and pbt_utils.population_best(str(ws)) == record
         # best.yaml keeps 1e6966a's keys and plain YAML: a 1e6966a member reads it as before
         assert yaml.load((ws / "best" / "best.yaml").read_text(), Loader=yaml.FullLoader) == record
