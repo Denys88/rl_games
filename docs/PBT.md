@@ -633,6 +633,7 @@ Log lines of rank 0:
 | `force_outcome` | `""` | `""`, `self`, `best`, `donor:<idx>` | Qualification only: every iteration outside the grace windows restarts from this source, whatever the rule says. |
 | `initial_mutation` | `false` | bool | A fresh member mutates its `agent.params.config` values once at init. |
 | `restart_drop_args` | `{}` | map of argument name to nargs (int >= 0 or `?`) | Launch-only arguments every restart removes from the command. |
+| `self_mutation` | `restart` | `restart`, `in_process` | `in_process`: a self-mutation sets its values on the running learner, on every rank, when `set_param` takes every changed key; else it restarts. |
 
 Integer keys accept ints, whole floats (Hydra and OmegaConf turn `2e7` into a float) and numeric
 strings (PyYAML and Isaac Lab's `yaml.full_load` turn `2e7` and `1e-3` into strings; `20_000_000`

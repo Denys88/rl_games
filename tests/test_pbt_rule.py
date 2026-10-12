@@ -29,8 +29,10 @@ WORKSPACE = "pbt_workspace"
 
 @pytest.fixture(autouse=True)
 def fresh_launch(monkeypatch):
-    """No RL_GAMES_PBT_RESTART payload and no cached restart info, before and after."""
+    """No RL_GAMES_PBT_RESTART payload and no cached restart info, before and after. A restart
+    decision ends its step without the re-exec (test_pbt_restart.py has those)."""
     monkeypatch.delenv(pbt_utils.RESTART_ENV_VAR, raising=False)
+    monkeypatch.setattr(PbtAlgoObserver, "_restart_with_new_params", lambda self, *args: None)
     pbt_utils._reset_restart_info_cache()
     yield
     pbt_utils._reset_restart_info_cache()

@@ -66,9 +66,10 @@ class ExecCalled(Exception):
     pass
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def execs(monkeypatch):
-    """os.execv replaced by a recorder: (path, argv, environ) per call, then ExecCalled."""
+    """os.execv replaced by a recorder: (path, argv, environ) per call, then ExecCalled. In every
+    test here: a restart decision re-execs in its step."""
     calls = []
 
     def fake_execv(path, argv):
@@ -99,13 +100,17 @@ def report(train_dir, idx, iteration, objective):
 
 
 def decide(obs, algo, iteration, objective):
-    """Run PBT iteration `iteration` of `obs` through after_steps, its window holding `objective`."""
+    """Run PBT iteration `iteration` of `obs` through after_steps, its window holding `objective`;
+    a restart decision re-execs in that step (`execs`)."""
     if getattr(obs, "algo", None) is not algo:
         obs.after_init(algo)
     algo.frame = iteration * INTERVAL + 5
     obs.pbt_it = iteration - 1
     obs.process_infos({"episode": {"success": objective}}, None)
-    obs.after_steps()
+    try:
+        obs.after_steps()
+    except ExecCalled:
+        pass
     assert obs.pbt_it == iteration                              # the iteration ran
 
 
@@ -118,10 +123,8 @@ def load_record(train_dir, idx=3):
         return yaml.safe_load(fobj)
 
 
-def reexec(obs, execs):
-    """The step after the decision re-execs: (argv, payload) of the captured os.execv."""
-    with pytest.raises(ExecCalled):
-        obs.after_steps()
+def reexec(execs):
+    """The decision's re-exec: (argv, payload) of the captured os.execv."""
     [(_, argv, environ)] = execs
     return argv, environ[pbt_utils.RESTART_ENV_VAR]
 
@@ -163,7 +166,7 @@ def test_restart_record_equals_the_payload_and_the_childs_restart_info(tmp_path,
     obs = decision(tmp_path)
     after = time.time()
     record = load_record(tmp_path)                              # written at the decision, before the re-exec
-    argv, raw = reexec(obs, execs)
+    argv, raw = reexec(execs)
     payload = json.loads(raw)
     assert (payload["schema"], payload["kind"], payload["experiment_name"]) == (1, kind, "member3_12-02-03-04")
     assert (payload["policy_idx"], payload["source_policy"]) == (3, obs.restart_source)
@@ -201,7 +204,7 @@ def test_the_next_restart_records_the_next_count_and_seed(tmp_path, execs):
     pbt_utils._reset_restart_info_cache()
     obs = transfer(tmp_path)
     record = load_record(tmp_path)
-    argv, raw = reexec(obs, execs)
+    argv, raw = reexec(execs)
     assert json.loads(raw)["restart_count"] == record["restart_count"] == 3
     assert record["seed"] == int(pbt_utils.get_cli_arg(argv, "--seed")) == pbt_utils.derive_seed(42, 3, 3)
 
@@ -218,7 +221,7 @@ def test_record_seed_is_the_seed_the_restart_command_passes(tmp_path, execs, mon
     monkeypatch.setattr("sys.argv", ["train.py", "task=Lift"])
     obs = transfer(tmp_path, launch_argv=launch_argv, args_cli=args_cli, **pbt)
     record = load_record(tmp_path)
-    argv, _ = reexec(obs, execs)
+    argv, _ = reexec(execs)
     seed_arg = pbt.get("seed_arg", "--seed")
     assert record["seed_arg"] == seed_arg
     if seed == "derived":
@@ -271,7 +274,7 @@ def test_a_subclass_that_replaces_pbt_iteration_gets_the_record(tmp_path, execs)
     obs = observer(tmp_path, 3, 4, cls=CopiedIteration)
     decide(obs, Algo(tmp_path, epoch_num=40), 5, 1.0)
     record = load_record(tmp_path)
-    _, raw = reexec(obs, execs)
+    _, raw = reexec(execs)
     payload = json.loads(raw)
     assert payload["kind"] == "transfer" and payload["mutated"] == {LR: 1e-3}
     assert {key: record.get(key) for key in payload} == dict(payload, frame_reached=None)
@@ -350,7 +353,7 @@ def test_a_record_that_cannot_be_written_does_not_stop_the_restart(tmp_path, mon
     obs = transfer(tmp_path)
     assert "WARNING could not write restart.yaml" in capsys.readouterr().out
     assert not os.path.exists(old)                              # it would describe another restart.pth
-    _, raw = reexec(obs, execs)
+    _, raw = reexec(execs)
     assert json.loads(raw)["kind"] == "transfer"
 
 

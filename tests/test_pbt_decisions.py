@@ -470,12 +470,11 @@ def test_the_restarted_process_logs_what_the_restart_cost(tmp_path, execs):
     reports(tmp_path, DONORS)
     obs = member(tmp_path, mutation_rate=1.0)
     algo = Algo(tmp_path, epoch_num=40, curr_frames=64)
-    decide(obs, algo, 5, 1.0)
+    decide(obs, algo, 5, 1.0)                               # its step re-execs, before the epoch's update
     record = load_yaml(tmp_path, "restart.yaml")
-    algo.frame += 64                                        # the decision epoch's update; the next epoch re-execs
-    _, raw = reexec(obs, execs)
+    _, raw = reexec(execs)
     payload = json.loads(raw)
-    assert payload["time"] == record["time"] and payload["frame_reached"] == 5005 + 2 * 64
+    assert payload["time"] == record["time"] and payload["frame_reached"] == 5005 + 64
     assert "frame_reached" not in record                    # known at the re-exec only
 
     time.sleep(0.05)
@@ -485,12 +484,12 @@ def test_the_restarted_process_logs_what_the_restart_cost(tmp_path, execs):
     child.after_steps()                                     # its first step, after restoring restart.pth
     seconds = algo.writer.values("pbt/restart_seconds")
     assert len(seconds) == 1 and 0.05 <= seconds[0] < 60
-    assert algo.writer.values("pbt/frames_discarded") == [128]     # the decision epoch's rollout and the next
+    assert algo.writer.values("pbt/frames_discarded") == [64]      # the decision epoch's rollout
     steps = {step for tag, _, step in algo.writer.scalars}
     assert steps == {child._summary_step(payload["frame"])}
     line = decisions(tmp_path)[-1]
     assert line["outcome"] == "restarted" and line["kind"] == "transfer" and line["source"] == obs.restart_source
-    assert line["seconds"] == pytest.approx(seconds[0]) and line["frames_discarded"] == 128
+    assert line["seconds"] == pytest.approx(seconds[0]) and line["frames_discarded"] == 64
     assert (line["iteration"], line["frame"], line["attempt"]) == (5, 5005, None)
 
 

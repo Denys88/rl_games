@@ -212,7 +212,7 @@ def member_observer(directory, learning_rate, entropy_coef):
 def decide(tmp_path, donor_state, observer, algo):
     """Members 0-2 report at iteration 20, member 0 (the best) with `donor_state` configured
     with learning_rate 1e-3 and entropy_coef 0.01; member 3 (`observer`, the worst) is replaced
-    from member 0 at its next step. Returns restart.pth's state."""
+    from member 0 at its next step (the re-exec left out). Returns restart.pth's state."""
     ws = tmp_path / "pbt_workspace"
     for idx, objective in ((0, 5.0), (1, 3.0), (2, 2.5)):
         (ws / f"{idx:03d}").mkdir(parents=True)
@@ -221,6 +221,7 @@ def decide(tmp_path, donor_state, observer, algo):
                                       MemberAlgo(tmp_path, 20_000, 160, state), {LR: 1e-3, ENT: 0.01})
     observer.after_init(algo)
     observer.pbt_it, observer.initial_frame = 19, 0
+    observer._restart_with_new_params = lambda *args: None
     observer.process_infos({"episode": {"success": 1.0}}, None)
     observer.after_steps()
     assert observer.restart_flag.item() == 1 and observer.restart_source == 0
@@ -310,6 +311,10 @@ def learner(observer, train_dir, **config):
     return runner.algo_factory.create(runner.algo_name, base_name="run", params=runner.params)
 
 
+class Reexec(Exception):
+    pass
+
+
 def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
     """H06. The PBT save point (after_steps) comes after update_epoch and before the epoch's update
     and frame increment. restart.pth must hold the last completed epoch, or every restart skips an
@@ -319,7 +324,7 @@ def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
     assert reference.trace == [(1, 0), (2, 16), (3, 32), (4, 48), (5, 64), (6, 80)]
 
     # members 0 and 1 report objective 10 at iteration 1; member 2 reports 0 and is replaced at its
-    # first boundary (epoch 2, frame 16); the next step (epoch 3, the last) re-execs it, recorded here
+    # first boundary (epoch 2, frame 16), whose step re-execs it before the epoch's update (recorded here)
     train_dir = tmp_path / "member"
     ws = train_dir / "pbt_workspace"
     for idx in (0, 1):
@@ -334,9 +339,16 @@ def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
          "params": {"config": {"device": "cpu", "learning_rate": 2e-4}}},
         args_cli=types.SimpleNamespace())
     restarts = []
-    observer._restart_with_new_params = lambda params, checkpoint: restarts.append(checkpoint)
-    learner(observer, train_dir, max_epochs=3).train()
-    assert observer.restart_flag.item() == 1 and restarts == [observer.restart_from_checkpoint]
+
+    def reexec(params, checkpoint):
+        restarts.append((member.epoch_num, checkpoint))
+        raise Reexec()
+
+    observer._restart_with_new_params = reexec
+    member = learner(observer, train_dir, max_epochs=3)
+    with pytest.raises(Reexec):
+        member.train()
+    assert observer.restart_flag.item() == 1 and restarts == [(2, observer.restart_from_checkpoint)]
     own = torch.load(ws / "002" / "000001.pth", weights_only=False)
     assert (own["epoch"], own["frame"]) == (1, 16)                       # the member's PBT save
     restart = torch.load(observer.restart_from_checkpoint, weights_only=False)

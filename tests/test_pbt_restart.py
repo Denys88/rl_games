@@ -694,9 +694,10 @@ class TestRestartEnvironment:
             raise ExecCalled()
 
         monkeypatch.setattr(os, "_exit", exit_)
-        obs.restart_flag[0] = 1
+        # rank 0's restart decision, as the iteration's broadcast delivers it
+        monkeypatch.setattr(torch.distributed, "broadcast", lambda message, src: message.__setitem__(0, 1))
         with pytest.raises(ExecCalled):
-            obs.after_steps()
+            obs._sync_decision(True, dict(obs.pbt_params))
         assert events == ["flush stdout", "flush stderr", "exit 0"]
 
 

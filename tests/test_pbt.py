@@ -291,25 +291,27 @@ class TestBandLogic:
         monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
         monkeypatch.setattr(pbt_utils, "maybe_save_best", lambda *a, **k: False)
+        restarts = []
+        obs._restart_with_new_params = lambda *args: restarts.append(args)
         obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
         obs.after_steps()
         assert obs.pbt_it == 1                             # the iteration ran: no vacuous pass
-        return obs
+        return obs, restarts
 
     def test_underperformer_gets_replacement_and_restart_flag(self, tmp_path, monkeypatch):
-        obs = self._run_tick(tmp_path, monkeypatch, [1.0, 10.0, 10.5], my_idx=0)
-        assert obs.restart_flag.item() == 1
+        obs, restarts = self._run_tick(tmp_path, monkeypatch, [1.0, 10.0, 10.5], my_idx=0)
+        assert obs.restart_flag.item() == 1 and len(restarts) == 1     # restarted in the decision's step
         assert obs.restart_from_checkpoint in ("/tmp/pbt_test/1.pth", "/tmp/pbt_test/2.pth")
         assert set(obs.new_params) == {"agent.params.config.learning_rate"}
 
     def test_leader_keeps_training(self, tmp_path, monkeypatch):
-        obs = self._run_tick(tmp_path, monkeypatch, [10.5, 10.0, 1.0], my_idx=0)
-        assert obs.restart_flag.item() == 0
+        obs, restarts = self._run_tick(tmp_path, monkeypatch, [10.5, 10.0, 1.0], my_idx=0)
+        assert obs.restart_flag.item() == 0 and restarts == []
         assert not hasattr(obs, "new_params")
 
     def test_mid_population_untouched(self, tmp_path, monkeypatch):
-        obs = self._run_tick(tmp_path, monkeypatch, [10.0, 10.1, 9.9], my_idx=0)
-        assert obs.restart_flag.item() == 0
+        obs, restarts = self._run_tick(tmp_path, monkeypatch, [10.0, 10.1, 9.9], my_idx=0)
+        assert obs.restart_flag.item() == 0 and restarts == []
 
 
 # ---------------------------------------------------------------------------------------------
@@ -540,6 +542,7 @@ class TestGraceWindows:
         monkeypatch.setattr(pbt_utils, "load_pbt_ckpts", lambda *a, **k: ckpts)
         monkeypatch.setattr(pbt_utils, "cleanup", lambda *a, **k: None)
         monkeypatch.setattr(pbt_utils, "prepare_restart_checkpoint", lambda src, *a, **k: src)
+        obs._restart_with_new_params = lambda *args: None      # a restart re-execs in the decision's step
         obs.process_infos({"episode": {"success": 1.0}}, None)   # a full window, a new objective
         obs.after_steps()
         assert obs.pbt_it == frame // obs.cfg.interval_steps   # the iteration ran: no vacuous pass
@@ -684,35 +687,43 @@ def _pbt_gloo_worker(rank, world_size, port, workdir, results):
     algo.train_dir = workdir
     algo.writer = BandWriter() if rank == 0 else None
     obs.after_init(algo)
-    iterations, restarts = [], []
-    obs._pbt_iteration = lambda score, best, frame: iterations.append((score, best, frame))
+    iterations, restarts, trace, broadcasts = [], [], [], []
+
+    def iteration(score, best, frame):
+        iterations.append((score, best, frame))
+        if len(iterations) == 3:                           # rank 0 decides a restart at the third iteration
+            obs.new_params, obs.restart_from_checkpoint = {}, "/r.pth"
+            obs.restart_flag[0] = 1
+
+    obs._pbt_iteration = iteration
     obs._restart_with_new_params = lambda *a: restarts.append(algo.frame)
-    for step in range(12):
+    broadcast = dist.broadcast
+    dist.broadcast = lambda tensor, src, **kwargs: broadcasts.append(algo.frame) or broadcast(tensor, src, **kwargs)
+    for _ in range(12):
         obs.process_infos({"obj": torch.full((4,), 0.1 if rank == 0 else 0.3)}, torch.arange(4).reshape(-1, 1))
-        obs.after_steps()
+        obs.after_steps()                                  # rank 1 exits in the step of the decision
+        trace.append(obs.pbt_it)
+        results[rank] = (iterations, trace, broadcasts, restarts)
+        if restarts:
+            break
         algo.frame += 60
-    if rank == 0:
-        obs.new_params, obs.restart_from_checkpoint = {}, "/r.pth"
-        obs.restart_flag[0] = 1
-    results[rank] = (iterations, obs.pbt_it)
-    obs.after_steps()                                      # rank 1 exits here
-    results[rank] = (iterations, obs.pbt_it, restarts)
     dist.destroy_process_group()
 
 
 def test_two_process_gloo_objective_pooling_and_restart_broadcast(tmp_path):
     import torch.multiprocessing as mp
-    port = 29617 + os.getpid() % 1000
     with mp.Manager() as mgr:
         results = mgr.dict()
-        mp.spawn(_pbt_gloo_worker, args=(2, port, str(tmp_path), results), nprocs=2, join=True)
-        r0, r1 = results[0], results[1]
-    iterations0, pbt_it0, restarts0 = r0
-    iterations1, pbt_it1 = r1[0], r1[1]
-    assert len(r1) == 2                                    # rank 1 left through os._exit(0) on the restart flag
-    assert pbt_it0 == pbt_it1 and len(iterations0) == pbt_it0 and iterations1 == []
+        mp.spawn(_pbt_gloo_worker, args=(2, _free_port(), str(tmp_path), results), nprocs=2, join=True)
+        (iterations0, trace0, broadcasts0, restarts0), (iterations1, trace1, broadcasts1, _) = results[0], results[1]
+    # after_steps at frames 0, 60, ...; boundaries are crossed at 120, 240 and 300, the third iteration,
+    # where rank 0 restarts and rank 1 leaves through os._exit(0) in the same step (it records no more)
+    assert trace0 == [0, 0, 1, 1, 2, 3] and trace1 == trace0[:-1]
+    assert len(iterations0) == 3 and iterations1 == []
     assert all(score == pytest.approx(0.2) and best == pytest.approx(0.2) for score, best, _ in iterations0)
-    assert restarts0 == [720]
+    assert restarts0 == [300]
+    # the decision's one broadcast, at the iteration boundaries only
+    assert broadcasts0 == [120, 240, 300] and broadcasts1 == [120, 240]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -763,7 +774,7 @@ class TestReviewRound2:
         monkeypatch.setenv("WORLD_SIZE", "2")
         make_observer(tmp_path, extra_pbt={"num_policies": 4})
         out = capsys.readouterr().out
-        assert "never replaces with num_policies <= 2" in out and "restart flag is not broadcast" in out
+        assert "never replaces with num_policies <= 2" in out and "decisions are not broadcast" in out
 
     def test_temp_names_are_unique_per_host_and_member(self, tmp_path):
         import socket

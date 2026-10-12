@@ -14,8 +14,8 @@ import yaml
 
 from rl_games.common.pbt import PbtAlgoObserver, pbt_utils, restart_info
 from tests.test_critical_fixes import make_cartpole_agent
-from tests.test_pbt_records import (ENT, LR, PARAMS, Algo, decide, execs, member_dir, observer,  # noqa: F401
-                                    reexec, restore_environ)
+from tests.test_pbt_records import (ENT, LR, PARAMS, Algo, ExecCalled, decide, execs, member_dir,  # noqa: F401
+                                    observer, reexec, restore_environ)
 from tests.test_pbt_restart_handoff import make_member_agent, member_params
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -136,7 +136,7 @@ def restart_decision(train_dir, execs, **pbt):
         save(train_dir, idx, 5, objective)
     obs = observer(train_dir, 3, 4, mutation_rate=1.0, **pbt)
     decide(obs, Algo(train_dir, epoch_num=40, experiment_name="member3"), 5, 1.0)
-    _, raw = reexec(obs, execs)
+    _, raw = reexec(execs)
     return json.loads(raw)
 
 
@@ -320,9 +320,9 @@ def test_a_relaunched_restart_restores_the_donor_with_the_mutated_values(tmp_pat
     obs.after_init(algo)
     obs.pbt_it, obs.initial_frame = 19, 0
     obs.process_infos({"episode": {"success": 1.0}}, None)
-    obs.after_steps()
-    assert obs.restart_flag.item() == 1 and obs.restart_source == 0
-    reexec(obs, execs)                                      # the restarted process dies in its start-up
+    with pytest.raises(ExecCalled):
+        obs.after_steps()                               # the decision re-execs; the restarted process
+    assert obs.restart_flag.item() == 1 and obs.restart_source == 0      # dies in its start-up
 
     resume = pbt_utils.member_resume(str(ws), 3)
     assert resume["source"] == "restart"
