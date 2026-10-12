@@ -63,7 +63,6 @@ params:
     full_experiment_name: PickCube_RGB_Maniskill
     env_name: maniskill
     multi_gpu: False
-    mixed_precision: True
     normalize_input: True
     normalize_value: True
     normalize_advantage: True

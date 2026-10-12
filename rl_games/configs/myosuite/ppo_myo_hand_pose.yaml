@@ -39,7 +39,6 @@ params:
     reward_shaper:
       scale_value: 1.0
       log_val: false
-    mixed_precision: true
     normalize_input: true
     normalize_value: true
     value_bootstrap: true

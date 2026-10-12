@@ -27,25 +27,21 @@ class TestReplayBufferNoPinning:
         assert s_obs.shape == (2, 4) and s_trunc.shape == (2, 1)
 
 
-class TestNoGradScaler:
+class TestGradScaler:
 
-    def test_no_scaler_anywhere_in_train_paths(self):
-        # bf16 autocast needs no loss scaling; the scaler was deleted, not disabled
-        import inspect
-        from rl_games.common import a2c_common
-        from rl_games.algos_torch import central_value, a2c_continuous, a2c_discrete
-        for mod in (a2c_common, central_value, a2c_continuous, a2c_discrete):
-            src = inspect.getsource(mod)
-            assert 'GradScaler' not in src.replace('no GradScaler', ''), mod.__name__
-            assert 'scaler.' not in src, mod.__name__
+    def test_scaler_only_for_fp16(self):
+        # bf16 has fp32's exponent range and needs no loss scaling
+        from rl_games.algos_torch import torch_ext
+        assert not torch_ext.grad_scaler(None).is_enabled()
+        assert not torch_ext.grad_scaler(torch.bfloat16).is_enabled()
 
-    def test_central_value_autocast_is_bf16(self):
+    def test_central_value_trains_under_the_configured_autocast(self):
         # the live training path (train_net wraps every train_critic step)
-        # must run under bf16 autocast
+        # must run under the critic's own precision
         import inspect
         from rl_games.algos_torch.central_value import CentralValueTrain
         src = inspect.getsource(CentralValueTrain.train_net)
-        assert 'dtype=torch.bfloat16' in src
+        assert 'torch_ext.autocast(self.amp_dtype)' in src
 
 
 class TestSacCompileInPlace:
