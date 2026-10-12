@@ -1,11 +1,11 @@
 # Population Based Training (PBT)
 
-rl_games ships the PBT observer of [DexPBT](https://arxiv.org/abs/2305.12127) (the lineage
-maintained in [IsaacGymEnvs](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs) and Isaac Lab's
-`isaaclab_rl`) in `rl_games.common.pbt`. Each member of a population is its own training process,
-or torchrun job, with a `PbtAlgoObserver`. Members share a workspace directory and rank themselves
-against each other at fixed frame intervals. A member that falls behind re-executes itself from a
-better member's checkpoint, or its own, with mutated hyperparameters.
+rl_games ships the PBT observer of [DexPBT](https://arxiv.org/abs/2305.12127) (originally from
+[IsaacGymEnvs](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs); Isaac Lab's `isaaclab_rl`
+maintains its own port) in `rl_games.common.pbt`. Each member of a population is its own training
+process, or torchrun job, with a `PbtAlgoObserver`. Members share a workspace directory and rank
+themselves against each other at fixed frame intervals. A member that falls behind re-executes
+itself from a better member's checkpoint, or its own, with mutated hyperparameters.
 
 Supported agents: `a2c_continuous` and `a2c_discrete` (PPO). SAC is not supported: the observer
 raises `NotImplementedError` when SAC's `train()` starts.
@@ -52,8 +52,13 @@ train script must:
 5. give each member a fixed `full_experiment_name` (e.g. `pbt_p00`) on every launch. Without one
    (rank 0 warns), each restart writes into a new timestamped run directory, and members started
    in the same second share one;
-6. launch all members with the same `train_dir` and `pbt.workspace`: the workspace is
-   `<train_dir>/<workspace>`;
+6. launch all members with the same `train_dir` and the same `pbt` section apart from
+   `policy_idx` (`num_policies`, `interval_steps`, `workspace`, ...): the workspace is
+   `<train_dir>/<workspace>`, a member numbers its iterations by its own `interval_steps` and
+   reads its peers' files by those numbers, and `num_policies` sizes the ranking, the reporting
+   gate and the worst and top groups. A restart re-runs the train script, which reads its config
+   again: a config edited under a running population reaches only the members that restart
+   afterwards, and splits the population;
 7. for a multi-GPU member, pass an `args_cli` with `distributed=True`
    ([Multi-GPU members](#multi-gpu-members));
 8. register custom mutation functions at import ([Mutation functions](#mutation-functions)).
@@ -201,12 +206,15 @@ without leaders they self-mutate. There is no reporting gate or worst group. Con
 
 ### Differences from IsaacGymEnvs' DexPBT
 
-With every member reported and replaceable and no ties, the rule picks the same members and donors
-as IsaacGymEnvs' for the same objectives. Otherwise:
+With every member reported and replaceable and no ties, the rule takes the same worst group and
+draws donors from the same top group as IsaacGymEnvs' for the same objectives (the draws
+themselves come from another generator). Otherwise:
 
 - IsaacGymEnvs takes the worst group from the whole ranking: a member that never reported (ranked
-  at -1e9), or one restarting, lagging or in its grace window, holds a worst slot and blocks every
-  replacement. Its top group can include members that never reported.
+  at -1e9), or one restarting, lagging or in its grace window, holds a worst slot that a member
+  able to act would need. With IsaacGymEnvs' default `replace_fraction_worst` of 0.125 that is the
+  only slot of a population of up to 8 members, and nobody else is replaced. Its top group can
+  include members that never reported.
 - It breaks ties by index, restarts on no-op self-mutations, decides in a run's last epochs, and
   mutates every member's values at launch (`initial_pbt_check`). rl_games members start with their
   configured values.
@@ -216,7 +224,8 @@ as IsaacGymEnvs' for the same objectives. Otherwise:
 
 `objective` is a dotted address into the env infos, required: e.g. `episode.Episode_Reward/success`
 (Isaac Lab-style nested infos), `scores` (flat dicts) or `episode.r` (gymnasium's
-`RecordEpisodeStatistics`). It is read at each env step that finishes episodes:
+`RecordEpisodeStatistics`). It is looked up at every env step; only the episodes that end on a
+step count:
 
 - a per-env tensor or array is read at the finished envs. Done indices arrive per agent
   (`env * num_agents`), as rl_games passes them to observers, and are read at
@@ -225,8 +234,7 @@ as IsaacGymEnvs' for the same objectives. Otherwise:
   by their count. A NaN or inf scalar drops all of them.
 
 Dropped episodes count as non-finite; episodes that end on a step where the address can't be read
-count as unreadable. `pbt_utils.episode_stats(value, done_indices, num_agents)` returns
-`(sum, count, nonfinite)` for one step (`episode_sum_count` the first two).
+count as unreadable.
 
 A member's objective is the mean of the latest `objective_window` finished episodes of each rank (0:
 the rank's env count), pooled across ranks. That size is DexPBT's, but the estimator differs:
@@ -244,6 +252,11 @@ published again. Rank 0 warns once per boundary, with the last lookup error of t
   Y unreadable dropped)` while the windows fill;
 - `waits for a new objective '<key>' [on k of n ranks]: V finite, X non-finite and Y unreadable
   episodes since iteration I` after that.
+
+A lookup that fails on a step where no episode ended counts nothing, but it still shows as the
+last lookup error. With `episode.r` from `RecordEpisodeStatistics`, which adds `episode` to the
+infos only on steps where an episode ends, the warnings therefore show `KeyError('episode')` with 0
+unreadable episodes: that is harmless.
 
 Every rank raises `RuntimeError` after `max_consecutive_errors` boundaries in a row at which some
 rank had failed: since the last iteration (or the process start) each of its envs ended an
@@ -289,9 +302,8 @@ Hydra job, else the cwd when the observer was built. With Hydra 1.1 job semantic
 omitted or `'1.1'`, or `hydra.job.chdir=True`) the job runs inside its run dir. The restart then
 drops any `hydra.run.dir` override and appends `hydra.run.dir=<that run dir>`, single-quoted when
 the path needs it: the child reuses the run dir instead of nesting a new one, and a relative
-`train_dir` keeps its workspace. A run dir path containing `${` can't be passed. With
-`version_base` 1.2 or later (Isaac Lab uses `'1.3'`) none of this is needed; prefer it, or
-`hydra.job.chdir=False`.
+`train_dir` keeps its workspace. With `version_base` 1.2 or later (Isaac Lab uses `'1.3'`) none
+of this is needed; prefer it, or `hydra.job.chdir=False`.
 
 **`python -m` entry points.** Pass `launch_argv=['-m', 'pkg.module', *sys.argv[1:]]`: the restart
 then runs `python -m pkg.module`, or `torch.distributed.run ... -m pkg.module` for a multi-GPU
@@ -347,8 +359,8 @@ This rule holds for every A2C restore: PBT restarts, restarts by other PBT obser
 mutated values only on the command line (Isaac Lab's `isaaclab_rl`, IsaacGymEnvs ports), and plain
 resumes. The config, on a restart the restart command, is the source of truth for hyperparameters.
 Checkpoints store their run's configured `learning_rate` and `entropy_coef` as `config_hparams`.
-The checkpoint contributes only runtime state, and only while the config value equals the stored
-one:
+The checkpoint contributes only runtime state, as it is while the config value equals the stored
+one; under `adaptive` a changed `learning_rate` rescales it:
 
 | `lr_schedule` | learning rate | `entropy_coef` |
 |---|---|---|
@@ -367,11 +379,12 @@ one:
 
 `restart.pth` stores the restart's pre-mutation values of the mutable `learning_rate` and
 `entropy_coef` (the base the new values were mutated from: the member's own or the donor's) as
-`config_hparams`. Under `adaptive` the restarted member
-therefore continues from the donor's adapted LR times this restart's mutation factor (1 when
-`learning_rate` was not mutated), clamped. It is not reset to a nominal value, nor scaled by the
-ratio of two members' configured LRs. Mutating `learning_rate` under `adaptive` only perturbs the
-inherited walk; `kl_threshold` changes the schedule.
+`config_hparams`. Under `adaptive` the restarted member therefore continues from the source's
+adapted LR (the donor's, or its own for a self-mutation) times this restart's mutation factor,
+clamped to `[min_lr, max_lr]`; unchanged (factor 1) when `learning_rate` was not mutated. It is
+not reset to a nominal value, nor scaled by the ratio of two members' configured LRs. Mutating
+`learning_rate` under `adaptive` only perturbs the inherited walk; `kl_threshold` changes the
+schedule.
 
 ### restart_info() and restart.yaml
 
@@ -406,9 +419,9 @@ writes it). It holds the payload's keys plus `epoch` (the last completed one, as
 random per launch, null when the command keeps its own seed) and `time` (`time.time()`).
 `checkpoint` is the writer's absolute path; on another mount use `<member dir>/restart.pth`. No
 record is written when nothing restarts: a no-op or in-process self-mutation, the end-of-run guard,
-a failed `restart.pth`. Nothing in rl_games reads it yet, and workspace loaders and cleanup ignore
-it. A process that is not a PBT restart deletes it at its first epoch when it records a decision
-above that process's iteration.
+a failed `restart.pth`. Nothing in rl_games acts on its content yet, except that a process that is
+not a PBT restart deletes it at its first epoch when it records a decision above that process's
+iteration; workspace loaders and cleanup ignore it.
 
 ### wandb
 
@@ -458,6 +471,10 @@ The train script still calls `wandb.init` itself in the child.
   seeding; rl_games doesn't, and there is no config key. Apply it to the seed the run will use,
   `params['seed'] = member_seed(seed, policy_idx)`: a None seed leaves the Runner's
   `int(time.time())`, and members started in the same second start as copies.
+- A seed of -1 (random per launch) is a train-script convention: rl_games' Runner needs a seed of
+  0 or more, or None for a time-based one (numpy rejects -1 at startup). A script that accepts -1
+  must replace it with a drawn seed before it sets `params['seed']`, as Isaac Lab's train.py does.
+  `member_seed`, the restart's derived seed and `restart.yaml` pass -1 on unchanged.
 - With `multi_gpu`, rl_games adds the global rank to `params.seed` itself. Scripts that add it as
   well (Isaac Lab) get learner seed + 2 * rank and env seed + rank, so within one member rank r's
   learner seed equals rank 2r's env seed. Across members the stride must exceed
@@ -488,11 +505,12 @@ The train script still calls `wandb.init` itself in the child.
 ```
 
 **Cleanup.** Each member deletes its own files at or below the slowest member's iteration minus
-20; a member that never reported counts as iteration 0. It always keeps its newest yaml at or
-below the slowest member's iteration, so a live member any number of iterations behind still finds
-every peer at or below its own iteration. Above 50 iterations it thins its older files as
-IsaacGymEnvs does, never the newest 10 or the oldest: disk stays at about 50 yaml/pth pairs per
-member, also when a member stops or dies. Each `.yaml` is deleted before its `.pth`.
+20, except its newest yaml at or below the slowest member's iteration; a member that never
+reported counts as iteration 0. Above 50 iterations it thins its older files as IsaacGymEnvs does,
+never the newest 10 or the oldest: disk stays at about 50 yaml/pth pairs per member, also when a
+member stops or dies. Thinning may remove that newest yaml, but never the oldest file, so a live
+member any number of iterations behind still finds every peer at or below its own iteration,
+though an older yaml once thinning has started. Each `.yaml` is deleted before its `.pth`.
 
 **Files.** Workspace files are plain YAML (`yaml.safe_dump`, `yaml.safe_load`): a value plain YAML
 can't hold (a numpy or torch scalar) makes the save raise, a failed iteration. A reader skips a
@@ -537,7 +555,13 @@ hit this guard.
 
 Plain resumes (frame > 0) and PBT restarts pass; a member resumed from an older checkpoint deletes
 its own files above its iteration. Bring a dead member of a running population back by resuming it
-from its latest workspace `.pth` or its `restart.pth`, not from scratch.
+from its latest workspace `.pth` or its `restart.pth`, not from scratch, and pass its current
+values with the resume as `key=value` overrides: the `params` of `<it>.yaml` for `<it>.pth`, of
+`restart.yaml` for `restart.pth`. The restore takes hyperparameters from the config
+([Hyperparameters on restore](#hyperparameters-on-restore)): resumed with its launch command, the
+member silently trains with its launch values again and publishes them in its next yaml. Leave
+out `--sigma`: a resume by hand is not a PBT restart, so the runner would apply it to the trained
+policy.
 
 ## TensorBoard and logs
 
@@ -567,8 +591,10 @@ Log lines of rank 0:
 | `not among the worst [..]`, `only k of n members reported`, `best objective this iteration ... reaches the top [..]`, `not an underperformer` | no replacement |
 | `replace from j: lead ...`, `underperformer` | a transfer |
 | `lead of j (...) too small: mutate own parameters`, `no leaders: mutate own parameters` | a self-mutation |
+| `no-op self-mutation: keep training` | a self-mutation that changed no value: no restart |
 | `within the grace window`, `... no replacement this close to the end` | no decision |
 | `exception ... in PBT checkpoint save/load (k/n)` | a failed iteration, counted toward `max_consecutive_errors` |
+| `exception ... while preparing the restart checkpoint` | a decided restart that did not happen (e.g. the source's checkpoint was cleaned up meanwhile, or holds NaN or inf): the member keeps training with its weights. It does not count toward `max_consecutive_errors`, so it can repeat at every iteration |
 
 ## Config reference
 
@@ -609,8 +635,9 @@ works too). Float keys accept numbers and numeric strings. For both, bool, None 
 thresholds), NaN and non-numeric strings raise `ValueError` naming `pbt.<key>`, as do fractions
 for integer keys, at init and on every rank.
 
-Unknown keys raise `ValueError`, listing every unknown key with the key it likely means.
-IsaacGymEnvs' `change_min` and `change_max` point to `change_range`; `dbg_mode` is not supported.
+Unknown keys raise `ValueError`, listing every unknown key, with the key it likely means when one
+is close. IsaacGymEnvs' `change_min` and `change_max` point to `change_range`; `dbg_mode` is not
+supported.
 
 `rl_games.common.pbt.validate(params, extra_params=None, launcher_cwd=None)` returns
 `(PbtCfg, mutable params)`. It touches no env and no tensors, so a train script calls it before
@@ -667,9 +694,10 @@ the workspace, the restart command and its payload get plain Python numbers.
 ## Extending the observer
 
 - To apply a self-mutation in the running process instead of restarting, override
-  `_apply_self_mutation(self, changed: dict) -> bool`; don't copy `_pbt_iteration`, whose copy
+  `_apply_self_mutation(self, changed: dict) -> bool`; don't replace `_pbt_iteration`: a copy
+  misses the parts added since it was taken, and every later fix (a copy older than this version
   misses the replaceable marks, `restart.pth`'s base values, watermark and completed epoch, the
-  no-op check, the end-of-run guard and the tie order. The hook is called on rank 0 for a
+  no-op check, the end-of-run guard and the tie order). The hook is called on rank 0 for a
   self-mutation with changes, before anything is written for a restart; `changed` is
   `{flattened key: new value}`. Return True when the values were applied: the observer takes them
   as `pbt_params`, logs `pbt/<param>` at the iteration's x and the table
@@ -709,10 +737,12 @@ the workspace, the restart command and its payload get plain Python numbers.
   fixed `full_experiment_name` on every launch; rl_games marks a restart itself
   ([restart_info()](#restart_info-and-restartyaml)).
 - Isaac Lab's `PbtCfg` keys are a subset of rl_games': its `pbt` sections construct as they are.
-  With `threshold_std` or `threshold_abs` and no `replace_rule` they keep the threshold rule; set
-  `replace_rule: dexpbt` for DexPBT's. Isaac Lab's train.py builds the observer without
-  `launch_argv`, so its restarts drop launch flags ([The restart command](#the-restart-command)):
-  pass `launch_argv`.
+  Isaac Lab has only the threshold rule. A section with `threshold_std` or `threshold_abs` and no
+  `replace_rule` keeps it; set `replace_rule: dexpbt` for DexPBT's. A section that leaves the
+  thresholds at Isaac Lab's defaults (neither key) runs dexpbt here, and only rank 0's init notice
+  says so: set `replace_rule: threshold` to keep Isaac Lab's rule. Isaac Lab's train.py builds the
+  observer without `launch_argv`, so its restarts drop launch flags
+  ([The restart command](#the-restart-command)): pass `launch_argv`.
 - `params.config.population_based_training` is an older, separate switch. It does not enable this
   PBT (attaching the observer does), needs `params.config.pbt_idx` (KeyError without it), adds
   `_pbt_<pbt_idx>` to the run name unless `full_experiment_name` is set, and routes summaries
@@ -721,9 +751,14 @@ the workspace, the restart command and its payload get plain Python numbers.
 
 ## Upgrading a running population
 
-- Checkpoints gain `config_hparams`, and `pbt_history` after transfers; workspace yamls gain
-  `replaceable`. Older readers ignore them, and yamls without `replaceable` count as replaceable.
-- Resumes take `weight_decay`, and under identity the LR, from the config.
+- Checkpoints gain `config_hparams`, and `pbt_history` after any PBT restart or in-process
+  self-mutation; workspace yamls gain `replaceable`. Older readers ignore them, and yamls without
+  `replaceable` count as replaceable.
+- Resumes take `weight_decay`, `entropy_coef` (except under a linear entropy schedule) and, under
+  identity, the LR from the config. Under `adaptive` or `linear`, a `learning_rate` that differs
+  from the checkpoint's stored one rescales or replaces the checkpoint's LR
+  ([Hyperparameters on restore](#hyperparameters-on-restore)). Before, a plain resume kept the
+  checkpoint's LR and entropy.
 - A `restart.pth` written by an older parent has no base values: under `adaptive` the child scales
   the donor's walk by the ratio of its config LR to the donor's stored one, for that restart.
 - `pbt` sections with unknown keys or invalid values raise at init.
@@ -735,29 +770,6 @@ the workspace, the restart command and its payload get plain Python numbers.
 
 ## Testing and release qualification
 
-`python -m pytest tests/test_pbt_e2e.py` runs in CI (about 30 s). A 3-member CPU population of the
-example with real `os.execv` restarts takes about 15 s of it. The test checks the restart round
-trip, the values in effect after each restart, epoch and frame continuity, distinct mutation
-draws, that no secret from the environment reaches a log, and each restart's `kind` and
-`restart.yaml`.
-
-Multi-GPU members can't run in CI. Before a release, on a node with 2 GPUs:
-
-```bash
-bash examples/pbt/run_nccl_qualification.sh                    # fp32 weights, TF32 matmuls
-bash examples/pbt/run_nccl_qualification.sh --precision fp16    # fp16 with loss scaling
-bash examples/pbt/run_nccl_qualification.sh --lstm              # LSTM policies
-```
-
-Options: `--members N` (3 or more), `--nproc`, `--lr-schedule`, `--max-epochs`, `--out`,
-`--python`, `--dry-run`. Each run is 3 members of 2 ranks (rank r on GPU r) on the dexpbt rule,
-mutation_rate 0.5, the adaptive LR schedule, `torch_compile` and the normalizers on; the last
-member alternates transfers and self-mutations. `check_qualification.py` prints PASS, or FAIL with
-the failures: the ranks of every process start must agree on state hashes, counters, restart info
-and values in effect; every restart must have restored `restart.pth` (the model, the fp16 loss
-scale); every rank must end normally; some member must restart at least 3 times. The members'
-`--report` lines (a `PBT_MEMBER` JSON line per rank at the first env step) belong to the example,
-not to the library API: a debugging aid for DDP state sync.
-
-Results: record each run's commit, node and outcome here. None yet. Still to run: the three
-commands above, and one with 4 ranks per member (`--nproc 4`) on a 4-GPU node.
+`python -m pytest tests/test_pbt_e2e.py` runs a 3-member CPU population of the example with real
+restarts in CI (about 30 s). Multi-GPU members can't run in CI: before a release, run the GPU
+qualification of [examples/pbt/README.md](../examples/pbt/README.md#gpu-qualification-nccl).

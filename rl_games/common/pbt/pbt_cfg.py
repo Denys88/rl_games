@@ -44,7 +44,8 @@ class PbtCfg:
         with mutated parameters (DexPBT), unless the mutation changed no value.
       - "threshold": underperformers (score < min(mean - threshold_std*std, mean - threshold_abs))
         restart from a random leader (score > max(mean + threshold_std*std, mean + threshold_abs)).
-    On replacement, selected hyperparameters are mutated by a random factor in `change_range`.
+    On a replacement each key of `mutation` is mutated with probability `mutation_rate` by its
+    mutation function (docs/PBT.md lists them; not all use `change_range`).
 
     Frames (`interval_steps`, `start_after`, `initial_delay`) are the learner's `frame`: agent
     steps summed over the member's ranks.
@@ -118,21 +119,24 @@ class PbtCfg:
     """dexpbt: fraction of the population (rounded up) that replacements are drawn from, in (0, 1]."""
 
     replace_threshold_frac_std: float = 0.5
-    """dexpbt: replace only if the candidate leads by more than this many population stds
-    (std over the objectives with the worst 20% trimmed); >= 0."""
+    """dexpbt: a transfer from the drawn donor needs a lead of more than this many population stds
+    (std over the objectives with the worst 20% trimmed); otherwise the member self-mutates; >= 0."""
 
     replace_threshold_frac_absolute: float = 0.05
-    """dexpbt: replace only if the candidate leads by more than this fraction of |candidate objective|; >= 0."""
+    """dexpbt: a transfer from the drawn donor needs a lead of more than this fraction of |donor
+    objective|; otherwise the member self-mutates; >= 0."""
 
     leader_params_prob: float = 0.5
     """dexpbt: probability that a replaced member mutates the source's hyperparameters rather
     than its own, in [0, 1]."""
 
     threshold_std: float | None = None
-    """threshold: std-based margin k in max(mean ± k·std, mean ± threshold_abs). Default 0.10."""
+    """threshold: std-based margin k: leaders are above max(mean + k·std, mean + threshold_abs),
+    underperformers below min(mean - k·std, mean - threshold_abs). Default 0.10."""
 
     threshold_abs: float | None = None
-    """threshold: absolute margin A in max(mean ± threshold_std·std, mean ± A). Default 0.05."""
+    """threshold: absolute margin A: leaders are above max(mean + threshold_std·std, mean + A),
+    underperformers below min(mean - threshold_std·std, mean - A). Default 0.05."""
 
     mutation_rate: float = 0.25
     """Per-parameter probability of mutation when a policy is replaced, in [0, 1]."""
@@ -238,7 +242,8 @@ class PbtCfg:
 
     @classmethod
     def from_dict(cls, d):
-        """Build from a config dict. Unknown keys raise, each listed with the key likely meant."""
+        """Build from a config dict. Unknown keys raise, each listed with the key likely meant
+        when one is close."""
         known = [f.name for f in fields(cls)]
         unknown = sorted((key for key in d if key not in known), key=str)
         if unknown:

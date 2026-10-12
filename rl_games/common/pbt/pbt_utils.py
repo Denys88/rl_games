@@ -586,9 +586,9 @@ def load_reader_objectives(policy_dir, checkpoints: dict[int, dict | None], read
     """The reader's own objectives that `member_status` compares the members 2+ iterations behind
     with: for each such member in `checkpoints`, the reader's newest valid yaml in `policy_dir` at
     or below that member's iteration, the one that member reads of the reader (`load_pbt_ckpts`).
-    Returns {yaml iteration: objective}; reads nothing when no member is that far behind. Cleanup
-    keeps these yamls: it deletes nothing above the slowest member's iteration minus `keep_back`,
-    nor the newest yaml at or below that iteration. (rank 0 only)
+    Returns {yaml iteration: objective}; reads nothing when no member is that far behind.
+    `cleanup`'s deletion below the slowest member keeps these yamls, but its thinning may delete
+    one (never the oldest yaml): the newest older one is read then. (rank 0 only)
     """
     lagging = sorted({ckpt["iteration"] for ckpt in checkpoints.values() if _lagging(ckpt, reader_iteration)})
     if not lagging or not os.path.isdir(policy_dir):
