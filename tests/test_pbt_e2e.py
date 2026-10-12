@@ -525,6 +525,87 @@ def test_qualification_checker_reports_a_restart_without_its_checkpoint(tmp_path
     assert proc.stdout.splitlines()[-1] == "FAIL"
 
 
+def _process(restart_count, **changes):
+    """Both ranks' start reports of the member's process `restart_count` (see `_report`)."""
+    return [_report(rank, restart_count, **changes) for rank in (0, 1)]
+
+
+def write_log(path, reports):
+    path.write_text("".join(PREFIX + json.dumps(report) + "\n" for report in reports))
+    return path
+
+
+@pytest.fixture
+def checker(member_report, monkeypatch):
+    """check_qualification.py's main() in this process (a subprocess imports torch for every
+    case): checker(log, *args) -> (exit status, the FAIL lines it printed)."""
+    spec = importlib.util.spec_from_file_location("check_qualification", CHECKER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules, "member_report", member_report)  # the checker imports it from its directory
+
+    def run(log, *args):
+        monkeypatch.setattr(sys, "argv", [CHECKER, "--world-size", "2", *args, str(log)])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = module.main()
+        return status, [line for line in out.getvalue().splitlines() if line.startswith("FAIL")]
+    return run
+
+
+@pytest.mark.parametrize("reports, args, failures", [
+    (_process(0) + _process(1) + _exits(1), [], []),
+    (_process(0) + _process(1, checkpoint__model="ee") + _exits(1), [],
+     [f"member 0 process 1 rank {rank}: the model differs from its checkpoint's (aa vs ee)" for rank in (0, 1)]),
+    (_process(0) + _process(1, checkpoint__scaler_scale=2048.0) + _exits(1), [],
+     [f"member 0 process 1 rank {rank}: loss scale 1024.0 differs from the checkpoint's 2048.0" for rank in (0, 1)]),
+    (_process(0) + _process(1)[:1] + _exits(1), [], ["member 0 process 1: ranks [0] reported, expected [0, 1]"]),
+    (_process(0) + _process(2) + _exits(2), [], ["member 0: process starts reported for restart counts [0, 2]"]),
+    (_process(0) + _process(1) + _exits(1)[:1], [],
+     ["member 0: ranks [0] of its last process ended training, expected [0, 1]"]),
+    (_process(0) + _process(1) + _exits(1), ["--min-restarts", "2"],
+     ["the most restarted member restarted 1 times, fewer than 2"]),
+    ([], [], ["no PBT_MEMBER start reports: run the members with --report"]),
+], ids=["pass", "model-not-restored", "scale-not-restored", "rank-not-reported", "restart-count-skipped",
+        "rank-not-ended", "too-few-restarts", "no-reports"])
+def test_qualification_checker_fails_each_check(tmp_path, checker, reports, args, failures):
+    """Each check of the checker on its own: a restarted process whose model or fp16 loss scale is
+    not its checkpoint's, a rank without a start report, a restart count without its process, a
+    rank of the last process that didn't end training, too few restarts, no reports at all."""
+    status, lines = checker(write_log(tmp_path / "member0.log", reports), *args)
+    assert (status, lines) == ((1, [f"FAIL {failure}" for failure in failures] + ["FAIL"]) if failures else (0, []))
+
+
+def test_qualification_checker_compares_the_restart_pth_on_disk(tmp_path, member_report, checker):
+    """With --train-dir, the member's restart.pth must still hold what its last process restored:
+    the model, the loss scale, the frame and the epoch. A missing restart.pth, or one restored
+    from outside the run directory, fails too."""
+    import torch
+
+    train_dir = tmp_path / "run"
+    path = train_dir / "pbt_workspace" / "000" / "restart.pth"
+    restored = {"model": {"w": torch.zeros(2)}, "scaler": {"scale": 1024.0}, "frame": 4096, "epoch": 16}
+    model = member_report.model_hash(restored["model"])
+    log = write_log(tmp_path / "member0.log", _process(0) + _process(1, state__model=model, checkpoint__model=model,
+                                                                    checkpoint__path=str(path)) + _exits(1))
+    on_disk = ("--train-dir", str(train_dir))
+    assert checker(log, *on_disk) == (1, [f"FAIL member 0 process 1: {path} is missing", "FAIL"])
+    path.parent.mkdir(parents=True)
+    torch.save(restored, path)
+    assert checker(log, *on_disk) == (0, [])
+    other = {"w": torch.ones(2)}
+    for change, held in [({"model": other}, f"model {member_report.model_hash(other)}, the process restored {model}"),
+                         ({"scaler": {"scale": 2048.0}}, "scaler_scale 2048.0, the process restored 1024.0"),
+                         ({"frame": 4224}, "frame 4224, the process restored 4096"),
+                         ({"epoch": 15}, "epoch 15, the process restored 16")]:
+        torch.save(dict(restored, **change), path)
+        assert checker(log, *on_disk) == (1, [f"FAIL member 0 process 1: {path} holds {held}", "FAIL"])
+    # the reports' default checkpoint path, /nonexistent/restart.pth, is outside the run directory
+    elsewhere = write_log(tmp_path / "elsewhere.log", _process(0) + _process(1) + _exits(1))
+    assert checker(elsewhere, *on_disk) == (
+        1, [f"FAIL member 0 process 1: restored /nonexistent/restart.pth, outside {train_dir}", "FAIL"])
+
+
 def test_reports_survive_another_ranks_unfinished_line(member_report):
     """The ranks of a member share its log, and print() writes a line's text and its newline
     apart (torchrun runs the workers unbuffered): a report written in between is still read, and

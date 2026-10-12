@@ -792,7 +792,17 @@ class TestReviewRound2:
         assert (state["frame"], state["epoch"]) == (7000, 55)
 
 
+def _free_port():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
 def _pbt_gloo_uneven_worker(rank, world_size, port, workdir, results):
+    """One rank of a 2-rank member with a window of 8 episodes per rank, interval 100, 60 frames
+    per step. Rank 0 ends 8 finite episodes per step: its window is full at once. Rank 1 ends one:
+    a new objective at every boundary, but a full window only after 8 steps (frame 420)."""
     import datetime
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     os.environ.update(RANK=str(rank), WORLD_SIZE=str(world_size), LOCAL_RANK=str(rank))
@@ -800,7 +810,7 @@ def _pbt_gloo_uneven_worker(rank, world_size, port, workdir, results):
     dist.init_process_group('gloo', rank=rank, world_size=world_size, init_method=f'tcp://127.0.0.1:{port}',
                             timeout=datetime.timedelta(seconds=60))
     params = {"pbt": {"enabled": True, "policy_idx": 0, "num_policies": 3, "directory": workdir,
-                      "interval_steps": 100, "objective": "obj",
+                      "interval_steps": 100, "objective": "obj", "objective_window": 8,
                       "mutation": {"agent.params.config.learning_rate": "mutate_float"}},
               "params": {"config": {"device": "cpu", "learning_rate": 3e-4}}}
     obs = PbtAlgoObserver(params, args_cli=types.SimpleNamespace(distributed=True))
@@ -809,22 +819,30 @@ def _pbt_gloo_uneven_worker(rank, world_size, port, workdir, results):
     algo.train_dir = workdir
     algo.writer = BandWriter() if rank == 0 else None
     obs.after_init(algo)
-    iterations = []
-    obs._pbt_iteration = lambda score, best, frame: iterations.append(frame)
-    for step in range(8):
-        if rank == 0:                                          # rank 0 alone holds twice its window
-            obs.process_infos({"obj": torch.ones(8)}, torch.arange(8).reshape(-1, 1))
+    iterations, trace = [], []
+    obs._pbt_iteration = lambda score, best, frame: iterations.append((frame, score))
+    for step in range(12):
+        if rank == 0:
+            obs.process_infos({"obj": torch.full((8,), 0.1)}, torch.arange(8).reshape(-1, 1))
+        else:
+            obs.process_infos({"obj": torch.full((4,), 0.3)}, torch.tensor([[step % 4]]))
         obs.after_steps()
+        trace.append(obs.pbt_it)
         algo.frame += 60
-    results[rank] = (iterations, obs.pbt_it)
+    results[rank] = (iterations, trace)
     dist.destroy_process_group()
 
 
 def test_two_process_gloo_window_gate_requires_every_rank(tmp_path):
+    """An iteration waits until every rank's window is full, although every rank has a new
+    objective at each boundary: rank 0 doesn't decide on its own episodes."""
     import torch.multiprocessing as mp
-    port = 29717 + os.getpid() % 1000
     with mp.Manager() as mgr:
         results = mgr.dict()
-        mp.spawn(_pbt_gloo_uneven_worker, args=(2, port, str(tmp_path), results), nprocs=2, join=True)
-        (iterations0, it0), (iterations1, it1) = results[0], results[1]
-    assert iterations0 == [] and iterations1 == [] and it0 == it1 == 0
+        mp.spawn(_pbt_gloo_uneven_worker, args=(2, _free_port(), str(tmp_path), results), nprocs=2, join=True)
+        (iterations0, trace0), (iterations1, trace1) = results[0], results[1]
+    # after_steps at frames 0, 60, ..., 660; boundaries are crossed at 120, 240, 300, 420, 540, 600.
+    # The iteration due at 120 waits on both ranks until rank 1's window is full at 420
+    assert trace0 == trace1 == [0, 0, 0, 0, 0, 0, 0, 4, 4, 5, 6, 6]
+    assert [frame for frame, _ in iterations0] == [420, 540, 600] and iterations1 == []
+    assert iterations0[0][1] == pytest.approx((8 * 0.1 + 8 * 0.3) / 16)  # both full windows pooled
