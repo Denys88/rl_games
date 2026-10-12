@@ -634,6 +634,9 @@ Log lines of rank 0:
 | `initial_mutation` | `false` | bool | A fresh member mutates its `agent.params.config` values once at init. |
 | `restart_drop_args` | `{}` | map of argument name to nargs (int >= 0 or `?`) | Launch-only arguments every restart removes from the command. |
 | `self_mutation` | `restart` | `restart`, `in_process` | `in_process`: a self-mutation sets its values on the running learner, on every rank, when `set_param` takes every changed key; else it restarts. |
+| `max_member_lag` | `10` | int >= 0 | A member without a heartbeat or a new yaml for this many of the deciding member's iteration times is stale and left out; 0: no member is judged by time. |
+| `force_owner` | `false` | bool | Start even when the member's `owner.yaml` names a process that may still run it. |
+| `stop_with_first` | `false` | bool | The first member to reach `max_epochs` or `max_frames` writes `finished.yaml`; the others stop at the end of their next epoch. |
 
 Integer keys accept ints, whole floats (Hydra and OmegaConf turn `2e7` into a float) and numeric
 strings (PyYAML and Isaac Lab's `yaml.full_load` turn `2e7` and `1e-3` into strings; `20_000_000`

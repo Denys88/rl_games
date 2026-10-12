@@ -3,15 +3,18 @@
 # Copyright (c) 2022-2026, The Isaac Lab Project Developers.
 # SPDX-License-Identifier: BSD-3-Clause
 
+import contextlib
 import json
 import math
 import os
 import random
 import re
+import statistics
 import sys
 import threading
 import time
 import traceback
+import uuid
 from collections import deque
 from typing import NamedTuple
 
@@ -123,6 +126,11 @@ class PbtAlgoObserver(AlgoObserver):
     outcome to the member's `decisions.jsonl` (`_append_decision`), and the learner's checkpoints
     carry the member's PBT state (`_pbt_state`), from which `pbt_utils.member_resume` relaunches
     a member that died.
+
+    Rank 0 keeps the member's owner record (`owner.yaml`, `_claim_member`, `_heartbeat`), from
+    which peers tell a live member from a dead one (`pbt.max_member_lag`), and writes an exit
+    record at a normal end (`after_train`). With `pbt.stop_with_first` the population ends with
+    its first member to finish (`_watch_population_end`).
     """
 
     def __init__(self, params, args_cli=None, launch_argv=None, extra_params=None, code_fingerprint=None):
@@ -192,6 +200,13 @@ class PbtAlgoObserver(AlgoObserver):
         self._failed_boundaries = 0  # consecutive boundaries waited at with a failed rank
         self.code_fingerprint = None if code_fingerprint is None else str(code_fingerprint)
         self._identity_warnings = set()  # (peer, field, value) already warned about
+        # this launch of the member, in its owner record; liveness: the wall seconds per iteration
+        # interval and the last boundary timed (rank 0)
+        self.launch_id = uuid.uuid4().hex
+        self._iteration_seconds = deque(maxlen=20)
+        self._boundary = None
+        self._stop_fn = None  # the learner's stop_fn under pbt.stop_with_first
+        self._ignored_marker = None  # the time of a finished.yaml of another run, warned about
 
         if self.distributed_args.rank == 0:
             for line in rule_notices(self.cfg, params["pbt"]):
@@ -329,15 +344,16 @@ class PbtAlgoObserver(AlgoObserver):
 
     def after_init(self, algo):
         """Keep the algo and give the learner this member's PBT state (`_pbt_state`) on every rank;
-        rank 0 creates this policy's workspace folder. In a PBT restart rank 0 notices when the
-        learner's `experiment_name` differs from the one the member's previous process wrote into
-        (the payload's): a new run directory.
+        rank 0 creates this policy's workspace folder and claims the member (`_claim_member`). In a
+        PBT restart rank 0 notices when the learner's `experiment_name` differs from the one the
+        member's previous process wrote into (the payload's): a new run directory.
 
         Args:
             algo: rl_games algorithm object (provides writer, train_dir, frame counter, etc.).
 
         Raises:
             NotImplementedError: for SAC, which never calls `after_steps` (PBT would do nothing).
+            RuntimeError: on rank 0, when another process may still run this member.
         """
         from rl_games.algos_torch.sac_agent import SACAgent  # lazy: only this check needs the SAC module
 
@@ -369,6 +385,70 @@ class PbtAlgoObserver(AlgoObserver):
         self.ws_dir = os.path.join(self.root_dir, self.cfg.workspace)
         self.curr_policy_dir = os.path.join(self.ws_dir, f"{self.cfg.policy_idx:03d}")
         os.makedirs(self.curr_policy_dir, exist_ok=True)
+        self._claim_member()
+
+    def _claim_member(self):
+        """Rank 0 at init, before any collective (torchrun stops the other ranks when it raises):
+        write the member's owner record (owner.yaml, `pbt_utils.owner_record`), which names this
+        process and launch (`launch_id`) and is renewed at every iteration boundary (`_heartbeat`).
+
+        A plain launch refuses to start while the process the record names may still run the
+        member (`pbt_utils.owner_alive`), unless `pbt.force_owner`: two processes of one member
+        would write the same files. A process with this member's restart payload (a PBT restart,
+        a `member_resume` relaunch) takes the member over. The member's median iteration time
+        continues from the record.
+        """
+        record = pbt_utils.read_record(self.curr_policy_dir, pbt_utils.OWNER_RECORD) or {}
+        takeover = getattr(self, "restart", None) is not None or self.cfg.force_owner
+        if record and not takeover and pbt_utils.owner_alive(record, self.cfg.max_member_lag):
+            heartbeat = record.get("heartbeat")
+            age = f"{time.time() - heartbeat:.0f} s ago" if isinstance(heartbeat, (int, float)) else "unknown"
+            raise RuntimeError(
+                f"Policy {self.cfg.policy_idx}: {pbt_utils.OWNER_RECORD} in {self.curr_policy_dir} says pid "
+                f"{record.get('pid')} on {record.get('host')} runs this member (heartbeat {age}), and it may still "
+                f"run: two processes of one member would write the same files. Stop it first, or set "
+                f"pbt.force_owner: true when it no longer runs this member; a PBT restart or a member_resume "
+                f"relaunch (RL_GAMES_PBT_RESTART) takes the member over")
+        seconds = record.get("iteration_seconds")
+        if isinstance(seconds, (int, float)) and seconds > 0:
+            self._iteration_seconds.append(float(seconds))
+        self._claimed = time.time()
+        self._write_owner()
+
+    def _write_owner(self):
+        median = statistics.median(self._iteration_seconds) if self._iteration_seconds else None
+        pbt_utils.write_record(self.curr_policy_dir, pbt_utils.OWNER_RECORD, pbt_utils.owner_record(
+            self.launch_id, self.restart_count, self._claimed, median))
+
+    def _heartbeat(self, iteration):
+        """Rank 0 at each iteration boundary, also one that waits for its objective: time the
+        interval since the last boundary (the member's iteration wall time) and renew the owner
+        record. Returns why this process must stop instead, else None: the record names another
+        launch, which took the member over (the caller raises after the step's collectives). A
+        record that can't be read or written only warns: peers may count the member stale."""
+        now = time.time()
+        if self._boundary is None or iteration > self._boundary[0]:
+            if self._boundary is not None:
+                self._iteration_seconds.append((now - self._boundary[1]) / (iteration - self._boundary[0]))
+            self._boundary = (iteration, now)
+        try:
+            record = pbt_utils.read_record(self.curr_policy_dir, pbt_utils.OWNER_RECORD)
+            if record is not None and record.get("launch_id") != self.launch_id:
+                return (f"Policy {self.cfg.policy_idx}: another process took this member over: "
+                        f"{pbt_utils.OWNER_RECORD} in {self.curr_policy_dir} names launch {record.get('launch_id')} "
+                        f"(pid {record.get('pid')} on {record.get('host')}), this process is launch {self.launch_id}. "
+                        f"It stops, so that one process writes the member's files")
+            self._write_owner()
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not renew {pbt_utils.OWNER_RECORD}: {exc!r}")
+        return None
+
+    def _member_lag(self):
+        """Seconds without a sign of life after which a peer is stale: max_member_lag × this
+        member's median iteration wall time; None while unknown, and with max_member_lag 0."""
+        if not (self.cfg.max_member_lag and self._iteration_seconds):
+            return None
+        return self.cfg.max_member_lag * statistics.median(self._iteration_seconds)
 
     def _population(self, algo):
         """What this member runs, recorded in its workspace yamls and learner checkpoints (K02): the
@@ -499,19 +579,25 @@ class PbtAlgoObserver(AlgoObserver):
             2) All ranks: pool the objective windows and episode counts across ranks and
                track the best pooled objective of the iteration.
             3) On the PBT cadence (`interval_steps`), once every rank has a full window and a
-               finite objective since the last iteration, rank 0 saves a checkpoint, loads the
-               population, logs, and applies the replacement rule (`_pbt_iteration`), with the
-               global `random` module swapped to the member's private generator (`_draw_rng`).
-               Until then the iteration is retried on every step without advancing `pbt_it`
-               (see `_wait_for_objective`). When the iteration decided a restart (the flag is
-               set), rank 0 writes the member's restart.yaml (`_save_restart_record`); then it
-               appends the iteration's outcome to decisions.jsonl (`_append_decision`).
+               finite objective since the last iteration, rank 0 renews the member's owner record
+               (`_heartbeat`), saves a checkpoint, loads the population, logs, and applies the
+               replacement rule (`_pbt_iteration`), with the global `random` module swapped to the
+               member's private generator (`_draw_rng`). Until then the iteration is retried on
+               every step without advancing `pbt_it` (see `_wait_for_objective`). When the
+               iteration decided a restart (the flag is set), rank 0 writes the member's
+               restart.yaml (`_save_restart_record`), unless the population has finished
+               (`pbt.stop_with_first`); then it appends the iteration's outcome to decisions.jsonl
+               (`_append_decision`).
             4) All ranks, at the iteration: act on rank 0's decision (`_sync_decision`): the
                member restarts before this epoch's update, or applies an in-process
-               self-mutation.
+               self-mutation. Then rank 0 raises if another launch took the member over.
+        With `pbt.stop_with_first` rank 0 first watches for the population's end
+        (`_watch_population_end`).
         """
         distributed = self._distributed()
         frame = self.algo.frame
+        if self.cfg.stop_with_first and self.distributed_args.rank == 0:
+            self._watch_population_end(frame)
         if self.pbt_it == -1:
             # first step after (re)start: the checkpoint restore has already set the frame
             self.pbt_it = frame // self.cfg.interval_steps
@@ -545,12 +631,19 @@ class PbtAlgoObserver(AlgoObserver):
         self._last_objective_error = None
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
         previous = dict(self.pbt_params)  # every rank's values before rank 0's decision
-        if self.distributed_args.rank == 0:
+        taken_over = self._heartbeat(iteration) if self.distributed_args.rank == 0 else None
+        if self.distributed_args.rank == 0 and taken_over is None:
             objective = pooled.total / pooled.count
             # PBT's draws (donor, leader-params coin, mutations) come from this member's private stream,
             # also in a subclass that replaces _pbt_iteration and calls `random` itself
             with pbt_utils.swap_random_state(self._draw_rng()):
                 decision = self._pbt_iteration(objective, best_in_iteration, frame)
+            if int(self.restart_flag[0]) == 1 and self.cfg.stop_with_first and self._population_finished():
+                # a subclass's _pbt_iteration (the base decides none once the population has finished)
+                self.restart_flag[0] = 0
+                print(f"Policy {self.cfg.policy_idx}: the population has finished ({pbt_utils.FINISHED_MARKER}): "
+                      f"the restart is dropped")
+                decision = {"outcome": "ending", "frames_left": 0, "limit": pbt_utils.FINISHED_MARKER}
             # here rather than in _pbt_iteration: a subclass that replaces it sets the same attributes
             if int(self.restart_flag[0]) == 1:
                 self.restart_time = time.time()
@@ -558,6 +651,8 @@ class PbtAlgoObserver(AlgoObserver):
             if decision is not None:
                 self._append_decision(self.pbt_it, frame, objective, decision)
         self._sync_decision(distributed, previous)
+        if taken_over is not None:
+            raise RuntimeError(taken_over)
 
     def _sync_decision(self, distributed, previous):
         """Every rank, right after rank 0's PBT iteration: act on its decision. Rank 0 broadcasts
@@ -618,11 +713,12 @@ class PbtAlgoObserver(AlgoObserver):
         waits through: with synchronized time limits (every env resets at a (re)start) episodes
         end in bursts, and an interval shorter than an episode often passes without one ending.
 
-        Rank 0 warns, and appends a `stale` line to decisions.jsonl, once per boundary. Every rank
-        raises after `max_consecutive_errors` boundaries in a row at which a rank had failed (no
-        finite objective since the last iteration or the process start, although every env of
-        the rank ended an episode, and at least a window of them): a diverged member, also one
-        that is NaN from its first step (a restart or resume from a diverged checkpoint), would
+        Rank 0 renews the owner record (`_heartbeat`; it raises when another launch took the
+        member over), warns, and appends a `stale` line to decisions.jsonl, once per boundary.
+        Every rank raises after `max_consecutive_errors` boundaries in a row at which a rank had
+        failed (no finite objective since the last iteration or the process start, although every
+        env of the rank ended an episode, and at least a window of them): a diverged member, also
+        one that is NaN from its first step (a restart or resume from a diverged checkpoint), would
         otherwise train on without ever saving or being replaced. Boundaries that only wait for
         episodes to end don't count. Pooled values: every rank decides alike.
         """
@@ -641,6 +737,9 @@ class PbtAlgoObserver(AlgoObserver):
                 f"the objective; {counts}; last lookup error: {self._last_objective_error}")
         if self.distributed_args.rank != 0:
             return
+        taken_over = self._heartbeat(iteration)
+        if taken_over is not None:
+            raise RuntimeError(taken_over)
         self._append_decision(iteration, self.algo.frame, None, {
             "outcome": "stale", "episodes": pooled.count, "valid": pooled.valid, "nonfinite": pooled.nonfinite,
             "unread": pooled.unread, "stale_ranks": pooled.stale_ranks})
@@ -666,7 +765,8 @@ class PbtAlgoObserver(AlgoObserver):
         the other ranks. Otherwise this member's files above its current iteration are deleted: a
         relaunch from an older checkpoint, or reused leftovers. So is a restart.yaml of a decision
         above the current iteration, unless this process is a PBT restart (the record is then its
-        own).
+        own). A fresh launch under `reuse_workspace` also removes the workspace's finished.yaml
+        (`pbt.stop_with_first`) when it was written before this launch: the earlier run's end.
         """
         directory = getattr(self, "curr_policy_dir", None)
         if directory is None or not os.path.isdir(directory):
@@ -674,7 +774,15 @@ class PbtAlgoObserver(AlgoObserver):
         saved = pbt_utils.saved_iterations(directory)
         restart = getattr(self, "restart", None)
         fresh = restart is None and frame == 0
-        if fresh and saved and not getattr(self.cfg, "reuse_workspace", False):
+        reuse = getattr(self.cfg, "reuse_workspace", False)
+        marker = pbt_utils.read_record(self.ws_dir, pbt_utils.FINISHED_MARKER) if fresh and reuse else None
+        written = (marker or {}).get("time")
+        if marker is not None and not (isinstance(written, (int, float)) and written >= self._claimed):
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(os.path.join(self.ws_dir, pbt_utils.FINISHED_MARKER))
+            print(f"Policy {self.cfg.policy_idx}: removed the {pbt_utils.FINISHED_MARKER} an earlier run left in "
+                  f"{self.ws_dir}: this launch starts the workspace over (reuse_workspace)")
+        if fresh and saved and not reuse:
             raise RuntimeError(
                 f"Policy {self.cfg.policy_idx}: {directory} holds PBT checkpoints of an earlier run (iterations "
                 f"{saved[0]}..{saved[-1]}), and this is a fresh launch (no checkpoint, not a PBT restart): peers "
@@ -734,13 +842,15 @@ class PbtAlgoObserver(AlgoObserver):
 
         No decision inside the grace windows (`start_after` since the process started or a
         self-mutation was applied, `initial_delay` since the start of training), nor when the
-        run ends before a restart could pay off (`_frames_to_end`); the member's yaml says
-        `replaceable: false` then, so peers keep it out of their worst group. The new values are
-        clamped into `mutation_bounds`. A self-mutation that changes no value keeps training; one
-        with changes goes to `_apply_self_mutation` first, and restarts unless that applied it. A
-        restart marks this iteration's yaml not replaceable once restart.pth is written: peers
-        read it until the restarted process saves. Peers that run other code or another
-        population setup are left out (`_foreign_members`).
+        run ends before a restart could pay off (`_frames_to_end`) or the population has finished
+        (`pbt.stop_with_first`); the member's yaml says `replaceable: false` then, so peers keep it
+        out of their worst group. The new values are clamped into `mutation_bounds`. A
+        self-mutation that changes no value keeps training; one with changes goes to
+        `_apply_self_mutation` first, and restarts unless that applied it. A restart marks this
+        iteration's yaml not replaceable once restart.pth is written: peers read it until the
+        restarted process saves. Peers that run other code or another population setup
+        (`_foreign_members`), and stale ones (`pbt.max_member_lag`, `pbt_utils.member_status`), are
+        left out.
 
         Returns the iteration's outcome, which `after_steps` appends to decisions.jsonl (and records
         a restart in restart.yaml): {"outcome": ...} with the rule's numbers, see `_append_decision`.
@@ -750,6 +860,8 @@ class PbtAlgoObserver(AlgoObserver):
         print(f"Policy {cfg.policy_idx}, frames_left {frame_left}, PBT it {self.pbt_it}, objective {score:.6g}")
         in_grace = frame - self.initial_frame < cfg.start_after or frame < cfg.initial_delay
         to_end = self._frames_to_end(frame)
+        if cfg.stop_with_first and self._population_finished() is not None:
+            to_end = (0, pbt_utils.FINISHED_MARKER)
         ending = to_end is not None and to_end[0] < max(cfg.start_after, cfg.interval_steps)
         try:
             pbt_utils.save_pbt_checkpoint(self.curr_policy_dir, score, self.pbt_it, self.algo, self.pbt_params,
@@ -759,6 +871,7 @@ class PbtAlgoObserver(AlgoObserver):
             pbt_utils.cleanup(ckpts, self.curr_policy_dir)
             # what this member's yamls said where members 2+ iterations behind are (see member_status)
             own_objectives = pbt_utils.load_reader_objectives(self.curr_policy_dir, ckpts, self.pbt_it)
+            activity = {p: pbt_utils.member_activity(os.path.join(self.ws_dir, f"{p:03d}")) for p in ckpts}
         except Exception as exc:
             self._consecutive_errors += 1
             print(f"Policy {cfg.policy_idx}: exception {exc!r} in PBT checkpoint save/load "
@@ -769,9 +882,9 @@ class PbtAlgoObserver(AlgoObserver):
             return {"outcome": "error", "error": repr(exc)}
         self._consecutive_errors = 0
 
-        foreign = self._foreign_members(ckpts)
-        status = pbt_utils.member_status(ckpts, self.pbt_it, reader_objectives=own_objectives)
-        status.update(dict.fromkeys(foreign, pbt_utils.FOREIGN))
+        lag = self._member_lag()
+        status = pbt_utils.member_status(ckpts, self.pbt_it, reader_objectives=own_objectives, activity=activity,
+                                         lag=lag, foreign=self._foreign_members(ckpts))
         sumry = {i: None if c is None else {k: v for k, v in c.items() if k != "params"} for i, c in ckpts.items()}
         self.printer.print_ckpt_summary(sumry, status=status)
         unreported = sorted(p for p, s in status.items() if s == pbt_utils.NOT_REPORTED)
@@ -779,8 +892,14 @@ class PbtAlgoObserver(AlgoObserver):
             print(f"Policy {cfg.policy_idx}: WARNING members {unreported} have not reported (no checkpoint at or "
                   f"below iteration {self.pbt_it} in {self.ws_dir}), so they are not ranked: are all "
                   f"{cfg.num_policies} members (num_policies) running?")
+        stale = sorted(p for p, s in status.items() if s == pbt_utils.STALE)
+        if stale:
+            print(f"Policy {cfg.policy_idx}: WARNING members {stale} have shown no sign of life (a heartbeat in "
+                  f"{pbt_utils.OWNER_RECORD}, a workspace yaml) for {lag:.0f} s, max_member_lag × this member's "
+                  f"median iteration time: they are left out of the ranking and the donors")
 
-        objectives = {p: (c["true_objective"] if c and p not in foreign else None) for p, c in ckpts.items()}
+        left_out = (pbt_utils.FOREIGN, pbt_utils.STALE)
+        objectives = {p: (c["true_objective"] if c and status[p] not in left_out else None) for p, c in ckpts.items()}
         initialized = {p: o for p, o in objectives.items() if o is not None and o > _UNINITIALIZED_VALUE}
         # equal objectives rank in an order every member shares at this iteration, new at the next
         order = pbt_utils.tie_break_order(cfg.workspace, self.pbt_it, cfg.num_policies)
@@ -993,6 +1112,73 @@ class PbtAlgoObserver(AlgoObserver):
         if max_frames is not None and max_frames != -1:
             left.append((int(max_frames) - int(frame) - epoch_frames, "max_frames"))
         return min(left) if left else None
+
+    def after_train(self, reason):
+        """Rank 0, when training ends normally (`reason`, one of a2c_common.EXIT_REASONS): write the
+        member's exit record (exit.yaml: schema, reason, frame, epoch, time, launch_id). Peers then
+        see the member as finished: ranked and a donor, never replaced. Not written once another
+        launch has taken the member over (its owner record names that launch)."""
+        if self.distributed_args.rank != 0:
+            return
+        try:
+            owner = pbt_utils.read_record(self.curr_policy_dir, pbt_utils.OWNER_RECORD)
+            if owner is not None and owner.get("launch_id") != self.launch_id:
+                return
+            pbt_utils.write_record(self.curr_policy_dir, pbt_utils.EXIT_RECORD, {
+                "schema": pbt_utils.SCHEMA, "reason": reason, "frame": int(self.algo.frame),
+                "epoch": int(self.algo.epoch_num), "time": time.time(), "launch_id": self.launch_id})
+        except Exception as exc:
+            print(f"Policy {self.cfg.policy_idx}: WARNING could not write {pbt_utils.EXIT_RECORD}: {exc!r}")
+
+    def _watch_population_end(self, frame):
+        """`pbt.stop_with_first`, rank 0 at every step. The learner's stop_fn, which rank 0 calls
+        after each epoch's update (training then saves the custom-stop checkpoint and ends on every
+        rank), also returns True once the workspace holds this population's finished.yaml
+        (`_population_finished`); a stop_fn set before train(), or since, is called first. In this
+        member's last epoch by max_epochs or max_frames, when train() calls no stop_fn, it writes
+        the marker unless a member of the population has."""
+        algo = self.algo
+        if self._stop_fn is None or algo.stop_fn is not self._stop_fn:
+            user_stop_fn = algo.stop_fn
+
+            def stop_fn(learner):
+                if user_stop_fn is not None and user_stop_fn(learner):
+                    return True
+                return self._population_finished() is not None
+
+            self._stop_fn = algo.stop_fn = stop_fn
+        to_end = self._frames_to_end(frame)
+        if to_end is None or to_end[0] > 0 or self._population_finished() is not None:
+            return
+        pbt_utils.write_record(self.ws_dir, pbt_utils.FINISHED_MARKER, dict(
+            {"schema": pbt_utils.SCHEMA, "policy_idx": self.cfg.policy_idx, "reason": to_end[1],
+             "frame": int(frame) + self._epoch_frames(), "epoch": int(algo.epoch_num)},
+            **self._run_targets(), time=time.time()))
+        print(f"Policy {self.cfg.policy_idx}: {to_end[1]} ends the run with this epoch, the first of the population: "
+              f"wrote {pbt_utils.FINISHED_MARKER}, the other members stop at the end of their epochs")
+
+    def _run_targets(self):
+        """What makes a finished.yaml this population's: max_epochs, max_frames and the settings hash."""
+        algo = self.algo
+        return {"max_epochs": int(getattr(algo, "max_epochs", -1)), "max_frames": int(getattr(algo, "max_frames", -1)),
+                "settings": self.population["settings"]}
+
+    def _population_finished(self):
+        """The workspace's finished.yaml (`pbt.stop_with_first`) when a member of this population wrote
+        it (the same `_run_targets`), else None. A marker of another run is ignored, with one warning."""
+        marker = pbt_utils.read_record(self.ws_dir, pbt_utils.FINISHED_MARKER)
+        if marker is None:
+            return None
+        own = self._run_targets()
+        differs = [key for key, value in own.items() if marker.get(key) != value]
+        if not differs:
+            return marker
+        if marker.get("time") != self._ignored_marker:
+            self._ignored_marker = marker.get("time")
+            theirs, mine = ({key: values[key] for key in differs} for values in (marker, own))
+            print(f"Policy {self.cfg.policy_idx}: WARNING ignoring {pbt_utils.FINISHED_MARKER} of another run in "
+                  f"{self.ws_dir}: it has {theirs}, this member {mine}")
+        return None
 
     def _summary_step(self, frame=None):
         """x of the pbt/* scalars: the x of this epoch's `rewards/step` point (env steps).
