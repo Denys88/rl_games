@@ -190,9 +190,18 @@ python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml -
 
 ## Population Based Training
 
-rl_games includes the [DexPBT](https://arxiv.org/abs/2305.12127)-lineage PBT observers
-(previously maintained downstream in IsaacGymEnvs and Isaac Lab), usable with any backend
-via `rl_games.common.pbt` — see [docs/PBT.md](docs/PBT.md).
+rl_games includes the [DexPBT](https://arxiv.org/abs/2305.12127)-lineage PBT observer
+(previously maintained downstream in IsaacGymEnvs and Isaac Lab) in `rl_games.common.pbt`, for
+the PPO agents (`a2c_continuous`, `a2c_discrete`). [examples/pbt/](examples/pbt/) is a runnable
+CartPole population and the template for a train script; a population of 4 runs on CPU in under
+a minute:
+
+```bash
+bash examples/pbt/run_population.sh --members 4
+```
+
+See [docs/PBT.md](docs/PBT.md) for writing a train script, the replacement rules, restarts,
+multi-GPU members and the config reference.
 
 ## Multi GPU
 

@@ -276,7 +276,7 @@ pbt:
     agent.params.config.gamma: mutate_discount
     agent.params.config.tau: mutate_discount
 """,
-    # docs/PBT.md usage example
+    # docs/PBT.md usage example at 1e6966a (test_pbt_docs.py checks the current examples)
     "docs_example": """
 pbt:
   enabled: True
@@ -297,7 +297,7 @@ pbt:
     agent.params.config.e_clip: mutate_eps_clip
     agent.params.config.gamma: mutate_discount
 """,
-    # docs/PBT.md launcher example
+    # docs/PBT.md launcher example at 1e6966a
     "docs_launcher": """
 pbt:
   launcher: /path/to/_isaac_sim/python.sh
