@@ -3,8 +3,10 @@
 PBT_MEMBER lines of train_member.py --report (member_report.py):
 
 - every process start is reported by all --world-size ranks of its member, and they agree on
-  the counters, the restart info, the hyperparameters in effect and the hashes of the model,
-  normalizers, optimizer and loss scaler: the ranks restored and broadcast the same state;
+  the counters, the configured LR schedule, the restart info, the hyperparameters in effect
+  (the learning rate too: under the adaptive schedule only rank 0 runs the scheduler) and the
+  hashes of the model, normalizers, optimizer and loss scaler: the ranks restored and broadcast
+  the same state;
 - a restarted process restored its checkpoint (restart.pth) on every rank: the model hash and,
   with fp16, the loss scale are the checkpoint's;
 - with --train-dir, each member's restart.pth on disk still holds what its last process
@@ -12,7 +14,8 @@ PBT_MEMBER lines of train_member.py --report (member_report.py):
 - some member restarted at least --min-restarts times, and every rank of every member's last
   process ended training normally.
 
-Prints a line per member, then PASS, or the failures and FAIL (exit status 1).
+Prints a line per member (restarts, LR schedule), then PASS, or the failures and FAIL (exit
+status 1).
 """
 
 import argparse
@@ -22,8 +25,8 @@ import sys
 from collections import defaultdict
 
 # what every rank of a member reports alike at a process start
-SAME_ON_EVERY_RANK = ("restart_count", "frame", "epoch", "restart", "params", "effective", "state", "scaler_scale",
-                      "checkpoint")
+SAME_ON_EVERY_RANK = ("restart_count", "frame", "epoch", "lr_schedule", "restart", "params", "effective", "state",
+                      "scaler_scale", "checkpoint")
 
 
 def _show(value):
@@ -60,9 +63,12 @@ def check_restored(where, report, failures):
 
 
 def check_on_disk(where, report, train_dir, failures):
-    """The member's restart.pth in `train_dir` still holds what its last process restored."""
+    """The member's restart.pth in `train_dir` still holds what its last process restored
+    (nothing to compare when it restored none: `check_restored` reports that)."""
     import member_report
 
+    if report.get("checkpoint") is None:
+        return
     path = report["checkpoint"]["path"]
     if os.path.commonpath([os.path.realpath(path), os.path.realpath(train_dir)]) != os.path.realpath(train_dir):
         failures.append(f"{where}: restored {path}, outside {train_dir}")
@@ -133,7 +139,8 @@ def main():
             failures.append(f"member {policy}: ranks {ended} of its last process ended training, expected {ranks}")
         most_restarts = max(most_restarts, last)
         print(f"member {policy}: {last} restarts ({transfers} transfers, {last - transfers} self-mutations), "
-              f"{len(starts[(policy, last)])} ranks in its last process")
+              f"{len(starts[(policy, last)])} ranks in its last process, lr_schedule "
+              f"{starts[(policy, last)][0].get('lr_schedule')}")
     if members and most_restarts < args.min_restarts:
         failures.append(f"the most restarted member restarted {most_restarts} times, fewer than {args.min_restarts}")
 
