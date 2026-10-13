@@ -67,6 +67,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                            **self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
+                'max_frames': self.max_frames,
                 'multi_gpu': self.multi_gpu,
                 'zero_rnn_on_done': self.zero_rnn_on_done,
                 'ddp_find_unused_parameters': self.ddp_find_unused_parameters,

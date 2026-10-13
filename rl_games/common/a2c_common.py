@@ -1,4 +1,5 @@
 import copy
+import math
 import os
 
 from rl_games.common import vecenv
@@ -197,11 +198,19 @@ def resolve_obs_norm_init_count(value, mini_epochs, batch_size):
     return count
 
 
+# what ends a PPO train() loop, in the order the loops check them (AlgoObserver.after_train's reason)
+EXIT_REASONS = ('score_to_win', 'max_epochs', 'max_frames', 'stop_fn')
+
+
 class A2CBase(BaseAlgorithm):
 
     def __init__(self, base_name, params):
 
         self.config = config = params['config']
+        # the LR schedule this run was configured with: the multi-GPU setup below sets
+        # lr_schedule None on non-zero ranks (Identity scheduler, LR broadcast from rank 0),
+        # so decisions every rank must take alike (the checkpoint restore) read this one
+        self._configured_lr_schedule = config.get('lr_schedule')
         pbt_str = ''
         self.population_based_training = config.get('population_based_training', False)
         if self.population_based_training:
@@ -351,10 +360,11 @@ class A2CBase(BaseAlgorithm):
         # Setting learning rate scheduler
         if self.is_adaptive_lr:
             self.kl_threshold = config['kl_threshold']
+            min_lr, max_lr = self._adaptive_lr_bounds()
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
-                min_lr=config.get('min_lr', 1e-6),
-                max_lr=config.get('max_lr', 1e-2),
+                min_lr=min_lr,
+                max_lr=max_lr,
                 lr_multiplier=config.get('lr_multiplier', 1.5))
 
         elif self.linear_lr:
@@ -498,6 +508,12 @@ class A2CBase(BaseAlgorithm):
         self.play_time = 0
         self.epoch_num = 0
         self.curr_frames = 0
+        # PBT lineage of the current weights (IsaacGymEnvs format): restored from checkpoints
+        # and saved again, so it survives the member's own saves
+        self.pbt_history = []
+        # a PBT member's identity (policy_idx, params, restart_count, population), set by its
+        # observer; checkpoints carry it as 'pbt', and a restore takes the checkpoint's
+        self.pbt_state = None
         # allows us to specify a folder where all experiments will reside
         self.train_dir = config.get('train_dir', 'runs')
 
@@ -703,6 +719,19 @@ class A2CBase(BaseAlgorithm):
 
         # if self.has_central_value:
         #    self.central_value_net.update_lr(lr)
+
+    def _adaptive_lr_bounds(self):
+        """(min_lr, max_lr) of the adaptive LR schedule, from the config: the scheduler and the
+        checkpoint restore share them, and every rank has them (non-zero ranks have no
+        AdaptiveScheduler). Cast here: YAML 1.1 reads a bare exponent ('1e-5') as a string."""
+        return float(self.config.get('min_lr', 1e-6)), float(self.config.get('max_lr', 1e-2))
+
+    def _rescaled_lr(self, lr, old_lr, new_lr):
+        """The adapted LR `lr` after its nominal value changed from old_lr to new_lr: times new/old,
+        within the adaptive bounds (the restore and set_param share the rule)."""
+        lr = lr * new_lr / old_lr if old_lr > 0 else new_lr
+        min_lr, max_lr = self._adaptive_lr_bounds()
+        return min(max(lr, min_lr), max_lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -937,7 +966,18 @@ class A2CBase(BaseAlgorithm):
             merge_rank_stats(m, lambda t: dist.all_reduce(t, op=dist.ReduceOp.SUM))
 
     def train_epoch(self):
+        self.algo_observer.before_steps()
         self.vec_env.set_train_info(self.frame, self)
+
+    def _sync_exit_reason(self, reason):
+        """Rank 0's decision to end train() (None or one of EXIT_REASONS) on every rank: the loop's one
+        broadcast per epoch, carrying the reason's index + 1 (0: keep training)."""
+        if not self.multi_gpu:
+            return reason
+        code = torch.tensor(0 if reason is None else EXIT_REASONS.index(reason) + 1, device=self.device).float()
+        dist.broadcast(code, 0)
+        code = int(code.item())
+        return EXIT_REASONS[code - 1] if code else None
 
     def train_actor_critic(self, obs_dict, opt_step=True):
         pass
@@ -984,6 +1024,15 @@ class A2CBase(BaseAlgorithm):
         # adaptive walk from the config LR (KL spike after late resumes)
         state['last_lr'] = self.last_lr
         state['entropy_coef'] = self.entropy_coef
+        # the values this run was configured with: a restore compares them with its own
+        # config to tell a changed hyperparameter (a PBT mutation, an edited resume) from
+        # the runtime state above (see _restore_hyperparameters)
+        state['config_hparams'] = {'learning_rate': float(self.config['learning_rate']),
+                                   'entropy_coef': float(self.config['entropy_coef'])}
+        if self.pbt_history:
+            state['pbt_history'] = list(self.pbt_history)
+        if self.pbt_state:
+            state['pbt'] = copy.deepcopy(self.pbt_state)
 
         return state
 
@@ -1000,6 +1049,8 @@ class A2CBase(BaseAlgorithm):
                 self.central_value_net.optimizer.load_state_dict(weights['assymetric_vf_optimizer'])
             if 'assymetric_vf_scaler' in weights and self.central_value_net.scaler.is_enabled():
                 self.central_value_net.scaler.load_state_dict(weights['assymetric_vf_scaler'])
+            if set_epoch:
+                self.central_value_net.restore_epoch(int(weights['epoch']))
 
         self.optimizer.load_state_dict(weights['optimizer'])
         if 'scaler' in weights and self.scaler.is_enabled():
@@ -1022,12 +1073,64 @@ class A2CBase(BaseAlgorithm):
             else:
                 self.config['capability_manifest'] = weights['capability_manifest']
 
-        # old checkpoints lack these keys: keep config-derived values then
-        self.last_lr = weights.get('last_lr', self.last_lr)
-        self.entropy_coef = weights.get('entropy_coef', self.entropy_coef)
+        self._restore_hyperparameters(weights)
+        self.pbt_history = list(weights.get('pbt_history', []))
+        self.pbt_state = copy.deepcopy(weights.get('pbt'))
 
         # central-value stats load after set_weights ran; re-seed everything
         self._seed_stats_sync_snapshots()
+
+    def _restore_hyperparameters(self, weights):
+        """LR, entropy coefficient and weight decay after the optimizer state was loaded.
+
+        The config is the source of truth for hyperparameters; the checkpoint contributes the
+        adaptive LR walk and a linear schedule's position while the config value equals the one
+        stored in `config_hparams` (the run's configured values, or a PBT restart's pre-mutation
+        values). A changed learning_rate moves the adaptive LR by the same factor, within
+        [min_lr, max_lr]. Checkpoints without `config_hparams` keep their runtime values. Works
+        for any restart (rl_games' PBT, observers that only pass the mutated values on the
+        command line, an edited resume) and decides on the configured schedule, so every rank
+        restores the same values (non-zero ranks run with lr_schedule None).
+        """
+        stored = weights.get('config_hparams') or {}
+
+        def changed(key, value):
+            return key in stored and not math.isclose(float(stored[key]), value, rel_tol=1e-9, abs_tol=0.0)
+
+        schedule = self._configured_lr_schedule
+        lr_cfg = float(self.config['learning_rate'])
+        lr = weights.get('last_lr')
+        if lr is None or schedule not in ('adaptive', 'linear'):
+            lr = lr_cfg                       # no runtime state (identity), or none saved
+        elif schedule == 'adaptive':
+            lr = float(lr)
+            if changed('learning_rate', lr_cfg):
+                lr = self._rescaled_lr(lr, float(stored['learning_rate']), lr_cfg)
+        elif changed('learning_rate', lr_cfg):
+            lr = lr_cfg                       # linear: the new schedule takes over at its next step
+        else:
+            lr = float(lr)
+        self.last_lr = lr
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+
+        ent_cfg = float(self.config['entropy_coef'])
+        entropy = weights.get('entropy_coef')
+        linear_entropy = schedule == 'linear' and self.config.get('schedule_entropy', False)
+        if entropy is None or not linear_entropy or changed('entropy_coef', ent_cfg):
+            entropy = ent_cfg
+        self.entropy_coef = float(entropy)
+
+        # no runtime state: the config wins over the values load_state_dict put back. The
+        # critic's LR is its schedule's value at its epoch (set from the learner's on a restore
+        # with set_epoch, see restore_epoch; else its own), from its configured LR
+        for param_group in self.optimizer.param_groups:
+            param_group['weight_decay'] = self.weight_decay
+        if self.has_central_value:
+            critic = self.central_value_net
+            for param_group in critic.optimizer.param_groups:
+                param_group['weight_decay'] = critic.weight_decay
+                param_group['lr'] = critic.lr
 
     def set_central_value_function_weights(self, weights):
         self.central_value_net.load_state_dict(weights['assymetric_vf_nets'])
@@ -1067,54 +1170,65 @@ class A2CBase(BaseAlgorithm):
         # restored stats are shared history, not fresh per-rank data
         self._seed_stats_sync_snapshots()
 
+    # the config keys set_param changes in a running learner ('mini_epochs' also as mini_epochs_num)
+    SET_PARAMS = ('learning_rate', 'entropy_coef', 'weight_decay', 'kl_threshold', 'mini_epochs', 'grad_norm',
+                  'critic_coef', 'bounds_loss_coef', 'gamma', 'tau', 'e_clip')
+
     def get_param(self, param_name):
-        if param_name in [
-            "grad_norm",
-            "critic_coef",
-            "bounds_loss_coef",
-            "entropy_coef",
-            "kl_threshold",
-            "gamma",
-            "tau",
-            "mini_epochs_num",
-            "e_clip",
-        ]:
-            return getattr(self, param_name)
-        elif param_name == "learning_rate":
+        if param_name == 'learning_rate':
             return self.last_lr
-        else:
-            raise NotImplementedError(f"Can't get param {param_name}")
+        if param_name in self.SET_PARAMS or param_name == 'mini_epochs_num':
+            return getattr(self, 'mini_epochs_num' if param_name == 'mini_epochs' else param_name)
+        raise NotImplementedError(f"Can't get param {param_name}")
 
     def set_param(self, param_name, param_value):
-        if param_name in [
-            "grad_norm",
-            "critic_coef", 
-            "bounds_loss_coef",
-            "entropy_coef",
-            "gamma",
-            "tau",
-            "mini_epochs_num",
-            "e_clip",
-        ]:
-            setattr(self, param_name, param_value)
-        elif param_name == "learning_rate":
-            if self.global_rank == 0:
-                if self.is_adaptive_lr:
-                    raise NotImplementedError("Can't directly mutate LR on this schedule")
-                else:
-                    self.learning_rate = param_value
+        """Change a hyperparameter of the running learner with its config key's meaning, and the config
+        value with it (the next checkpoint's `config_hparams`). Keys: SET_PARAMS.
 
-                    for param_group in self.optimizer.param_groups:
-                        param_group["lr"] = self.learning_rate
-        elif param_name == "kl_threshold":
-            if self.global_rank == 0:
-                if self.is_adaptive_lr:
-                    self.kl_threshold = param_value
-                    self.scheduler.kl_threshold = param_value
-                else:
-                    raise NotImplementedError("Can't directly mutate kl threshold")
+        Multi-GPU: call it on every rank with the same value. It runs no collective and decides on the
+        configured LR schedule, so every rank changes the same values; ranks that step with different
+        values desynchronize the DDP replicas for good, and a different mini_epochs hangs them.
+
+        learning_rate: the LR under the identity schedule. Under linear, the schedule's start (rank 0
+        runs it), and the current LR times new/old until its next step. Under adaptive, the adapted
+        LR times new/old within [min_lr, max_lr], as a checkpoint restore does. entropy_coef under a
+        linear entropy schedule: its start too.
+        """
+        key = 'mini_epochs' if param_name == 'mini_epochs_num' else param_name
+        if key not in self.SET_PARAMS:
+            raise NotImplementedError(
+                f"Can't set param {param_name!r}; set_param supports {', '.join(self.SET_PARAMS)}")
+        if key == 'learning_rate':
+            new, old = float(param_value), float(self.config['learning_rate'])
+            lr = new
+            if self._configured_lr_schedule == 'adaptive':
+                lr = self._rescaled_lr(self.last_lr, old, new)
+            elif self._configured_lr_schedule == 'linear':
+                lr = self.last_lr * new / old
+                if isinstance(self.scheduler, schedulers.LinearScheduler):
+                    self.scheduler.start_lr = new
+            self.config['learning_rate'] = new
+            self.last_lr = lr
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = lr
+        elif key == 'entropy_coef':
+            self.entropy_coef = self.config['entropy_coef'] = float(param_value)
+            if getattr(self.scheduler, 'apply_to_entropy', False):
+                self.scheduler.start_entropy_coef = self.entropy_coef
+        elif key == 'weight_decay':
+            self.weight_decay = self.config['weight_decay'] = float(param_value)
+            for param_group in self.optimizer.param_groups:
+                param_group['weight_decay'] = self.weight_decay
+        elif key == 'kl_threshold':
+            # kept on every rank; only rank 0 runs an adaptive scheduler
+            self.kl_threshold = self.config['kl_threshold'] = float(param_value)
+            if isinstance(self.scheduler, schedulers.AdaptiveScheduler):
+                self.scheduler.kl_threshold = self.kl_threshold
         else:
-            raise NotImplementedError(f"No param found for {param_value}")
+            # read at use time; mini_epochs is an int, every other value a float (YAML may hold ints)
+            value = int(param_value) if key == 'mini_epochs' else float(param_value)
+            setattr(self, 'mini_epochs_num' if key == 'mini_epochs' else key, value)
+            self.config[key] = value
 
     def _preproc_obs(self, obs_batch):
         if type(obs_batch) is dict:
@@ -1537,7 +1651,7 @@ class DiscreteA2CBase(A2CBase):
             total_time += sum_time
             curr_frames = self.curr_frames * self.world_size if self.multi_gpu else self.curr_frames
             self.frame += curr_frames
-            should_exit = False
+            exit_reason = None
 
             if self.global_rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
@@ -1593,7 +1707,7 @@ class DiscreteA2CBase(A2CBase):
                             if self.last_mean_rewards > self.config['score_to_win']:
                                 print('Maximum reward achieved. Network won!')
                                 self.save(os.path.join(self.nn_dir, checkpoint_name))
-                                should_exit = True
+                                exit_reason = 'score_to_win'
 
                 if epoch_num >= self.max_epochs and self.max_epochs != -1:
                     if self.game_rewards.current_size == 0:
@@ -1603,7 +1717,7 @@ class DiscreteA2CBase(A2CBase):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX EPOCHS NUM!')
-                    should_exit = True
+                    exit_reason = exit_reason or 'max_epochs'
 
                 if self.frame >= self.max_frames and self.max_frames != -1:
                     if self.game_rewards.current_size == 0:
@@ -1613,21 +1727,18 @@ class DiscreteA2CBase(A2CBase):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX FRAMES NUM!')
-                    should_exit = True
+                    exit_reason = exit_reason or 'max_frames'
 
-                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                if exit_reason is None and self.stop_fn is not None and self.stop_fn(self):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(epoch_num)))
                     print('Custom stop callback returned True. Stopping training.')
-                    should_exit = True
+                    exit_reason = 'stop_fn'
 
                 update_time = 0
 
-            if self.multi_gpu:
-                should_exit_t = torch.tensor(should_exit, device=self.device).float()
-                dist.broadcast(should_exit_t, 0)
-                should_exit = should_exit_t.bool().item()
-
-            if should_exit:
+            exit_reason = self._sync_exit_reason(exit_reason)
+            if exit_reason is not None:
+                self.algo_observer.after_train(exit_reason)
                 return self.last_mean_rewards, epoch_num
 
 
@@ -1770,8 +1881,7 @@ class ContinuousA2CBase(A2CBase):
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         self.sync_running_stats()
-        min_lr = self.config.get('min_lr', 1e-6)
-        max_lr = self.config.get('max_lr', 1e-2)
+        min_lr, max_lr = self._adaptive_lr_bounds()
         self.scheduler_stats = {
             'scheduler_kl': torch_ext.mean_list(schedule_kls).item() if schedule_kls else float('nan'),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),
@@ -1886,7 +1996,7 @@ class ContinuousA2CBase(A2CBase):
 
             # cleaning memory to optimize space
             self.dataset.update_values_dict(None)
-            should_exit = False
+            exit_reason = None
 
             if self.global_rank == 0:
                 self.diagnostics.epoch(self, current_epoch=epoch_num)
@@ -1941,7 +2051,7 @@ class ContinuousA2CBase(A2CBase):
                             if self.last_mean_rewards > self.config['score_to_win']:
                                 print('Maximum reward achieved. Network won!')
                                 self.save(os.path.join(self.nn_dir, checkpoint_name))
-                                should_exit = True
+                                exit_reason = 'score_to_win'
 
                 if epoch_num >= self.max_epochs and self.max_epochs != -1:
                     if self.game_rewards.current_size == 0:
@@ -1951,7 +2061,7 @@ class ContinuousA2CBase(A2CBase):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_ep_' + str(epoch_num) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX EPOCHS NUM!')
-                    should_exit = True
+                    exit_reason = exit_reason or 'max_epochs'
 
                 if self.frame >= self.max_frames and self.max_frames != -1:
                     if self.game_rewards.current_size == 0:
@@ -1961,19 +2071,16 @@ class ContinuousA2CBase(A2CBase):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_frame_' + str(self.frame) \
                         + '_rew_' + str(mean_rewards).replace('[', '_').replace(']', '_')))
                     print('MAX FRAMES NUM!')
-                    should_exit = True
+                    exit_reason = exit_reason or 'max_frames'
 
-                if not should_exit and self.stop_fn is not None and self.stop_fn(self):
+                if exit_reason is None and self.stop_fn is not None and self.stop_fn(self):
                     self.save(os.path.join(self.nn_dir, 'last_' + self.config['name'] + '_custom_stop_ep_' + str(epoch_num)))
                     print('Custom stop callback returned True. Stopping training.')
-                    should_exit = True
+                    exit_reason = 'stop_fn'
 
                 update_time = 0
 
-            if self.multi_gpu:
-                should_exit_t = torch.tensor(should_exit, device=self.device).float()
-                dist.broadcast(should_exit_t, 0)
-                should_exit = should_exit_t.float().item()
-
-            if should_exit:
+            exit_reason = self._sync_exit_reason(exit_reason)
+            if exit_reason is not None:
+                self.algo_observer.after_train(exit_reason)
                 return self.last_mean_rewards, epoch_num

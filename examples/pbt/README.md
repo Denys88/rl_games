@@ -1,0 +1,111 @@
+# PBT example: a CartPole population
+
+A runnable Population Based Training setup for rl_games (see [docs/PBT.md](../../docs/PBT.md)):
+every member is its own `train_member.py` process training CartPole PPO with a
+`PbtAlgoObserver`. Every `--interval-steps` frames each member saves a scored checkpoint into the
+shared `<train-dir>/pbt_workspace` and ranks itself against the others by its episode return
+(`episode.r`, from gymnasium's `RecordEpisodeStatistics`); the worst one restarts from a better
+member's checkpoint (or its own) with mutated hyperparameters (learning rate, entropy and critic
+coefficients, gradient norm, clip range, gamma).
+
+A restart re-execs the member's launch command with `--checkpoint=<restart.pth>` and the new values
+appended as `agent.params.config.<key>=<value>` overrides. That is what a train script needs for PBT:
+accept those overrides (`runner.py` doesn't) and pass the launch command to the observer
+(`launch_argv`). `train_member.py` is a template for that. With `--self-mutation in_process` and
+`--transfer in_process` a member takes those changes in its running process instead, and with
+`--restart-mode exit` it ends at a restart, for its supervisor to run the command again.
+
+| File | What it is |
+|---|---|
+| `train_member.py` | one member: CartPole PPO config, `key=value` overrides, the observer, `Runner` |
+| `run_population.sh` | starts N members (CPU or GPU) and waits for them |
+| `member_report.py` | `--report`: a JSON line per rank at each (re)start, after each in-process change and at the end, with state hashes |
+| `run_nccl_qualification.sh`, `check_qualification.py` | GPU qualification of multi-GPU members (NCCL) |
+
+## Run a population
+
+From the repository root (CPU, under a minute):
+
+```bash
+bash examples/pbt/run_population.sh --members 4    # --python PY if python3 is not your environment's
+```
+
+Each member logs to `<train-dir>/logs/member<i>.log`: the population table at every PBT iteration,
+the replacement decision, the mutated values and the restart command. `tensorboard --logdir
+<train-dir>` shows the `pbt/*` scalars of every member (objective, rank, restart count, current
+values) next to `rewards/step`.
+
+Options go after `--` to every member, e.g. `-- --max-epochs 200 --mutation-rate 0.5
+agent.pbt.start_after=8192` (see `python examples/pbt/train_member.py --help`). `--device cuda`
+spreads the members over the visible GPUs. Every population needs a new `--train-dir`: a fresh
+member refuses a workspace that holds an earlier run's checkpoints (`pbt.reuse_workspace`).
+`--supervise` runs each member under `python -m rl_games.common.pbt.supervise` with
+`--restart-mode exit`: each restart is a new process of the member's supervisor, which also
+relaunches a member that crashed.
+
+Pass the seed on the command line (`--seed`, as `run_population.sh` does): each restart then gets
+its own seed derived from it, and members get distinct seeds through `member_seed(seed, idx)`.
+
+A member of several GPUs is one torchrun job on one node, and it restarts as a new one:
+
+```bash
+python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
+    examples/pbt/train_member.py --policy-idx 0 --num-policies 3 --distributed --seed 42
+```
+
+## End-to-end test
+
+`tests/test_pbt_e2e.py` runs three-member populations of this script on CPU with real restarts
+(about 90 seconds), with forced objectives (`--fake-objective`): member 2 always ranks last, alternately
+far behind (a transfer from member 0) and close behind (a self-mutation). It checks the restarts
+(same process, restart info and its kind, command, checkpoint, frame and epoch counters,
+`restart.yaml`), that every restarted process trains with its new values, that restarts draw
+different mutations, that no member logs a failure it trained on (an exception the observer
+caught), that member 0 holds the population best, and that no secret from the environment reaches
+a log. The same population then runs with `--self-mutation in_process --transfer in_process`
+(member 2 never restarts: each change is in effect at its next env step, and a transfer's weights
+are restart.pth's), with each of the two alone (the other kind restarts the member, also right
+after an in-process change), and under supervisors (each restart a new process, the only one under
+its supervisor). Member 2 of a last population is killed after its first restart decision and
+relaunched with what `python -m rl_games.common.pbt.member_resume --format shell` appends: the
+restart is retried, with the donor's weights and the mutated values. A single LSTM member with the
+qualification's settings also runs PBT iterations scored by the default objective, the episode
+return:
+
+```bash
+python -m pytest tests/test_pbt_e2e.py
+```
+
+## GPU qualification (NCCL)
+
+Multi-GPU members can't run in CI. Before a release, on a node with 2 GPUs:
+
+```bash
+bash examples/pbt/run_nccl_qualification.sh                     # 3 members x 2 ranks, fp32 + TF32
+bash examples/pbt/run_nccl_qualification.sh --precision fp16    # fp16 with loss scaling
+bash examples/pbt/run_nccl_qualification.sh --lstm              # LSTM policies
+bash examples/pbt/run_nccl_qualification.sh --self-mutation in_process --transfer in_process
+bash examples/pbt/run_nccl_qualification.sh --supervise         # restarts through supervisors
+```
+
+Each run starts 3 members (`--members`) of 2 ranks (`--nproc`), rank r of every member on the r-th
+GPU of `CUDA_VISIBLE_DEVICES` (default the first `--nproc` GPUs: `--nproc 4` on a node with 4 or
+more takes GPUs 0-3), on the dexpbt rule with mutation_rate 0.5, the adaptive LR schedule,
+torch_compile on and the input and value normalizers on. The last member restarts at nearly every
+PBT iteration, alternating transfers and self-mutations (with `--self-mutation in_process` alone,
+two transfers follow each self-mutation). Every rank of every process reports hashes
+of its model, normalizers, optimizer and loss scaler at its first env step, after the restore and the
+broadcast of the weights; `check_qualification.py` then checks that the ranks of each process agree,
+that every restart restored `restart.pth` (the model, and the fp16 loss scale), that every rank ended
+normally, and prints PASS or the failures. Logs and runs go to `--out`; `--dry-run` prints the
+commands. With an in-process mode every rank also reports at the first env step after each change
+applied in process, and the checker requires such changes: the ranks must agree after the update
+an in-process self-mutation's values ran, and must all have loaded an in-process transfer's
+`restart.pth`.
+
+The adaptive LR schedule is the one Isaac Lab's and DexLab's PBT configs use, and the one where the
+ranks can disagree: only rank 0 runs the scheduler (the other ranks have none and take its LR),
+while a restart restores on every rank the checkpoint's adapted LR, scaled by the restart's
+`learning_rate` mutation. The checker compares the learning rate, the optimizer's LR and its state
+hash across ranks. `--lr-schedule linear` qualifies the linear schedule the same way;
+`--lr-schedule none` (a constant LR) can't show such a disagreement.
