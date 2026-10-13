@@ -11,7 +11,9 @@ scored checkpoint there and ranks itself against the others. A member in the wor
 restarts from a better member's checkpoint, or its own, with mutated hyperparameters: the
 observer re-execs this command with --checkpoint=<restart.pth> and the new values appended as
 agent.params.config.<key>=<value> overrides. So the script takes key=value overrides (runner.py
-doesn't) and hands its launch command to the observer (launch_argv).
+doesn't) and hands its launch command to the observer (launch_argv). With --self-mutation or
+--transfer in_process the member takes those changes in its running process instead, and with
+--restart-mode exit it ends at a restart, for its supervisor to run the command again.
 """
 
 import argparse
@@ -41,6 +43,15 @@ def parse_args():
                         help="replacement rule (default dexpbt)")
     parser.add_argument("--mutation-rate", type=float, default=0.25,
                         help="probability that a restart mutates each parameter (default 0.25)")
+    parser.add_argument("--self-mutation", choices=("restart", "in_process"), default="restart",
+                        help="pbt.self_mutation: in_process sets a self-mutation's values on the running learner "
+                             "instead of restarting (default restart)")
+    parser.add_argument("--transfer", choices=("restart", "in_process"), default="restart",
+                        help="pbt.transfer: in_process loads a better member's checkpoint into the running learner "
+                             "instead of restarting (default restart)")
+    parser.add_argument("--restart-mode", choices=("exec", "exit"), default="exec",
+                        help="pbt.restart_mode: exit ends the member at a restart, for its supervisor to run it again "
+                             "(python -m rl_games.common.pbt.supervise, run_population.sh --supervise; default exec)")
     parser.add_argument("--max-epochs", type=int, default=100, help="epochs per member (default 100)")
     parser.add_argument("--train-dir", default=os.path.join("runs", "pbt_cartpole"),
                         help="run directory of the population: member<i>/ per member, pbt_workspace/ shared "
@@ -59,10 +70,11 @@ def parse_args():
                         help="an LSTM policy (all members of a population need the same network)")
     parser.add_argument("--fake-objective", default=None, metavar="X[,Y...]",
                         help="rank by this constant instead of the episode return, to force a ranking in tests; "
-                             "with several values, a process with restart count k takes the k-th (cycling)")
+                             "with several values, the k-th (cycling) after k restarts and in-process self-mutations "
+                             "of the process")
     parser.add_argument("--report", action="store_true",
-                        help="print a PBT_MEMBER JSON line per rank at every process start and at the end "
-                             "(state hashes and restart info, see member_report.py)")
+                        help="print a PBT_MEMBER JSON line per rank at every process start, after every in-process "
+                             "change and at the end (state hashes and restart info, see member_report.py)")
     parser.add_argument("overrides", nargs="*", metavar="agent.KEY=VALUE", help="config overrides, see below")
     args = parser.parse_intermixed_args()
     for override in args.overrides:
@@ -137,6 +149,9 @@ def build_agent_config(args, rl_games_dir, record_episodes):
         "interval_steps": args.interval_steps,
         "replace_rule": args.replace_rule,
         "mutation_rate": args.mutation_rate,
+        "self_mutation": args.self_mutation,
+        "transfer": args.transfer,
+        "restart_mode": args.restart_mode,
         "mutation": {
             "agent.params.config.learning_rate": "mutate_float",
             "agent.params.config.entropy_coef": "mutate_float",
@@ -159,7 +174,7 @@ def main():
     from gymnasium.wrappers import RecordEpisodeStatistics
 
     import rl_games
-    from rl_games.common.pbt import PbtAlgoObserver, member_seed
+    from rl_games.common.pbt import PbtAlgoObserver, member_seed, restart_info
     from rl_games.torch_runner import Runner
 
     if args.device is None:
@@ -179,23 +194,30 @@ def main():
         def __init__(self):
             # validates the PBT setup (rl_games.common.pbt.validate) before anything is built
             super().__init__(agent_cfg, args_cli=args, launch_argv=LAUNCH_ARGV)
-            values = args.fake_objective
-            self.fake_objective = None if values is None else values[self.restart_count % len(values)]
-            self._fake_infos = None
-            self._started = False
+            self._seen = None  # (restart info, params) at the last env step
+            self._mutations = 0  # self-mutations applied in this process
+            self._fake_infos = None  # (objective, infos)
 
         def process_infos(self, infos, done_indices):
-            if not self._started:
-                # the first env step: after the restore and the multi-GPU broadcast, before any update
-                self._started = True
+            seen = (restart_info(), dict(self.pbt_params))
+            if seen != self._seen:
+                # the first env step: after the restore and the multi-GPU broadcast, before any update;
+                # later, the first one after a change every rank applied in process: a transfer
+                # replaces the restart info, a self-mutation only the params
+                kind = None if self._seen is None else "transfer" if seen[0] != self._seen[0] else "self_mutation"
+                self._mutations += kind == "self_mutation"
+                self._seen = seen
                 if report is not None:
-                    report.emit(report.start_report(self, seed=params["seed"], checkpoint=args.checkpoint,
-                                                    launch_argv=LAUNCH_ARGV))
-            if self.fake_objective is not None:
-                if self._fake_infos is None:
-                    value = torch.full((self.algo.num_actors,), self.fake_objective, device=self.algo.ppo_device)
-                    self._fake_infos = {"episode": {"r": value}}
-                infos = self._fake_infos
+                    common = {"seed": params["seed"], "launch_argv": LAUNCH_ARGV}
+                    report.emit(report.start_report(self, checkpoint=args.checkpoint, **common) if kind is None
+                                else report.change_report(self, kind, **common))
+            if args.fake_objective is not None:
+                values = args.fake_objective
+                value = values[(self.restart_count + self._mutations) % len(values)]
+                if self._fake_infos is None or self._fake_infos[0] != value:
+                    self._fake_infos = value, {"episode": {"r": torch.full((self.algo.num_actors,), value,
+                                                                           device=self.algo.ppo_device)}}
+                infos = self._fake_infos[1]
             super().process_infos(infos, done_indices)
 
     observer = Member()

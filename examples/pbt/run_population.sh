@@ -9,7 +9,7 @@ REPO=$(cd "$HERE/../.." && pwd)
 usage() {
   cat <<EOF
 usage: run_population.sh [--members N] [--device cpu|cuda] [--train-dir DIR] [--seed S]
-                         [--python PY] [--dry-run] [-- MEMBER_ARGS...]
+                         [--supervise] [--python PY] [--dry-run] [-- MEMBER_ARGS...]
 
 Start N members of train_member.py (CartPole PPO with PBT), one process each, and wait for
 them. Member i logs to <train-dir>/logs/member<i>.log. The members import rl_games from this
@@ -21,6 +21,9 @@ checkout ($REPO).
                    every population needs a new one
   --seed S         base seed (default 42): member i trains with member_seed(S, i), and each
                    restart with a seed derived from that
+  --supervise      run each member under python -m rl_games.common.pbt.supervise with
+                   --restart-mode exit: the supervisor runs it again at each restart, and
+                   after a crash
   --python PY      Python interpreter (default python3)
   --dry-run        print the member commands without running them
   MEMBER_ARGS      passed to every member, e.g. --max-epochs 200 agent.pbt.start_after=8192
@@ -33,6 +36,7 @@ DEVICE=cpu
 TRAIN_DIR=runs/pbt_cartpole_$(date +%Y%m%d_%H%M%S)
 SEED=42
 PY=python3
+SUPERVISE=0
 DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,6 +45,7 @@ while [ $# -gt 0 ]; do
     --train-dir) TRAIN_DIR=$2; shift 2 ;;
     --seed) SEED=$2; shift 2 ;;
     --python) PY=$2; shift 2 ;;
+    --supervise) SUPERVISE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
@@ -65,6 +70,10 @@ for ((i = 0; i < MEMBERS; i++)); do
   [ "$GPUS" -gt 0 ] && device=cuda:$((i % GPUS))
   cmd=("$PY" "$HERE/train_member.py" --policy-idx "$i" --num-policies "$MEMBERS" --seed "$SEED"
        --train-dir "$TRAIN_DIR" --device "$device" "$@")
+  if [ "$SUPERVISE" = 1 ]; then
+    cmd=("$PY" -m rl_games.common.pbt.supervise --workspace "$TRAIN_DIR/pbt_workspace" --policy-idx "$i" --
+         "${cmd[@]}" --restart-mode exit)
+  fi
   log="$TRAIN_DIR/logs/member$i.log"
   if [ "$DRY_RUN" = 1 ]; then
     echo "# member $i, log $log"
