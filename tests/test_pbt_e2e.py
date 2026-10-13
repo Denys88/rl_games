@@ -11,10 +11,11 @@ processes' parameters give each restart's mutation factors, and member 2 starts 
 the donor doesn't have. The members launch without --seed: every process of a member seeds
 Python's `random` alike, the case in which PBT's draws repeated at every restart.
 
-The same population runs three ways: restarts by os.execv (the default), self-mutations and
-transfers applied to the running members (--self-mutation/--transfer in_process), and every
-member under its supervisor, which runs it again at each restart (--restart-mode exit). A last
-run kills member 2 after its first restart decision and relaunches it through member_resume.
+The same population runs five ways: restarts by os.execv (the default), self-mutations and
+transfers applied to the running members (--self-mutation/--transfer in_process), each of the two
+alone in process (the other kind restarts the member), and every member under its supervisor,
+which runs it again at each restart (--restart-mode exit). A last run kills member 2 after its
+first restart decision and relaunches it through member_resume.
 
 Every process prints `PBT_MEMBER {json}` lines (--report, examples/pbt/member_report.py): one
 at its first env step (restart info, counters, the hyperparameters in effect, state hashes,
@@ -187,12 +188,30 @@ def inprocess_population(tmp_path_factory, member_report):
 
 
 @pytest.fixture(scope="module")
+def self_mutation_inprocess_population(tmp_path_factory, member_report):
+    """DexLab's arrangement: self-mutations in process, transfers by restart."""
+    return run_population(tmp_path_factory.mktemp("pbt_e2e_self_mutation"), member_report,
+                          "--self-mutation", "in_process")
+
+
+@pytest.fixture(scope="module")
+def transfer_inprocess_population(tmp_path_factory, member_report):
+    return run_population(tmp_path_factory.mktemp("pbt_e2e_transfer"), member_report, "--transfer", "in_process")
+
+
+@pytest.fixture(scope="module")
 def supervised_population(tmp_path_factory, member_report):
     return run_population(tmp_path_factory.mktemp("pbt_e2e_supervised"), member_report, supervise=True)
 
 
-ALL = ["population", "inprocess_population", "supervised_population"]
-RESTARTING = ["population", "supervised_population"]  # member 2 restarts as a new process image
+# each population and the kinds of change it applies in process; the others restart the member
+IN_PROCESS_KINDS = {"population": (), "inprocess_population": ("self_mutation", "transfer"),
+                    "self_mutation_inprocess_population": ("self_mutation",),
+                    "transfer_inprocess_population": ("transfer",), "supervised_population": ()}
+ALL = list(IN_PROCESS_KINDS)
+RESTARTING = [name for name, kinds in IN_PROCESS_KINDS.items() if len(kinds) < 2]  # as a new process image
+IN_PROCESS = [name for name, kinds in IN_PROCESS_KINDS.items() if kinds]
+ONE_IN_PROCESS = [name for name in IN_PROCESS if name in RESTARTING]
 
 
 def starts(population, idx):
@@ -307,9 +326,7 @@ def test_restarted_members_train_with_their_new_values(request, name):
             child["effective"]["optimizer_lr"]))
     # a transfer restores the donor's checkpoint, whose learning rate and entropy coefficient
     # (the config's 2e-4 and 0.01) differ from member 2's own
-    transfers = [child for idx, _, child in restarts(population) if child["restart"]["source_policy"] != idx]
-    assert transfers
-    for child in transfers:
+    for child in [child for idx, _, child in restarts(population) if child["restart"]["source_policy"] != idx]:
         assert child["checkpoint"]["last_lr"] == pytest.approx(2e-4)
         assert child["checkpoint"]["entropy_coef"] == pytest.approx(0.01)
         assert child["effective"]["learning_rate"] != pytest.approx(2e-4)
@@ -359,27 +376,31 @@ def test_no_secret_reaches_a_log(population):
 @pytest.mark.parametrize("name", RESTARTING)
 def test_restart_records_agree_with_the_children(request, name):
     """`restart_info()` names the kind of every restart, and each member's restart.yaml records
-    its last restart as its child received, restored and trained with it."""
+    its last restart (a restarted process, or a transfer in process) as the member received,
+    restored and trained with it."""
     population = request.getfixturevalue(name)
     children = [(idx, child) for idx, _, child in restarts(population)]
     for idx, child in children:
         info = child["restart"]
         assert info["kind"] == ("self_mutation" if info["source_policy"] == idx else "transfer"), info
     for idx in {idx for idx, _ in children}:
-        child = [child for member, child in children if member == idx][-1]
-        info = child["restart"]
+        last = [r for r in population.reports[idx] if r["event"] == "start" or r.get("kind") == "transfer"][-1]
+        info = last["restart"]
         with open(os.path.join(population.train_dir, "pbt_workspace", f"{idx:03d}", "restart.yaml")) as f:
             record = yaml.safe_load(f)
         for key in ("kind", "policy_idx", "source_policy", "restart_count", "iteration", "frame", "checkpoint"):
             assert record[key] == info[key], key
         assert record["mutated"] == pytest.approx(info["mutated"])
-        assert record["params"] == pytest.approx(child["params"])
-        assert record["epoch"] == child["checkpoint"]["epoch"] == child["epoch"] - 1
+        assert record["params"] == pytest.approx(last["params"])
+        assert record["epoch"] == last["checkpoint"]["epoch"]
 
 
-@pytest.mark.parametrize("name, minimum", [("population", ["--min-restarts", "3"]),
-                                           ("inprocess_population", ["--min-restarts", "2", "--min-in-process", "4"]),
-                                           ("supervised_population", ["--min-restarts", "3"])])
+@pytest.mark.parametrize("name, minimum", [
+    ("population", ["--min-restarts", "3"]),
+    ("inprocess_population", ["--min-restarts", "2", "--min-in-process", "4"]),
+    ("self_mutation_inprocess_population", ["--min-restarts", "3", "--min-in-process", "2"]),
+    ("transfer_inprocess_population", ["--min-restarts", "3", "--min-in-process", "2"]),
+    ("supervised_population", ["--min-restarts", "3"])])
 def test_qualification_checker_accepts_the_population(request, name, minimum):
     population = request.getfixturevalue(name)
     proc = subprocess.run([sys.executable, CHECKER, "--world-size", "1", *minimum,
@@ -391,18 +412,28 @@ def test_qualification_checker_accepts_the_population(request, name, minimum):
 
 # --- in-process changes, the supervisor, a relaunch through member_resume ------------------------
 
-def test_in_process_changes_apply_to_the_running_member(inprocess_population):
-    """Member 2 never restarts: its self-mutations and transfers apply to its running learner, and
-    the first env step after each reports the new values in effect. A transfer loads the donor's
+@pytest.mark.parametrize("name", ALL)
+def test_each_kind_of_change_runs_in_its_mode(request, name):
+    """Member 2 transfers and self-mutates: in process the kinds its population applies there,
+    by a restart the others (with both in process it never restarts)."""
+    population = request.getfixturevalue(name)
+    ran = {(change["kind"], True) for change in in_process(population, LOSER)} | {
+        (child["restart"]["kind"], False) for idx, _, child in restarts(population) if idx == LOSER}
+    assert ran == {(kind, kind in IN_PROCESS_KINDS[name]) for kind in ("self_mutation", "transfer")}
+
+
+@pytest.mark.parametrize("name", IN_PROCESS)
+def test_in_process_changes_apply_to_the_running_member(request, name):
+    """Member 2's in-process self-mutations and transfers apply to its running learner, and the
+    first env step after each reports the new values in effect. A transfer loads the donor's
     weights from restart.pth at the start of the epoch after its decision, with the member's own
     epoch and frame, and counts as a restart."""
-    population = inprocess_population
-    [first] = starts(population, LOSER)
-    changes = in_process(population, LOSER)
-    kinds = [change["kind"] for change in changes]
-    assert kinds.count("transfer") >= 2 and kinds.count("self_mutation") >= 2, kinds
-    for previous, change in zip([first] + changes, changes):
-        assert change["pid"] == first["pid"]
+    population = request.getfixturevalue(name)
+    reports = [r for r in population.reports[LOSER] if r["event"] != "exit"]
+    changes = [(previous, change) for previous, change in zip(reports, reports[1:]) if change["event"] == "in_process"]
+    assert len(changes) >= 2, [(r["event"], r.get("kind")) for r in reports]
+    for previous, change in changes:
+        assert change["pid"] == previous["pid"]
         for key, value in change["params"].items():
             assert change["effective"][key[len(CONFIG):]] == pytest.approx(value), key
         info = change["restart"]
@@ -418,15 +449,32 @@ def test_in_process_changes_apply_to_the_running_member(inprocess_population):
             assert change["params"] != previous["params"] and change["checkpoint"] is None
 
 
-def test_in_process_changes_are_recorded(inprocess_population):
+@pytest.mark.parametrize("name", ONE_IN_PROCESS)
+def test_a_restart_right_after_an_in_process_change_continues_the_member(request, name):
+    """With one kind in process, the other restarts the member also right after an in-process
+    change: the restarted process continues the member's restart count, as its restart info
+    gives it."""
+    population = request.getfixturevalue(name)
+    reports = population.reports[LOSER]
+    pairs = [(change, child) for change, child in zip(reports, reports[1:])
+             if change["event"] == "in_process" and child["event"] == "start"]
+    assert pairs, [(r["event"], r.get("kind")) for r in reports]
+    for change, child in pairs:
+        assert child["restart"]["kind"] != change["kind"]
+        assert child["restart_count"] == child["restart"]["restart_count"] == change["restart_count"] + 1
+
+
+@pytest.mark.parametrize("name", IN_PROCESS)
+def test_in_process_changes_are_recorded(request, name):
     """decisions.jsonl has a line per in-process change: `in_process` for a self-mutation, a
     `transfer` with `in_process: true`."""
+    population = request.getfixturevalue(name)
     for idx in range(len(OBJECTIVES)):
-        with open(os.path.join(inprocess_population.train_dir, "pbt_workspace", f"{idx:03d}", "decisions.jsonl")) as f:
+        with open(os.path.join(population.train_dir, "pbt_workspace", f"{idx:03d}", "decisions.jsonl")) as f:
             lines = [json.loads(line) for line in f]
         recorded = ["self_mutation" if line["outcome"] == "in_process" else "transfer" for line in lines
                     if line["outcome"] == "in_process" or line.get("in_process")]
-        assert recorded == [change["kind"] for change in in_process(inprocess_population, idx)]
+        assert recorded == [change["kind"] for change in in_process(population, idx)]
 
 
 def test_supervised_members_restart_as_new_processes(supervised_population):
@@ -777,6 +825,9 @@ def checker(member_report, monkeypatch):
     ([], [], ["no PBT_MEMBER start reports: run the members with --report"]),
     (_process(0) + _in_process("self_mutation", 0, 6144) + _in_process("transfer", 1, 8192) + _process(2)
      + _exits(2), ["--min-in-process", "2"], []),
+    # self-mutations in process without a restart between them: one restart count, two changes
+    (_process(0) + _in_process("self_mutation", 0, 6144) + _in_process("self_mutation", 0, 9216) + _exits(0),
+     ["--min-restarts", "0", "--min-in-process", "2"], []),
     (_process(0) + _in_process("self_mutation", 0, 6144)[:1] + _in_process("self_mutation", 0, 6144,
                                                                          state__model="a2")[1:] + _exits(0),
      ["--min-restarts", "0"], ['member 0 in-process self_mutation at frame 6144: ranks disagree on state.model: '
@@ -789,8 +840,9 @@ def checker(member_report, monkeypatch):
     (_process(0) + _in_process("self_mutation", 0, 6144) + _exits(0), ["--min-restarts", "0", "--min-in-process", "2"],
      ["the member with the most in-process changes made 1, fewer than 2"]),
 ], ids=["pass", "model-not-restored", "scale-not-restored", "rank-not-reported", "restart-count-skipped",
-        "rank-not-ended", "too-few-restarts", "no-reports", "in-process-pass", "in-process-ranks-disagree",
-        "in-process-rank-not-reported", "in-process-transfer-not-restored", "too-few-in-process"])
+        "rank-not-ended", "too-few-restarts", "no-reports", "in-process-pass", "in-process-same-restart-count",
+        "in-process-ranks-disagree", "in-process-rank-not-reported", "in-process-transfer-not-restored",
+        "too-few-in-process"])
 def test_qualification_checker_fails_each_check(tmp_path, checker, reports, args, failures):
     """Each check of the checker on its own: a restarted process whose model or fp16 loss scale is
     not its checkpoint's, a rank without a start report, a restart count without its process (or

@@ -32,7 +32,7 @@ the ranks agree and that every restart restored restart.pth, the fp16 loss scale
                    the new learning_rate (adaptive: the adapted LR scaled by its mutation)
   --max-epochs E   epochs per member (default 120)
   --self-mutation M  restart (default), or in_process: the ranks set a self-mutation's values
-                   on the running learner
+                   on the running learner (alone, two transfers follow each self-mutation)
   --transfer M     restart (default), or in_process: the ranks load the donor's restart.pth
                    into the running learner
   --supervise      each member under python -m rl_games.common.pbt.supervise, which runs the

@@ -56,7 +56,7 @@ python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
 ## End-to-end test
 
 `tests/test_pbt_e2e.py` runs three-member populations of this script on CPU with real restarts
-(about a minute), with forced objectives (`--fake-objective`): member 2 always ranks last, alternately
+(about 90 seconds), with forced objectives (`--fake-objective`): member 2 always ranks last, alternately
 far behind (a transfer from member 0) and close behind (a self-mutation). It checks the restarts
 (same process, restart info and its kind, command, checkpoint, frame and epoch counters,
 `restart.yaml`), that every restarted process trains with its new values, that restarts draw
@@ -64,10 +64,11 @@ different mutations, that no member logs a failure it trained on (an exception t
 caught), that member 0 holds the population best, and that no secret from the environment reaches
 a log. The same population then runs with `--self-mutation in_process --transfer in_process`
 (member 2 never restarts: each change is in effect at its next env step, and a transfer's weights
-are restart.pth's), and under supervisors (each restart a new process, the only one under its
-supervisor). Member 2 of a last population is killed after its first restart decision and relaunched
-with what `python -m rl_games.common.pbt.member_resume --format shell` appends: the restart is
-retried, with the donor's weights and the mutated values. A single LSTM member with the
+are restart.pth's), with each of the two alone (the other kind restarts the member, also right
+after an in-process change), and under supervisors (each restart a new process, the only one under
+its supervisor). Member 2 of a last population is killed after its first restart decision and
+relaunched with what `python -m rl_games.common.pbt.member_resume --format shell` appends: the
+restart is retried, with the donor's weights and the mutated values. A single LSTM member with the
 qualification's settings also runs PBT iterations scored by the default objective, the episode
 return:
 
@@ -91,7 +92,8 @@ Each run starts 3 members (`--members`) of 2 ranks (`--nproc`), rank r of every 
 GPU of `CUDA_VISIBLE_DEVICES` (default the first `--nproc` GPUs: `--nproc 4` on a node with 4 or
 more takes GPUs 0-3), on the dexpbt rule with mutation_rate 0.5, the adaptive LR schedule,
 torch_compile on and the input and value normalizers on. The last member restarts at nearly every
-PBT iteration, alternating transfers and self-mutations. Every rank of every process reports hashes
+PBT iteration, alternating transfers and self-mutations (with `--self-mutation in_process` alone,
+two transfers follow each self-mutation). Every rank of every process reports hashes
 of its model, normalizers, optimizer and loss scaler at its first env step, after the restore and the
 broadcast of the weights; `check_qualification.py` then checks that the ranks of each process agree,
 that every restart restored `restart.pth` (the model, and the fp16 loss scale), that every rank ended
