@@ -1636,10 +1636,11 @@ class PbtAlgoObserver(AlgoObserver):
         frame_reached and the wandb variables `_finish_wandb` set (`environ`: the run to resume),
         and end the process with `pbt_utils.RESTART_EXIT_CODE`. The supervisor that runs the
         member's command (`python -m rl_games.common.pbt.supervise`) runs it again from the
-        record; a record that can't be written only warns (the supervisor then relaunches from
-        what the member's directory holds, `pbt_utils.member_resume`). The other ranks have
-        exited with status 0 (`_sync_decision`), as in an exec: torchrun stops every rank once
-        one fails, and rank 0 may still be finishing its wandb run."""
+        record, which frame_reached marks as one the member ended for (a transfer loaded in
+        process writes it without); a record that can't be written only warns (the supervisor
+        then relaunches from what the member's directory holds, `pbt_utils.member_resume`). The
+        other ranks have exited with status 0 (`_sync_decision`), as in an exec: torchrun stops
+        every rank once one fails, and rank 0 may still be finishing its wandb run."""
         environ = {key: os.environ[key] for key in _WANDB_RESTART_VARS if key in os.environ}
         try:
             pbt_utils.write_restart_record(self.curr_policy_dir, dict(
