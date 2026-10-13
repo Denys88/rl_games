@@ -200,8 +200,9 @@ script; a population of 4 runs on CPU in under a minute:
 bash examples/pbt/run_population.sh --members 4
 ```
 
-See [docs/PBT.md](docs/PBT.md) for writing a train script, the replacement rules, restarts,
-multi-GPU members and the config reference.
+See [docs/PBT.md](docs/PBT.md) for writing a train script, the replacement rules, restarts (in
+place, through a supervisor or in the running process), multi-GPU members, dead and finished
+members, and the config reference.
 
 ## Multi GPU
 
