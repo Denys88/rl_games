@@ -1568,14 +1568,18 @@ class PbtAlgoObserver(AlgoObserver):
         payload, the last completed `epoch` (restart.pth's: the decision runs in after_steps,
         before the epoch's update), every new param value (`params`), the `seed` the restart
         command passes as `seed_arg` (`_restart_seed`; None when it keeps its own), with which
-        `pbt_utils.member_resume` retries the restart, and `forced` under `pbt.force_outcome`.
-        Plain JSON types, as the child reads the payload."""
+        `pbt_utils.member_resume` retries the restart, the train script's `checkpoint_arg` and
+        `restart_drop_args` (a subclass that saves with its own call records neither in its
+        workspace yamls), and `forced` under `pbt.force_outcome`. Plain JSON types, as the child
+        reads the payload."""
         new_params = {param: pbt_utils.plain_number(value) for param, value in self.new_params.items()}
         checkpoint = self.restart_from_checkpoint
         record = dict(self._restart_payload(new_params, checkpoint),
                       epoch=int(self.algo.epoch_num) - 1, params=new_params,
                       seed=self._restart_seed(self._restart_script_args(new_params, checkpoint)),
-                      seed_arg=self.cfg.seed_arg, **self._forced_stamp())
+                      seed_arg=self.cfg.seed_arg, checkpoint_arg=self.cfg.checkpoint_arg,
+                      restart_drop_args=dict(getattr(self.cfg, "restart_drop_args", None) or {}),
+                      **self._forced_stamp())
         return json.loads(json.dumps(record, default=pbt_utils.json_default))
 
     def _save_restart_record(self):

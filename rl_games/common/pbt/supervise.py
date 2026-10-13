@@ -14,18 +14,29 @@ when the child ends:
   params and the seed replaced and the member's `restart_drop_args` removed, as an exec'd restart
   does (`pbt_utils.build_launch_restart_args`), the payload in RL_GAMES_PBT_RESTART and the
   wandb run to resume in the environment. The launcher keeps its own arguments, and no launcher
-  nests inside the old one: the processes stay the supervisor, the launcher and the ranks;
+  nests inside the old one: the processes stay the supervisor, the launcher and the ranks. With
+  nothing to restart from in the member's directory it exits 1: --workspace or --policy-idx is
+  not the member's;
 - at a normal end (an exit.yaml written since the launch, or status 0) it exits 0;
+- when the member's owner.yaml names another process that may still run the member (one for
+  which the member refused the launch, or one that took it over), it exits with the member's
+  status: a relaunch would take the member over;
 - after a crash (any other status) it waits `--backoff` seconds, doubled at each crash in a row
-  without a new workspace checkpoint, and runs the command again from what `member_resume` picks
-  (the restart retried, or the newest checkpoint as kind "resume"; the command as given without
-  either), for at most `--max-retries` crashes in a row; then it exits with the crash's status;
-- SIGTERM or SIGINT to the supervisor goes to the member's process group; the supervisor waits
-  for the member and exits with its status (128 + N when signal N ended it), never relaunching.
+  without a new workspace checkpoint, and runs the command again, for at most `--max-retries`
+  crashes in a row; then it exits with the crash's status. Once one of its launches has saved a
+  workspace checkpoint, it runs the command from what `member_resume` picks (the restart
+  retried, or the newest checkpoint as kind "resume"; the command as given without either);
+  until then as it ran before, so a launch the member refuses at its start (over an earlier
+  run's checkpoints) doesn't turn into a resume of that run;
+- SIGTERM, SIGINT or SIGHUP to the supervisor goes to the member's process group; the supervisor
+  waits for the member and exits with its status (128 + N when signal N ended it), never
+  relaunching. A signal ignored when the supervisor starts (nohup's SIGHUP) stays ignored.
 
 Run one supervisor per member, on the host of its rank 0, while no other process of the member
 runs, and keep torchrun's `--max-restarts` at 0: torchrun would otherwise rerun the ranks itself,
-without the restart's arguments.
+without the restart's arguments. The supervisor imports torch through rl_games: it holds about
+0.5 GB of memory for the member's life, as much as a launcher level that each exec'd restart of
+a multi-GPU member adds.
 """
 
 import argparse
@@ -38,6 +49,7 @@ import sys
 import time
 
 from rl_games.common.pbt import pbt_utils
+from rl_games.common.pbt.pbt_cfg import PbtCfg
 
 
 def relaunch(command, resume):
@@ -73,19 +85,26 @@ class Supervisor:
         self.signal = None  # the signal that stops the supervisor
 
     def run(self) -> int:
-        for signum in (signal.SIGTERM, signal.SIGINT):
-            signal.signal(signum, self._forward)
-        command, env, crashes = self.command, dict(os.environ), 0
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            if signal.getsignal(signum) != signal.SIG_IGN:
+                signal.signal(signum, self._forward)
+        command, env, crashes, progress = self.command, dict(os.environ), 0, False
         while True:
             before = self._records()
             status = self._run(command, env)
             # which of the member's records the child changed
             decided, ended, saved = (now != then for now, then in zip(self._records(), before))
+            progress = progress or saved  # a new workspace checkpoint since the supervisor started
             if self.signal is not None:
                 return _exit_status(status)
             if status == 0 or ended:
                 self._say(f"the member ended (status {status})")
                 return 0
+            owner = self._other_owner()
+            if owner is not None:
+                self._say(f"the member ended (status {status}), and {pbt_utils.OWNER_RECORD} names pid "
+                          f"{owner.get('pid')} on {owner.get('host')}, which may still run it: no relaunch")
+                return _exit_status(status)
             requested = status == pbt_utils.RESTART_EXIT_CODE or decided
             if requested:
                 crashes = 0
@@ -101,8 +120,13 @@ class Supervisor:
                 self._sleep(delay)
             if self.signal is not None:  # it came since the member ended
                 return _exit_status(status)
-            resume = pbt_utils.member_resume(self.workspace, self.policy_idx, requested=requested)
-            command, env = relaunch(self.command, resume)
+            if requested or progress:  # else the same launch again
+                resume = pbt_utils.member_resume(self.workspace, self.policy_idx, requested=requested)
+                if requested and resume is None:
+                    self._say(f"{self.member_dir} holds nothing to restart from: are --workspace and "
+                              f"--policy-idx the member's?")
+                    return 1
+                command, env = relaunch(self.command, resume)
 
     def _records(self):
         """(restart.yaml's decision time, exit.yaml's time, [the newest saved iteration]) of the member."""
@@ -111,6 +135,14 @@ class Supervisor:
 
         saved = pbt_utils.saved_iterations(self.member_dir) if os.path.isdir(self.member_dir) else []
         return time_of(pbt_utils.RESTART_RECORD), time_of(pbt_utils.EXIT_RECORD), saved[-1:]
+
+    def _other_owner(self):
+        """The member's owner record when the process it names may still run the member, now that the
+        child has ended (`pbt_utils.owner_alive`, another host's within the default max_member_lag);
+        else None."""
+        owner = pbt_utils.read_record(self.member_dir, pbt_utils.OWNER_RECORD)
+        exit_record = pbt_utils.read_record(self.member_dir, pbt_utils.EXIT_RECORD)
+        return owner if owner and pbt_utils.owner_alive(owner, PbtCfg.max_member_lag, exit_record) else None
 
     def _run(self, command, env) -> int:
         """Run `command` to its end in a new process group; returns its status (-N: signal N ended it)."""
@@ -127,7 +159,7 @@ class Supervisor:
         return status
 
     def _forward(self, signum, frame):
-        """SIGTERM or SIGINT: stop the supervisor, and pass the signal to the member's process group."""
+        """SIGTERM, SIGINT or SIGHUP: stop the supervisor, and pass the signal to the member's process group."""
         self.signal = signum
         if self.child is not None and self.child.returncode is None:
             try:

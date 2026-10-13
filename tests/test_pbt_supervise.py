@@ -14,13 +14,14 @@ import time
 
 import psutil
 import pytest
+import torch
 import yaml
 
-from rl_games.common.pbt import PbtCfg, pbt_utils
+from rl_games.common.pbt import PbtCfg, pbt_utils, supervise as supervise_module
 from tests.test_pbt_e2e import CONFIG, EPOCH_FRAMES, INTERVAL, SCRIPT, SMALL, member_env, member_report  # noqa: F401
 from tests.test_pbt_inprocess import cartpole_member
-from tests.test_pbt_records import (Algo, ExecCalled, decide, execs, load_record, member_dir, observer,  # noqa: F401
-                                    reexec, report, restore_environ)
+from tests.test_pbt_records import (Algo, CopiedIteration, ExecCalled, decide, execs, load_record,  # noqa: F401
+                                    member_dir, observer, reexec, report, restore_environ)
 from tests.test_pbt_restart import StubRun, fail_finish, install_wandb
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="process groups and signals")
@@ -30,7 +31,7 @@ FAKE_MEMBER = os.path.join(REPO, "tests", "pbt_fake_member.py")
 LR = CONFIG + "learning_rate"
 WANDB_VARS = ("WANDB_RUN_ID", "WANDB_RESUME", "WANDB_INIT_TIMEOUT")
 # restart.yaml's keys that the payload doesn't have
-RECORD_ONLY = ("epoch", "params", "seed", "seed_arg", "environ")
+RECORD_ONLY = ("epoch", "params", "seed", "seed_arg", "checkpoint_arg", "restart_drop_args", "environ")
 
 
 def test_restart_mode_is_validated():
@@ -125,6 +126,35 @@ def test_member_resume_returns_the_launch_only_arguments(tmp_path):
     resume = pbt_utils.member_resume(workspace(tmp_path), 3)
     assert resume["source"] == "checkpoint" and resume["restart_drop_args"] == {"--warm-start": 0, "--resume-from": "?"}
     assert pbt_utils.member_resume(workspace(tmp_path), 0)["restart_drop_args"] == {}     # none configured
+
+
+def test_a_copied_iteration_relaunches_with_the_arguments_an_exec_takes(tmp_path, exits):
+    """A subclass that replaces _pbt_iteration (DexLab's) saves its yamls without the train
+    script's checkpoint and launch-only arguments; restart.yaml records them, as the exec takes
+    them from the config."""
+    for idx, objective in ((0, 5.0), (1, 4.0), (2, 3.0)):
+        report(tmp_path, idx, 5, objective)
+    launch_argv = ["train.py", "--warm-start", "task=Lift"]
+    obs = observer(tmp_path, 3, 4, cls=CopiedIteration, launch_argv=launch_argv, restart_mode="exit",
+                   checkpoint_arg="--resume-from", restart_drop_args={"--warm-start": 0})
+    decide(obs, Algo(tmp_path, epoch_num=40), 5, 1.0)
+    assert exits == [pbt_utils.RESTART_EXIT_CODE]
+    resume = pbt_utils.member_resume(workspace(tmp_path), 3, requested=True)
+    command, _ = supervise_module.relaunch([sys.executable, *launch_argv], resume)
+    restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
+    assert command[:4] == [sys.executable, "train.py", "task=Lift", f"--resume-from={restart_pth}"]
+
+
+def test_the_other_ranks_end_with_status_0(tmp_path, monkeypatch, exits):
+    """Also under restart_mode exit: torchrun stops every rank once one fails, while rank 0 may
+    still be finishing its wandb run."""
+    monkeypatch.setenv("RANK", "1")
+    obs = observer(tmp_path, 3, 4, restart_mode="exit")
+    # rank 0's restart decision, as the iteration's broadcast delivers it
+    monkeypatch.setattr(torch.distributed, "broadcast", lambda message, src: message.__setitem__(0, 1))
+    with pytest.raises(ExecCalled):
+        obs._sync_decision(True, dict(obs.pbt_params))
+    assert exits == [0]
 
 
 def test_member_resume_cli_exports_the_wandb_run(tmp_path, monkeypatch, exits):
@@ -232,8 +262,46 @@ def test_crashes_in_a_row_stop_at_the_retry_cap(tmp_path):
     assert all(run["payload"] is None and run["args"] == ["--seed", "1"] for run in runs)
 
 
-def test_a_new_checkpoint_starts_the_crash_count_over(tmp_path):
-    steps = [{"save": 1, "status": 3}, {"save": 2, "status": 3}, {"save": 3, "status": 3}, {"end": "max_frames"}]
+def test_a_launch_that_ends_before_it_saves_runs_again_as_given(tmp_path):
+    """A new run into the workspace of an earlier one: the member refuses its fresh launch (the
+    leftover guard). Run again as given, never as a resume of the earlier run's checkpoint."""
+    assert supervise(tmp_path, [{"save": 4, "end": "max_epochs"}])[0] == 0
+    (tmp_path / "launches.jsonl").unlink()
+    status, out, runs = supervise(tmp_path, [{"status": 1}], "--seed", "1", max_retries=2)
+    assert status == 1 and len(runs) == 3, out
+    assert all(run["payload"] is None and run["args"] == ["--seed", "1"] for run in runs)
+
+
+def test_a_member_another_process_runs_is_not_taken_over(tmp_path):
+    """owner.yaml names a live process (this test's), which saves meanwhile, and the member refuses
+    the launch: a relaunch with a payload would take the member over, and the two processes would
+    fence each other."""
+    os.makedirs(tmp_path / "ws" / "003")
+    pbt_utils.write_record(str(tmp_path / "ws" / "003"), pbt_utils.OWNER_RECORD,
+                           pbt_utils.owner_record("another launch", 0, time.time()))
+    status, out, runs = supervise(tmp_path, [{"save": 5, "status": 1}, {"status": 1}])
+    assert status == 1 and len(runs) == 1, out
+    assert f"pid {os.getpid()}" in out
+
+
+def test_a_restart_with_nothing_to_restart_from_ends_the_supervisor(tmp_path):
+    """--workspace is not the member's: a relaunch would start the member over."""
+    steps = [{"save": 1, "restart": {"params": {LR: 0.0001}}, "status": pbt_utils.RESTART_EXIT_CODE},
+             {"end": "max_epochs"}]
+    command = supervisor_command(tmp_path, steps)
+    command[command.index("--workspace") + 1] = str(tmp_path / "wrkspace")
+    proc = subprocess.run(command, cwd=REPO, env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, timeout=120)
+    assert proc.returncode == 1 and len(launches(tmp_path)) == 1, proc.stdout
+    assert str(tmp_path / "wrkspace" / "003") in proc.stdout
+
+
+@pytest.mark.parametrize("steps", [
+    [{"save": 1, "status": 3}, {"save": 2, "status": 3}, {"save": 3, "status": 3}, {"end": "max_frames"}],
+    [{"status": 3}, {"save": 1, "restart": {"params": {LR: 0.0001}}, "status": pbt_utils.RESTART_EXIT_CODE},
+     {"status": 3}, {"end": "max_frames"}],
+], ids=["new_checkpoints", "requested_restart"])
+def test_progress_starts_the_crash_count_over(tmp_path, steps):
     status, out, runs = supervise(tmp_path, steps, max_retries=1)
     assert status == 0 and len(runs) == 4, out
 
@@ -253,9 +321,10 @@ def test_what_a_member_leaves_in_its_process_group_ends_with_it(tmp_path, step):
     assert_gone([runs[0]["child"]])
 
 
-@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
 def test_a_signal_ends_the_member_and_the_supervisor(tmp_path, signum):
-    """Forwarded to the member's process group (its child too); the member is not relaunched."""
+    """Forwarded to the member's process group (its child too); the member is not relaunched.
+    SIGHUP: the terminal closed, which the member in its own session doesn't see."""
     proc = subprocess.Popen(supervisor_command(tmp_path, [{"child": True, "hang": True}]), cwd=REPO, env=member_env(),
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
@@ -267,6 +336,22 @@ def test_a_signal_ends_the_member_and_the_supervisor(tmp_path, signum):
     assert proc.returncode == 128 + signum, out
     assert len(launches(tmp_path)) == 1
     assert_gone([run["pid"], run["child"]])
+
+
+def test_a_signal_ignored_at_the_start_stays_ignored(tmp_path):
+    """nohup's SIGHUP: the member trains on."""
+    proc = subprocess.Popen(["nohup", *supervisor_command(tmp_path, [{"hang": True}])], cwd=REPO, env=member_env(),
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        [run] = wait_for_launches(tmp_path, 1, proc)
+        os.kill(proc.pid, signal.SIGHUP)
+        time.sleep(1)
+        assert proc.poll() is None and running(run["pid"])
+        os.kill(proc.pid, signal.SIGTERM)
+        out, _ = proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    assert proc.returncode == 128 + signal.SIGTERM, out
 
 
 def test_a_signal_during_the_backoff_ends_the_supervisor(tmp_path):
@@ -312,6 +397,8 @@ def test_restarts_keep_the_process_tree_flat(tmp_path):
     assert [run["args"][-1] for run in runs] == [f"{LR}=0.0003", f"{LR}=0.0001", f"{LR}=0.0002", f"{LR}=0.0005",
                                                  f"{LR}=0.0005"]
     assert [(run["payload"] or {}).get("kind") for run in runs] == [None] + ["self_mutation"] * 3 + ["resume"]
+    # the restart itself (torchrun's status 1 told apart by restart.yaml), not a retry after a crash
+    assert all("attempt" not in run["payload"] and "frame_reached" in run["payload"] for run in runs[1:4])
     assert len(launches(tmp_path)) == 5
     assert_gone([runs[-1]["pid"], runs[-1]["child"], torchrun])
 

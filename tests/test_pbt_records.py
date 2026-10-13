@@ -172,7 +172,8 @@ def test_restart_record_equals_the_payload_and_the_childs_restart_info(tmp_path,
     assert (payload["policy_idx"], payload["source_policy"]) == (3, obs.restart_source)
     # the payload's keys but the frame the member reached at the re-exec, and the record's own
     assert {key: record.get(key) for key in payload} == dict(payload, frame_reached=None)
-    assert set(record) - set(payload) == {"epoch", "params", "seed", "seed_arg"}
+    assert set(record) - set(payload) == {"epoch", "params", "seed", "seed_arg", "checkpoint_arg", "restart_drop_args"}
+    assert (record["checkpoint_arg"], record["restart_drop_args"]) == ("--checkpoint", {})
 
     restart_pth = os.path.join(member_dir(tmp_path), "restart.pth")
     assert record["checkpoint"] == restart_pth and os.path.isabs(record["checkpoint"])
