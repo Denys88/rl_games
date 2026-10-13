@@ -379,25 +379,39 @@ def test_a_cartpole_member_with_an_objective_function_iterates_on_epochs(tmp_pat
         assert yaml.safe_load(fobj)["interval_unit"] == "epochs"
 
 
-def test_a_restarted_cartpole_member_counts_from_its_restored_epoch(tmp_path, execs):
-    """Interval 2 epochs, start_after 4, 16 frames per epoch. Member 2, below members 0 and 1, is
-    in its grace window at its first boundary (epoch 3) and decides a transfer at the next (epoch 5),
-    whose step re-execs it: restart.pth holds epoch 4. The restarted process resumes at epoch 5, in
-    iteration 2, and counts its grace window from epoch 4: grace at epoch 7, a transfer at epoch 9."""
+def cartpole_peers(train_dir):
+    """Members 0 and 1 of 3: CartPole checkpoints with objective 10 at iteration 1."""
     from tests.test_critical_fixes import make_cartpole_agent
-    from tests.test_pbt_restore import ConstantObjective, MemberAlgo, learner
+    from tests.test_pbt_restore import MemberAlgo
 
-    train_dir = tmp_path / "member"
     for idx in (0, 1):
         os.makedirs(member_dir(train_dir, idx))
         state = make_cartpole_agent().get_full_state_weights()
         pbt_utils.save_pbt_checkpoint(member_dir(train_dir, idx), 10.0, 1, MemberAlgo(train_dir, 16, 2, state),
                                       {LR: 2e-4})
-    pbt = {"objective": "objective", "objective_window": 1, "start_after": 4, "replace_rule": "threshold"}
-    parent = ConstantObjective(cartpole_params(train_dir, **pbt), args_cli=types.SimpleNamespace(),
-                               launch_argv=["train.py"])
+
+
+def loser(train_dir, **pbt):
+    """Member 2 (interval 2 epochs, start_after 4), objective 0: below `cartpole_peers`, it takes
+    a transfer at each of its iterations outside its grace window."""
+    from tests.test_pbt_restore import ConstantObjective
+
+    pbt = dict({"objective": "objective", "objective_window": 1, "start_after": 4, "replace_rule": "threshold"}, **pbt)
+    return ConstantObjective(cartpole_params(train_dir, **pbt), args_cli=types.SimpleNamespace(),
+                             launch_argv=["train.py"])
+
+
+def test_a_restarted_cartpole_member_counts_from_its_restored_epoch(tmp_path, execs):
+    """16 frames per epoch. Member 2 (`loser`) is in its grace window at its first boundary (epoch 3)
+    and decides a transfer at the next (epoch 5), whose step re-execs it: restart.pth holds epoch 4.
+    The restarted process resumes at epoch 5, in iteration 2, and counts its grace window from
+    epoch 4: grace at epoch 7, a transfer at epoch 9."""
+    from tests.test_pbt_restore import learner
+
+    train_dir = tmp_path / "member"
+    cartpole_peers(train_dir)
     with pytest.raises(ExecCalled):
-        learner(parent, train_dir, max_epochs=20).train()
+        learner(loser(train_dir), train_dir, max_epochs=20).train()
     restart_pth = os.path.join(member_dir(train_dir, 2), "restart.pth")
     state = torch.load(restart_pth, weights_only=False)
     assert (state["epoch"], state["frame"]) == (4, 64)
@@ -405,8 +419,7 @@ def test_a_restarted_cartpole_member_counts_from_its_restored_epoch(tmp_path, ex
     [(_, _, environ)] = execs
     os.environ[pbt_utils.RESTART_ENV_VAR] = environ[pbt_utils.RESTART_ENV_VAR]
     pbt_utils._reset_restart_info_cache()
-    child = ConstantObjective(cartpole_params(train_dir, **pbt), args_cli=types.SimpleNamespace(),
-                              launch_argv=["train.py"])
+    child = loser(train_dir)
     agent = learner(child, train_dir, max_epochs=20)
     agent.restore(restart_pth)
     with pytest.raises(ExecCalled):
@@ -414,3 +427,18 @@ def test_a_restarted_cartpole_member_counts_from_its_restored_epoch(tmp_path, ex
     assert (child.restart_count, agent.epoch_num) == (1, 9)
     assert [(line["iteration"], line["frame"], line["outcome"]) for line in decisions(train_dir, 2)] == [
         (1, 32, "grace"), (2, 64, "transfer"), (2, 64, "restarted"), (3, 96, "grace"), (4, 128, "transfer")]
+
+
+def test_an_in_process_transfer_restarts_the_grace_window_at_its_load(tmp_path):
+    """The member above with its transfers in process: the transfer decided at epoch 5 loads at
+    the start of epoch 6, after 5 completed epochs, where its grace window restarts: grace at
+    epochs 7 and 9, the next transfer at epoch 11, loaded after 11 completed epochs, grace again."""
+    from tests.test_pbt_restore import learner
+
+    cartpole_peers(tmp_path)
+    member = loser(tmp_path, transfer="in_process")
+    learner(member, tmp_path, max_epochs=15).train()
+    assert (member.restart_count, member.initial_frame) == (2, 11)
+    assert [(line["iteration"], line["frame"], line["outcome"]) for line in decisions(tmp_path, 2)] == [
+        (1, 32, "grace"), (2, 64, "transfer"), (3, 96, "grace"), (4, 128, "grace"), (5, 160, "transfer"),
+        (6, 192, "grace"), (7, 224, "grace")]
