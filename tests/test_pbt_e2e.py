@@ -3,17 +3,23 @@ restarts (os.execv) and the workspace on disk.
 
 Three members on the dexpbt rule, with forced objectives (--fake-objective). Member 2 always
 ranks last, alternately far behind (objective 0.0: a transfer from member 0) and close behind
-(0.98: the lead is too small, a self-mutation) by its restart count, so both kinds of restart
-run. While member 2 restarts it can't be replaced, and member 1 (0.99) then takes the worst
-slot: it self-mutates now and then. Member 0 is the best and never restarts.
+(0.98: the lead is too small, a self-mutation) by its restarts and in-process self-mutations, so
+both kinds of restart run. While member 2 restarts it can't be replaced, and member 1 (0.99)
+then takes the worst slot: it self-mutates now and then. Member 0 is the best and never restarts.
 `leader_params_prob=0` keeps every restart on the member's own parameters, so consecutive
 processes' parameters give each restart's mutation factors, and member 2 starts from values
 the donor doesn't have. The members launch without --seed: every process of a member seeds
 Python's `random` alike, the case in which PBT's draws repeated at every restart.
 
+The same population runs three ways: restarts by os.execv (the default), self-mutations and
+transfers applied to the running members (--self-mutation/--transfer in_process), and every
+member under its supervisor, which runs it again at each restart (--restart-mode exit). A last
+run kills member 2 after its first restart decision and relaunches it through member_resume.
+
 Every process prints `PBT_MEMBER {json}` lines (--report, examples/pbt/member_report.py): one
 at its first env step (restart info, counters, the hyperparameters in effect, state hashes,
-what its checkpoint holds) and one at its normal exit.
+what its checkpoint holds), one at the first env step after each in-process change and one at
+its normal exit.
 """
 
 import contextlib
@@ -32,6 +38,7 @@ import sys
 import time
 from typing import NamedTuple
 
+import psutil
 import pytest
 import yaml
 
@@ -96,6 +103,7 @@ class Population(NamedTuple):
     returncodes: dict   # member -> exit code of its last process
     reports: dict       # member -> PBT_MEMBER reports in log order
     malformed: dict     # member -> PBT_MEMBER lines that don't parse
+    processes: dict     # member -> the most processes seen under the one launched (its supervisor)
 
 
 def wait_for_report(path, proc, deadline):
@@ -107,13 +115,27 @@ def wait_for_report(path, proc, deadline):
         time.sleep(0.1)
 
 
-@pytest.fixture(scope="module")
-def population(tmp_path_factory, member_report):
-    root = tmp_path_factory.mktemp("pbt_e2e")
+def start(command, log_path, mode="w"):
+    with open(log_path, mode) as log:
+        # own session: a member that hangs is killed with whatever it exec'd into
+        return subprocess.Popen(command, cwd=REPO, env=member_env(), stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+
+
+def descendants(pid):
+    try:
+        return len(psutil.Process(pid).children(recursive=True))
+    except psutil.NoSuchProcess:
+        return 0
+
+
+def run_population(root, member_report, *member_args, supervise=False, watch=None):
+    """Run the members of OBJECTIVES in `root` to their end with `member_args`, each under its own
+    supervisor with `supervise` (and --restart-mode exit). `watch(procs, commands, log_dir)` runs
+    at every poll and may replace a member's process."""
     train_dir, log_dir = root / "runs", root / "logs"
     log_dir.mkdir()
-    env = member_env()
-    procs = {}
+    procs, commands, most = {}, {}, {}
     deadline = time.monotonic() + 600
     try:
         for idx, objective in enumerate(OBJECTIVES):
@@ -126,13 +148,19 @@ def population(tmp_path_factory, member_report):
             command = [sys.executable, SCRIPT, "--policy-idx", str(idx), "--num-policies", str(len(OBJECTIVES)),
                        "--interval-steps", str(INTERVAL), "--mutation-rate", "0.5", "--max-epochs", str(MAX_EPOCHS),
                        "--train-dir", str(train_dir), "--fake-objective", objective, "--report",
-                       *SMALL, "agent.pbt.leader_params_prob=0", *(LOSER_START if idx == LOSER else [])]
-            with open(log_dir / f"member{idx}.log", "w") as log:
-                # own session: a member that hangs is killed with whatever it exec'd into
-                procs[idx] = subprocess.Popen(command, cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT,
-                                              start_new_session=True)
-        for proc in procs.values():
-            proc.wait(timeout=max(1.0, deadline - time.monotonic()))
+                       *SMALL, "agent.pbt.leader_params_prob=0", *member_args, *(LOSER_START if idx == LOSER else [])]
+            if supervise:
+                command = [sys.executable, "-m", "rl_games.common.pbt.supervise", "--workspace",
+                           str(train_dir / "pbt_workspace"), "--policy-idx", str(idx), "--", *command,
+                           "--restart-mode", "exit"]
+            commands[idx] = command
+            procs[idx] = start(command, log_dir / f"member{idx}.log")
+        while any(proc.poll() is None for proc in procs.values()) and time.monotonic() < deadline:
+            if watch is not None:
+                watch(procs, commands, log_dir)
+            for idx, proc in procs.items():
+                most[idx] = max(most.get(idx, 0), descendants(proc.pid))
+            time.sleep(0.2)
     finally:
         for proc in procs.values():
             if proc.poll() is None:
@@ -143,11 +171,36 @@ def population(tmp_path_factory, member_report):
     read = {idx: member_report.read_reports(text.splitlines()) for idx, text in logs.items()}
     return Population(str(train_dir), log_paths, logs, {idx: proc.returncode for idx, proc in procs.items()},
                       {idx: reports for idx, (reports, _) in read.items()},
-                      {idx: malformed for idx, (_, malformed) in read.items()})
+                      {idx: malformed for idx, (_, malformed) in read.items()},
+                      {idx: most.get(idx, 0) for idx in procs})
+
+
+@pytest.fixture(scope="module")
+def population(tmp_path_factory, member_report):
+    return run_population(tmp_path_factory.mktemp("pbt_e2e"), member_report)
+
+
+@pytest.fixture(scope="module")
+def inprocess_population(tmp_path_factory, member_report):
+    return run_population(tmp_path_factory.mktemp("pbt_e2e_inprocess"), member_report,
+                          "--self-mutation", "in_process", "--transfer", "in_process")
+
+
+@pytest.fixture(scope="module")
+def supervised_population(tmp_path_factory, member_report):
+    return run_population(tmp_path_factory.mktemp("pbt_e2e_supervised"), member_report, supervise=True)
+
+
+ALL = ["population", "inprocess_population", "supervised_population"]
+RESTARTING = ["population", "supervised_population"]  # member 2 restarts as a new process image
 
 
 def starts(population, idx):
     return [r for r in population.reports[idx] if r["event"] == "start"]
+
+
+def in_process(population, idx):
+    return [r for r in population.reports[idx] if r["event"] == "in_process"]
 
 
 def config_overrides(argv):
@@ -178,7 +231,9 @@ def restart_pth(population, idx):
 
 # --- the population ----------------------------------------------------------------------------
 
-def test_members_exit_cleanly(population):
+@pytest.mark.parametrize("name", ALL)
+def test_members_exit_cleanly(request, name):
+    population = request.getfixturevalue(name)
     for idx in range(len(OBJECTIVES)):
         log = population.logs[idx]
         assert population.returncodes[idx] == 0, log[-4000:]
@@ -236,7 +291,9 @@ def test_members_restart_by_exec(population):
     assert {child["restart"]["source_policy"] == idx for idx, _, child in restarts(population)} == {False, True}
 
 
-def test_restarted_members_train_with_their_new_values(population):
+@pytest.mark.parametrize("name", RESTARTING)
+def test_restarted_members_train_with_their_new_values(request, name):
+    population = request.getfixturevalue(name)
     for _, _, child in restarts(population):
         params, info = child["params"], child["restart"]
         # the command line's values are the member's params and its config...
@@ -259,10 +316,12 @@ def test_restarted_members_train_with_their_new_values(population):
         assert child["effective"]["entropy_coef"] != pytest.approx(0.01)
 
 
-def test_epochs_and_frames_stay_in_step(population):
+@pytest.mark.parametrize("name", ALL)
+def test_epochs_and_frames_stay_in_step(request, name):
     """A restart resumes after the last completed epoch: each process starts at the epoch after
     the one restart.pth completed, every member's epoch and frame counters stay in step, and the
     restarted member ends at max_epochs with max_epochs epochs of frames, like the others."""
+    population = request.getfixturevalue(name)
     for idx in range(len(OBJECTIVES)):
         for process in starts(population, idx):
             assert process["epoch"] == process["frame"] // EPOCH_FRAMES + 1, process
@@ -297,9 +356,11 @@ def test_no_secret_reaches_a_log(population):
         assert not leaked, leaked[:3]
 
 
-def test_restart_records_agree_with_the_children(population):
+@pytest.mark.parametrize("name", RESTARTING)
+def test_restart_records_agree_with_the_children(request, name):
     """`restart_info()` names the kind of every restart, and each member's restart.yaml records
     its last restart as its child received, restored and trained with it."""
+    population = request.getfixturevalue(name)
     children = [(idx, child) for idx, _, child in restarts(population)]
     for idx, child in children:
         info = child["restart"]
@@ -316,12 +377,109 @@ def test_restart_records_agree_with_the_children(population):
         assert record["epoch"] == child["checkpoint"]["epoch"] == child["epoch"] - 1
 
 
-def test_qualification_checker_accepts_the_population(population):
-    proc = subprocess.run([sys.executable, CHECKER, "--world-size", "1", "--min-restarts", "3",
+@pytest.mark.parametrize("name, minimum", [("population", ["--min-restarts", "3"]),
+                                           ("inprocess_population", ["--min-restarts", "2", "--min-in-process", "4"]),
+                                           ("supervised_population", ["--min-restarts", "3"])])
+def test_qualification_checker_accepts_the_population(request, name, minimum):
+    population = request.getfixturevalue(name)
+    proc = subprocess.run([sys.executable, CHECKER, "--world-size", "1", *minimum,
                            "--train-dir", population.train_dir, *population.log_paths.values()],
                           env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout
     assert "PASS" in proc.stdout
+
+
+# --- in-process changes, the supervisor, a relaunch through member_resume ------------------------
+
+def test_in_process_changes_apply_to_the_running_member(inprocess_population):
+    """Member 2 never restarts: its self-mutations and transfers apply to its running learner, and
+    the first env step after each reports the new values in effect. A transfer loads the donor's
+    weights from restart.pth at the start of the epoch after its decision, with the member's own
+    epoch and frame, and counts as a restart."""
+    population = inprocess_population
+    [first] = starts(population, LOSER)
+    changes = in_process(population, LOSER)
+    kinds = [change["kind"] for change in changes]
+    assert kinds.count("transfer") >= 2 and kinds.count("self_mutation") >= 2, kinds
+    for previous, change in zip([first] + changes, changes):
+        assert change["pid"] == first["pid"]
+        for key, value in change["params"].items():
+            assert change["effective"][key[len(CONFIG):]] == pytest.approx(value), key
+        info = change["restart"]
+        if change["kind"] == "transfer":
+            assert (info["kind"], info["source_policy"]) == ("transfer", 0)
+            assert info["restart_count"] == change["restart_count"] == previous["restart_count"] + 1
+            assert {key: change["params"][key] for key in info["mutated"]} == pytest.approx(info["mutated"])
+            assert change["frame"] == info["frame"] + EPOCH_FRAMES
+            assert change["checkpoint"]["path"] == info["checkpoint"]
+            assert change["state"]["model"] == change["checkpoint"]["model"]
+        else:
+            assert (info, change["restart_count"]) == (previous["restart"], previous["restart_count"])
+            assert change["params"] != previous["params"] and change["checkpoint"] is None
+
+
+def test_in_process_changes_are_recorded(inprocess_population):
+    """decisions.jsonl has a line per in-process change: `in_process` for a self-mutation, a
+    `transfer` with `in_process: true`."""
+    for idx in range(len(OBJECTIVES)):
+        with open(os.path.join(inprocess_population.train_dir, "pbt_workspace", f"{idx:03d}", "decisions.jsonl")) as f:
+            lines = [json.loads(line) for line in f]
+        recorded = ["self_mutation" if line["outcome"] == "in_process" else "transfer" for line in lines
+                    if line["outcome"] == "in_process" or line.get("in_process")]
+        assert recorded == [change["kind"] for change in in_process(inprocess_population, idx)]
+
+
+def test_supervised_members_restart_as_new_processes(supervised_population):
+    """Each restart is a new process its member's supervisor starts: one process under the
+    supervisor all along (an exec'd restart of a torchrun member nests a launcher at each)."""
+    population = supervised_population
+    assert len(starts(population, LOSER)) >= 4, population.logs[LOSER][-4000:]
+    for idx in range(len(OBJECTIVES)):
+        processes = starts(population, idx)
+        assert [p["restart_count"] for p in processes] == list(range(len(processes)))
+        assert len({p["pid"] for p in processes}) == len(processes)
+        assert population.processes[idx] == 1
+    for idx, parent, child in restarts(population):
+        info = child["restart"]
+        assert info["source_policy"] == expected_source(idx, parent) and "attempt" not in info
+        assert [a for a in child["argv"] if a.startswith("--checkpoint")] == [f"--checkpoint={info['checkpoint']}"]
+
+
+def test_a_member_killed_before_its_restart_saved_resumes_through_member_resume(tmp_path, member_report):
+    """Member 2 is killed (its process group) once its first restart is decided (restart.yaml),
+    before the restarted process saves, and relaunched with its command plus what member_resume's
+    shell output appends, as a launcher would: the restart is retried, with the donor's weights
+    from restart.pth and the record's values in effect."""
+    record_path = tmp_path / "runs" / "pbt_workspace" / f"{LOSER:03d}" / "restart.yaml"
+    resume = shlex.join([sys.executable, "-m", "rl_games.common.pbt.member_resume", "--workspace",
+                         str(tmp_path / "runs" / "pbt_workspace"), "--policy-idx", str(LOSER), "--format", "shell"])
+    records = []
+
+    def kill_and_relaunch(procs, commands, log_dir):
+        if records or not record_path.exists():
+            return
+        os.killpg(procs[LOSER].pid, signal.SIGKILL)
+        procs[LOSER].wait()
+        records.append(yaml.safe_load(record_path.read_text()))
+        procs[LOSER] = start(["bash", "-c", f'eval "$({resume})" && exec "$@"', "relaunch", *commands[LOSER]],
+                             log_dir / f"member{LOSER}.log", "a")
+
+    population = run_population(tmp_path, member_report, watch=kill_and_relaunch)
+    [record] = records
+    assert population.returncodes[LOSER] == 0 and "Traceback" not in population.logs[LOSER], (
+        population.logs[LOSER][-4000:])
+    [relaunched] = [p for p in starts(population, LOSER) if (p["restart"] or {}).get("attempt")]
+    info = relaunched["restart"]
+    assert (info["kind"], info["source_policy"], info["attempt"]) == ("transfer", 0, 2)
+    assert (info["restart_count"], info["frame"]) == (record["restart_count"], record["frame"]) == (
+        relaunched["restart_count"], relaunched["frame"])
+    assert relaunched["checkpoint"]["path"] == restart_pth(population, LOSER)
+    donor = {member_report.checkpoint_summary(str(path))["model"]
+             for path in (tmp_path / "runs" / "pbt_workspace" / "000").glob("[0-9]*.pth")}
+    assert relaunched["state"]["model"] == relaunched["checkpoint"]["model"] and relaunched["state"]["model"] in donor
+    assert relaunched["params"] == pytest.approx(record["params"])
+    for key, value in record["params"].items():
+        assert relaunched["effective"][key[len(CONFIG):]] == pytest.approx(value), key
 
 
 # --- the scripts -------------------------------------------------------------------------------
@@ -362,6 +520,48 @@ def test_run_population_launches_one_process_per_member(tmp_path):
         assert argv[-2:] == ["--max-epochs", "7"]
 
 
+def test_run_population_can_supervise_its_members(tmp_path):
+    """--supervise: each member under its supervisor, which runs it again at its restarts."""
+    commands = dry_run("run_population.sh", "--members", "3", "--supervise", "--train-dir", str(tmp_path / "runs"),
+                       "--", "--max-epochs", "7")
+    assert len(commands) == 3, commands
+    for idx, argv in enumerate(commands):
+        assert argv[1:3] == ["-m", "rl_games.common.pbt.supervise"]
+        assert option(argv, "--workspace") == str(tmp_path / "runs" / "pbt_workspace")
+        member = argv[argv.index("--") + 1:]
+        assert os.path.realpath(member[1]) == os.path.realpath(os.path.join(EXAMPLE, "train_member.py"))
+        assert option(member, "--policy-idx") == option(argv, "--policy-idx") == str(idx)
+        assert member[-4:] == ["--max-epochs", "7", "--restart-mode", "exit"]
+
+
+@pytest.mark.parametrize("args, member_flags, check_flags", [
+    ([], ["--self-mutation", "restart", "--transfer", "restart"], ["--min-restarts", "3"]),
+    (["--self-mutation", "in_process", "--transfer", "in_process"],
+     ["--self-mutation", "in_process", "--transfer", "in_process"], ["--min-restarts", "3", "--min-in-process", "2"]),
+    (["--transfer", "in_process"], ["--transfer", "in_process"], ["--min-in-process", "2"]),
+], ids=["restart", "in_process", "transfer_in_process"])
+def test_nccl_qualification_takes_the_in_process_modes(tmp_path, args, member_flags, check_flags):
+    *commands, check = dry_run("run_nccl_qualification.sh", *args, "--out", str(tmp_path))
+    for argv in commands:
+        for flag, value in zip(member_flags[::2], member_flags[1::2]):
+            assert option(argv, flag) == value, flag
+    for flag, value in zip(check_flags[::2], check_flags[1::2]):
+        assert option(check, flag) == value, flag
+    assert ("--min-in-process" in check) == ("in_process" in args)
+
+
+def test_nccl_qualification_can_supervise_its_members(tmp_path):
+    *commands, check = dry_run("run_nccl_qualification.sh", "--supervise", "--out", str(tmp_path))
+    assert len(commands) == 3, commands
+    for idx, argv in enumerate(commands):
+        assert argv[1:3] == ["-m", "rl_games.common.pbt.supervise"]
+        assert (option(argv, "--workspace"), option(argv, "--policy-idx")) == (str(tmp_path / "runs" / "pbt_workspace"),
+                                                                              str(idx))
+        member = argv[argv.index("--") + 1:]
+        assert member[1:3] == ["-m", "torch.distributed.run"] and member[-2:] == ["--restart-mode", "exit"]
+    assert os.path.realpath(check[1]) == os.path.realpath(CHECKER)
+
+
 def test_nccl_qualification_runs_members_of_two_ranks(tmp_path):
     *commands, check = dry_run("run_nccl_qualification.sh", "--members", "3", "--precision", "fp16", "--lstm",
                                "--out", str(tmp_path))
@@ -390,7 +590,9 @@ def test_nccl_qualification_takes_the_lr_schedule(tmp_path, choice, value):
 
 @pytest.mark.parametrize("args, message", [(["--lr-schedule", "cosine"], "--lr-schedule takes"),
                                            (["--nproc", "0"], "--nproc takes"),
-                                           (["--precision", "bf16"], "--precision takes")])
+                                           (["--precision", "bf16"], "--precision takes"),
+                                           (["--self-mutation", "inprocess"], "--self-mutation takes"),
+                                           (["--transfer", "exec"], "--transfer takes")])
 def test_nccl_qualification_rejects_bad_arguments(args, message):
     proc = subprocess.run(["bash", os.path.join("examples", "pbt", "run_nccl_qualification.sh"), "--dry-run", *args],
                           cwd=REPO, env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -530,6 +732,12 @@ def _process(restart_count, **changes):
     return [_report(rank, restart_count, **changes) for rank in (0, 1)]
 
 
+def _in_process(kind, restart_count, frame, **changes):
+    """Both ranks' reports of an in-process self-mutation or transfer at `frame` (see `_report`)."""
+    return [dict(_report(rank, restart_count, **changes), event="in_process", kind=kind, frame=frame)
+            for rank in (0, 1)]
+
+
 def write_log(path, reports):
     path.write_text("".join(PREFIX + json.dumps(report) + "\n" for report in reports))
     return path
@@ -560,18 +768,35 @@ def checker(member_report, monkeypatch):
     (_process(0) + _process(1, checkpoint__scaler_scale=2048.0) + _exits(1), [],
      [f"member 0 process 1 rank {rank}: loss scale 1024.0 differs from the checkpoint's 2048.0" for rank in (0, 1)]),
     (_process(0) + _process(1)[:1] + _exits(1), [], ["member 0 process 1: ranks [0] reported, expected [0, 1]"]),
-    (_process(0) + _process(2) + _exits(2), [], ["member 0: process starts reported for restart counts [0, 2]"]),
+    (_process(0) + _process(2) + _exits(2), [],
+     ["member 0: process starts and in-process transfers reported for restart counts [0, 2]"]),
     (_process(0) + _process(1) + _exits(1)[:1], [],
      ["member 0: ranks [0] of its last process ended training, expected [0, 1]"]),
     (_process(0) + _process(1) + _exits(1), ["--min-restarts", "2"],
      ["the most restarted member restarted 1 times, fewer than 2"]),
     ([], [], ["no PBT_MEMBER start reports: run the members with --report"]),
+    (_process(0) + _in_process("self_mutation", 0, 6144) + _in_process("transfer", 1, 8192) + _process(2)
+     + _exits(2), ["--min-in-process", "2"], []),
+    (_process(0) + _in_process("self_mutation", 0, 6144)[:1] + _in_process("self_mutation", 0, 6144,
+                                                                         state__model="a2")[1:] + _exits(0),
+     ["--min-restarts", "0"], ['member 0 in-process self_mutation at frame 6144: ranks disagree on state.model: '
+                               'rank 0 "aa", rank 1 "a2"']),
+    (_process(0) + _in_process("self_mutation", 0, 6144)[:1] + _exits(0), ["--min-restarts", "0"],
+     ["member 0 in-process self_mutation at frame 6144: ranks [0] reported, expected [0, 1]"]),
+    (_process(0) + _in_process("transfer", 1, 8192, checkpoint__model="ee") + _exits(1), [],
+     [f"member 0 in-process transfer at frame 8192 rank {rank}: the model differs from its checkpoint's (aa vs ee)"
+      for rank in (0, 1)]),
+    (_process(0) + _in_process("self_mutation", 0, 6144) + _exits(0), ["--min-restarts", "0", "--min-in-process", "2"],
+     ["the member with the most in-process changes made 1, fewer than 2"]),
 ], ids=["pass", "model-not-restored", "scale-not-restored", "rank-not-reported", "restart-count-skipped",
-        "rank-not-ended", "too-few-restarts", "no-reports"])
+        "rank-not-ended", "too-few-restarts", "no-reports", "in-process-pass", "in-process-ranks-disagree",
+        "in-process-rank-not-reported", "in-process-transfer-not-restored", "too-few-in-process"])
 def test_qualification_checker_fails_each_check(tmp_path, checker, reports, args, failures):
     """Each check of the checker on its own: a restarted process whose model or fp16 loss scale is
-    not its checkpoint's, a rank without a start report, a restart count without its process, a
-    rank of the last process that didn't end training, too few restarts, no reports at all."""
+    not its checkpoint's, a rank without a start report, a restart count without its process (or
+    in-process transfer), a rank of the last process that didn't end training, too few restarts,
+    no reports at all; ranks that disagree after an in-process change or don't report it, an
+    in-process transfer that didn't load restart.pth, too few in-process changes."""
     status, lines = checker(write_log(tmp_path / "member0.log", reports), *args)
     assert (status, lines) == ((1, [f"FAIL {failure}" for failure in failures] + ["FAIL"]) if failures else (0, []))
 

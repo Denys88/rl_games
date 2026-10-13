@@ -5,8 +5,9 @@ Each rank prints one line `PBT_MEMBER {json}` at the first env step of every pro
 or a PBT restart): its restart info, counters, the hyperparameters the learner trains with,
 hashes of its model, normalizers, optimizer and loss scaler, and what the checkpoint it started
 from holds. The first env step comes after the restore and the multi-GPU broadcast and before
-any update, so all ranks of a member must report the same state. One more line at the normal
-end of training.
+any update, so all ranks of a member must report the same state. So must they at the first env
+step after a change applied in process (`pbt.self_mutation`, `pbt.transfer: in_process`), where
+each rank prints an `in_process` line. One more line at the normal end of training.
 """
 
 import hashlib
@@ -104,6 +105,17 @@ def start_report(observer, *, seed, checkpoint, launch_argv) -> dict:
         "scaler_scale": float(algo.scaler.get_scale()) if algo.scaler.is_enabled() else None,
         "checkpoint": checkpoint_summary(checkpoint),
     }
+
+
+def change_report(observer, kind, *, seed, launch_argv) -> dict:
+    """The report at the first env step after an in-process change, `kind` "self_mutation" or
+    "transfer": the start report's fields, with the transfer's restart.pth as the checkpoint. A
+    self-mutation's comes after an update with its values, a transfer's before any."""
+    from rl_games.common.pbt import restart_info
+
+    checkpoint = restart_info()["checkpoint"] if kind == "transfer" else None
+    return dict(start_report(observer, seed=seed, checkpoint=checkpoint, launch_argv=launch_argv),
+                event="in_process", kind=kind)
 
 
 def exit_report(observer) -> dict:

@@ -10,16 +10,17 @@ usage() {
   cat <<EOF
 usage: run_nccl_qualification.sh [--members N] [--nproc N] [--precision default|fp16] [--lstm]
                                  [--lr-schedule adaptive|linear|none] [--max-epochs E]
-                                 [--out DIR] [--python PY] [--dry-run]
+                                 [--self-mutation restart|in_process] [--transfer restart|in_process]
+                                 [--supervise] [--out DIR] [--python PY] [--dry-run]
 
 PBT with members of several ranks on one node: N members, each a torchrun job of --nproc ranks
 (rank r of every member on the r-th GPU of CUDA_VISIBLE_DEVICES, default the first --nproc
 GPUs), on the dexpbt rule with mutation_rate 0.5, the adaptive LR schedule, torch_compile on and
 the input and value normalizers on. The last member always ranks last, alternately far behind
 (a transfer from a leader) and close behind (a self-mutation), so it restarts at nearly every
-PBT iteration. Every rank of every process reports its state after the restore
-(train_member.py --report), and check_qualification.py checks that the ranks agree and that
-every restart restored restart.pth, the fp16 loss scale included.
+PBT iteration. Every rank of every process reports its state after the restore, and after each
+change applied in process (train_member.py --report), and check_qualification.py checks that
+the ranks agree and that every restart restored restart.pth, the fp16 loss scale included.
 
   --members N      population size (default 3; the dexpbt rule needs 3 or more)
   --nproc N        ranks per member (default 2)
@@ -30,6 +31,12 @@ every restart restored restart.pth, the fp16 loss scale included.
                    rank of a restarted member must restore the same LR from restart.pth and
                    the new learning_rate (adaptive: the adapted LR scaled by its mutation)
   --max-epochs E   epochs per member (default 120)
+  --self-mutation M  restart (default), or in_process: the ranks set a self-mutation's values
+                   on the running learner
+  --transfer M     restart (default), or in_process: the ranks load the donor's restart.pth
+                   into the running learner
+  --supervise      each member under python -m rl_games.common.pbt.supervise, which runs the
+                   member's torchrun command again at each restart (--restart-mode exit)
   --out DIR        logs/ and runs/ of the qualification (default runs/pbt_nccl_<date>_<time>)
   --python PY      Python interpreter (default python3)
   --dry-run        print the commands without running them
@@ -42,6 +49,9 @@ PRECISION=default
 LSTM=()
 LR_SCHEDULE=adaptive
 MAX_EPOCHS=120
+SELF_MUTATION=restart
+TRANSFER=restart
+SUPERVISE=0
 OUT=runs/pbt_nccl_$(date +%Y%m%d_%H%M%S)
 PY=python3
 DRY_RUN=0
@@ -53,6 +63,9 @@ while [ $# -gt 0 ]; do
     --lstm) LSTM=(--lstm); shift ;;
     --lr-schedule) LR_SCHEDULE=$2; shift 2 ;;
     --max-epochs) MAX_EPOCHS=$2; shift 2 ;;
+    --self-mutation) SELF_MUTATION=$2; shift 2 ;;
+    --transfer) TRANSFER=$2; shift 2 ;;
+    --supervise) SUPERVISE=1; shift ;;
     --out) OUT=$2; shift 2 ;;
     --python) PY=$2; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -69,6 +82,12 @@ case "$LR_SCHEDULE" in
   adaptive|linear) ;;
   none) LR_SCHEDULE=None ;;  # as rl_games/configs/ppo_cartpole.yaml spells the constant LR
   *) echo "run_nccl_qualification.sh: --lr-schedule takes adaptive, linear or none, got $LR_SCHEDULE" >&2; exit 2 ;;
+esac
+case "$SELF_MUTATION" in restart|in_process) ;; *)
+  echo "run_nccl_qualification.sh: --self-mutation takes restart or in_process, got $SELF_MUTATION" >&2; exit 2 ;;
+esac
+case "$TRANSFER" in restart|in_process) ;; *)
+  echo "run_nccl_qualification.sh: --transfer takes restart or in_process, got $TRANSFER" >&2; exit 2 ;;
 esac
 case "$NPROC" in
   ''|*[!0-9]*|0) echo "run_nccl_qualification.sh: --nproc takes a number of ranks >= 1, got $NPROC" >&2; exit 2 ;;
@@ -102,11 +121,16 @@ for ((i = 0; i < MEMBERS; i++)); do
        "$HERE/train_member.py" --policy-idx "$i" --num-policies "$MEMBERS" --distributed --report
        --seed 42 --replace-rule dexpbt --mutation-rate 0.5 --interval-steps $((1024 * NPROC))
        --max-epochs "$MAX_EPOCHS" --train-dir "$OUT/runs" --fake-objective "$obj" ${LSTM[@]+"${LSTM[@]}"}
+       --self-mutation "$SELF_MUTATION" --transfer "$TRANSFER"
        agent.params.config.num_actors=8 agent.params.config.horizon_length=16
        agent.params.config.minibatch_size=64 agent.params.config.mini_epochs=2
        agent.params.config.normalize_input=true agent.params.config.normalize_value=true
        agent.params.config.torch_compile=true agent.params.config.mixed_precision="$MIXED_PRECISION"
        agent.params.config.lr_schedule="$LR_SCHEDULE")
+  if [ "$SUPERVISE" = 1 ]; then
+    cmd=("$PY" -m rl_games.common.pbt.supervise --workspace "$OUT/runs/pbt_workspace" --policy-idx "$i" --
+         "${cmd[@]}" --restart-mode exit)
+  fi
   log="$OUT/logs/member$i.log"
   if [ "$DRY_RUN" = 1 ]; then
     echo "# member $i, log $log"
@@ -126,6 +150,8 @@ for ((i = 0; i < MEMBERS; i++)); do
 done
 
 check=("$PY" "$HERE/check_qualification.py" --world-size "$NPROC" --min-restarts 3 --train-dir "$OUT/runs")
+# with a mode in process, changes in process must have run
+[ "$SELF_MUTATION$TRANSFER" = restartrestart ] || check+=(--min-in-process 2)
 if [ "$DRY_RUN" = 1 ]; then
   printf '%q ' "${check[@]}"; echo "$OUT/logs/member*.log"
   exit 0
