@@ -16,7 +16,8 @@ from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils, restart_info
 from tests.test_critical_fixes import make_cartpole_runner
 from tests.test_pbt_decisions import decisions
 from tests.test_pbt_inprocess import SCHEDULES, Learner, Member
-from tests.test_pbt_learner_api import CRITIC, StatesEnv, _CpuConfig, free_port
+from tests.test_pbt import free_port
+from tests.test_pbt_learner_api import CRITIC, StatesEnv, _CpuConfig
 from tests.test_pbt_records import (ENT, INTERVAL, LR, PARAMS, Algo, decide, execs, load_record,  # noqa: F401
                                     member_dir, restore_environ)
 

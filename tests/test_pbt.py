@@ -714,7 +714,7 @@ def test_two_process_gloo_objective_pooling_and_restart_broadcast(tmp_path):
     import torch.multiprocessing as mp
     with mp.Manager() as mgr:
         results = mgr.dict()
-        mp.spawn(_pbt_gloo_worker, args=(2, _free_port(), str(tmp_path), results), nprocs=2, join=True)
+        mp.spawn(_pbt_gloo_worker, args=(2, free_port(), str(tmp_path), results), nprocs=2, join=True)
         (iterations0, trace0, broadcasts0, restarts0), (iterations1, trace1, broadcasts1, _) = results[0], results[1]
     # after_steps at frames 0, 60, ...; boundaries are crossed at 120, 240 and 300, the third iteration,
     # where rank 0 restarts and rank 1 leaves through os._exit(0) in the same step (it records no more)
@@ -803,10 +803,12 @@ class TestReviewRound2:
         assert (state["frame"], state["epoch"]) == (7000, 55)
 
 
-def _free_port():
+def free_port():
+    """A TCP port free on every address: gloo's store listens on all of them, so a port free only
+    on 127.0.0.1 (another service holding it on another address) fails with EADDRINUSE."""
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
+        sock.bind(("", 0))
         return sock.getsockname()[1]
 
 
@@ -850,7 +852,7 @@ def test_two_process_gloo_window_gate_requires_every_rank(tmp_path):
     import torch.multiprocessing as mp
     with mp.Manager() as mgr:
         results = mgr.dict()
-        mp.spawn(_pbt_gloo_uneven_worker, args=(2, _free_port(), str(tmp_path), results), nprocs=2, join=True)
+        mp.spawn(_pbt_gloo_uneven_worker, args=(2, free_port(), str(tmp_path), results), nprocs=2, join=True)
         (iterations0, trace0), (iterations1, trace1) = results[0], results[1]
     # after_steps at frames 0, 60, ..., 660; boundaries are crossed at 120, 240, 300, 420, 540, 600.
     # The iteration due at 120 waits on both ranks until rank 1's window is full at 420

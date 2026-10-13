@@ -3,7 +3,6 @@ after_train, set_param (F15) and the central value net's counters and schedule (
 
 import datetime
 import os
-import socket
 import types
 
 import pytest
@@ -13,6 +12,7 @@ from rl_games.common import schedulers
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import MultiObserver, pbt_utils
 from tests.test_critical_fixes import make_cartpole_runner
+from tests.test_pbt import free_port
 
 SCHEDULES = {
     "identity": {"lr_schedule": None},
@@ -301,12 +301,6 @@ VALUES = {"learning_rate": 6e-4, "entropy_coef": 0.02, "weight_decay": 1e-4, "kl
           "mini_epochs": 2, "grad_norm": 0.5, "critic_coef": 2.0, "gamma": 0.98, "tau": 0.92, "e_clip": 0.15}
 DDP_SCENARIOS = {name: (name, VALUES, (0, 1)) for name in SCHEDULES}
 DDP_SCENARIOS["rank0_only"] = ("identity", {"learning_rate": 6e-4}, (0,))   # control: must desynchronize
-
-
-def free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _ddp_rank(rank, world_size, port, workdir):

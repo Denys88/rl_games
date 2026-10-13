@@ -124,10 +124,20 @@ def start(command, log_path, mode="w"):
 
 
 def descendants(pid):
+    """The processes under `pid` that run the member (its script or torch.distributed.run): worker
+    pools a member starts (torch inductor's compile workers on torch 2.7) don't count."""
     try:
-        return len(psutil.Process(pid).children(recursive=True))
+        children = psutil.Process(pid).children(recursive=True)
     except psutil.NoSuchProcess:
         return 0
+    count = 0
+    for child in children:
+        try:
+            cmdline = " ".join(child.cmdline())
+        except psutil.Error:
+            continue
+        count += os.path.basename(SCRIPT) in cmdline or "torch.distributed.run" in cmdline
+    return count
 
 
 def run_population(root, member_report, *member_args, supervise=False, watch=None):

@@ -14,8 +14,9 @@ import yaml
 from rl_games.common.a2c_common import A2CBase
 from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
 from tests.test_critical_fixes import make_cartpole_runner
+from tests.test_pbt import free_port
 from tests.test_pbt_decisions import decisions
-from tests.test_pbt_learner_api import SetParams, _CpuConfig, free_port, lrs
+from tests.test_pbt_learner_api import SetParams, _CpuConfig, lrs
 from tests.test_pbt_records import (ENT, LR, PARAMS, Algo, ExecCalled, decide, execs, member_dir,  # noqa: F401
                                     report, restore_environ)
 
@@ -139,7 +140,8 @@ def test_the_default_restarts_in_the_decision_step(tmp_path, execs):
 # a CartPole learner
 
 SCHEDULES = {"identity": {"lr_schedule": None}, "linear": {"lr_schedule": "linear", "schedule_entropy": True},
-             "adaptive": {"lr_schedule": "adaptive"}}
+             # max_lr pinned: the tests compare LRs and KLs that a lower default ceiling would shrink to noise
+             "adaptive": {"lr_schedule": "adaptive", "max_lr": 1e-2}}
 LEARNER = {"learning_rate": 3e-4, "entropy_coef": 0.01, "weight_decay": 1e-4, "kl_threshold": 0.008,
            "mini_epochs": 2, "grad_norm": 1.0, "critic_coef": 2.0, "gamma": 0.99, "tau": 0.95, "e_clip": 0.2,
            "max_epochs": 8}

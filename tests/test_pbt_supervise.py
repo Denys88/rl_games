@@ -400,7 +400,10 @@ def test_restarts_keep_the_process_tree_flat(tmp_path):
                             env=member_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         runs = wait_for_launches(tmp_path, 5, proc)
-        assert len(runs) == 5, proc.communicate(timeout=60)[0] if proc.poll() is not None else runs
+        if len(runs) != 5:
+            if proc.poll() is None:
+                os.kill(proc.pid, signal.SIGTERM)   # the supervisor takes its member's processes down
+            pytest.fail(f"{len(runs)} of 5 launches; supervisor output:\n{proc.communicate(timeout=60)[0]}")
         torchrun = psutil.Process(runs[-1]["pid"]).parent().pid
         os.kill(proc.pid, signal.SIGTERM)
         out, _ = proc.communicate(timeout=60)
