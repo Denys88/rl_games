@@ -34,6 +34,13 @@ def _show(value):
     return json.dumps(value, sort_keys=True)
 
 
+def _by_value(value):
+    """`_show(value)` with its ints as floats: ranks agree on a param's value, not its type. Rank 0
+    keeps the values its decision took (a donor's yaml may hold critic_coef: 1), the other ranks
+    the floats rank 0 broadcast."""
+    return _show(json.loads(_show(value), parse_int=float))
+
+
 def compare_ranks(where, group, failures):
     """Report each key (each entry of a dict-valued key) on which the ranks of `group` disagree."""
     for key in SAME_ON_EVERY_RANK:
@@ -44,7 +51,7 @@ def compare_ranks(where, group, failures):
         else:
             pairs = [(key, values)]
         for name, per_rank in pairs:
-            if len({_show(value) for value in per_rank}) > 1:
+            if len({_by_value(value) for value in per_rank}) > 1:
                 shown = ", ".join(f"rank {report['rank']} {_show(value)}" for report, value in zip(group, per_rank))
                 failures.append(f"{where}: ranks disagree on {name}: {shown}")
 

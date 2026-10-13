@@ -832,6 +832,9 @@ def checker(member_report, monkeypatch):
                                                                          state__model="a2")[1:] + _exits(0),
      ["--min-restarts", "0"], ['member 0 in-process self_mutation at frame 6144: ranks disagree on state.model: '
                                'rank 0 "aa", rank 1 "a2"']),
+    # rank 0 keeps the int its decision took (a donor's yaml), the other ranks the broadcast float
+    (_process(0) + _in_process("transfer", 1, 8192, params={CONFIG + "critic_coef": 1})[:1]
+     + _in_process("transfer", 1, 8192, params={CONFIG + "critic_coef": 1.0})[1:] + _exits(1), [], []),
     (_process(0) + _in_process("self_mutation", 0, 6144)[:1] + _exits(0), ["--min-restarts", "0"],
      ["member 0 in-process self_mutation at frame 6144: ranks [0] reported, expected [0, 1]"]),
     (_process(0) + _in_process("transfer", 1, 8192, checkpoint__model="ee") + _exits(1), [],
@@ -841,14 +844,15 @@ def checker(member_report, monkeypatch):
      ["the member with the most in-process changes made 1, fewer than 2"]),
 ], ids=["pass", "model-not-restored", "scale-not-restored", "rank-not-reported", "restart-count-skipped",
         "rank-not-ended", "too-few-restarts", "no-reports", "in-process-pass", "in-process-same-restart-count",
-        "in-process-ranks-disagree", "in-process-rank-not-reported", "in-process-transfer-not-restored",
-        "too-few-in-process"])
+        "in-process-ranks-disagree", "in-process-int-and-float-agree", "in-process-rank-not-reported",
+        "in-process-transfer-not-restored", "too-few-in-process"])
 def test_qualification_checker_fails_each_check(tmp_path, checker, reports, args, failures):
     """Each check of the checker on its own: a restarted process whose model or fp16 loss scale is
     not its checkpoint's, a rank without a start report, a restart count without its process (or
     in-process transfer), a rank of the last process that didn't end training, too few restarts,
-    no reports at all; ranks that disagree after an in-process change or don't report it, an
-    in-process transfer that didn't load restart.pth, too few in-process changes."""
+    no reports at all; ranks that disagree after an in-process change (an int and a float of the
+    same value agree) or don't report it, an in-process transfer that didn't load restart.pth, too
+    few in-process changes."""
     status, lines = checker(write_log(tmp_path / "member0.log", reports), *args)
     assert (status, lines) == ((1, [f"FAIL {failure}" for failure in failures] + ["FAIL"]) if failures else (0, []))
 
