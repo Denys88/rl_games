@@ -253,6 +253,21 @@ def test_a_crash_relaunches_from_the_newest_checkpoint_after_a_backoff(tmp_path)
     assert second["args"] == [f"--checkpoint={checkpoint}", f"{LR}=0.0003"]
 
 
+@pytest.mark.parametrize("earlier", [[], [{"save": 1, "restart": {"params": {LR: 0.0004}},
+                                             "status": pbt_utils.RESTART_EXIT_CODE}]],
+                         ids=["first_launch", "after_a_restart"])
+def test_a_crash_after_an_in_process_transfer_is_a_crash(tmp_path, earlier):
+    """A transfer loaded in process (`pbt.transfer: in_process`) writes restart.yaml, also over the
+    record of a restart the member ended for, and the member goes on. Its crash before the next
+    save is a crash, and the relaunch retries the transfer from restart.pth."""
+    record = {"iteration": 2, "kind": "transfer", "source_policy": 1, "params": {LR: 0.0005}}
+    steps = earlier + [{"save": 2, "restart": record, "in_process": True, "status": 3}, {"end": "max_epochs"}]
+    status, out, runs = supervise(tmp_path, steps, f"{LR}=0.0003")
+    assert status == 0 and "crashed (status 3)" in out, out
+    assert runs[-1]["payload"]["kind"] == "transfer" and runs[-1]["payload"]["attempt"] == 2
+    assert runs[-1]["args"] == [f"--checkpoint={tmp_path / 'ws' / '003' / 'restart.pth'}", f"{LR}=0.0005"]
+
+
 def test_crashes_in_a_row_stop_at_the_retry_cap(tmp_path):
     """The backoff doubles at each crash in a row; nothing to resume from: the command as given."""
     status, out, runs = supervise(tmp_path, [{"status": 3}], "--seed", "1", max_retries=2, backoff=0.5)

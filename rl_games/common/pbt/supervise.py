@@ -9,14 +9,15 @@ reports 1), the other ranks with 0. The supervisor runs the member's command (e.
 torch.distributed.run ... train.py ...`) as its only child, in a process group of its own, and
 when the child ends:
 
-- for a restart (status 75, or a restart.yaml decided since the launch) it runs the command again
-  from the record (`pbt_utils.member_resume(..., requested=True)`): the checkpoint argument, the
-  params and the seed replaced and the member's `restart_drop_args` removed, as an exec'd restart
-  does (`pbt_utils.build_launch_restart_args`), the payload in RL_GAMES_PBT_RESTART and the
-  wandb run to resume in the environment. The launcher keeps its own arguments, and no launcher
-  nests inside the old one: the processes stay the supervisor, the launcher and the ranks. With
-  nothing to restart from in the member's directory it exits 1: --workspace or --policy-idx is
-  not the member's;
+- for a restart (status 75, or a restart.yaml the member ended for since the launch: one with
+  frame_reached; a transfer loaded in process writes one without and goes on) it runs the command
+  again from the record (`pbt_utils.member_resume(..., requested=True)`): the checkpoint
+  argument, the params and the seed replaced and the member's `restart_drop_args` removed, as an
+  exec'd restart does (`pbt_utils.build_launch_restart_args`), the payload in
+  RL_GAMES_PBT_RESTART and the wandb run to resume in the environment. The launcher keeps its
+  own arguments, and no launcher nests inside the old one: the processes stay the supervisor,
+  the launcher and the ranks. With nothing to restart from in the member's directory it exits 1:
+  --workspace or --policy-idx is not the member's;
 - at a normal end (an exit.yaml written since the launch, or status 0) it exits 0;
 - when the member's owner.yaml names another process that may still run the member (one for
   which the member refused the launch, or one that took it over), it exits with the member's
@@ -92,8 +93,8 @@ class Supervisor:
         while True:
             before = self._records()
             status = self._run(command, env)
-            # which of the member's records the child changed
-            decided, ended, saved = (now != then for now, then in zip(self._records(), before))
+            # which of the member's records the child wrote (None: none, or a restart.yaml it went on from)
+            decided, ended, saved = (now is not None and now != then for now, then in zip(self._records(), before))
             progress = progress or saved  # a new workspace checkpoint since the supervisor started
             if self.signal is not None:
                 return _exit_status(status)
@@ -129,12 +130,16 @@ class Supervisor:
                 command, env = relaunch(self.command, resume)
 
     def _records(self):
-        """(restart.yaml's decision time, exit.yaml's time, [the newest saved iteration]) of the member."""
-        def time_of(name):
-            return (pbt_utils.read_record(self.member_dir, name) or {}).get("time")
+        """(restart.yaml's decision time once the member ended for it, exit.yaml's time, [the newest
+        saved iteration]) of the member. The member ends for restart.yaml after it adds frame_reached
+        (`PbtAlgoObserver._exit_for_restart`); a transfer loaded in process, or an exec'd restart,
+        writes the record without it and goes on."""
+        def read(name):
+            return pbt_utils.read_record(self.member_dir, name) or {}
 
+        restart, ended = read(pbt_utils.RESTART_RECORD), read(pbt_utils.EXIT_RECORD)
         saved = pbt_utils.saved_iterations(self.member_dir) if os.path.isdir(self.member_dir) else []
-        return time_of(pbt_utils.RESTART_RECORD), time_of(pbt_utils.EXIT_RECORD), saved[-1:]
+        return restart.get("time") if "frame_reached" in restart else None, ended.get("time"), saved[-1:]
 
     def _other_owner(self):
         """The member's owner record when the process it names may still run the member, now that the

@@ -8,6 +8,8 @@ PLAN is a JSON file: {"member_dir", "policy_idx", "log", "yaml": fields every wo
   save: an iteration: its workspace yaml and checkpoint, the params from the agent.*=value ARGS;
   restart: restart.pth and the restart.yaml a decision under `pbt.restart_mode: exit` leaves,
       with the dict's fields in place of the defaults;
+  in_process: with restart, the restart.yaml of a transfer loaded in process (`pbt.transfer:
+      in_process`): without what the exit adds (frame_reached, environ);
   end: an exit reason: the exit record of a normal end;
   child: start a child in this process group, which outlives this process;
   hang: wait for a signal;
@@ -94,13 +96,16 @@ def main():
         with open(checkpoint, "wb") as fobj:
             fobj.write(b"restart")
         iteration = step["restart"].get("iteration", 1)
-        write_yaml(os.path.join(member_dir, "restart.yaml"), dict({
+        record = dict({
             "schema": 1, "kind": "self_mutation", "policy_idx": plan["policy_idx"],
             "source_policy": plan["policy_idx"], "restart_count": restart_count + 1, "iteration": iteration,
             "frame": iteration * 1000, "checkpoint": checkpoint, "mutated": step["restart"]["params"],
             "experiment_name": "member", "time": time.time(), "epoch": iteration * 8 - 1,
             "params": step["restart"]["params"], "seed": None, "seed_arg": "--seed",
-            "frame_reached": iteration * 1000 + 128, "environ": {}}, **step["restart"]))
+            "frame_reached": iteration * 1000 + 128, "environ": {}}, **step["restart"])
+        if step.get("in_process"):
+            del record["frame_reached"], record["environ"]
+        write_yaml(os.path.join(member_dir, "restart.yaml"), record)
     if "end" in step:
         write_yaml(os.path.join(member_dir, "exit.yaml"), {"schema": 1, "reason": step["end"], "frame": 0,
                                                            "epoch": 0, "time": time.time(), "launch_id": "fake"})
