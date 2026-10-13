@@ -35,8 +35,8 @@ def main(argv=None) -> int:
     parser.add_argument("--format", choices=("json", "shell"), default="json",
                         help="json: the dict (default); shell: an export and a set -- for a launcher to eval")
     parser.add_argument("--checkpoint-arg", default=None,
-                        help="the train script's checkpoint argument (default: the one the member's workspace "
-                             "yaml records, else --checkpoint)")
+                        help="the train script's checkpoint argument (default: the one the member's restart.yaml "
+                             "or workspace yaml records, else --checkpoint)")
     args = parser.parse_args(argv)
     resume = pbt_utils.member_resume(args.workspace, args.policy_idx)
     if args.format == "json":
