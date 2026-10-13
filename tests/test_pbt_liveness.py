@@ -23,7 +23,8 @@ from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
 from rl_games.common.pbt.pbt_cfg import settings_hash
 from tests.test_critical_fixes import make_cartpole_runner
 from tests.test_pbt_decisions import decisions, load_yaml, member
-from tests.test_pbt_learner_api import _CpuConfig, free_port
+from tests.test_pbt import free_port
+from tests.test_pbt_learner_api import _CpuConfig
 from tests.test_pbt_records import (INTERVAL, LR, Algo, decide, execs, member_dir, report,  # noqa: F401
                                     restore_environ)
 
@@ -278,6 +279,19 @@ def test_the_owner_record_is_written_at_init_and_renewed_at_every_boundary(tmp_p
     renewed = load_owner(tmp_path)
     assert renewed["heartbeat"] >= first["heartbeat"] and renewed["iteration_seconds"] > 0
     assert renewed["started"] == first["started"] and renewed["launch_id"] == obs.launch_id
+
+
+def test_the_iteration_time_is_per_iteration_crossed(tmp_path, monkeypatch):
+    """The lag that makes a peer stale is max_member_lag × this member's iteration wall time: the
+    time between two boundaries divided by the iterations between them (a wait spans several)."""
+    obs = member(tmp_path, max_member_lag=10)
+    obs.after_init(Algo(tmp_path, epoch_num=40))
+    clock = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    obs._heartbeat(1)
+    clock[0] += 30.0
+    obs._heartbeat(4)
+    assert obs._member_lag() == 10 * 10.0
 
 
 @pytest.fixture

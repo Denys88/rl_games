@@ -224,6 +224,15 @@ class TestForcedOutcome:
         assert pbt_utils.select_dexpbt(objectives, 0, 2.0, 2.0, PbtCfg(num_policies=3))[0] is None
         assert pbt_utils.select_threshold(objectives, 0, PbtCfg(num_policies=3, replace_rule="threshold"))[0] is None
 
+    def test_best_breaks_a_tie_in_the_shared_order(self):
+        """Members tied at the top: "best" is the first of them in the iteration's tie order, the
+        order every member ranks them in, not the highest index."""
+        objectives = {0: 3.0, 1: 1.0, 2: 3.0}
+        for iteration in range(6):
+            order = pbt_utils.tie_break_order("ws", iteration, 3)
+            expected = next(p for p in order if objectives[p] == 3.0)
+            assert pbt_utils.select_forced("best", 1, objectives, order)[0] == expected
+
     def test_a_forced_self_mutation_that_changes_nothing_keeps_training(self, tmp_path, capsys):
         obs = observer(tmp_path, 0, 1, force_outcome="self", mutation_rate=0.0)
         iterate(obs, Algo(tmp_path), 1, 1.0)

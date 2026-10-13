@@ -4,7 +4,6 @@ per-iteration param scalars."""
 
 import json
 import os
-import socket
 import sys
 import types
 
@@ -15,7 +14,7 @@ import yaml
 
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import MultiObserver, PbtAlgoObserver, pbt_utils
-from tests.test_pbt import BandWriter, FakeAlgo, make_observer, synthetic_ckpt
+from tests.test_pbt import BandWriter, FakeAlgo, free_port, make_observer, synthetic_ckpt
 
 NAN, INF = float("nan"), float("inf")
 DONE4 = torch.arange(4).reshape(-1, 1)          # every env of a 4-env rank finished
@@ -314,12 +313,6 @@ def test_a_member_diverging_mid_interval_keeps_its_last_finite_checkpoint(tmp_pa
 
 # ---------------------------------------------------------------------------------------------
 # Two gloo ranks: the gate decides on pooled values, so both ranks wait, advance and raise together.
-
-def free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
 
 def _gloo_member(rank, world_size, port, workdir, scenario):
     """One rank of a 2-rank member: 4 envs per rank, interval 100, 60 frames per epoch. Rank 1's
