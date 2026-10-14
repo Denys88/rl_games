@@ -119,7 +119,7 @@ def test_empty_and_single_wrap_controls_keep_original_contract():
 
 
 def test_public_sac_training_with_more_actors_than_replay_capacity(tmp_path):
-    from test_sac_correctness import make_fake_env_sac_agent
+    from tests.test_sac_correctness import make_fake_env_sac_agent
 
     agent, environment = make_fake_env_sac_agent(
         num_envs=11,
