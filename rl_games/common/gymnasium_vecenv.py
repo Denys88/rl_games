@@ -128,6 +128,8 @@ class GymnasiumVecEnv(IVecEnv):
             self.observation_space = single_obs_space
             self.action_space = single_action_space
 
+        self._use_global_observations = self.get_env_info()['use_global_observations']
+
     def step(self, action):
         if self._use_native_vec:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
@@ -167,8 +169,7 @@ class GymnasiumVecEnv(IVecEnv):
 
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
-        use_global_obs = self.get_env_info()['use_global_observations']
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
@@ -210,8 +211,7 @@ class GymnasiumVecEnv(IVecEnv):
             obs, info = env.reset()
             all_obs.append(obs)
 
-        use_global_obs = self.get_env_info()['use_global_observations']
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
@@ -224,6 +224,7 @@ class GymnasiumVecEnv(IVecEnv):
         return ret_obs
 
     def _get_num_agents(self, env):
+        env = getattr(env, 'unwrapped', env)
         if hasattr(env, 'get_number_of_agents'):
             return env.get_number_of_agents()
         return 1
@@ -250,7 +251,7 @@ class GymnasiumVecEnv(IVecEnv):
         # the same step — the done row already carries the post-reset obs.
         info['autoreset_mode'] = 'next_step' if self._use_native_vec else 'same_step'
         if not self._use_native_vec and self.envs:
-            sample_env = self.envs[0]
+            sample_env = getattr(self.envs[0], 'unwrapped', self.envs[0])
             if hasattr(sample_env, 'use_central_value'):
                 info['use_global_observations'] = sample_env.use_central_value
             if hasattr(sample_env, 'value_size'):
