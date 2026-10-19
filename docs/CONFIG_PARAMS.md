@@ -46,7 +46,7 @@ Selects autocast for the policy and critic forward passes, in rollouts and in up
 | `fp16` | float16 autocast | `GradScaler` |
 | `bf16` | bfloat16 autocast | none |
 
-`True` selects `bf16` and warns. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
+`True` selects `fp16`. fp16 overflows above 65,504: with large returns, keep `normalize_value: true`. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
 
 Keep the default for continuous control. bf16 keeps 8 significant bits, so it rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.1, that rounding adds noise to the PPO ratio and a KL of 0.01 to 0.03 per update at any learning rate. With `lr_schedule: adaptive`, the rate then falls to `min_lr`. fp16 rounds 8 times finer and does neither.
 
@@ -63,6 +63,15 @@ Keep the default for continuous control. bf16 keeps 8 significant bits, so it ro
 
 Use `fp16` when the network update dominates the iteration time, for example with image encoders. With small MLPs the simulator dominates and TF32 is as fast.
 
+### `torch_compile`
+
+Wraps the model forwards in `torch.compile`. Default: `False`. Accepts `True`, a mode name
+(`default`, `reduce-overhead`, `max-autotune`) or a dict with `mode` and `critic_mode`.
+
+On default-size policy networks compile is a net loss of about 1 % of total throughput (RTX PRO 6000,
+torch 2.13), and it adds startup time. It pays on large networks, about +2–3 % at
+`[4096, 2048, 1024]`. `docs/TORCH_COMPILE.md` covers the modes.
+
 ## Adaptive LR (under `config:`)
 
 ### `schedule_type`
@@ -75,9 +84,14 @@ config:
   lr_schedule: adaptive
   schedule_type: per_minibatch   # default; 'legacy' is a permanent alias
   kl_threshold: 0.008
-  min_lr: 1e-5                   # ALWAYS set both bounds explicitly:
-  max_lr: 1e-3                   # class defaults (1e-6 / 1e-2) are too wide
+  # set both bounds per task; keep the dot: YAML 1.1 reads a bare 1e-5 as a string
+  min_lr: 1.0e-5
+  max_lr: 1.0e-3
 ```
+
+Default `max_lr` changed 1e-2 → 1e-3 in 2.0.0: adaptive configs without an
+explicit `max_lr` now cap the KL-driven raise at 1e-3; set `max_lr: 1.0e-2`
+to restore the old ceiling.
 
 | Value | LR updates | KL input | When |
 |-------|------------|----------|------|
@@ -210,6 +224,26 @@ All metrics cover valid learner minibatch rows and are local to the writer's
 rank under DDP. Diagnostics add reductions, device synchronizations and, for
 the post-step group, one forward per minibatch, so account for this when
 measuring throughput. They are disabled by default.
+
+## Symmetry (under `config:`)
+
+### `symmetry_loss`
+
+Adds a mirror-consistency loss on the policy mean: the mean on mirrored observations is pulled
+toward the mirrored mean on the original observations, as in rsl-rl's mirror loss. Default: off.
+Applies to: continuous PPO with a feed-forward policy and flat observations.
+
+```yaml
+config:
+  symmetry_loss:
+    coef: 0.5
+    maps: mjlab_microduck.tasks.symmetry:mirror_maps
+```
+
+`maps` names a dict, or a function that returns one, with `obs_perm`, `obs_sign`, `act_perm` and
+`act_sign`. The mirror of an observation is `obs[:, obs_perm] * obs_sign` on the raw layout, and
+likewise for actions. Mirrored observations do not update the observation normalizer. The loss is
+logged as `losses/symmetry_loss`. On several GPUs, set `multi_gpu_grad_sync: 'flat_allreduce'`.
 
 ## Sigma Parametrization (under `network: space: continuous:`)
 

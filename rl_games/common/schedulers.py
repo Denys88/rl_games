@@ -17,7 +17,7 @@ class IdentityScheduler(RLScheduler):
 
 
 class AdaptiveScheduler(RLScheduler):
-    def __init__(self, kl_threshold=0.008, min_lr=1e-6, max_lr=1e-2, lr_multiplier=1.5):
+    def __init__(self, kl_threshold=0.008, min_lr=1e-6, max_lr=1e-3, lr_multiplier=1.5):
         super().__init__()
         self.min_lr = min_lr
         self.max_lr = max_lr

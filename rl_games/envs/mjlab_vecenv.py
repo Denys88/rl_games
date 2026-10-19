@@ -35,7 +35,11 @@ class MjlabVecEnv(IVecEnv):
         if self.device == 'cuda' and local_rank is not None:
             self.device = f'cuda:{local_rank}'
 
-        cfg = load_env_cfg(task_name)
+        # play=True loads the task's separately-registered play cfg (infinite
+        # episodes, obs corruption off) -- for watching/evaluating a policy,
+        # not training
+        play = kwargs.pop('play', False)
+        cfg = load_env_cfg(task_name, play=True) if play else load_env_cfg(task_name)
         cfg.scene.num_envs = num_actors
         # honor the runner-injected seed (already rank-offset under multi-GPU):
         # without this mjlab draws a random seed and env randomization is

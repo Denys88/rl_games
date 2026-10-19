@@ -278,8 +278,9 @@ class Runner:
         # across sequential rollout calls and LSTM internal allocations violate
         # CUDA graph memory pool constraints during backward pass.
 
-        # Enable torch.compile for performance if requested
-        compile_config = self.params.get('config', {}).get('torch_compile', True)
+        # Off by default: on default-size networks compile costs about 1 % of
+        # total throughput and adds startup time; it pays on large networks.
+        compile_config = self.params.get('config', {}).get('torch_compile', False)
 
         if compile_config is False:
             print("torch.compile: Disabled")

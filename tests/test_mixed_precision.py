@@ -91,9 +91,9 @@ def test_resolve_values(value, dtype):
 
 
 @pytest.mark.parametrize('value', [True, 1, 'true', 'True', '1'])
-def test_resolve_true_is_bf16_with_warning(value):
-    with pytest.warns(UserWarning, match='fp16'):
-        assert torch_ext.resolve_mixed_precision(value, 'cuda:0') is torch.bfloat16
+def test_resolve_true_is_fp16(value, recwarn):
+    assert torch_ext.resolve_mixed_precision(value, 'cuda:0') is torch.float16
+    assert not recwarn.list
 
 
 @pytest.mark.parametrize('value', [0, '0', 'False', 'FALSE'])
