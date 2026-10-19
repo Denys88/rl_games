@@ -56,7 +56,7 @@ def dicts_to_dict_with_arrays(dicts, add_batch_dim = True):
             return np.concatenate(v)
 
     dicts_len = len(dicts)
-    if(dicts_len <= 1):
+    if dicts_len == 0:
         return dicts
     res = defaultdict(list)
     { res[key].append(sub[key]) for sub in dicts for key in sub }
