@@ -1,0 +1,88 @@
+params:
+  seed: 7
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: -0.7  # sigma ~0.5; entropy bonus is off, start exploration sane
+        fixed_sigma: True
+    mlp:
+      units: [512, 256, 128]
+      activation: elu
+      initializer:
+        name: default
+
+  config:
+    name: boxhead_soccer_2v2_selfplay
+    full_experiment_name: boxhead_soccer_2v2_selfplay
+    env_name: dmc_soccer_selfplay
+    reward_shaper:
+      scale_value: 0.1
+    normalize_input: True
+    normalize_value: True
+    normalize_advantage: True
+    value_bootstrap: True
+    device: cpu
+
+    # 256 matches x 2 home players = 512 actors sharing one policy;
+    # away teams are played by the opponent league (8 types per rollout)
+    num_actors: 512
+    env_config:
+      env_name: BoxheadSoccer2v2-v1
+      players_per_match: 4
+      max_episode_steps: 600
+      # opponent league for robustness: scripted + random + frozen past
+      # checkpoints (lagged self-play), one type per match
+      opponent: league
+      league_ckpt_dir: runs/boxhead_soccer_2v2_selfplay/nn
+      league_refresh: 500
+      # reward shaping (see docs/DMC_SOCCER_SELFPLAY.md for the failure
+      # modes each choice prevents)
+      goal_w_score: 150.0
+      goal_w_concede: 0.0
+      vel_ball_w: 0.5
+      vel_player_w: 0.25
+      time_w: 0.05
+      team_chase: true
+      # anneal dense terms 1.0 -> 0.15 over 1M env steps so the goal reward
+      # dominates once chase/dribble are bootstrapped
+      dense_anneal_steps: 1000000
+      dense_floor: 0.15
+      seed: 7
+
+    horizon_length: 64
+    minibatch_size: 8192
+    mini_epochs: 4
+    ppo: True
+    e_clip: 0.2
+    clip_value: True
+    critic_coef: 2.0
+    # entropy bonus OFF: with mastered dense rewards its gradient dominates
+    # and inflates sigma without bound -> the policy decays into noise.
+    # League opponents + dense shaping already explore.
+    entropy_coef: 0.0
+    learning_rate: 3e-4
+    lr_schedule: adaptive
+    kl_threshold: 0.008
+    gamma: 0.995
+    tau: 0.95
+    grad_norm: 1.0
+    truncate_grads: True
+    bounds_loss_coef: 0.001
+    max_epochs: 20000
+    save_best_after: 200
+    save_frequency: 200
+    score_to_win: 1000000
