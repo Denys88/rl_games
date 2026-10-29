@@ -46,18 +46,25 @@ def wrap_atari(env, frame_stack=4, noop_max=30, frame_skip=4,
     return env
 
 
-def _dicts_to_dict_with_arrays(dicts, squeeze=False):
-    """Convert a list of dicts to a dict of stacked arrays."""
+def _dicts_to_dict_with_arrays(dicts, squeeze=False, concat_func=np.stack):
+    """Combine dictionary array leaves with the supplied batch operation."""
     result = {}
     for key in dicts[0].keys():
         values = [d[key] for d in dicts]
         if isinstance(values[0], dict):
-            result[key] = _dicts_to_dict_with_arrays(values, squeeze)
+            result[key] = _dicts_to_dict_with_arrays(values, squeeze, concat_func)
         else:
-            result[key] = np.stack(values)
+            result[key] = concat_func(values)
             if squeeze:
                 result[key] = result[key].squeeze()
     return result
+
+
+def _concat_observations(observations, concat_func):
+    """Batch array leaves while retaining the observation dictionary structure."""
+    if isinstance(observations[0], dict):
+        return _dicts_to_dict_with_arrays(observations, concat_func=concat_func)
+    return concat_func(observations)
 
 
 class GymnasiumVecEnv(IVecEnv):
@@ -121,6 +128,8 @@ class GymnasiumVecEnv(IVecEnv):
             self.observation_space = single_obs_space
             self.action_space = single_action_space
 
+        self._use_global_observations = self.get_env_info()['use_global_observations']
+
     def step(self, action):
         if self._use_native_vec:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
@@ -160,17 +169,15 @@ class GymnasiumVecEnv(IVecEnv):
 
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
-        # Check if obs are dicts (central_value)
-        use_global_obs = isinstance(all_obs[0], dict) and 'obs' in all_obs[0]
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
-                'obs': concat_func(newobs),
-                'states': np.stack(newstates),
+                'obs': _concat_observations(newobs, concat_func),
+                'states': _concat_observations(newstates, np.stack),
             }
         else:
-            ret_obs = concat_func(all_obs)
+            ret_obs = _concat_observations(all_obs, concat_func)
 
         rewards = concat_func(all_rewards)
         dones = concat_func(all_dones)
@@ -204,20 +211,20 @@ class GymnasiumVecEnv(IVecEnv):
             obs, info = env.reset()
             all_obs.append(obs)
 
-        use_global_obs = isinstance(all_obs[0], dict) and 'obs' in all_obs[0]
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
-                'obs': concat_func(newobs),
-                'states': np.stack(newstates),
+                'obs': _concat_observations(newobs, concat_func),
+                'states': _concat_observations(newstates, np.stack),
             }
         else:
-            ret_obs = concat_func(all_obs)
+            ret_obs = _concat_observations(all_obs, concat_func)
 
         return ret_obs
 
     def _get_num_agents(self, env):
+        env = getattr(env, 'unwrapped', env)
         if hasattr(env, 'get_number_of_agents'):
             return env.get_number_of_agents()
         return 1
@@ -244,7 +251,7 @@ class GymnasiumVecEnv(IVecEnv):
         # the same step — the done row already carries the post-reset obs.
         info['autoreset_mode'] = 'next_step' if self._use_native_vec else 'same_step'
         if not self._use_native_vec and self.envs:
-            sample_env = self.envs[0]
+            sample_env = getattr(self.envs[0], 'unwrapped', self.envs[0])
             if hasattr(sample_env, 'use_central_value'):
                 info['use_global_observations'] = sample_env.use_central_value
             if hasattr(sample_env, 'value_size'):
