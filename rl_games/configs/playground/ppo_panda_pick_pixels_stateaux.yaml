@@ -2,7 +2,7 @@
 # scratch WITH an auxiliary loss that regresses the privileged 66-d state from
 # the CNN trunk (actor_critic_state_aux). No teacher: the privileged
 # information is a prediction target only. Third arm next to
-# ppo_panda_pick_pixels_stateaux.yaml (scratch) and ppo_panda_pick_pixels_distill.yaml.
+# ppo_panda_pick_pixels.yaml (scratch) and ppo_panda_pick_pixels_distill.yaml.
 #
 #   LD_LIBRARY_PATH=/usr/lib/wsl/lib python scripts/playground_train.py -f rl_games/configs/playground/ppo_panda_pick_pixels_stateaux.yaml
 params:

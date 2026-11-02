@@ -39,7 +39,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'normalize_input_init_count': self.normalize_input_init_count,
         }
         if self.store_states and hasattr(self, 'state_space'):
-            build_config['state_shape'] = self.state_space.shape
+            config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(config)
         self.model.to(self.ppo_device)
@@ -86,7 +86,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.distill_config is not None:
             from rl_games.common.distillation import TeacherDistillation
             self.distill = TeacherDistillation.from_config(
-                self.distill_config, self.state_space.shape, self.actions_num, self.ppo_device)
+                self.distill_config, self.state_space.shape, self.actions_num, self.ppo_device, self.is_discrete)
             if self.has_central_value and self.distill.warm_start_value:
                 self.distill.warm_start_central_value(self.central_value_net.model)
         self.algo_observer.after_init(self)
@@ -116,6 +116,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         with torch.no_grad():
             res_dict = self.inference_model()(input_dict)
+            if self.distill is not None:
+                res_dict = self.distill.mix_actions(res_dict, obs['states'], self.epoch_num, action_masks)
             if self.has_central_value:
                 input_dict = {
                     'is_train': False,
@@ -190,10 +192,12 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
+            value_loss = 0.5 * c_loss * self.critic_coef
+            loss = a_loss + value_loss - entropy * self.entropy_coef
             if self.distill is not None:
-                d_loss = self.distill.loss(res_dict, input_dict['states'], rnn_masks)
-                loss = self.distill.ppo_coef(self.epoch_num) * loss + self.distill.coef(self.epoch_num) * d_loss
+                d_loss = self.distill.loss(res_dict, input_dict['states'], rnn_masks,
+                                           action_masks=batch_dict.get('action_masks', None))
+                loss = self.distill.combine(loss, value_loss, d_loss, self.epoch_num)
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
             if self.distill is not None:

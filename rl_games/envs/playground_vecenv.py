@@ -4,6 +4,7 @@ Any playground env (manipulation / dm_control_suite / locomotion) with
 
   obs: state   -> float32 (N, state_dim)          the env's privileged state vector
   obs: pixels  -> uint8   (N, H, W, 3)            camera 0 of the built-in renderer
+                                                  (floats in `pixel_range`, default [0, 1])
   obs: both    -> {'obs': uint8 pixels, 'states': float32 state}
 
 so a state teacher and a pixel student see the same physics state (see
@@ -13,7 +14,10 @@ CartpoleBalance), computed from the same `data` the pixels are rendered
 from, so it is identical in every obs mode.
 
 Episodes: brax EpisodeWrapper (time limit -> `time_outs`) + AutoReset with
-`full_reset=True` (a fresh random reset on done). Steps are jitted; tensors
+`full_reset=True` (a fresh random reset on done). `time_outs` is rebuilt from
+the step counter, so an episode that terminates exactly on the time limit is
+also flagged as a time-out (the wrapper's own `truncation` flag does not
+survive the auto reset). Steps are jitted; tensors
 reach torch via dlpack. Measured on an RTX 5090 at 1024 worlds:
 PandaPickCubeCartesian 6.7k steps/s (state) / 5.8k (64x64 pixels),
 CartpoleBalance 393k / 72k.
@@ -59,6 +63,12 @@ class PlaygroundVecEnv(IVecEnv):
         seed = int(kwargs.pop('seed', 0))
         cam_res = tuple(int(x) for x in kwargs.pop('cam_res', (64, 64)))
         full_reset = bool(kwargs.pop('full_reset', True))
+        # value range of the renderer's floats, mapped onto uint8 0..255. Manipulation
+        # envs give RGB in [0, 1]; dm_control_suite vision envs give mean-centred
+        # grayscale frame stacks in [-0.5, 0.5] (set pixel_range: [-0.5, 0.5] there)
+        pix_lo, pix_hi = (float(x) for x in kwargs.pop('pixel_range', (0.0, 1.0)))
+        if pix_hi <= pix_lo:
+            raise ValueError(f'pixel_range must be [lo, hi] with hi > lo, got {(pix_lo, pix_hi)}')
         overrides = kwargs.pop('config_overrides', None) or {}
         vision = self.obs_mode in ('pixels', 'both')
 
@@ -89,7 +99,7 @@ class PlaygroundVecEnv(IVecEnv):
             pix = None
             if vision:
                 p = st.obs['pixels/view_0'] if isinstance(st.obs, dict) else st.obs
-                pix = jnp.clip(p * 255.0, 0, 255).astype(jnp.uint8)
+                pix = jnp.clip((p - pix_lo) * (255.0 / (pix_hi - pix_lo)), 0, 255).astype(jnp.uint8)
             return pix, state
 
         def _reset(key):

@@ -64,8 +64,11 @@ def main():
             results.append(inf['achievements'][i].cpu().numpy()); finished[i] = True
         if finished.all():
             break
-    print(f'{finished.sum()} episodes in {time.time() - t0:.1f}s; reward mean {rewards[finished].mean():.2f}, '
-          f'len mean {lengths[finished].mean():.0f}')
+    if finished.any():
+        print(f'{finished.sum()} episodes in {time.time() - t0:.1f}s; reward mean {rewards[finished].mean():.2f}, '
+              f'len mean {lengths[finished].mean():.0f}')
+    else:
+        print(f'no episode finished within {args.max_steps} steps ({time.time() - t0:.1f}s)')
     if results:
         rates = np.mean(np.stack(results), axis=0)
         print(f'crafter score {crafter_score(rates):.1f}; achievements:',

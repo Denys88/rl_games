@@ -38,9 +38,15 @@ What happens inside the agent:
 - `get_action_values`: with probability `beta` a row's env action is the
   teacher's sample; the student's `neglogp` is recomputed for those rows so the
   PPO importance ratios stay valid.
-- `calc_gradients`: `loss = ppo_coef * ppo_loss + coef * KL(teacher || student)`
-  on the minibatch's states; logged as `losses/distill`, with
-  `info/distill_coef`, `info/ppo_coef`, `info/teacher_beta`.
+- `calc_gradients`: `loss = ppo_coef * (actor + entropy + bounds) + critic
+  + coef * KL(teacher || student)` on the minibatch's states; logged as
+  `losses/distill`, with `info/distill_coef`, `info/ppo_coef`,
+  `info/teacher_beta`. `ppo_coef` scales the policy part only, so the value
+  head keeps fitting the student's returns through the pure-DAgger phase
+  instead of meeting PPO cold (with a central value net this is moot: it
+  trains on its own and is warm-started).
+- Discrete envs with `use_action_masks`: the teacher's logits get the same
+  masks as the student's, both in the loss and in the beta-mixing.
 - Warm start: every teacher tensor whose name and shape match a tensor of the
   central-value model is copied (trunk, value head, input and value
   normalisers). The teacher's critic is a privileged-state value function, so
@@ -48,7 +54,16 @@ What happens inside the agent:
   teacher's MLP as the `central_value_config` network for a full match.
 
 The env must return `{'obs': ..., 'states': ...}` and expose `state_space`
-in `get_env_info()`.
+in `get_env_info()` (a missing `states` key fails at the first reset with a
+message naming the config block that needs it).
+
+Limits: the teacher is feedforward (it gets no rnn states), teacher and
+student share the action space type (`a2c_discrete` <-> `a2c_discrete`,
+`a2c_continuous` <-> `a2c_continuous`; checked at init), multi-discrete is
+not supported. With `lr_schedule: adaptive` the KL between consecutive
+student policies is driven by the distillation term during the DAgger phase
+and can collapse the learning rate; use `fixed` or `linear` there (the Panda
+config does).
 
 ## Vision env: Craftax-Classic
 

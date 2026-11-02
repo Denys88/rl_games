@@ -57,6 +57,7 @@ class CraftaxVecEnv(IVecEnv):
         from craftax.craftax_classic.renderer import make_craftax_pixel_renderer, render_craftax_symbolic
 
         self._jax, self._jnp = jax, jnp
+        self._jax_gpu = jax.default_backend() == 'gpu'
         env = make_craftax_env_from_name('Craftax-Classic-Symbolic-v1', auto_reset=True)
         params = env.default_params
         if 'max_timesteps' in kwargs:
@@ -113,6 +114,10 @@ class CraftaxVecEnv(IVecEnv):
 
     def _to_jax(self, t):
         t = t.detach().to(torch.int32).contiguous()
+        if self._jax_gpu and t.device.type != 'cuda':
+            # a CPU-committed dlpack array would pull the whole jitted step
+            # onto the JAX CPU backend
+            t = t.cuda()
         try:
             return self._jax.dlpack.from_dlpack(t)
         except Exception:

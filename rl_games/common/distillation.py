@@ -25,6 +25,16 @@ Because PPO's on-policy buffer is rebuilt from the student's own rollouts
 every epoch, the distillation term IS DAgger: supervised on the states the
 student visits. With ppo_coef 0 it is pure DAgger; ramping ppo_coef up and
 coef down gives DAgger -> PPO fine-tune; both on gives teacher-guided RL.
+
+ppo_coef scales the policy part of the PPO loss only (actor, entropy, bounds);
+the critic keeps fitting the student's returns during the DAgger phase, so it
+is not cold when PPO switches on. With a central value net this is moot: the
+central value trains on its own and `warm_start_value` seeds it from the
+teacher.
+
+Limits: the teacher is feedforward (no rnn states are passed to it), the
+student's action space must be the teacher's (discrete <-> discrete or
+continuous <-> continuous), and multi-discrete is not supported.
 """
 
 import numpy as np
@@ -92,33 +102,58 @@ class TeacherDistillation:
         return self.teacher({'obs': states, 'is_train': False})
 
     @classmethod
-    def from_config(cls, config, state_shape, actions_num, device):
-        """Build the frozen teacher from its own yaml + checkpoint."""
+    def from_config(cls, config, state_shape, actions_num, device, is_discrete=None):
+        """Build the frozen teacher from its own yaml + checkpoint. `is_discrete`
+        is the student's action space; it must match the teacher's."""
         from rl_games.algos_torch.model_builder import ModelBuilder
         params = yaml.safe_load(open(config['teacher_config']))['params']
+        teacher_algo = params['algo']['name']
+        if teacher_algo not in ('a2c_discrete', 'a2c_continuous'):
+            raise ValueError(f"distillation teacher must be a2c_discrete or a2c_continuous, got '{teacher_algo}'")
+        teacher_discrete = teacher_algo == 'a2c_discrete'
+        if is_discrete is not None and bool(is_discrete) != teacher_discrete:
+            raise ValueError("distillation teacher and student must share the action space type "
+                             f"(teacher {teacher_algo}, student {'discrete' if is_discrete else 'continuous'})")
         net = ModelBuilder().load(params)
         tcfg = params['config']
         model = net.build({'actions_num': actions_num, 'input_shape': tuple(state_shape), 'num_seqs': 1,
                            'value_size': tcfg.get('value_size', 1),
                            'normalize_value': tcfg.get('normalize_value', False),
                            'normalize_input': tcfg.get('normalize_input', False)})
+        if model.is_rnn():
+            raise NotImplementedError('distillation teacher must be feedforward: the teacher gets no rnn states')
         ckpt = torch.load(config['teacher_checkpoint'], map_location=device, weights_only=False)
         model.load_state_dict(_strip_prefix(ckpt['model']))
-        is_discrete = params['algo']['name'] == 'a2c_discrete'
         print(f"[Distillation] teacher {config['teacher_checkpoint']} (epoch {ckpt.get('epoch', '?')}), "
-              f"{'discrete' if is_discrete else 'continuous'}, coef {config.get('coef')}, "
+              f"{'discrete' if teacher_discrete else 'continuous'}, coef {config.get('coef')}, "
               f"ppo_coef {config.get('ppo_coef')}, beta {config.get('beta')}")
-        return cls(config, model, is_discrete, device)
+        return cls(config, model, teacher_discrete, device)
 
     # ---------------------------------------------------------------- loss
 
-    def loss(self, res_dict, states, rnn_masks=None):
-        """Mean distillation loss over rows (masked when rnn_masks given)."""
+    @staticmethod
+    def _logits(d, action_masks=None):
+        logits = d['logits']
+        if isinstance(logits, (list, tuple)):
+            raise NotImplementedError('distillation does not support multi-discrete action spaces')
+        logits = logits.float()
+        if action_masks is not None:
+            # invalid actions get -inf like CategoricalMasked does for the student,
+            # otherwise KL(teacher || student) is +inf wherever the student has -inf
+            logits = logits.masked_fill(~action_masks.bool(), float('-inf'))
+        return logits
+
+    def loss(self, res_dict, states, rnn_masks=None, action_masks=None):
+        """Mean distillation loss over rows (masked when rnn_masks given).
+        `action_masks` (discrete, bool [rows, actions]) restrict both policies
+        to the valid actions."""
         t = self.teacher_forward(states)
         if self.is_discrete:
-            logp_t = torch.log_softmax(t['logits'].float(), dim=-1)
-            logp_s = torch.log_softmax(res_dict['logits'].float(), dim=-1)
-            per_row = (logp_t.exp() * (logp_t - logp_s)).sum(dim=-1)
+            logp_t = torch.log_softmax(self._logits(t, action_masks), dim=-1)
+            logp_s = torch.log_softmax(self._logits(res_dict, action_masks), dim=-1)
+            p_t = logp_t.exp()
+            # 0 * (-inf - -inf) is nan: masked actions contribute nothing
+            per_row = torch.where(p_t > 0, p_t * (logp_t - logp_s), torch.zeros_like(p_t)).sum(dim=-1)
         else:
             mu_s, sig_s = res_dict['mus'].float(), res_dict['sigmas'].float()
             mu_t, sig_t = t['mus'].float(), t['sigmas'].float()
@@ -138,9 +173,17 @@ class TeacherDistillation:
         self.last_loss = out.detach()
         return out
 
+    def combine(self, ppo_loss, value_loss, d_loss, epoch):
+        """Total minibatch loss. ppo_coef scales the policy part of the PPO
+        loss only; the critic term (`value_loss`, already weighted, part of
+        `ppo_loss`) stays on so the value head keeps learning when ppo_coef
+        is 0."""
+        return (self.ppo_coef(epoch) * (ppo_loss - value_loss) + value_loss
+                + self.coef(epoch) * d_loss)
+
     # ------------------------------------------------------------- mixing
 
-    def mix_actions(self, res_dict, states, epoch):
+    def mix_actions(self, res_dict, states, epoch, action_masks=None):
         """DAgger beta-mixing on the rollout batch: substitute the teacher's
         sampled action for a Bernoulli(beta) subset of rows and recompute the
         student's neglogp for those rows."""
@@ -154,9 +197,10 @@ class TeacherDistillation:
         t = self.teacher_forward(states[sel])
         actions = res_dict['actions'].clone()
         if self.is_discrete:
-            ta = torch.distributions.Categorical(logits=t['logits'].float()).sample()
+            t_masks = action_masks[sel] if action_masks is not None else None
+            ta = torch.distributions.Categorical(logits=self._logits(t, t_masks)).sample()
             actions[sel] = ta.to(actions.dtype)
-            neglogp = -torch.log_softmax(res_dict['logits'].float(), dim=-1).gather(
+            neglogp = -torch.log_softmax(self._logits(res_dict, action_masks), dim=-1).gather(
                 1, actions.view(-1, 1).long()).squeeze(1)
         else:
             ta = torch.distributions.Normal(t['mus'].float(), t['sigmas'].float()).sample()

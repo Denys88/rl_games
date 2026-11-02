@@ -95,7 +95,9 @@ def main():
             fr = np.asarray(fr).copy()
             if insets:
                 ins = np.kron(insets[k], np.ones((3, 3, 1), dtype=np.uint8))       # 64 -> 192 px
-                fr[8:8 + ins.shape[0], 8:8 + ins.shape[1]] = ins
+                h = min(ins.shape[0], fr.shape[0] - 8)                               # large cam_res: crop
+                w = min(ins.shape[1], fr.shape[1] - 8)
+                fr[8:8 + h, 8:8 + w] = ins[:h, :w]
             out.append(fr)
         imageio.mimwrite(args.video, out, fps=args.fps, quality=7)
         print('video', args.video, len(out), 'frames', out[0].shape)

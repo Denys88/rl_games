@@ -874,6 +874,12 @@ class A2CBase(BaseAlgorithm):
     def env_reset(self):
         obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        if self.store_states and 'states' not in obs:
+            needs = [name for name, on in (('central_value_config', self.has_central_value),
+                                           ('distillation', self.distill_config is not None),
+                                           ('state_aux', self.state_aux_config is not None)) if on]
+            raise ValueError(f"{', '.join(needs)} needs the env to return {{'obs': ..., 'states': ...}}, "
+                             f"got observation keys {sorted(obs.keys())}")
         # a fresh reset invalidates the autoreset tracker: the first row after
         # an explicit reset is always a real step, never a filler reset row
         self._autoreset_prev_dones = None
@@ -1529,7 +1535,9 @@ class DiscreteA2CBase(A2CBase):
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
 
-        if self.distill is not None or self.state_aux_config is not None:
+        if 'states' in batch_dict:
+            # stored for a central value, distillation or state_aux; the
+            # minibatch carries them whenever the buffer has them
             dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
@@ -1878,7 +1886,9 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['rnn_masks'] = rnn_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
-        if self.distill is not None or self.state_aux_config is not None:
+        if 'states' in batch_dict:
+            # stored for a central value, distillation or state_aux; the
+            # minibatch carries them whenever the buffer has them
             dataset_dict['states'] = batch_dict['states']
 
         self.dataset.update_values_dict(dataset_dict)
