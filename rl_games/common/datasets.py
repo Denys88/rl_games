@@ -10,6 +10,8 @@ class PPODataset(Dataset):
             raise ValueError("Batch size must be divisible by minibatch size.")
         if batch_size % seq_length != 0:
             raise ValueError("Batch size must be divisible by sequence length.")
+        if is_rnn and minibatch_size % seq_length != 0:
+            raise ValueError("Minibatch size must be divisible by sequence length for RNN training.")
 
         self.is_rnn = is_rnn
         self.seq_length = seq_length
