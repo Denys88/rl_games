@@ -54,10 +54,10 @@ class ReplayBuffer(object):
         for i in idxes:
             data = self._get(i)
             obs_t, action, reward, obs_tp1, done = data
-            obses_t[it] = np.array(obs_t, copy=False)
-            actions[it] = np.array(action, copy=False)
+            obses_t[it] = np.asarray(obs_t)
+            actions[it] = np.asarray(action)
             rewards[it] = reward
-            obses_tp1[it] = np.array(obs_tp1, copy=False)
+            obses_tp1[it] = np.asarray(obs_tp1)
             dones[it] = done
             it = it + 1
         return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
@@ -125,7 +125,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
     def _sample_proportional(self, batch_size):
         res = []
-        p_total = self._it_sum.sum(0, self._curr_size - 1)
+        p_total = self._it_sum.sum(0, self._curr_size)
         every_range_len = p_total / batch_size
         for i in range(batch_size):
             mass = random.random() * every_range_len + i * every_range_len
@@ -238,6 +238,19 @@ class VectorizedReplayBuffer:
         if truncated is None:
             truncated = torch.zeros_like(done)
         num_observations = obs.shape[0]
+        if num_observations > self.capacity:
+            # Earlier rows in this batch cannot survive a capacity-sized ring.
+            # Advance over them to keep the same write position as sequential adds.
+            skipped = num_observations - self.capacity
+            obs = obs[skipped:]
+            action = action[skipped:]
+            reward = reward[skipped:]
+            next_obs = next_obs[skipped:]
+            done = done[skipped:]
+            truncated = truncated[skipped:]
+            self.idx = (self.idx + skipped) % self.capacity
+            num_observations = self.capacity
+            self.full = True
         remaining_capacity = min(self.capacity - self.idx, num_observations)
         overflow = num_observations - remaining_capacity
         if remaining_capacity < num_observations:

@@ -16,14 +16,14 @@ params:
         sigma_init:
           name: const_initializer
           val: -1.05
-        fixed_sigma: false
+        fixed_sigma: true    # global exploration std: see docs/MJLAB.md, stability notes
         min_sigma: 0.2
         sigma_parametrization: softplus
     mlp:
       units:
+      - 1024
       - 512
       - 256
-      - 128
       activation: elu
       initializer:
         name: default
@@ -40,7 +40,7 @@ params:
     tau: 0.95
     learning_rate: 0.0001
     grad_norm: 1.0
-    entropy_coef: 0.001
+    entropy_coef: 0.0    # a positive bonus on a global std runs away over long runs
     truncate_grads: true
     e_clip: 0.2
     clip_value: false
@@ -61,7 +61,19 @@ params:
       render: false
     save_frequency: 500
     save_best_after: 100
+    # adaptive rate driven by the KL of the optimizer step itself (an extra
+    # no-grad forward after each step), averaged over a mini-epoch before the
+    # rule acts. Beat a fixed 1e-4 on every seed and the legacy reference-KL
+    # scheduler by a wide margin on this task (docs/MJLAB.md). Keep
+    # schedule_type standard: per-minibatch stepping on this signal ratchets
+    # the rate to the floor on tail events.
     lr_schedule: adaptive
+    kl_schedule_source: optimizer_step
+    schedule_type: standard
+    kl_threshold: 0.002    # calibrated on the fixed-rate run's step KL (0.002 before takeoff, 0.003 after)
+    min_lr: 5.0e-05
+    max_lr: 2.0e-04
+    lr_multiplier: 1.5
     central_value_config:
       minibatch_size: 16384
       mini_epochs: 4
@@ -74,10 +86,10 @@ params:
         central_value: true
         mlp:
           units:
-          - 512
+          - 1024
+          - 1024
           - 512
           - 256
-          - 128
           activation: elu
           initializer:
             name: default
@@ -86,6 +98,3 @@ params:
     vecenv_type: MJLAB
     algo_observer: isaac
     clip_actions: false
-    kl_threshold: 0.01
-    min_lr: 0.0001
-    max_lr: 0.0002

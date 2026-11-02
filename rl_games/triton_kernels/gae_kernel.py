@@ -106,14 +106,17 @@ def _triton_gae(mb_rewards, mb_values, mb_dones, last_values, last_dones, gamma,
 
     grid = (num_envs * value_size,)
 
-    _gae_kernel[grid](
-        mb_rewards, mb_values, mb_dones, last_values, last_dones, mb_advs,
-        gamma, tau, horizon_length, value_size,
-        mb_rewards.stride(0), mb_rewards.stride(1),
-        mb_values.stride(0), mb_values.stride(1),
-        mb_dones.stride(0), mb_dones.stride(1),
-        mb_advs.stride(0), mb_advs.stride(1),
-    )
+    # Triton resolves pointers in the CURRENT CUDA context, not the tensor's:
+    # `device: cuda:N` single-process runs (no set_device) crash at launch.
+    with torch.cuda.device(mb_rewards.device):
+        _gae_kernel[grid](
+            mb_rewards, mb_values, mb_dones, last_values, last_dones, mb_advs,
+            gamma, tau, horizon_length, value_size,
+            mb_rewards.stride(0), mb_rewards.stride(1),
+            mb_values.stride(0), mb_values.stride(1),
+            mb_dones.stride(0), mb_dones.stride(1),
+            mb_advs.stride(0), mb_advs.stride(1),
+        )
 
     return mb_advs
 

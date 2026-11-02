@@ -1,5 +1,6 @@
 import math
 import time
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
@@ -76,10 +77,16 @@ numpy_to_torch_dtype_dict = {
 torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
-    c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
-    c3 = -1.0 / 2.0
-    kl = c1 + c2 + c3
+    """KL(N(p0_mu, p0_sigma) || N(p1_mu, p1_sigma)), summed over actions."""
+    # keep the Gaussian arithmetic in at least fp32
+    p0_mu, p0_sigma, p1_mu, p1_sigma = [
+        t.float() if t.dtype in (torch.float16, torch.bfloat16) else t
+        for t in (p0_mu, p0_sigma, p1_mu, p1_sigma)
+    ]
+    # exact form: an epsilon on the variance biased KL below zero even for identical policies
+    var_ratio = (p0_sigma / p1_sigma).square()
+    mean_delta = (p0_mu - p1_mu) / p1_sigma
+    kl = torch.log(p1_sigma / p0_sigma) + 0.5 * (var_ratio + mean_delta.square() - 1.0)
     kl = kl.sum(dim=-1) # returning mean between all steps of sum between all actions
     if reduce:
         return kl.mean()
@@ -256,8 +263,10 @@ def explained_variance(y_pred, y, masks=None):
     """
 
     if masks is not None:
-        masks = masks.unsqueeze(1)
-        _, var_y = get_mean_var_with_masks(y_pred, masks)
+        # a per-row mask broadcast over value_size columns: expand it so the
+        # helper counts valid ELEMENTS, matching the pooled torch.var below
+        masks = masks.unsqueeze(1).expand_as(y)
+        _, var_y = get_mean_var_with_masks(y, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
         # Use population variance to avoid DoF warnings when batch size is 1
@@ -272,7 +281,7 @@ def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
                 logratio > math.log(1.0 + clip_param),
             ).float()
     if masks is not None:
-        clip_frac = clip_frac * masks/masks.sum()
+        clip_frac = (clip_frac * masks).sum() / masks.sum().clamp(min=1.0)
     else:
         clip_frac = clip_frac.mean()
     return clip_frac
@@ -369,9 +378,52 @@ def get_mean(v):
     return mean
 
 
-def default_mixed_precision():
-    """bf16 autocast default: on for CUDA GPUs with native bf16 support."""
-    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+_HALF_DTYPES = {'fp16': torch.float16, 'float16': torch.float16, 'half': torch.float16,
+                'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16}
+_OFF_NAMES = ('false', '0', 'no', 'off', 'none', 'fp32', 'tf32')
+_ON_NAMES = ('true', '1', 'yes', 'on')
+
+
+def resolve_mixed_precision(value, device='cuda'):
+    """Map the `mixed_precision` config value to an autocast dtype, or None.
+
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). True, 1 or
+    'fp16': float16 autocast with loss scaling, the meaning True had through
+    rl_games 1.6.1. 'bf16': bfloat16, only on request, because at small sigma
+    its rounding adds a KL of 0.01-0.03 per update and noise in the PPO
+    ratio. Strings from CLI or Hydra overrides ('true', 'False', '0') map the
+    same way. Half precision needs a CUDA device; elsewhere it resolves to
+    None.
+    """
+    if isinstance(value, str):
+        name = value.strip().lower()
+        if name in _OFF_NAMES:
+            return None
+        if name in _ON_NAMES:
+            value = True
+        elif name in _HALF_DTYPES:
+            value = _HALF_DTYPES[name]
+    if value is None or value is False or (type(value) is int and value == 0):
+        return None
+    if value is True or (type(value) is int and value == 1):
+        value = torch.float16
+    if value not in (torch.float16, torch.bfloat16):
+        raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
+    if not str(device).startswith('cuda'):
+        warnings.warn(f"mixed_precision needs a CUDA device; running {device} without autocast.",
+                      stacklevel=2)
+        return None
+    return value
+
+
+def autocast(dtype):
+    """Autocast context for a dtype from resolve_mixed_precision; a no-op for None."""
+    return torch.amp.autocast('cuda', enabled=dtype is not None, dtype=dtype or torch.bfloat16)
+
+
+def grad_scaler(dtype):
+    """Loss scaler for fp16. bf16 has fp32's exponent range and needs none."""
+    return torch.amp.GradScaler('cuda', enabled=dtype == torch.float16)
 
 
 class AverageMeter(nn.Module):

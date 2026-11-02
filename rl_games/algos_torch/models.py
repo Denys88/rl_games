@@ -210,69 +210,6 @@ class ModelA2CMultiDiscrete(BaseModel):
                 return result
 
 
-class ModelA2CContinuous(BaseModel):
-    def __init__(self, network):
-        BaseModel.__init__(self, 'a2c')
-        self.network_builder = network
-
-    class Network(BaseModelNetwork):
-        def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
-            # Compilation is handled in torch_runner.py to avoid double compilation
-            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
-
-        def get_aux_loss(self):
-            return self.a2c_network.get_aux_loss()
-
-        def is_rnn(self):
-            return self.a2c_network.is_rnn()
-
-        def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
-
-        def get_value_layer(self):
-            return self.a2c_network.get_value_layer()
-
-        def kl(self, p_dict, q_dict):
-            p = p_dict['mu'], p_dict['sigma']
-            q = q_dict['mu'], q_dict['sigma']
-            return divergence.d_kl_normal(p, q)
-
-        def forward(self, input_dict):
-            is_train = input_dict.get('is_train', True)
-            prev_actions = input_dict.get('prev_actions', None)
-            input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, sigma, value, states = self.a2c_network(input_dict)
-            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
-
-            if is_train:
-                entropy = distr.entropy().sum(dim=-1)
-                prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
-                result = {
-                    'prev_neglogp': torch.squeeze(prev_neglogp),
-                    'value': value,
-                    'entropy': entropy,
-                    'rnn_states': states,
-                    'mus': mu,
-                    'sigmas': sigma
-                }
-                return result
-            else:
-                selected_action = distr.sample().squeeze()
-                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
-                result = {
-                    'neglogpacs': torch.squeeze(neglogp),
-                    'values': self.denorm_value(value),
-                    'actions': selected_action,
-                    'entropy': entropy,
-                    'rnn_states': states,
-                    'mus': mu,
-                    'sigmas': sigma
-                }
-                return result
-
-
 def apply_sigma_parametrization(raw, network):
     """Map the sigma head's raw output to (sigma, logstd).
 
@@ -284,7 +221,11 @@ def apply_sigma_parametrization(raw, network):
     gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
     final sigma so log-probs stay consistent.
     """
+    # autocast may leave the head in bf16/fp16; distribution math needs fp32
+    if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
+        raw = raw.float()
     min_sigma = getattr(network, 'min_sigma', 0.0)
+    max_sigma = getattr(network, 'max_sigma', 0.0)
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
         sigma = torch.nn.functional.softplus(raw) + min_sigma
@@ -301,8 +242,15 @@ def apply_sigma_parametrization(raw, network):
         sigma = torch.exp(raw)
         if min_sigma > 0:
             sigma = sigma + min_sigma
-        else:
+        elif max_sigma <= 0:
             return sigma, raw
+    if max_sigma > 0:
+        # smooth ceiling x/(1+x): ~identity well below the cap, saturates at
+        # max_sigma, gradient decays polynomially (tanh would hit exactly 1.0
+        # in fp32 and lose its gradient). Bounds sigma only, not the mean.
+        span = max_sigma - min_sigma  # > 0: validated by the network builder at config time
+        x = (sigma - min_sigma) / span
+        sigma = min_sigma + span * x / (1.0 + x)
     return sigma, torch.log(sigma)
 
 
@@ -335,6 +283,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
+            if mu.dtype == torch.float16 or mu.dtype == torch.bfloat16:
+                mu = mu.float()
             sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:

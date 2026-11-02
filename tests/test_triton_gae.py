@@ -98,6 +98,23 @@ def test_triton_handles_view_inputs():
     assert torch.allclose(out, ref, atol=1e-4)
 
 
+@pytest.mark.skipif(not TRITON_CUDA or torch.cuda.device_count() < 2,
+                    reason='requires triton and two CUDA devices')
+def test_triton_launches_in_tensor_context():
+    """`device: cuda:1` single-process training never calls set_device: the
+    kernel must launch in the tensor's context, not the current one (cuda:0),
+    and leave the current device untouched."""
+    from rl_games.triton_kernels.gae_kernel import _triton_gae
+    torch.cuda.set_device(0)
+    inputs = make_inputs(16, 6, 3, device='cuda:1')
+    out = _triton_gae(*inputs, 0.99, 0.95)
+    torch.cuda.synchronize(1)
+    assert out.device == inputs[0].device
+    assert torch.cuda.current_device() == 0
+    ref = _pytorch_gae(*inputs, 0.99, 0.95)
+    assert torch.allclose(out, ref, atol=1e-4), (out - ref).abs().max().item()
+
+
 @pytest.mark.skipif(not TRITON_CUDA, reason='requires CUDA and triton')
 def test_triton_all_done_and_no_done_edges():
     from rl_games.triton_kernels.gae_kernel import _triton_gae

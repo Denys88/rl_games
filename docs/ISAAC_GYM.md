@@ -145,10 +145,6 @@ self.network_factory.register_builder(
     lambda **kwargs: network_builder.A2CResnetBuilder()
 )
 self.network_factory.register_builder(
-    'rnd_curiosity',
-    lambda **kwargs: network_builder.RNDCuriosityBuilder()
-)
-self.network_factory.register_builder(
     'soft_actor_critic',
     lambda **kwargs: network_builder.SACBuilder()
 )
@@ -161,10 +157,6 @@ self.model_factory.register_builder(
 self.model_factory.register_builder(
     'multi_discrete_a2c',
     lambda network, **kwargs: models.ModelA2CMultiDiscrete(network)
-)
-self.model_factory.register_builder(
-    'continuous_a2c',
-    lambda network, **kwargs: models.ModelA2CContinuous(network)
 )
 self.model_factory.register_builder(
     'continuous_a2c_logstd',

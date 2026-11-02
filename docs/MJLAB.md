@@ -6,8 +6,11 @@
 
 ```bash
 pip install -e ".[mujoco]"
-pip install mjlab
+pip install "mjlab>=1.5.3"   # resolves its own warp / mujoco-warp pair; 1.5.0's pair crashed env resets
 ```
+
+MicroDuck additionally needs the mjlab 1.6 port of its task plugin (see
+[MicroDuck](#microduck)).
 
 ## How to run
 
@@ -27,6 +30,7 @@ python runner.py --train --file rl_games/configs/mjlab/ppo_g1_velocity.yaml
 |-------------|--------|------|---------|--------|
 | Go1 Velocity (flat) | `configs/mjlab/ppo_go1_velocity.yaml` | 4096 | 24 | 5000 |
 | G1 Velocity (flat) | `configs/mjlab/ppo_g1_velocity.yaml` | 4096 | 24 | 5000 |
+| MicroDuck Velocity (flat) | `configs/mjlab/ppo_microduck_velocity.yaml` | 4096 | 24 | 4000 |
 
 **Lift-Cube-Yam (manipulation)**
 ```bash
@@ -46,21 +50,138 @@ fp32 and bf16). The Lift-Cube-Yam config is **validated to task success**: episo
 same 491M-frame budget (asymmetric central-value critic on the env's privileged obs
 group + value normalization + adaptive LR; see the config for the full recipe).
 
+## Live viewer play
+
+Watch a trained checkpoint drive any mjlab task in real time, using mjlab's
+own viewers:
+
+```bash
+# Go1
+python -m rl_games.envs.mjlab_play \
+    --file rl_games/configs/mjlab/ppo_go1_velocity.yaml \
+    --checkpoint runs/MJLab_Go1_Velocity/nn/MJLab_Go1_Velocity.pth
+
+# MicroDuck
+python -m rl_games.envs.mjlab_play \
+    --file rl_games/configs/mjlab/ppo_microduck_velocity.yaml \
+    --checkpoint runs/MJLab_MicroDuck_Velocity/nn/MJLab_MicroDuck_Velocity.pth
+```
+
+The task's registered play variant is loaded (`load_env_cfg(task,
+play=True)`). What that changes is up to the task: mjlab's built-in velocity
+tasks make episodes infinite and switch observation corruption off, while
+task plugins define their own (MicroDuck's play cfg keeps the 20 s episodes
+and noisy actor observations, and shortens the push interval instead).
+`--viewer auto` (the default) opens the native MuJoCo window when a display
+is present (`DISPLAY`/`WAYLAND_DISPLAY`),
+otherwise it starts `ViserPlayViewer` -- a browser UI that works on headless
+boxes and prints a local URL (force it with `--viewer viser`). Other flags:
+`--task` (override the config's task id), `--num-envs` (default 4),
+`--stochastic` (sample actions instead of the deterministic mean), `--device`.
+
+Command control (native viewer, velocity tasks): the `twist` command term is
+overridden and re-asserted every step, with the standing/heading/world-frame
+rewrites and the resample timer suppressed, and the term's sampling
+distribution collapsed onto the commanded values. That last part matters:
+episode resets resample commands *inside* `env.step`, after the re-assert,
+so pinning the distribution is what keeps a reset from injecting a random
+command under the policy for a step. The pinning mutates the live term cfg;
+`CommandController.restore_distribution()` puts the original sampling back
+(required before handing the same env to mjlab's viser play UI, whose
+sliders derive their bounds from `cfg.ranges`).
+
+| Key | Action |
+|-----|--------|
+| `KP 8` / `KP 2` | forward velocity +/- 0.1 m/s |
+| `KP 4` / `KP 6` | yaw rate +/- 0.1 rad/s (left / right) |
+| `KP 7` / `KP 9` | lateral velocity +/- 0.1 m/s (left / right) |
+| `KP 0` | zero the command |
+| `Space`, `Enter` | pause / reset (viewer built-ins) |
+
+The commands sit on the numeric keypad because both layers underneath bind
+the letters. mjlab's native viewer reserves `Space` (pause), `Enter`
+(reset), `-`/`=` (speed), `,`/`.` (previous / next env), `A` (show all
+envs), `P` (plots), `R` (debug visualization) and `→` (single step while
+paused), and forwards every key to the command hook *after* its own
+binding; the MuJoCo window toggles a visualization or render flag on every
+letter (`W` wireframe, `S` shadows, `D` static bodies, ...). The keypad is
+free in both layers.
+
+The keyboard override is attached only to the native window (the viser viewer
+ships its own play UI). `Enter` resets the env and the policy together
+(`PolicyAdapter.reset` zeroes RNN hidden states). Env-internal per-env
+resets (a fall; MicroDuck's 20 s truncation) and viser's per-env GUI reset
+hand the policy observations only, so an RNN policy carries stale hidden
+state across those and recovers over a few steps.
+
+The MJLAB vecenv also accepts `play: true` under `env_config`, which loads
+the play cfg through the normal wrapper -- the way to run `runner.py --play`
+evaluation on the play variant. `BasePlayer` replaces `env_config` with
+`player.env_config` wholesale (no merge), so the block must repeat
+`task_name` and `device`:
+
+```yaml
+config:
+  player:
+    env_config:
+      task_name: Mjlab-Velocity-Flat-MicroDuck
+      device: cuda
+      play: true
+```
+
+Play runs are unseeded on the env side: the block above replaces the
+runner-seeded `env_config`, and `BasePlayer` pops `seed` without forwarding
+it (torch / numpy seeding still applies).
+
+## MicroDuck
+
+[MicroDuck](https://github.com/pollen-robotics/microduck_rl) is Pollen
+Robotics' palm-sized open-source biped.
+`configs/mjlab/ppo_microduck_velocity.yaml` is the default MicroDuck
+velocity config: asymmetric actor-critic (actor obs 61, privileged critic
+obs 76 on the `critic` obs group), 4096 envs, 50 Hz control. Episodes are
+20 s and end in truncation, so `value_bootstrap: true` is essential.
+
+**Port:** upstream `microduck_rl` pins mjlab 1.3; the mjlab-1.6 port lives in
+[ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl), branch `rl-games` (the default),
+with upstream's `develop` merged, the ball-walk task, an rl_games ONNX exporter in the robot
+runtime's contract and a training / play / export / deploy guide in its README. Install, in a
+Python 3.12 venv: `torch==2.13.0` from the cu130 index, `mjlab==1.6.0`, the actuator model
+`git+https://github.com/Rhoban/bam.git@57d13ead53206a6bf0db3d66f86506ae8c2ce01a`, the fork
+(`pip install -e .`), then rl_games; after that `Mjlab-*-MicroDuck` task names resolve here.
+
 ## Results
 
 ### Go1 Flat Velocity
 
-Same-machine comparison against mjlab's own rsl-rl reference recipe, both at
-the reference batch geometry (4096 envs × 24 steps) and a 5000-epoch budget
-(the command curriculum's stage-1 range; mjlab's 10k default only adds the
-harder stage-2 commands after 5000):
+Same-machine comparison against mjlab's own rsl-rl reference recipe at the
+reference batch geometry (4096 envs × 24 steps), the reference curriculum
+schedule, and mjlab's own default budget (10k iterations — the full protocol,
+including the doubled stage-2 command ranges the curriculum enables after
+iteration 5000):
 
-| Trainer | Mean episode reward (last-100) |
-|---------|-------------------------------|
-| mjlab rsl-rl reference | 94.0 |
-| rl_games (`ppo_go1_velocity.yaml`) | **97.0** (peak 98.9) |
+| Trainer | Mean episode reward (last-100, full 10k protocol) |
+|---------|---------------------------------------------------|
+| mjlab rsl-rl reference | 83.2 |
+| rl_games (`ppo_go1_velocity.yaml`) | **86.8** |
 
-![Go1 Flat Velocity](pictures/mjlab/go1_flat_comparison_5000.png)
+![Go1 velocity tracking: 1.0 m/s, a 0.7 rad/s turn, 1.5 m/s](pictures/mjlab/go1_velocity.gif)
+
+The Go1 clip plays the shipped config's policy at 1.0 m/s, a 0.7 rad/s turn
+and 1.5 m/s (measured 0.90, 0.90 with 0.75 rad/s, and 1.10 m/s).
+
+The shipped config stops at `max_epochs: 5000`; the table above was measured
+with `max_epochs: 10000` (mjlab's default budget), which is the only override.
+At the 5000-iteration mark (stage-1 command range only), the same runs read
+94.0 (reference) vs **97.0** (rl_games, peak 98.9):
+
+![Go1 Flat Velocity, first 5000 iterations of the 10k runs](pictures/mjlab/go1_flat_comparison_5000.png)
+
+A compressed-curriculum variant (`velocity_stage_steps` moves the range
+expansions to iterations 2500/5000, giving the hardest 2–3 m/s range 5000
+training iterations that the default schedule never allocates) produces the
+fastest policy: measured 1.07 m/s sustained at a 2.0 m/s command, roughly
+double the stage-1 policies.
 
 ### Go1 Rough Velocity
 
@@ -70,14 +191,26 @@ Central value network significantly improves rough terrain performance (~60 vs ~
 
 ### G1 Humanoid Flat Velocity
 
-Same protocol as Go1 (5000-epoch budget, reference geometry):
+Humanoid locomotion is a substantially harder task — mjlab's own default
+budget for G1 is 30k iterations (3× Go1's), and short-budget reward
+comparisons are misleading here: at 5000 iterations both stacks produce
+policies that score reward without actually tracking velocity commands
+(measure deployable behavior, not reward meters). We do not currently claim
+a G1 comparison; the `ppo_g1_velocity.yaml` config is training-stable and
+under active tuning against the reference's full-budget result.
 
-| Trainer | Mean episode reward (last-100) |
-|---------|-------------------------------|
-| mjlab rsl-rl reference | 69.6 |
-| rl_games (`ppo_g1_velocity.yaml`) | **72.1** (peak 76.5) |
+The G1 clip in the README comes from an 8192-environment run trained with
+DistributedDataParallel on two GPUs (4959 epochs, 1.95B frames) with
+`sigma_parametrization: scalar`, played deterministically at commands of
+1.0 m/s forward, a 0.5 rad/s turn, and 0.8 m/s forward: measured body-frame
+speeds 1.05, 1.03 and 0.91 m/s, no falls. The shipped 4096-environment
+config at its 5000-iteration budget still converges to a standing policy
+that tracks no command (reward about 75 per episode from the upright and
+pose terms alone), which is the trap the paragraph above describes.
 
-![G1 Humanoid Flat Velocity](pictures/mjlab/g1_flat_comparison_5000.png)
+![G1 humanoid velocity tracking](pictures/mjlab/g1_velocity.gif)
+
+![G1 flat velocity training reward, 8192 envs on two GPUs](pictures/mjlab/g1_flat_training_8k.png)
 
 Recipe (both locomotion configs): asymmetric central value on the privileged
 `critic` obs group, same size as the actor net, trained at the full 5 mini-epochs —
@@ -89,37 +222,119 @@ bootstrap on.
 ### WujiHand In-Hand Cube Reorientation
 
 In-hand reorientation to uniformly sampled SO(3) goals with switch-on-success,
-trained on the unmodified wuji-mjlab task (reward design, DR, and success
-protocol exactly as released). Same-machine comparison against the vendored
-rsl-rl fork that ships with wuji-mjlab, identical data budget
-(8192 envs × 40 steps, 5000 iterations, ~1.6B frames):
+trained on the unmodified wuji-mjlab task (reward design, DR and success
+protocol exactly as released). Same-machine comparison (one RTX PRO 6000 per
+run, same window) against the vendored rsl-rl fork that ships with wuji-mjlab,
+identical single-GPU data budget (8192 envs × 40 steps, 5000 iterations,
+1.64B frames). The 2-GPU run processes twice as many frames.
+Score: goal reaches per episode (training metric, 50-iteration EMA). The raw
+action smoothness is reported next to it because a policy can keep scoring
+while its actions become unusable (see the stability notes below); the
+reference's step-to-step action change is 0.39.
 
-| Trainer | Goal reaches / episode (train, last-100 mean) | Held-out eval | Wall-clock |
-|---------|-----------------------------------------------|---------------|------------|
-| wuji-mjlab rsl-rl fork | 16.4 (peak 16.9) | — | 4.08 h |
-| rl_games (`ppo_wujihand_reorient.yaml`) | **17.1** (peak 17.6) | 15.1 reaches/ep | **4.07 h** |
+| Trainer | Goal reaches / episode at 5000 | Time to the reference's final score | Action change / step |
+|---------|-------------------------------|-------------------------------------|----------------------|
+| wuji-mjlab rsl-rl fork (published recipe, actor 512/256/128) | 16.9 | 2.14 h | 0.39 |
+| wuji-mjlab rsl-rl fork at rl_games' network widths | 17.35 | 2.22 h | 0.40 |
+| rl_games `ppo_wujihand_reorient.yaml` (step-KL adaptive rate), seeds 42 / 7 / 123 | **20.1 / 19.1 / 19.5** | **1.30 / 1.44 / 1.40 h** | 0.37 |
+| rl_games, same recipe with a fixed rate of 1e-4 | 19.6 / 18.9 / 18.9 | 1.38 / 1.44 / 1.54 h | 0.37 |
+| rl_games, same recipe with the legacy reference-KL scheduler (band 5e-5..2e-4, target 0.01) | 18.8 / 18.2 / 18.9 | 1.56 / 1.86 / 1.60 h | 0.37 |
+| rl_games, legacy scheduler, at the reference's network widths | 16.7 | — | 0.36 |
+| rl_games `ppo_wujihand_reorient.yaml` on 2 GPUs (2× frames per iteration) | **21.1** | **1.02 h** | 0.36 |
+| rl_games, legacy scheduler, on 2 GPUs | 20.6 | 1.27 h | 0.36 |
 
-rl_games reaches the reference's final quality (16.4) at 3.34 h — 18% less
-wall-clock than the reference needs for its full run. Under the project's own
-sim2sim deployment protocol (100 trials, reach-one-goal criterion), the
-rl_games policy exported to ONNX scores identically to the officially
-released policy: success rate 1.00, drop rate 0.0, 1.07 goal reaches per
-trial (the protocol saturates after the first reach).
+The three full-width single-GPU rl_games rows each have three seeds
+(42 / 7 / 123); the other rows each report one run. These runs had no terminal
+action storm. The width comparisons help assess the recipes, but do not
+isolate the trainer: exploration, normalization and minibatch geometry also
+differ, and the smaller rl_games network used the legacy scheduler. These
+are training metrics, not held-out evaluation scores. The shipped recipe
+reaches the published reference's final training score in 33–39% less wall
+time on this machine; equal frames do not imply equal optimizer steps or
+compute cost.
 
 ![WujiHand Reorient comparison](pictures/mjlab/wuji_reorient_comparison.png)
 
 Recipe notes (all in the config): asymmetric central-value critic on the env's
 privileged `critic` obs group (16384 × 4 mini-epochs), value normalization on,
-truncation `value_bootstrap` on, minibatch 16384 — small minibatches (≤10240)
-make the KL-adaptive scheduler noisy, and very few optimizer steps per
-iteration (minibatch 32768 → 40 steps) starve the discovery phase on this
-task; adaptive LR on the band `min_lr 1e-4` – `max_lr 2e-4` — the floor keeps
-the early phase at the reference's proven rate, the cap prevents a
-late-training collapse (the env's escalating out-of-cage penalties produce
-rare huge negative return bursts that a high LR converts into an unrecoverable
-policy regression); state-dependent sigma with
-`sigma_parametrization: softplus` and `min_sigma: 0.2`, matching the
-exploration floor the task was designed around.
+truncation `value_bootstrap` on, minibatch 16384, a **global exploration std**
+(`fixed_sigma: true`, `sigma_parametrization: softplus`, `min_sigma: 0.2`)
+with `entropy_coef: 0`, and a **step-KL adaptive learning rate**
+(`kl_schedule_source: optimizer_step`, `schedule_type: standard`,
+`kl_threshold: 0.002`, band 5e-5..2e-4, factor 1.5).
+
+The scheduler choice is the result of a controlled comparison on this task
+(same seeds, same budget). The legacy scheduler reads a KL measured before the
+optimizer step against a stored policy; early in training that number is
+mostly drift accumulated over the pass plus observation-normaliser movement,
+not the step it is about to take, so it brakes to its floor for the first
+~800 iterations and takes off later (18.2–18.9). The shipped scheduler reads
+KL(after step || before step) on the same minibatch, averaged over a
+mini-epoch, with the target calibrated on the fixed-rate run's step KL
+(0.002 before takeoff, 0.003 after). On every seed it ran at ~1.3e-4
+before takeoff and 8.9e-5 after (seed 42 stepped down once more, to
+7.7e-5, in the last thousand iterations), which matches the recipe's own rate
+response (fixed 5e-5 / 1e-4 / 1.5e-4 / 2e-4 on seed 42: 18.5 / 19.9 / 19.2 /
+16.8 reaches): headroom above 1e-4 early, none late. Two variants to avoid:
+per-minibatch stepping on the step-KL signal ratchets the rate to the floor on
+tail events (19.3 on seed 42), and recalibrating the legacy scheduler's
+target to 0.02 only reaches parity with the fixed rate (19.4–19.5).
+The paired gain over the fixed rate on the three development seeds is
++0.5 / +0.2 / +0.6 reaches (mean +0.4; a 95% interval on three seeds spans
+−0.1 to +1.0), and a fourth fixed run on seed 42, with the step-KL
+measurement enabled, scored 19.9 and reached the reference's score in
+1.23 h, ahead of the scheduler's 1.30 h on that seed. The sign is consistent
+and the mechanism is understood; a comparison on fresh seeds is the next step.
+
+**Stability notes.** With a state-dependent std (`fixed_sigma: false`) this
+task can collapse thousands of iterations into training: on rare states the
+std head extrapolates to values of 40–200 while the batch mean stays at 0.2,
+the task's penalty on the raw (unclamped) action explodes, and the policy
+does not recover. Batch averages such as entropy and mean KL do not show it,
+and an adaptive learning rate cannot act on a tail of states. Two settings
+remove it, each verified on three seeds: a global std (the setting Shadow
+Hand and DeXtreme trained with; the recipe above) or a ceiling on the
+state-dependent std (`max_sigma: 1.0`, 17.6–18.6 reaches with the adaptive
+band, 18.8–19.2 with the fixed rate). Do not clip
+actions in the trainer while using a state-dependent std here (the task's
+penalty then no longer restrains the std head), do not add an entropy bonus
+to a global std on long runs, and read every score together with a smoothness
+metric. `use_diagnostics: true` logs the batch-max std per mini-epoch
+(`diagnostics/policy/sigma_max/<mini_epoch>`), which shows the tail long before a collapse.
+Global std and entropy zero changed together, so their individual effects are not isolated. `CONFIG_PARAMS.md` documents `max_sigma`, `kl_reference`, `kl_schedule_source` and the diagnostics.
+
+### MicroDuck Flat Velocity
+
+`ppo_microduck_velocity.yaml` against Pollen's rsl-rl recipe on the same machine, with the same
+env, reward terms and 4096 × 24 geometry:
+
+| | rl_games (3 seeds) | rsl-rl reference |
+|---|---|---|
+| final return | **147.7** (149.7 / 148.1 / 145.4) | 120.3 |
+| time to reach 120.3 | **3 min** | 16.3 min |
+
+![MicroDuck: rl_games vs rsl-rl](pictures/mjlab/microduck_comparison.png)
+
+![MicroDuck, forward 0.4 m/s](pictures/mjlab/microduck_forward.gif)
+
+The clip plays a seed-17 policy under a pinned 0.4 m/s forward command, with the commanded and the
+measured body-frame velocity on the frame. Under a 0.4 m/s command the policy walks at 0.26 m/s, and
+Pollen's released policy at 0.19 m/s in the same simulator.
+
+**Recipe.** Pollen's geometry and reward terms, plus `entropy_coef: 0`, `max_lr: 1e-3`,
+`clip_actions: false` (mjlab clamps actions in the env) and `normalize_value: true`.
+
+**Speed lane.** `configs/mjlab/ppo_microduck_speed_lane.yaml` trains the same robot on a variant of
+the task in our fork of `microduck_rl` ([ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl),
+branch `speed-lane`): a forward-command curriculum that raises the cap by 0.1 m/s whenever the tracking
+error at the current cap drops below 0.15 m/s, a touchdown-stride gait term, and a mirror-consistency
+loss on the policy (`symmetry_loss`), with 16,384 environments for 2,000 epochs (about 45 minutes). It
+walks at **0.39 m/s** under a 0.8 to 1.0 m/s command with no falls, against 0.33 m/s for Pollen's
+released policy under the same 0.8 m/s command (64 robots for 10 s each, no pushes). The task's tracking
+reward is lenient, since a 0.13 m/s shortfall still earns 85 % of it, so both policies walk slower than
+commanded.
+
+![MicroDuck, speed lane](pictures/mjlab/microduck_speed.gif)
 
 ## Notebooks
 
