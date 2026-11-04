@@ -1,3 +1,15 @@
+"""Environment wrappers.
+
+Every wrapper here speaks the gymnasium contract:
+``reset(**kwargs) -> (obs, info)`` and
+``step(action) -> (obs, reward, terminated, truncated, info)``.
+``terminated`` means the MDP ended (do not bootstrap the value function);
+``truncated`` means the episode was cut short by a time limit or similar
+external condition (do bootstrap).  Getting that split wrong silently
+corrupts value targets, so wrappers that end episodes artificially say
+explicitly which flag they raise.
+"""
+
 import numpy as np
 from numpy.random import randint
 
@@ -10,20 +22,6 @@ from gymnasium import spaces
 from copy import copy
 
 
-def _parse_reset_result(result):
-    """Extract obs from gymnasium reset() return of (obs, info)."""
-    return result[0]
-
-
-def _parse_step_result(result):
-    """Convert gymnasium 5-tuple step() return to (obs, reward, done, info)."""
-    obs, reward, terminated, truncated, info = result
-    done = terminated or truncated
-    if 'time_outs' not in info:
-        info['time_outs'] = truncated
-    return obs, reward, done, info
-
-
 class InfoWrapper(gym.Wrapper):
     def __init__(self, env):
         gym.Wrapper.__init__(self, env)
@@ -31,15 +29,14 @@ class InfoWrapper(gym.Wrapper):
 
     def reset(self, **kwargs):
         self.reward = 0
-        result = self.env.reset(**kwargs)
-        return _parse_reset_result(result)
+        return self.env.reset(**kwargs)
 
     def step(self, action):
-        observation, reward, done, info = _parse_step_result(self.env.step(action))
+        observation, reward, terminated, truncated, info = self.env.step(action)
         self.reward += reward
-        if done:
+        if terminated or truncated:
             info['scores'] = self.reward
-        return observation, reward, done, info
+        return observation, reward, terminated, truncated, info
 
 
 class NoopResetEnv(gym.Wrapper):
@@ -55,21 +52,17 @@ class NoopResetEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         """ Do no-op action for a number of steps in [1, noop_max]."""
-        _parse_reset_result(self.env.reset(**kwargs))
+        obs, info = self.env.reset(**kwargs)
         if self.override_num_noops is not None:
             noops = self.override_num_noops
         else:
             noops = randint(1, self.noop_max + 1)
         assert noops > 0
-        obs = None
         for _ in range(noops):
-            obs, _, done, _ = _parse_step_result(self.env.step(self.noop_action))
-            if done:
-                obs = _parse_reset_result(self.env.reset(**kwargs))
-        return obs
-
-    def step(self, ac):
-        return _parse_step_result(self.env.step(ac))
+            obs, _, terminated, truncated, info = self.env.step(self.noop_action)
+            if terminated or truncated:
+                obs, info = self.env.reset(**kwargs)
+        return obs, info
 
 
 class FireResetEnv(gym.Wrapper):
@@ -80,17 +73,14 @@ class FireResetEnv(gym.Wrapper):
         assert len(env.unwrapped.get_action_meanings()) >= 3
 
     def reset(self, **kwargs):
-        _parse_reset_result(self.env.reset(**kwargs))
-        obs, _, done, _ = _parse_step_result(self.env.step(1))
-        if done:
-            _parse_reset_result(self.env.reset(**kwargs))
-        obs, _, done, _ = _parse_step_result(self.env.step(2))
-        if done:
-            _parse_reset_result(self.env.reset(**kwargs))
-        return obs
-
-    def step(self, ac):
-        return _parse_step_result(self.env.step(ac))
+        self.env.reset(**kwargs)
+        obs, _, terminated, truncated, _ = self.env.step(1)
+        if terminated or truncated:
+            self.env.reset(**kwargs)
+        obs, _, terminated, truncated, _ = self.env.step(2)
+        if terminated or truncated:
+            self.env.reset(**kwargs)
+        return obs, {}
 
 
 class EpisodicLifeEnv(gym.Wrapper):
@@ -103,8 +93,10 @@ class EpisodicLifeEnv(gym.Wrapper):
         self.was_real_done = True
 
     def step(self, action):
-        obs, reward, done, info = _parse_step_result(self.env.step(action))
-        self.was_real_done = done
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        # a real game over is either flag: a time-limited episode is over for
+        # the env even though the agent still has lives left.
+        self.was_real_done = terminated or truncated
         # check current lives, make loss of life terminal,
         # then update lives to handle bonus lives
         lives = self.env.unwrapped.ale.lives()
@@ -112,9 +104,11 @@ class EpisodicLifeEnv(gym.Wrapper):
             # for Qbert sometimes we stay in lives == 0 condition for a few frames
             # so it's important to keep lives > 0, so that we only reset once
             # the environment advertises done.
-            done = True
+            # A lost life is a *termination* (there is no value to bootstrap
+            # from the life-loss state), never a truncation.
+            terminated = True
         self.lives = lives
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
     def reset(self, **kwargs):
         """Reset only when lives are exhausted.
@@ -122,12 +116,16 @@ class EpisodicLifeEnv(gym.Wrapper):
         and the learner need not know about any of this behind-the-scenes.
         """
         if self.was_real_done:
-            obs = _parse_reset_result(self.env.reset(**kwargs))
+            obs, info = self.env.reset(**kwargs)
         else:
             # no-op step to advance from terminal/lost life state
-            obs, _, _, _ = _parse_step_result(self.env.step(0))
+            obs, _, terminated, truncated, info = self.env.step(0)
+            if terminated or truncated:
+                # the no-op step ended the game after all (e.g. the last life
+                # was lost on it) -- fall back to a real reset.
+                obs, info = self.env.reset(**kwargs)
         self.lives = self.env.unwrapped.ale.lives()
-        return obs
+        return obs, info
 
 
 class EpisodeStackedEnv(gym.Wrapper):
@@ -137,7 +135,7 @@ class EpisodeStackedEnv(gym.Wrapper):
         self.current_steps = 0
 
     def step(self, action):
-        obs, reward, done, info = _parse_step_result(self.env.step(action))
+        obs, reward, terminated, truncated, info = self.env.step(action)
         if reward == 0:
             self.current_steps += 1
         else:
@@ -145,10 +143,14 @@ class EpisodeStackedEnv(gym.Wrapper):
         if self.current_steps == self.max_stacked_steps:
             self.current_steps = 0
             print('max_stacked_steps!')
-            done = True
+            # A stalled episode is cut with a -1 penalty and the env is reset
+            # in place, so the returned obs already belongs to the *next*
+            # episode -- there is nothing meaningful to bootstrap from.
+            # Report it as a termination, matching the penalty.
+            terminated = True
             reward = -1
-            obs = _parse_reset_result(self.env.reset())
-        return obs, reward, done, info
+            obs, _ = self.env.reset()
+        return obs, reward, terminated, truncated, info
 
 
 class MaxAndSkipEnv(gym.Wrapper):
@@ -166,9 +168,11 @@ class MaxAndSkipEnv(gym.Wrapper):
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""
         total_reward = 0.0
-        done = None
+        terminated = False
+        truncated = False
+        info = {}
         for i in range(self._skip):
-            obs, reward, done, info = _parse_step_result(self.env.step(action))
+            obs, reward, terminated, truncated, info = self.env.step(action)
             if self.use_max:
                 if i == self._skip - 2: self._obs_buffer[0] = obs
                 if i == self._skip - 1: self._obs_buffer[1] = obs
@@ -176,19 +180,18 @@ class MaxAndSkipEnv(gym.Wrapper):
                 self._obs_buffer[0] = obs
 
             total_reward += reward
-            if done:
+            # both flags end the skip: the inner env will not accept further
+            # steps, and each flag is forwarded unchanged so the caller can
+            # still tell a termination from a time-limit truncation.
+            if terminated or truncated:
                 break
-        # Note that the observation on the done=True frame
-        # doesn't matter
+        # Note that the observation on the terminal frame doesn't matter
         if self.use_max:
             max_frame = self._obs_buffer.max(axis=0)
         else:
             max_frame = self._obs_buffer[0]
 
-        return max_frame, total_reward, done, info
-
-    def reset(self, **kwargs):
-        return _parse_reset_result(self.env.reset(**kwargs))
+        return max_frame, total_reward, terminated, truncated, info
 
 
 class ClipRewardEnv(gym.RewardWrapper):
@@ -248,16 +251,16 @@ class FrameStack(gym.Wrapper):
             else:
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
 
-    def reset(self):
-        ob = _parse_reset_result(self.env.reset())
+    def reset(self, **kwargs):
+        ob, info = self.env.reset(**kwargs)
         for _ in range(self.k):
             self.frames.append(ob)
-        return self._get_ob()
+        return self._get_ob(), info
 
     def step(self, action):
-        ob, reward, done, info = _parse_step_result(self.env.step(action))
+        ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward, terminated, truncated, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k
@@ -291,16 +294,18 @@ class BatchedFrameStack(gym.Wrapper):
             else:
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
 
-    def reset(self):
-        ob = _parse_reset_result(self.env.reset())
+    def reset(self, **kwargs):
+        ob, info = self.env.reset(**kwargs)
         for _ in range(self.k):
             self.frames.append(ob)
-        return self._get_ob()
+        return self._get_ob(), info
 
     def step(self, action):
-        ob, reward, done, info = _parse_step_result(self.env.step(action))
+        # multi-agent envs (SMAC) return per-agent terminated/truncated arrays;
+        # they are forwarded untouched.
+        ob, reward, terminated, truncated, info = self.env.step(action)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward, terminated, truncated, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k
@@ -339,22 +344,22 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
                 self.state_space = spaces.Box(low=0, high=1, shape=(k, state_shp[0]), dtype=env.observation_space.dtype)
 
-    def reset(self):
-        obs_dict = _parse_reset_result(self.env.reset())
+    def reset(self, **kwargs):
+        obs_dict, info = self.env.reset(**kwargs)
         ob = obs_dict["obs"]
         state = obs_dict["state"]
         for _ in range(self.k):
             self.obses.append(ob)
             self.states.append(state)
-        return self._get_ob()
+        return self._get_ob(), info
 
     def step(self, action):
-        obs_dict, reward, done, info = _parse_step_result(self.env.step(action))
+        obs_dict, reward, terminated, truncated, info = self.env.step(action)
         ob = obs_dict["obs"]
         state = obs_dict["state"]
         self.obses.append(ob)
         self.states.append(state)
-        return self._get_ob(), reward, done, info
+        return self._get_ob(), reward, terminated, truncated, info
 
     def _get_ob(self):
         assert len(self.obses) == self.k
@@ -431,15 +436,19 @@ class ReallyDoneWrapper(gym.Wrapper):
 
     def step(self, action):
         old_lives = self.env.unwrapped.ale.lives()
-        obs, reward, done, info = _parse_step_result(self.env.step(action))
+        obs, reward, terminated, truncated, info = self.env.step(action)
         lives = self.env.unwrapped.ale.lives()
-        if done:
-            return obs, reward, done, info
+        if terminated or truncated:
+            return obs, reward, terminated, truncated, info
         if old_lives > lives:
             print('lives:', lives)
-            obs, _, done, _ = _parse_step_result(self.env.step(1))
-        done = lives == 0
-        return obs, reward, done, info
+            # FIRE through the life-loss animation; the flags of that extra
+            # step are intentionally discarded, the running-out-of-lives
+            # condition below is what ends the episode.
+            obs, _, _, _, _ = self.env.step(1)
+        # only a real game over terminates; nothing here truncates.
+        terminated = lives == 0
+        return obs, reward, terminated, truncated, info
 
 
 class AllowBacktracking(gym.Wrapper):
@@ -457,14 +466,14 @@ class AllowBacktracking(gym.Wrapper):
     def reset(self, **kwargs):
         self._cur_x = 0
         self._max_x = 0
-        return _parse_reset_result(self.env.reset(**kwargs))
+        return self.env.reset(**kwargs)
 
     def step(self, action):
-        obs, rew, done, info = _parse_step_result(self.env.step(action))
+        obs, rew, terminated, truncated, info = self.env.step(action)
         self._cur_x += rew
         rew = max(0, self._cur_x - self._max_x)
         self._max_x = max(self._max_x, self._cur_x)
-        return obs, rew, done, info
+        return obs, rew, terminated, truncated, info
 
 
 def unwrap(env):
@@ -484,16 +493,15 @@ class StickyActionEnv(gym.Wrapper):
         self.p = p
         self.last_action = 0
 
-    def reset(self):
+    def reset(self, **kwargs):
         self.last_action = 0
-        return _parse_reset_result(self.env.reset())
+        return self.env.reset(**kwargs)
 
     def step(self, action):
         if self.unwrapped.np_random.uniform() < self.p:
             action = self.last_action
         self.last_action = action
-        obs, reward, done, info = _parse_step_result(self.env.step(action))
-        return obs, reward, done, info
+        return self.env.step(action)
 
 
 class MontezumaInfoWrapper(gym.Wrapper):
@@ -508,23 +516,27 @@ class MontezumaInfoWrapper(gym.Wrapper):
         return int(ram[self.room_address])
 
     def step(self, action):
-        obs, rew, done, info = _parse_step_result(self.env.step(action))
+        obs, rew, terminated, truncated, info = self.env.step(action)
         self.visited_rooms.add(self.get_current_room())
-        if done:
+        if terminated or truncated:
             if 'scores' not in info:
                 info['scores'] = {}
             info['scores'].update(visited_rooms=copy(self.visited_rooms))
             self.visited_rooms.clear()
-        return obs, rew, done, info
+        return obs, rew, terminated, truncated, info
 
-    def reset(self):
-        return _parse_reset_result(self.env.reset())
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
 
 
 class TimeLimit(gym.Wrapper):
     """
     A little bit changed original openai's TimeLimit env.
     Main difference is that we always send true or false in infos['time_outs']
+
+    Hitting the limit is a *truncation*: the MDP did not end, so the value
+    function must still be bootstrapped from the final observation. It never
+    sets ``terminated``, and it never clears a truncation raised further in.
     """
     def __init__(self, env, max_episode_steps=None):
         super(TimeLimit, self).__init__(env)
@@ -534,17 +546,16 @@ class TimeLimit(gym.Wrapper):
 
     def step(self, action):
         assert self._elapsed_steps is not None, "Cannot call env.step() before calling reset()"
-        observation, reward, done, info = _parse_step_result(self.env.step(action))
+        observation, reward, terminated, truncated, info = self.env.step(action)
         self._elapsed_steps += 1
-        info['time_outs'] = False
-        if self._elapsed_steps >= self._max_episode_steps:
-            info['time_outs'] = True
-            done = True
-        return observation, reward, done, info
+        if self._max_episode_steps is not None and self._elapsed_steps >= self._max_episode_steps:
+            truncated = True
+        info['time_outs'] = truncated
+        return observation, reward, terminated, truncated, info
 
     def reset(self, **kwargs):
         self._elapsed_steps = 0
-        return _parse_reset_result(self.env.reset(**kwargs))
+        return self.env.reset(**kwargs)
 
 
 class ImpalaEnvWrapper(gym.Wrapper):
@@ -560,22 +571,22 @@ class ImpalaEnvWrapper(gym.Wrapper):
     def step(self, action):
         if not np.isscalar(action):
             action = action.item()
-        obs, reward, done, info = _parse_step_result(self.env.step(action))
+        obs, reward, terminated, truncated, info = self.env.step(action)
         obs = {
             'observation': obs,
             'reward': np.clip(reward, -1, 1),
             'last_action': action
         }
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
-    def reset(self):
-        obs = _parse_reset_result(self.env.reset())
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
         obs = {
             'observation': obs,
             'reward': 0.0,
             'last_action': 0
         }
-        return obs
+        return obs, info
 
 
 class MaskVelocityWrapper(gym.ObservationWrapper):
