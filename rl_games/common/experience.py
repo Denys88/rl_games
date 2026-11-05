@@ -1,3 +1,7 @@
+import collections
+import math
+import weakref
+
 import numpy as np
 import random
 import gymnasium as gym
@@ -204,11 +208,140 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._max_priority = max(self._max_priority, priority)
 
 
+def _cuda_unregister(ptr):
+    try:
+        torch.cuda.synchronize()  # no kernel may still read the pages
+        torch.cuda.cudart().cudaHostUnregister(ptr)
+    except Exception:  # interpreter shutdown
+        pass
+
+
+def _page_locked(shape, dtype):
+    """Exact-size page-locked host tensor (pin_memory rounds big blocks up to a power of two)."""
+    t = torch.empty(shape, dtype=dtype)
+    nbytes = t.numel() * t.element_size()
+    if nbytes and int(torch.cuda.cudart().cudaHostRegister(t.data_ptr(), nbytes, 3)) == 0:  # portable | mapped
+        weakref.finalize(t, _cuda_unregister, t.data_ptr())
+        return t
+    return torch.empty(shape, dtype=dtype, pin_memory=True)
+
+
+class _DevicePointer:
+    def __init__(self, ptr, nbytes):
+        self.__cuda_array_interface__ = {'shape': (nbytes,), 'typestr': '|u1', 'data': (ptr, False), 'version': 3}
+
+
+def _mapped_view(host, device):
+    """CUDA tensor aliasing page-locked ``host`` (UVA), checked by a write from each side; None if unusable."""
+    nbytes = host.numel() * host.element_size()
+    try:
+        raw = torch.as_tensor(_DevicePointer(host.data_ptr(), nbytes), device=device)
+        probe = torch.tensor([17, 34, 51], dtype=torch.uint8)
+        host_bytes = host.view(-1).view(torch.uint8)
+        host_bytes[:3] = probe
+        torch.cuda.synchronize(device)
+        ok = bool(torch.equal(raw[:3].cpu(), probe))
+        raw[:3] = probe.flip(0).to(device)
+        torch.cuda.synchronize(device)
+        ok = ok and bool(torch.equal(host_bytes[:3], probe.flip(0)))
+        return raw.view(host.dtype).view(host.shape) if ok else None
+    except Exception:
+        return None
+
+
+class ReplayStorage:
+    """Allocates replay columns on the device ('device'), or in page-locked host memory ('host').
+
+    Host columns are read and written by GPU kernels through a mapped view of the same pages (UVA),
+    with a CPU gather + copy fallback when the mapping is unavailable.
+    """
+
+    def __init__(self, device, storage='device'):
+        if storage not in ('device', 'host'):
+            raise ValueError(f"replay storage must be 'device' or 'host', got {storage!r}")
+        self.device = torch.device(device)
+        self.host_tensors = []  # page-locked tensors behind the mapped views, kept alive here
+        self.mapped = (storage == 'host' and self.device.type == 'cuda'
+                       and _mapped_view(_page_locked((64,), torch.uint8), self.device) is not None)
+        # where the columns are indexed: the compute device, or the CPU for an unmapped host ring
+        self.rows_device = torch.device('cpu') if storage == 'host' and not self.mapped else self.device
+        self.pin = storage == 'host' and not self.mapped and torch.cuda.is_available()
+
+    def alloc(self, shape, dtype, zero=True):
+        if not self.mapped:
+            make = torch.zeros if zero else torch.empty
+            return make(shape, dtype=dtype, device=self.rows_device, pin_memory=self.pin)
+        host = _page_locked(shape, dtype)
+        if host.numel() == 0:
+            return torch.empty(shape, dtype=dtype, device=self.device)
+        if zero:
+            host.zero_()
+        view = _mapped_view(host, self.device)
+        if view is None:
+            raise RuntimeError(f'could not map {tuple(shape)} {dtype} host rows into {self.device}')
+        self.host_tensors.append(host)
+        return view
+
+    def rows(self, x):
+        # only host -> device copies may run asynchronously
+        return x.to(self.rows_device, non_blocking=self.rows_device.type == 'cuda')
+
+
+class NStepFolder:
+    """Folds consecutive vec-env steps into n-step transitions, per env.
+
+    push() takes one step for all envs: 'reward' (B, H), 'terminated' / 'truncated' (B,) bool, and
+    'ends', tensors read at the end of the window (the next obs, a final-obs slot). With n steps
+    pending it returns the transition anchored at the oldest: the discounted reward sum up to and
+    including the first episode end in the window, that end's flags and 'ends', and 'steps' (B,), the
+    number of rewards summed. Other keys come from the anchor step.
+    """
+
+    def __init__(self, n_step, gamma):
+        self.n_step = n_step
+        self.gamma = gamma
+        self.pending = collections.deque()
+
+    def push(self, step):
+        self.pending.append(step)
+        if len(self.pending) < self.n_step:
+            return None
+        out = self._fold()
+        self.pending.popleft()
+        return out
+
+    def _fold(self):
+        last = self.pending[-1]
+        ret, term, trunc = last['reward'], last['terminated'], last['truncated']
+        ends = dict(last['ends'])
+        steps = torch.full(term.shape, self.n_step, dtype=torch.int64, device=term.device)
+        for k in range(self.n_step - 2, -1, -1):
+            e = self.pending[k]
+            done = e['terminated'] | e['truncated']
+            ret = e['reward'] + self.gamma * ret * (~done).unsqueeze(-1)
+            term = torch.where(done, e['terminated'], term)
+            trunc = torch.where(done, e['truncated'], trunc)
+            steps = torch.where(done, k + 1, steps)
+            for key, value in e['ends'].items():
+                ends[key] = torch.where(done.view(-1, *([1] * (value.dim() - 1))), value, ends[key])
+        return dict(self.pending[0], reward=ret, terminated=term, truncated=trunc, ends=ends, steps=steps)
+
+
+def _flat_flag(x):
+    return x.bool().view(-1)
+
+
 class VectorizedReplayBuffer:
     """
     Vectorized replay buffer implementation using Torch tensors.
+
+    Rewards are (N, num_heads). With n_step > 1, add() takes one full vec-env step per call (every
+    env, in a fixed order, with an optional ``live`` mask of the rows to keep) and stores the folded
+    n-step transition: reward sum up to the first episode end, that end's next obs and flags, and the
+    bootstrap discount gamma^k (returned as 'discount' by sample_batch).
     """
-    def __init__(self, obs_shape, action_shape, capacity, device):
+    def __init__(self, obs_shape, action_shape, capacity, device, num_heads=1, n_step=1, gamma=0.99,
+                 obs_dtype=torch.float32, storage='device'):
         """Create Vectorized Replay buffer.
         Parameters
         ----------
@@ -218,25 +351,53 @@ class VectorizedReplayBuffer:
         """
 
         self.device = device
+        self.storage = ReplayStorage(device, storage)
+        alloc = self.storage.alloc
 
-        # Always use float32 for storage - autocast will handle precision during training
-        dtype = torch.float32
+        # Actions and rewards are float32; obs default to float32 (autocast handles training precision)
+        self.obs_dtype = obs_dtype
+        self.obses = alloc((capacity, *obs_shape), obs_dtype)
+        self.next_obses = alloc((capacity, *obs_shape), obs_dtype)
+        self.actions = alloc((capacity, *action_shape), torch.float32)
+        self.rewards = alloc((capacity, num_heads), torch.float32)
+        self.dones = alloc((capacity, 1), torch.bool)
+        self.truncated = alloc((capacity, 1), torch.bool)
 
-        self.obses = torch.zeros((capacity, *obs_shape), dtype=dtype, device=self.device)
-        self.next_obses = torch.zeros((capacity, *obs_shape), dtype=dtype, device=self.device)
-        self.actions = torch.zeros((capacity, *action_shape), dtype=dtype, device=self.device)
-        self.rewards = torch.zeros((capacity, 1), dtype=dtype, device=self.device)
-        self.dones = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
-        self.truncated = torch.zeros((capacity, 1), dtype=torch.bool, device=self.device)
+        self.n_step = n_step
+        self.gamma = gamma
+        self.folder = NStepFolder(n_step, gamma) if n_step > 1 else None
+        self.discounts = alloc((capacity, 1), torch.float32) if n_step > 1 else None
 
         self.capacity = capacity
         self.idx = 0
         self.full = False
 
     @torch.no_grad()
-    def add(self, obs, action, reward, next_obs, done, truncated=None):
+    def add(self, obs, action, reward, next_obs, done, truncated=None, live=None):
         if truncated is None:
             truncated = torch.zeros_like(done)
+        if self.folder is None:
+            if live is not None:
+                raise ValueError('live masks need n_step > 1; select the live rows before add()')
+            self._write(obs, action, reward, next_obs, done, truncated)
+            return
+        done = _flat_flag(done)
+        t = self.folder.push({
+            'obs': obs, 'action': action, 'reward': reward.view(obs.shape[0], -1),
+            'terminated': done, 'truncated': _flat_flag(truncated) & ~done, 'live': live,
+            'ends': {'next_obs': next_obs},
+        })
+        if t is None:
+            return
+        discount = (self.gamma ** t['steps'].float()).unsqueeze(1)
+        columns = [t['obs'], t['action'], t['reward'], t['ends']['next_obs'], t['terminated'].unsqueeze(1),
+                   t['truncated'].unsqueeze(1), discount]
+        if t['live'] is not None:
+            rows = t['live'].nonzero(as_tuple=True)[0]
+            columns = [c.index_select(0, rows) for c in columns]
+        self._write(*columns)
+
+    def _write(self, obs, action, reward, next_obs, done, truncated, discount=None):
         num_observations = obs.shape[0]
         if num_observations > self.capacity:
             # Earlier rows in this batch cannot survive a capacity-sized ring.
@@ -248,6 +409,8 @@ class VectorizedReplayBuffer:
             next_obs = next_obs[skipped:]
             done = done[skipped:]
             truncated = truncated[skipped:]
+            if discount is not None:
+                discount = discount[skipped:]
             self.idx = (self.idx + skipped) % self.capacity
             num_observations = self.capacity
             self.full = True
@@ -260,6 +423,8 @@ class VectorizedReplayBuffer:
             self.next_obses[0:overflow].copy_(next_obs[-overflow:])
             self.dones[0:overflow].copy_(done[-overflow:])
             self.truncated[0:overflow].copy_(truncated[-overflow:])
+            if discount is not None:
+                self.discounts[0:overflow].copy_(discount[-overflow:])
             self.full = True
 
         self.obses[self.idx:self.idx + remaining_capacity].copy_(obs[:remaining_capacity])
@@ -268,11 +433,34 @@ class VectorizedReplayBuffer:
         self.next_obses[self.idx:self.idx + remaining_capacity].copy_(next_obs[:remaining_capacity])
         self.dones[self.idx:self.idx + remaining_capacity].copy_(done[:remaining_capacity])
         self.truncated[self.idx:self.idx + remaining_capacity].copy_(truncated[:remaining_capacity])
+        if discount is not None:
+            self.discounts[self.idx:self.idx + remaining_capacity].copy_(discount[:remaining_capacity])
 
         self.idx = (self.idx + num_observations) % self.capacity
         # num_observations > 0 guard: a zero-row add on a fresh buffer leaves
         # idx == 0 and must NOT mark the (empty) buffer as full.
         self.full = self.full or (num_observations > 0 and self.idx == 0)
+
+    def can_sample(self):
+        return self.full or self.idx > 0
+
+    def _out(self, x):
+        return x.to(self.device, non_blocking=True)
+
+    def sample_batch(self, batch_size):
+        """Uniform batch: obs, action, reward (N, H), next_obs, done, truncated, discount (None for n_step 1)."""
+        idxs = torch.randint(0,
+                            self.capacity if self.full else self.idx,
+                            (batch_size,), device=self.storage.rows_device)
+        return {
+            'obs': self._out(self.obses[idxs]).float(),
+            'action': self._out(self.actions[idxs]),
+            'reward': self._out(self.rewards[idxs]),
+            'next_obs': self._out(self.next_obses[idxs]).float(),
+            'done': self._out(self.dones[idxs]),
+            'truncated': self._out(self.truncated[idxs]),
+            'discount': self._out(self.discounts[idxs]) if self.discounts is not None else None,
+        }
 
     def sample(self, batch_size):
         """Sample a batch of experiences.
@@ -295,22 +483,12 @@ class VectorizedReplayBuffer:
         truncated: torch tensor
             whether the episode was truncated (e.g. time limit) at this tuple of (observation, action) or not
         """
-
-        idxs = torch.randint(0,
-                            self.capacity if self.full else self.idx,
-                            (batch_size,), device=self.device)
-        obses = self.obses[idxs]
-        actions = self.actions[idxs]
-        rewards = self.rewards[idxs]
-        next_obses = self.next_obses[idxs]
-        dones = self.dones[idxs]
-        truncated = self.truncated[idxs]
-
-        return obses, actions, rewards, next_obses, dones, truncated
+        b = self.sample_batch(batch_size)
+        return b['obs'], b['action'], b['reward'], b['next_obs'], b['done'], b['truncated']
 
     def state_dict(self):
         """Return the replay buffer state for checkpointing."""
-        return {
+        state = {
             'obses': self.obses.cpu(),
             'next_obses': self.next_obses.cpu(),
             'actions': self.actions.cpu(),
@@ -320,6 +498,9 @@ class VectorizedReplayBuffer:
             'idx': self.idx,
             'full': self.full,
         }
+        if self.discounts is not None:
+            state['discounts'] = self.discounts.cpu()
+        return state
 
     def load_state_dict(self, state):
         """Restore the replay buffer state from a checkpoint."""
@@ -332,8 +513,209 @@ class VectorizedReplayBuffer:
             self.truncated.copy_(state['truncated'].to(self.device))
         else:
             self.truncated.zero_()
+        if self.discounts is not None:
+            self.discounts.copy_(state['discounts'].to(self.device))
         self.idx = state['idx']
         self.full = state['full']
+
+
+class MemoryEfficientReplayBuffer:
+    """Replay ring for a fixed set of vec envs that stores every obs once.
+
+    num_envs rows per env step, so env e's row for step t + n sits n * num_envs rows after its row
+    for step t. A row holds the n-step transition anchored at its step (obs, action, per-head reward
+    sum, flags of the first episode end in the window, bootstrap discount for n > 1); its next obs
+    is read from row i + n * num_envs at sample time, so the newest n steps are not sampled. A window
+    that ends in a time-out bootstraps from the true final obs, kept in a side pool (one entry per
+    time-out serves the up to n rows that end there); terminated windows keep nothing.
+
+    add() takes one full vec-env step with same-step autoreset: next_obs of a time-out env must be
+    its true final obs. Optional ``compactor`` drops reconstructible obs columns before storage and
+    rebuilds them at sample time from the kept columns plus an int32 aux row per obs. It provides
+    compact_dim, aux_dim, compact(obs (N, O)) -> (N, compact_dim) and expand(compact, aux) -> (N, O).
+    """
+
+    def __init__(self, obs_shape, action_shape, capacity, device, num_envs, num_heads=1, n_step=1, gamma=0.99,
+                 obs_dtype=torch.float32, storage='device', compactor=None):
+        if len(obs_shape) != 1:
+            raise ValueError(f'the memory-efficient replay needs flat observations, got {tuple(obs_shape)}')
+        if n_step * num_envs >= capacity:
+            raise ValueError(f'replay capacity {capacity} must exceed n_step * num_envs = {n_step * num_envs}')
+        self.device = torch.device(device)
+        self.storage = ReplayStorage(device, storage)
+        self.num_envs, self.capacity, self.n_step, self.gamma = num_envs, capacity, n_step, gamma
+        self.obs_dtype = obs_dtype
+        self.compactor = compactor
+        self.stored_dim = compactor.compact_dim if compactor is not None else obs_shape[0]
+        self.aux_dim = compactor.aux_dim if compactor is not None else 0
+
+        alloc = lambda shape, dtype: self.storage.alloc(shape, dtype, zero=False)
+        self.obs = alloc((capacity, self.stored_dim), obs_dtype)
+        self.aux = alloc((capacity, self.aux_dim), torch.int32) if self.aux_dim else None
+        self.action = alloc((capacity, *action_shape), torch.float32)
+        self.reward = alloc((capacity, num_heads), torch.float32)
+        self.terminated = alloc((capacity,), torch.bool)
+        self.truncated = alloc((capacity,), torch.bool)
+        self.discount = alloc((capacity,), torch.float32) if n_step > 1 else None
+        # pool slot of the true final obs for time-out rows, -1 otherwise
+        self.final_slot = alloc((capacity,), torch.int64)
+        self.final_slot.fill_(-1)
+
+        self._pool_obs = None
+        self._pool_aux = None
+        self._pool_birth = np.zeros(0, dtype=np.int64)  # env step of each slot's time-out
+        self._pool_next = 0
+
+        self.folder = NStepFolder(n_step, gamma)
+        self.size = 0
+        self.ptr = 0
+        self.steps = 0  # env steps added
+
+    def nbytes(self):
+        tensors = [self.obs, self.aux, self.action, self.reward, self.terminated, self.truncated, self.discount,
+                   self.final_slot, self._pool_obs, self._pool_aux]
+        return sum(t.numel() * t.element_size() for t in tensors if t is not None)
+
+    def _stored(self, obs):
+        if self.compactor is not None:
+            obs = self.compactor.compact(obs)
+        return obs.to(self.obs_dtype)
+
+    def _ensure_pool(self, count, oldest_live_step):
+        """Slots for ``count`` new final obs; grows the pool rather than overwrite a slot still referenced."""
+        size = len(self._pool_birth)
+        if size:
+            slots = (self._pool_next + np.arange(count)) % size
+            if count <= size and not (self._pool_birth[slots] >= oldest_live_step).any():
+                self._pool_next = int((self._pool_next + count) % size)
+                return slots
+        new_size = max(2 * size, size + count, 8 * self.num_envs)
+        obs = self.storage.alloc((new_size, self.stored_dim), self.obs_dtype, zero=False)
+        aux = self.storage.alloc((new_size, self.aux_dim), torch.int32, zero=False) if self.aux_dim else None
+        if size:
+            obs[:size] = self._pool_obs
+            if aux is not None:
+                aux[:size] = self._pool_aux
+        self._pool_obs, self._pool_aux = obs, aux
+        birth = np.full(new_size, np.iinfo(np.int64).min, dtype=np.int64)
+        birth[:size] = self._pool_birth
+        self._pool_birth = birth
+        slots = size + np.arange(count)
+        self._pool_next = int((size + count) % new_size)
+        return slots
+
+    def _store_final(self, timeout, final_obs, final_aux):
+        """Pool slot per env, -1 where the env did not time out at this step."""
+        slot = torch.full((self.num_envs,), -1, dtype=torch.int64, device=self.device)
+        envs = timeout.nonzero().squeeze(-1)
+        if envs.numel() == 0:
+            return slot
+        # rows anchored at or after this step may still be alive (conservative by one partial batch)
+        oldest_live = self.steps - self.n_step - math.ceil(self.capacity / self.num_envs) + 1
+        slots = self._ensure_pool(int(envs.numel()), oldest_live)
+        self._pool_birth[slots] = self.steps
+        slots_t = torch.as_tensor(slots, device=self.device)
+        rows = self.storage.rows(slots_t)
+        self._pool_obs[rows] = self.storage.rows(self._stored(final_obs[envs]))
+        if self._pool_aux is not None:
+            self._pool_aux[rows] = self.storage.rows(final_aux[envs].to(torch.int32))
+        slot[envs] = slots_t
+        return slot
+
+    @torch.no_grad()
+    def add(self, obs, action, reward, next_obs, done, truncated=None, live=None, obs_aux=None, next_obs_aux=None):
+        """One env step for all envs; done = terminated. A step both terminated and truncated counts as terminated."""
+        if live is not None:
+            raise ValueError('the memory-efficient replay needs same-step autoreset (every row live)')
+        if obs.shape[0] != self.num_envs:
+            raise ValueError(f'expected {self.num_envs} envs, got {obs.shape[0]}')
+        if self.compactor is not None and (obs_aux is None or next_obs_aux is None):
+            raise ValueError('a compacting replay needs obs_aux and next_obs_aux')
+        terminated = _flat_flag(done.to(self.device))
+        truncated = torch.zeros_like(terminated) if truncated is None else _flat_flag(truncated.to(self.device))
+        truncated = truncated & ~terminated
+        step = {
+            'obs': self._stored(obs.to(self.device)),
+            'action': action.to(self.device, torch.float32),
+            'reward': reward.to(self.device, torch.float32).view(self.num_envs, -1),
+            'terminated': terminated,
+            'truncated': truncated,
+            'ends': {'slot': self._store_final(truncated, next_obs.to(self.device), next_obs_aux)},
+        }
+        if obs_aux is not None:
+            step['aux'] = obs_aux.to(self.device, torch.int32)
+        self.steps += 1
+        t = self.folder.push(step)
+        if t is not None:
+            self._write(t)
+
+    def _write(self, t):
+        b = self.num_envs
+        if self.ptr + b <= self.capacity:
+            rows = slice(self.ptr, self.ptr + b)
+        else:
+            rows = self.storage.rows((self.ptr + torch.arange(b, device=self.device)) % self.capacity)
+        to_rows = self.storage.rows
+        self.obs[rows] = to_rows(t['obs'])
+        if self.aux is not None:
+            self.aux[rows] = to_rows(t['aux'])
+        self.action[rows] = to_rows(t['action'])
+        self.reward[rows] = to_rows(t['reward'])
+        self.terminated[rows] = to_rows(t['terminated'])
+        self.truncated[rows] = to_rows(t['truncated'])
+        if self.discount is not None:
+            self.discount[rows] = to_rows(self.gamma ** t['steps'].float())
+        self.final_slot[rows] = to_rows(t['ends']['slot'])
+        self.ptr = (self.ptr + b) % self.capacity
+        self.size = min(self.size + b, self.capacity)
+
+    def can_sample(self):
+        return self.size > self.n_step * self.num_envs
+
+    def sample_batch(self, batch_size, rows=None):
+        """Uniform batch on the compute device; obs and next_obs come back as float32."""
+        lag = self.n_step * self.num_envs
+        if rows is None:
+            rows = torch.randint(0, self.size - lag, (batch_size,), device=self.storage.rows_device)
+            if self.size == self.capacity:
+                rows = (rows + self.ptr) % self.capacity  # logical 0 = oldest row
+        else:
+            rows = self.storage.rows(torch.as_tensor(rows, dtype=torch.long))
+        both = torch.cat([rows, (rows + lag) % self.capacity])
+        obs = self.obs[both]
+        aux = self.aux[both] if self.aux is not None else None
+        if self._pool_obs is not None:
+            n = rows.shape[0]
+            slot = self.final_slot[rows]
+            hit = (slot >= 0).unsqueeze(-1)
+            safe = slot.clamp(min=0)
+            obs[n:] = torch.where(hit, self._pool_obs[safe], obs[n:])
+            if aux is not None:
+                aux[n:] = torch.where(hit, self._pool_aux[safe], aux[n:])
+        obs = obs.to(self.device, non_blocking=True).float()
+        if self.compactor is not None:
+            obs = self.compactor.expand(obs, aux.to(self.device, non_blocking=True))
+        obs, next_obs = obs.chunk(2)
+
+        def out(x):
+            return x.to(self.device, non_blocking=True)
+
+        return {
+            'obs': obs,
+            'action': out(self.action[rows]),
+            'reward': out(self.reward[rows]),
+            'next_obs': next_obs,
+            'done': out(self.terminated[rows]).unsqueeze(1),
+            'truncated': out(self.truncated[rows]).unsqueeze(1),
+            'discount': out(self.discount[rows]).unsqueeze(1) if self.discount is not None else None,
+        }
+
+    def sample(self, batch_size):
+        b = self.sample_batch(batch_size)
+        return b['obs'], b['action'], b['reward'], b['next_obs'], b['done'], b['truncated']
+
+    def state_dict(self):
+        raise NotImplementedError('saving the memory-efficient replay is not supported')
 
 
 class ExperienceBuffer:

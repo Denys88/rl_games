@@ -282,6 +282,9 @@ configurations = {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
     },
+    'point_mass_tracking' : {
+        'vecenv_type' : 'POINT_MASS_TRACKING'
+    },
     'test_env' : {
         'env_creator' : lambda **kwargs : create_test_env(kwargs.pop('name'), **kwargs),
         'vecenv_type' : 'RAY'

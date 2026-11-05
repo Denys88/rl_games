@@ -1,5 +1,6 @@
 from rl_games.common.player import BasePlayer
 from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch.sac_helper import resolve_action_groups
 from rl_games.algos_torch.running_mean_std import RunningMeanStd
 from rl_games.common.tr_helpers import unsqueeze_obs
 import torch
@@ -219,7 +220,9 @@ class SACPlayer(BasePlayer):
             'value_size': self.env_info.get('value_size', 1),
             'normalize_value': False,
             'normalize_input': self.normalize_input,
-        }  
+            'action_groups': resolve_action_groups(
+                self.config.get('action_groups') or self.env_info.get('action_groups'), self.actions_num),
+        }
         self.model = self.network.build(config)
         self.model.to(self.device)
         self.model.eval()
