@@ -41,6 +41,32 @@ def wrap_model_ddp(model, device, find_unused_parameters=False):
     return ddp
 
 
+def nccl_runtime_version():
+    """(major, minor, patch) of the loaded libnccl; torch.cuda.nccl.version() is the one torch was built against,
+    which a newer nvidia-nccl wheel replaces at run time."""
+    import ctypes
+    try:
+        code = ctypes.c_int()
+        ctypes.CDLL('libnccl.so.2').ncclGetVersion(ctypes.byref(code))
+        return code.value // 10000, code.value // 100 % 100, code.value % 100
+    except (OSError, AttributeError):
+        return tuple(torch.cuda.nccl.version()[:3])
+
+
+def check_nccl(device):
+    """Refuse NCCL older than 2.27 on sm_12x GPUs (RTX PRO 6000 / RTX 50 Blackwell): there every collective ends in
+    an illegal memory access (NCCL 2.26.2, the one torch 2.7 ships; 2.27.3 and later work)."""
+    if not torch.cuda.is_available():
+        return
+    major, minor = torch.cuda.get_device_capability(device)
+    version = nccl_runtime_version()
+    if major == 12 and tuple(version) < (2, 27, 0):
+        raise RuntimeError(
+            f"NCCL {'.'.join(map(str, version))} fails on {torch.cuda.get_device_name(device)} (sm_{major}{minor}): "
+            f"every collective ends in an illegal memory access. Install NCCL >= 2.27, e.g. "
+            f"pip install 'nvidia-nccl-cu12>=2.27' (torch 2.7 ships 2.26.2)")
+
+
 def flat_allreduce_grads(model, world_size):
     """Average gradients across ranks with a single flat all-reduce
     (legacy multi_gpu_grad_sync: 'flat_allreduce' mode)."""

@@ -40,9 +40,10 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         self.loc = loc
         self.scale = scale
 
-        self.base_dist = pyd.Normal(loc, scale)
+        # no argument validation: its checks read device values on the host (one sync per actor call)
+        self.base_dist = pyd.Normal(loc, scale, validate_args=False)
         transforms = [TanhTransform()]
-        super().__init__(self.base_dist, transforms)
+        super().__init__(self.base_dist, transforms, validate_args=False)
 
     @property
     def mean(self):
@@ -136,7 +137,9 @@ class ReturnScaler:
     max_return (the critic support) and typical returns to unit spread.
     """
 
-    def __init__(self, num_heads, gamma, max_return, device):
+    def __init__(self, num_heads, gamma, max_return, device, all_reduce=None):
+        """all_reduce (in-place SUM, e.g. torch.distributed.all_reduce): pool the batch moments over ranks."""
+        self.all_reduce = all_reduce
         self.gamma = gamma
         self.max_return = max_return
         self.returns = None  # (B, H), allocated on the first update
@@ -152,11 +155,21 @@ class ReturnScaler:
             self.returns = torch.zeros_like(rewards, dtype=torch.float32)
         keep = self.gamma * (~done.bool().view(-1)).float().unsqueeze(-1)
         self.returns = keep * self.returns + rewards.float()
-        self.abs_max = torch.maximum(self.abs_max, self.returns.abs().amax(dim=0))
-        # parallel merge of the batch moments, prior count 1e-4
+        batch_max = self.returns.abs().amax(dim=0)
         n = float(self.returns.shape[0])
         batch_mean = self.returns.mean(dim=0)
-        batch_var = (self.returns.pow(2).mean(dim=0) - batch_mean.pow(2)).clamp(min=0.0)
+        batch_sq = self.returns.pow(2).mean(dim=0)
+        if self.all_reduce is not None:
+            import torch.distributed as dist
+            world = dist.get_world_size()
+            moments = torch.cat([batch_mean, batch_sq])
+            self.all_reduce(moments)
+            batch_mean, batch_sq = (moments / world).chunk(2)
+            self.all_reduce(batch_max, op=dist.ReduceOp.MAX)
+            n *= world
+        self.abs_max = torch.maximum(self.abs_max, batch_max)
+        # parallel merge of the batch moments, prior count 1e-4
+        batch_var = (batch_sq - batch_mean.pow(2)).clamp(min=0.0)
         delta = batch_mean - self.mean
         total = self.count + n
         m2 = self.var * (self.count + 1e-4) + batch_var * n + delta.pow(2) * self.count * n / total
@@ -207,3 +220,104 @@ class HeldNoise:
             self.used = 0
         self.used += 1
         return self.eps
+
+
+def make_capturable(optimizer, device):
+    """Device LR tensors and capturable steps, so optimizer.step() can run inside a CUDA graph."""
+    for group in optimizer.param_groups:
+        group['capturable'] = True
+        lr = group['lr']
+        group['lr'] = torch.tensor(float(lr), dtype=torch.float32, device=device)
+
+
+class CudaGraphStep:
+    """Runs fn(batch, branch) through one CUDA graph per branch, replayed on static copies of the batch.
+
+    The first ``warmup`` calls of each branch run eagerly, so lazy optimizer state, compilation and
+    autotuning happen before the capture. fn must only launch device work: host-side effects inside it
+    happen once, at capture. The graphs share one memory pool; outputs are cloned after each replay.
+    """
+
+    def __init__(self, fn, warmup=3):
+        self.fn = fn
+        self.warmup = warmup
+        self.reset()
+
+    def reset(self):
+        self.graphs, self.outputs, self.calls = {}, {}, {}
+        self.batch = None
+        self.pool = None
+        self.stream = None
+
+    def _warmup(self, batch, branch):
+        """Eager call on the capture stream: library handles, workspaces and kernel choices are then the ones the
+        capture sees (a kernel first loaded inside a capture can break it)."""
+        if self.stream is None:
+            self.stream = torch.cuda.Stream()
+        current = torch.cuda.current_stream()
+        self.stream.wait_stream(current)
+        with torch.cuda.stream(self.stream):
+            out = self.fn(batch, branch)
+        current.wait_stream(self.stream)
+        for v in out.values():
+            v.record_stream(current)
+        return out
+
+    def __call__(self, batch, branch):
+        calls = self.calls.get(branch, 0)
+        self.calls[branch] = calls + 1
+        if calls < self.warmup:
+            return self._warmup(batch, branch)
+        if self.batch is None:
+            self.batch = {k: None if v is None else v.detach().clone() for k, v in batch.items()}
+        else:
+            for k, v in batch.items():
+                if v is not None:
+                    self.batch[k].copy_(v)
+        if branch not in self.graphs:
+            graph = torch.cuda.CUDAGraph()
+            torch.cuda.synchronize()
+            # thread_local: CUDA calls of other threads (e.g. a simulator's) cannot invalidate the capture
+            with torch.cuda.graph(graph, pool=self.pool, stream=self.stream, capture_error_mode='thread_local'):
+                self.outputs[branch] = self.fn(self.batch, branch)
+            if self.pool is None:
+                self.pool = graph.pool()
+            self.graphs[branch] = graph
+        self.graphs[branch].replay()
+        return {k: v.clone() for k, v in self.outputs[branch].items()}
+
+
+class OverlappedGradAllReduce:
+    """Averages gradients over the ranks while backward is still running.
+
+    Each parameter's gradient is all-reduced asynchronously as soon as backward has accumulated it, so the
+    traffic of the late layers overlaps the backward of the early ones; finish() joins the collectives
+    (stream waits, no host sync) and divides by the world size. ``dtype`` (e.g. bfloat16) sends the
+    gradients in that precision.
+    """
+
+    def __init__(self, params, world_size, dtype=None):
+        import torch.distributed as dist
+        self.dist = dist
+        self.world_size = world_size
+        self.dtype = dtype
+        self.pending = []
+        self.params = [p for p in params if p.requires_grad]
+        for p in self.params:
+            p.register_post_accumulate_grad_hook(self._launch)
+
+    def _launch(self, param):
+        grad = param.grad if self.dtype is None else param.grad.to(self.dtype)
+        self.pending.append((param, grad, self.dist.all_reduce(grad, async_op=True)))
+
+    def finish(self):
+        """Wait for the collectives and leave the mean gradient in every param.grad."""
+        if not self.pending:
+            return
+        for _, _, work in self.pending:
+            work.wait()
+        grads = [p.grad for p, _, _ in self.pending]
+        if self.dtype is not None:
+            torch._foreach_copy_(grads, [g for _, g, _ in self.pending])
+        torch._foreach_div_(grads, float(self.world_size))
+        self.pending = []
