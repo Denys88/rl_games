@@ -236,15 +236,16 @@ class SACAgent(BaseAlgorithm):
         self.local_rank = int(os.getenv('LOCAL_RANK', '0'))
         self.world_size = int(os.getenv('WORLD_SIZE', '1'))
         backend = config.get('multi_gpu_backend', 'nccl')
-        if not dist.is_initialized():
-            dist.init_process_group(backend, rank=self.global_rank, world_size=self.world_size)
-        if backend == 'nccl':
+        if backend == 'nccl':  # this rank's GPU before any CUDA work or the process group
             device = f'cuda:{self.local_rank}'
             torch.cuda.set_device(self.local_rank)
+            torch_ext.check_nccl(device)
             config['device'] = device
             env_config = config.get('env_config') or {}
             if str(env_config.get('device', '')).startswith('cuda'):
                 env_config['device'] = device
+        if not dist.is_initialized():
+            dist.init_process_group(backend, rank=self.global_rank, world_size=self.world_size)
         if self.global_rank != 0:
             config['print_stats'] = False
         self._can_sample_all = False

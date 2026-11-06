@@ -90,3 +90,38 @@ def test_default_network_with_obs_normalizer_stays_identical():
         r0, r1 = results[0], results[1]
     assert torch.equal(r0['digest'], r1['digest'])
     assert r0['updates'] == r1['updates'] > 0
+
+
+def _nccl_worker(rank, world_size, port, results, config):
+    os.environ.update({'RANK': str(rank), 'LOCAL_RANK': str(rank), 'WORLD_SIZE': str(world_size),
+                       'MASTER_ADDR': '127.0.0.1', 'MASTER_PORT': str(port)})
+    torch.cuda.set_device(rank)
+    env = PointMassTracking(64, num_groups=2, seed=10 + rank, device=f'cuda:{rank}')
+    agent = make_agent(env, flash_network(actor_units=32, critic_units=64, blocks=2), seed=rank, device='cuda',
+                       multi_gpu=True, batch_size=128, replay_memory_efficient=True, lr_schedule='cosine', **config)
+    agent.train()
+    results[rank] = {'digest': _digest(agent).cpu(), 'updates': agent.update_counter,
+                     'device': str(agent.model.sac_network.critic.out_bias.device),
+                     'captured': sorted(agent.graph_step.graphs) if agent.graph_step is not None else []}
+    # no destroy_process_group: with captured NCCL collectives it can block; process exit frees the communicator
+
+
+@pytest.mark.skipif(not torch.cuda.is_available() or torch.cuda.device_count() < 2, reason='needs 2 GPUs')
+@pytest.mark.parametrize('config', [
+    {'mixed_precision': 'fp16', 'update_cuda_graph': True},
+    {'mixed_precision': False, 'multi_gpu_overlap': False},
+    {'mixed_precision': 'fp16', 'multi_gpu_grad_dtype': 'bfloat16'},
+], ids=['fp16_graph_overlap', 'fp32_flat', 'fp16_bf16_traffic'])
+def test_nccl_two_gpus_stay_identical(config):
+    """Real NCCL on two GPUs (overlapped all-reduce, CUDA graph capture): each rank on its own GPU, same networks."""
+    import torch.multiprocessing as mp
+    port = 29740 + os.getpid() % 1000 + len(str(config))
+    with mp.Manager() as manager:
+        results = manager.dict()
+        mp.spawn(_nccl_worker, args=(2, port, results, dict(config, max_epochs=4)), nprocs=2, join=True)
+        r0, r1 = results[0], results[1]
+    assert (r0['device'], r1['device']) == ('cuda:0', 'cuda:1')
+    assert r0['updates'] == r1['updates'] > 0
+    assert torch.equal(r0['digest'], r1['digest'])
+    if config.get('update_cuda_graph'):
+        assert r0['captured'] == [False, True]
