@@ -359,7 +359,8 @@ class SACAgent(BaseAlgorithm):
         action_shape = self.env_info['action_space'].shape
         obs_dtype = getattr(torch, config.get('replay_obs_dtype', 'float32'))
         storage = config.get('replay_storage', 'device')
-        compactor = config.get('replay_obs_compactor', None)
+        # the config's compactor, else one the env reports (env_info['replay_obs_compactor'], an object)
+        compactor = config.get('replay_obs_compactor', None) or (self.env_info or {}).get('replay_obs_compactor')
         if isinstance(compactor, str):
             # 'module:factory', called with env_info
             module, attr = compactor.split(':')

@@ -548,10 +548,18 @@ class _StepCountCompactor:
         return torch.cat([compact, aux.float()], dim=-1)
 
 
-def test_agent_feeds_the_compactor_aux_and_final_aux():
+@pytest.mark.parametrize('from_env', [False, True])
+def test_agent_feeds_the_compactor_aux_and_final_aux(from_env):
     env = _StepCountTracking(16, num_groups=2, episode_length=12)
-    agent = make_agent(env, flash_network(), n_step=3, max_epochs=4, replay_memory_efficient=True,
-                       replay_obs_compactor=_StepCountCompactor(env.get_env_info()))
+    compactor = _StepCountCompactor(env.get_env_info())
+    if from_env:  # the env reports its compactor in env_info
+        info = env.get_env_info()
+        env.get_env_info = lambda: {**info, 'replay_obs_compactor': compactor}
+        agent = make_agent(env, flash_network(), n_step=3, max_epochs=4, replay_memory_efficient=True)
+    else:
+        agent = make_agent(env, flash_network(), n_step=3, max_epochs=4, replay_memory_efficient=True,
+                           replay_obs_compactor=compactor)
+    assert isinstance(agent.obs_compactor, _StepCountCompactor)
     agent.train()
     buffer = agent.replay_buffer
     assert buffer.obs.shape[1] == env.obs_dim and buffer.aux.shape[1] == 1
