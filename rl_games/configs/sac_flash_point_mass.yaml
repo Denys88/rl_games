@@ -6,6 +6,7 @@
 # (or let the env report env_info['action_groups']); the env provides infos['reward_heads'] (B, H),
 # infos['time_outs'] and infos['final_observation'] (same-step autoreset).
 #   python runner.py --train --file rl_games/configs/sac_flash_point_mass.yaml
+#   torchrun --standalone --nproc_per_node=4 runner.py --train --file ... (with multi_gpu: True)
 
 params:
   seed: 42
@@ -92,6 +93,7 @@ params:
     mixed_precision: fp16
     torch_compile: default      # fused network kernels
     update_cuda_graph: True     # each update replayed as one CUDA graph
+    multi_gpu: False            # True under torchrun: one rank per GPU, own envs and replay, gradients averaged
 
     player:
       deterministic: True

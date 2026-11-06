@@ -137,7 +137,9 @@ class ReturnScaler:
     max_return (the critic support) and typical returns to unit spread.
     """
 
-    def __init__(self, num_heads, gamma, max_return, device):
+    def __init__(self, num_heads, gamma, max_return, device, all_reduce=None):
+        """all_reduce (in-place SUM, e.g. torch.distributed.all_reduce): pool the batch moments over ranks."""
+        self.all_reduce = all_reduce
         self.gamma = gamma
         self.max_return = max_return
         self.returns = None  # (B, H), allocated on the first update
@@ -153,11 +155,21 @@ class ReturnScaler:
             self.returns = torch.zeros_like(rewards, dtype=torch.float32)
         keep = self.gamma * (~done.bool().view(-1)).float().unsqueeze(-1)
         self.returns = keep * self.returns + rewards.float()
-        self.abs_max = torch.maximum(self.abs_max, self.returns.abs().amax(dim=0))
-        # parallel merge of the batch moments, prior count 1e-4
+        batch_max = self.returns.abs().amax(dim=0)
         n = float(self.returns.shape[0])
         batch_mean = self.returns.mean(dim=0)
-        batch_var = (self.returns.pow(2).mean(dim=0) - batch_mean.pow(2)).clamp(min=0.0)
+        batch_sq = self.returns.pow(2).mean(dim=0)
+        if self.all_reduce is not None:
+            import torch.distributed as dist
+            world = dist.get_world_size()
+            moments = torch.cat([batch_mean, batch_sq])
+            self.all_reduce(moments)
+            batch_mean, batch_sq = (moments / world).chunk(2)
+            self.all_reduce(batch_max, op=dist.ReduceOp.MAX)
+            n *= world
+        self.abs_max = torch.maximum(self.abs_max, batch_max)
+        # parallel merge of the batch moments, prior count 1e-4
+        batch_var = (batch_sq - batch_mean.pow(2)).clamp(min=0.0)
         delta = batch_mean - self.mean
         total = self.count + n
         m2 = self.var * (self.count + 1e-4) + batch_var * n + delta.pow(2) * self.count * n / total
@@ -274,3 +286,38 @@ class CudaGraphStep:
         self.graphs[branch].replay()
         return {k: v.clone() for k, v in self.outputs[branch].items()}
 
+
+class OverlappedGradAllReduce:
+    """Averages gradients over the ranks while backward is still running.
+
+    Each parameter's gradient is all-reduced asynchronously as soon as backward has accumulated it, so the
+    traffic of the late layers overlaps the backward of the early ones; finish() joins the collectives
+    (stream waits, no host sync) and divides by the world size. ``dtype`` (e.g. bfloat16) sends the
+    gradients in that precision.
+    """
+
+    def __init__(self, params, world_size, dtype=None):
+        import torch.distributed as dist
+        self.dist = dist
+        self.world_size = world_size
+        self.dtype = dtype
+        self.pending = []
+        self.params = [p for p in params if p.requires_grad]
+        for p in self.params:
+            p.register_post_accumulate_grad_hook(self._launch)
+
+    def _launch(self, param):
+        grad = param.grad if self.dtype is None else param.grad.to(self.dtype)
+        self.pending.append((param, grad, self.dist.all_reduce(grad, async_op=True)))
+
+    def finish(self):
+        """Wait for the collectives and leave the mean gradient in every param.grad."""
+        if not self.pending:
+            return
+        for _, _, work in self.pending:
+            work.wait()
+        grads = [p.grad for p, _, _ in self.pending]
+        if self.dtype is not None:
+            torch._foreach_copy_(grads, [g for _, g, _ in self.pending])
+        torch._foreach_div_(grads, float(self.world_size))
+        self.pending = []
