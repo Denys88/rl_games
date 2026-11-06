@@ -161,6 +161,21 @@ class SACAgent(BaseAlgorithm):
         self._init_lr_schedule(config)
         self.replay_buffer = self._build_replay_buffer(config)
 
+        # update_cuda_graph: each update (critic step, actor + temperature step, target EMA) is captured
+        # once per branch in a CUDA graph and replayed; sampling and the LR schedule stay on the host
+        self.graph_step = None
+        if config.get('update_cuda_graph', False):
+            if not self.ensemble_critic or torch.device(self._device).type != 'cuda':
+                raise ValueError('update_cuda_graph needs the flash_sac network on a CUDA device')
+            compile_cfg = config.get('torch_compile', False)
+            mode = compile_cfg.get('mode') if isinstance(compile_cfg, dict) else compile_cfg
+            if mode is True or mode in ('reduce-overhead', 'max-autotune'):
+                raise ValueError("update_cuda_graph captures the whole update; torch_compile must not add CUDA "
+                                 "graphs of its own: use 'default' or 'max-autotune-no-cudagraphs'")
+            self._make_capturable()
+            self.graph_step = sac_helper.CudaGraphStep(self._update_step,
+                                                       warmup=int(config.get('update_cuda_graph_warmup', 3)))
+
         # Target entropy per group: -coef * dims, or that of an isotropic Gaussian with
         # std target_entropy_sigma per normalized action dim (0.5 n ln(2 pi e sigma^2)).
         self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
@@ -213,6 +228,10 @@ class SACAgent(BaseAlgorithm):
                 def close(self): pass
             self.writer = _DummyWriter()
 
+    def _make_capturable(self):
+        for opt in (self.actor_optimizer, self.critic_optimizer, self.log_alpha_optimizer):
+            sac_helper.make_capturable(opt, self._device)
+
     def _init_lr_schedule(self, config):
         """lr_schedule: cosine = linear warm-up over lr_warmup_steps updates, then cosine to
         lr_end_factor * lr at lr_decay_steps (default: the run's update count). Each schedule is
@@ -241,7 +260,10 @@ class SACAgent(BaseAlgorithm):
         lr = base_lr * schedulers.cosine_lr_factor(step, self.lr_warmup_steps, self.lr_decay_steps,
                                                    self.lr_end_factor)
         for group in optimizer.param_groups:
-            group['lr'] = lr
+            if torch.is_tensor(group['lr']):
+                group['lr'].fill_(lr)  # device LR read by a captured step
+            else:
+                group['lr'] = lr
 
     def _build_replay_buffer(self, config):
         """VectorizedReplayBuffer (default), or with replay_memory_efficient the ring that reads next obs
@@ -474,6 +496,11 @@ class SACAgent(BaseAlgorithm):
         if 'replay_buffer' in weights:
             self.replay_buffer.load_state_dict(weights['replay_buffer'])
 
+        if self.graph_step is not None:
+            # new optimizer state tensors: recapture
+            self._make_capturable()
+            self.graph_step.reset()
+
         if self.vec_env is not None:
             env_state = weights.get('env_state', None)
             self.vec_env.set_env_state(env_state)
@@ -572,6 +599,9 @@ class SACAgent(BaseAlgorithm):
 
     def _critic_step(self, critic_loss):
         self._set_lr(self.critic_optimizer, self.critic_lr, self.update_counter)
+        self._critic_opt_step(critic_loss)
+
+    def _critic_opt_step(self, critic_loss):
         self.critic_optimizer.zero_grad(set_to_none=True)
         self.critic_scaler.scale(critic_loss).backward()
         if self.critic_grad_clip > 0:
@@ -616,6 +646,10 @@ class SACAgent(BaseAlgorithm):
         step = self.actor_steps if self.lr_per_optimizer_step else self.update_counter - 1
         self._set_lr(self.actor_optimizer, self.actor_lr, step)
         self._set_lr(self.log_alpha_optimizer, self.alpha_lr, step)
+        self._actor_opt_step(total_loss)
+        self.actor_steps += 1
+
+    def _actor_opt_step(self, total_loss):
         self.actor_optimizer.zero_grad(set_to_none=True)
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad(set_to_none=True)
@@ -626,7 +660,6 @@ class SACAgent(BaseAlgorithm):
         if self.learnable_temperature:
             self.actor_scaler.step(self.log_alpha_optimizer)
         self.actor_scaler.update()
-        self.actor_steps += 1
         if self._post_actor_step is not None:
             self._post_actor_step()
 
@@ -647,6 +680,14 @@ class SACAgent(BaseAlgorithm):
         norm sees both halves (CrossQ); only the first half enters the loss. a' comes from the actor's
         running statistics.
         """
+        critic_loss, losses = self._critic_heads_loss(obs, action, reward, next_obs, done, discount)
+        self._critic_step(critic_loss)
+        if self.num_heads > 1:
+            self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
+        return critic_loss.detach(), losses[0].mean().detach(), losses[1].mean().detach()
+
+    def _critic_heads_loss(self, obs, action, reward, next_obs, done, discount):
+        """Critic loss of update_critic_heads and its (2, H) per-twin, per-head terms."""
         net = self.model.sac_network
         n, h = obs.shape[0], self.num_heads
         with torch.no_grad():
@@ -678,11 +719,7 @@ class SACAgent(BaseAlgorithm):
                         net.v_min, net.v_max).view(1, h, n, bins)
                 losses = -(target * log_p[:, :n].reshape(2, h, n, bins)).sum(-1).mean(dim=2)  # (2, H)
             critic_loss = losses.mean()
-
-        self._critic_step(critic_loss)
-        if h > 1:
-            self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
-        return critic_loss.detach(), losses[0].mean().detach(), losses[1].mean().detach()
+        return critic_loss, losses.detach()
 
     def update_actor_and_alpha_heads(self, obs, next_obs):
         """Actor and temperature step with one loss and temperature per action group.
@@ -691,6 +728,16 @@ class SACAgent(BaseAlgorithm):
         first half enters the loss. Q pair h sees the action with only group h's dims attached to the
         graph, so loss h trains group h's tower. The online critic uses its running statistics.
         """
+        total_loss, actor_loss, losses, entropy, alpha_loss = self._actor_heads_loss(obs, next_obs)
+        self._actor_step(total_loss)
+        if self.num_heads > 1:
+            self._add_head_stat('losses/a_loss_head', losses)
+            self._add_head_stat('losses/entropy_head', entropy)
+            self._add_head_stat('info/alpha_head', self.alpha)
+        return actor_loss.detach(), entropy.mean(), self.alpha.detach(), alpha_loss
+
+    def _actor_heads_loss(self, obs, next_obs):
+        """Losses of update_actor_and_alpha_heads: total, actor, per-group actor (H,), entropy (H,), alpha."""
         net = self.model.sac_network
         n, h = obs.shape[0], self.num_heads
         for p in net.critic.parameters():
@@ -715,21 +762,16 @@ class SACAgent(BaseAlgorithm):
                 alpha_loss = None
                 total_loss = actor_loss
 
+        # the graph above holds no critic parameter, so backward later leaves the critic grads alone
         net.critic.train()
-        self._actor_step(total_loss)
         for p in net.critic.parameters():
             p.requires_grad = True
-
-        if h > 1:
-            self._add_head_stat('losses/a_loss_head', losses)
-            self._add_head_stat('losses/entropy_head', entropy)
-            self._add_head_stat('info/alpha_head', self.alpha)
-        return actor_loss.detach(), entropy.mean(), self.alpha.detach(), alpha_loss
+        return total_loss, actor_loss.detach(), losses.detach(), entropy, alpha_loss
 
     def soft_update_params(self, net, target_net, tau):
         with torch.no_grad():
-            for src, tgt in zip(net.parameters(), target_net.parameters()):
-                tgt.data.lerp_(src.data, tau)
+            # one multi-tensor kernel; the same lerp as a per-tensor lerp_
+            torch._foreach_lerp_([p.data for p in target_net.parameters()], [p.data for p in net.parameters()], tau)
 
     def update_target_weights(self):
         tau = self.critic_tau
@@ -753,6 +795,9 @@ class SACAgent(BaseAlgorithm):
         obs = self.preproc_obs(obs)
         next_obs = self.preproc_obs(next_obs)
 
+        if self.graph_step is not None:
+            return self._graphed_update(obs, action, reward, next_obs, done, batch['discount'])
+
         if self.ensemble_critic:
             critic_loss, critic1_loss, critic2_loss = self.update_critic_heads(
                 obs, action, reward, next_obs, done, batch['discount'])
@@ -773,6 +818,48 @@ class SACAgent(BaseAlgorithm):
 
         self.update_target_weights()
         return actor_loss_info, critic1_loss, critic2_loss
+
+    def _update_step(self, batch, actor_step):
+        """Device work of one update_cuda_graph update (critic step, actor and temperature step when
+        actor_step, target EMA) on the batch tensors; returns the stats as tensors. The LR schedule
+        and the counters run on the host around it (they would freeze in a captured graph)."""
+        critic_loss, losses = self._critic_heads_loss(batch['obs'], batch['action'], batch['reward'],
+                                                      batch['next_obs'], batch['done'], batch['discount'])
+        self._critic_opt_step(critic_loss)
+        out = {'critic_loss': critic_loss.detach(), 'critic_losses': losses}
+        if actor_step:
+            total_loss, actor_loss, a_losses, entropy, alpha_loss = self._actor_heads_loss(batch['obs'],
+                                                                                          batch['next_obs'])
+            self._actor_opt_step(total_loss)
+            out.update(actor_loss=actor_loss, actor_losses=a_losses, entropy=entropy, alpha=self.alpha.detach())
+            if alpha_loss is not None:
+                out['alpha_loss'] = alpha_loss.detach()
+        self.update_target_weights()
+        return out
+
+    def _graphed_update(self, obs, action, reward, next_obs, done, discount):
+        actor_step = (self.update_counter + 1) % self.policy_frequency == 0
+        self._set_lr(self.critic_optimizer, self.critic_lr, self.update_counter)
+        if actor_step:
+            step = self.actor_steps if self.lr_per_optimizer_step else self.update_counter
+            self._set_lr(self.actor_optimizer, self.actor_lr, step)
+            self._set_lr(self.log_alpha_optimizer, self.alpha_lr, step)
+        batch = {'obs': obs, 'action': action, 'reward': reward, 'next_obs': next_obs, 'done': done,
+                 'discount': discount}
+        out = self.graph_step(batch, actor_step)
+        self.update_counter += 1
+        losses = out['critic_losses']
+        if self.num_heads > 1:
+            self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
+        actor_info = None
+        if actor_step:
+            self.actor_steps += 1
+            if self.num_heads > 1:
+                self._add_head_stat('losses/a_loss_head', out['actor_losses'])
+                self._add_head_stat('losses/entropy_head', out['entropy'])
+                self._add_head_stat('info/alpha_head', out['alpha'])
+            actor_info = (out['actor_loss'], out['entropy'].mean(), out['alpha'], out.get('alpha_loss'))
+        return actor_info, losses[0].mean(), losses[1].mean()
 
     def preproc_obs(self, obs):
         if isinstance(obs, dict):

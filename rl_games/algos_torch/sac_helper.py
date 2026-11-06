@@ -40,9 +40,10 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
         self.loc = loc
         self.scale = scale
 
-        self.base_dist = pyd.Normal(loc, scale)
+        # no argument validation: its checks read device values on the host (one sync per actor call)
+        self.base_dist = pyd.Normal(loc, scale, validate_args=False)
         transforms = [TanhTransform()]
-        super().__init__(self.base_dist, transforms)
+        super().__init__(self.base_dist, transforms, validate_args=False)
 
     @property
     def mean(self):
@@ -207,3 +208,69 @@ class HeldNoise:
             self.used = 0
         self.used += 1
         return self.eps
+
+
+def make_capturable(optimizer, device):
+    """Device LR tensors and capturable steps, so optimizer.step() can run inside a CUDA graph."""
+    for group in optimizer.param_groups:
+        group['capturable'] = True
+        lr = group['lr']
+        group['lr'] = torch.tensor(float(lr), dtype=torch.float32, device=device)
+
+
+class CudaGraphStep:
+    """Runs fn(batch, branch) through one CUDA graph per branch, replayed on static copies of the batch.
+
+    The first ``warmup`` calls of each branch run eagerly, so lazy optimizer state, compilation and
+    autotuning happen before the capture. fn must only launch device work: host-side effects inside it
+    happen once, at capture. The graphs share one memory pool; outputs are cloned after each replay.
+    """
+
+    def __init__(self, fn, warmup=3):
+        self.fn = fn
+        self.warmup = warmup
+        self.reset()
+
+    def reset(self):
+        self.graphs, self.outputs, self.calls = {}, {}, {}
+        self.batch = None
+        self.pool = None
+        self.stream = None
+
+    def _warmup(self, batch, branch):
+        """Eager call on the capture stream: library handles, workspaces and kernel choices are then the ones the
+        capture sees (a kernel first loaded inside a capture can break it)."""
+        if self.stream is None:
+            self.stream = torch.cuda.Stream()
+        current = torch.cuda.current_stream()
+        self.stream.wait_stream(current)
+        with torch.cuda.stream(self.stream):
+            out = self.fn(batch, branch)
+        current.wait_stream(self.stream)
+        for v in out.values():
+            v.record_stream(current)
+        return out
+
+    def __call__(self, batch, branch):
+        calls = self.calls.get(branch, 0)
+        self.calls[branch] = calls + 1
+        if calls < self.warmup:
+            return self._warmup(batch, branch)
+        if self.batch is None:
+            self.batch = {k: None if v is None else v.detach().clone() for k, v in batch.items()}
+        else:
+            for k, v in batch.items():
+                if v is not None:
+                    self.batch[k].copy_(v)
+        if branch not in self.graphs:
+            graph = torch.cuda.CUDAGraph()
+            torch.cuda.synchronize()
+            # thread_local: CUDA calls of other threads (e.g. a simulator's) cannot invalidate the capture
+            with torch.cuda.graph(graph, pool=self.pool, stream=self.stream, capture_error_mode='thread_local'):
+                self.outputs[branch] = self.fn(self.batch, branch)
+            if self.pool is None:
+                self.pool = graph.pool()
+            self.graphs[branch] = graph
+        self.graphs[branch].replay()
+        return {k: v.clone() for k, v in self.outputs[branch].items()}
+

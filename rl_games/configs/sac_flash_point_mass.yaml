@@ -90,7 +90,8 @@ params:
     held_noise_max_steps: 16
 
     mixed_precision: fp16
-    torch_compile: False
+    torch_compile: default      # fused network kernels
+    update_cuda_graph: True     # each update replayed as one CUDA graph
 
     player:
       deterministic: True

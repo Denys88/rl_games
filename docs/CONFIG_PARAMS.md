@@ -480,6 +480,7 @@ combines them (FlashSAC recipe) on a GPU-vectorized test task with two action gr
 | `replay_obs_dtype` | `float32` | Obs storage dtype (`float16`, `bfloat16`); sampled back as float32. |
 | `replay_storage` | `device` | `host`: page-locked host memory read and written by the GPU through a mapped view. |
 | `replay_obs_compactor` | unset | Object or `'module:factory'` (called with `env_info`) with `compact_dim`, `aux_dim`, `compact(obs)` and `expand(compact, aux)`: drops reconstructible obs columns before storage and rebuilds them at sample time. The aux ints come from the obs dict key `obs_aux` and `infos['final_obs_aux']`. Memory-efficient replay only. |
+| `update_cuda_graph` | `False` | Capture each update (critic step, actor and temperature step, target EMA) once per branch in a CUDA graph and replay it; sampling and the LR schedule stay on the host. `flash_sac` network on CUDA; use with `torch_compile: default` (compile modes with their own CUDA graphs are refused). The first `update_cuda_graph_warmup` (3) updates of each branch run eagerly. |
 
 Network `flash_sac` (model `soft_actor_critic`): batch norm, unit-norm linear residual blocks and RMS
 norm, re-projected after every optimizer step; an ensemble critic with `2 x groups` members, a
