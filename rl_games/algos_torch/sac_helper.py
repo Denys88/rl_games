@@ -131,7 +131,8 @@ def project_categorical(probs, reward, terminated, entropy_bonus, discount, v_mi
 class ReturnScaler:
     """Per-head reward scale from the spread of the running discounted return.
 
-    Per env and head G <- gamma * (1 - done) * G + r. Rewards are divided by
+    Per env and head G <- gamma * (1 - done_prev) * G + r, done_prev the previous step's done, so the
+    terminal step still closes its own episode's return. Rewards are divided by
     max(sqrt(Var[G] + 1e-8), max|G| / max_return), so the largest return seen maps to at most
     max_return (the critic support) and typical returns to unit spread.
     """
@@ -140,6 +141,7 @@ class ReturnScaler:
         self.gamma = gamma
         self.max_return = max_return
         self.returns = None  # (B, H), allocated on the first update
+        self.prev_done = None  # (B,) bool, the previous update's done
         self.abs_max = torch.zeros(num_heads, device=device)
         self.mean = torch.zeros(num_heads, device=device)
         self.var = torch.ones(num_heads, device=device)
@@ -148,10 +150,14 @@ class ReturnScaler:
     @torch.no_grad()
     def update(self, rewards, done):
         """rewards (B, H), done (B,) bool."""
+        done = done.bool().view(-1)
         if self.returns is None:
             self.returns = torch.zeros_like(rewards, dtype=torch.float32)
-        keep = self.gamma * (~done.bool().view(-1)).float().unsqueeze(-1)
+        if self.prev_done is None:
+            self.prev_done = torch.zeros_like(done)
+        keep = self.gamma * (~self.prev_done).float().unsqueeze(-1)
         self.returns = keep * self.returns + rewards.float()
+        self.prev_done = done.clone()
         self.abs_max = torch.maximum(self.abs_max, self.returns.abs().amax(dim=0))
         # parallel merge of the batch moments, prior count 1e-4
         n = float(self.returns.shape[0])
@@ -169,12 +175,14 @@ class ReturnScaler:
         return rewards / torch.maximum(torch.sqrt(self.var + 1e-8), self.abs_max / self.max_return)
 
     def state_dict(self):
-        return {'returns': self.returns, 'abs_max': self.abs_max, 'mean': self.mean, 'var': self.var,
-                'count': self.count}
+        return {'returns': self.returns, 'prev_done': self.prev_done, 'abs_max': self.abs_max, 'mean': self.mean,
+                'var': self.var, 'count': self.count}
 
     def load_state_dict(self, state):
         device = self.mean.device
         self.returns = None if state['returns'] is None else state['returns'].to(device)
+        prev = state.get('prev_done')
+        self.prev_done = None if prev is None else prev.to(device)
         for key in ('abs_max', 'mean', 'var', 'count'):
             setattr(self, key, state[key].to(device))
 
@@ -187,23 +195,28 @@ def truncated_zeta_pmf(mu, n_max):
 
 
 class HeldNoise:
-    """Exploration noise held over several steps.
+    """Exploration noise held over several steps, per env.
 
-    A standard-normal draw per env and action dim is reused for n consecutive policy steps; n is
-    drawn once for all envs from a truncated zeta law P(n) ~ n^-mu on 1..n_max (mu 2, n_max 16:
-    n = 1 with probability 0.63, mean 2.13).
+    Each env reuses its standard-normal draw (one per action dim) for n consecutive policy steps, n drawn per env
+    from a truncated zeta law P(n) ~ n^-mu on 1..n_max (mu 2, n_max 16: n = 1 with probability 0.63, mean 2.13).
+    An env starting a new episode draws fresh noise. Everything stays on the device (no host sync).
     """
 
     def __init__(self, mu=2.0, n_max=16):
-        self.pmf = truncated_zeta_pmf(mu, n_max)
+        self.pmf = truncated_zeta_pmf(mu, n_max).float()
         self.eps = None
-        self.hold = 0
-        self.used = 0
+        self.left = None  # (B,) steps the current draw still covers
 
-    def __call__(self, like):
-        if self.eps is None or self.eps.shape != like.shape or self.used >= self.hold:
+    def __call__(self, like, reset=None):
+        """like (B, A); reset (B,) bool, envs that start a new episode at this step."""
+        if self.eps is None or self.eps.shape != like.shape:
             self.eps = torch.randn_like(like)
-            self.hold = int(torch.multinomial(self.pmf, 1).item()) + 1
-            self.used = 0
-        self.used += 1
+            self.left = torch.zeros(like.shape[0], dtype=torch.long, device=like.device)
+            self.pmf = self.pmf.to(like.device)
+        fresh = self.left <= 0
+        if reset is not None:
+            fresh = fresh | reset.view(-1).to(fresh.device)
+        self.eps = torch.where(fresh.unsqueeze(-1), torch.randn_like(like), self.eps)
+        hold = torch.multinomial(self.pmf, like.shape[0], replacement=True) + 1
+        self.left = torch.where(fresh, hold, self.left) - 1
         return self.eps

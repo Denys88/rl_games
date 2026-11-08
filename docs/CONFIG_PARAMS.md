@@ -467,24 +467,29 @@ combines them (FlashSAC recipe) on a GPU-vectorized test task with two action gr
 
 | Key | Default | Meaning |
 |---|---|---|
-| `n_step` | `1` | n-step returns, folded at insertion per env. A window stops at the first episode end: a termination does not bootstrap, a time-out bootstraps from the true final obs with `gamma^k` (`k` = rewards summed). |
+| `n_step` | `1` | n-step returns, folded at insertion per env. A window stops at the first episode end: a termination does not bootstrap, a time-out bootstraps from the true final obs with `gamma^k` (`k` = rewards summed). A step that both terminates and times out counts as terminated. |
 | `action_groups` | unset | Partition of the action dims, e.g. `{right: ["0:3", 6, 7], left: [...]}` (ints or `"start:stop"`). Falls back to `env_info['action_groups']`. Each group gets an actor tower, a Q twin pair, a reward column and a temperature; the env passes per-group rewards in `infos['reward_heads']` (B, H). Needs the `flash_sac` network. |
 | `target_entropy_sigma` | unset | Target entropy per group `0.5 n ln(2 pi e sigma^2)` instead of `-target_entropy_coef * n`. |
-| `min_alpha` | `0.01` | Floor on the temperature in the actor loss. |
-| `normalize_reward` | `False` | Divide rewards (per group) by `max(std(G), max|G| / normalized_return_max)`, `G` the running discounted return per env. |
+| `min_alpha` | `0.01` | Floor on the temperature. Default network: in the actor loss. `flash_sac`: in the actor loss and the critic target, and log alpha is clamped at it after every temperature step. `0` = no floor. |
+| `normalize_reward` | `False` | Divide rewards (per group) by `max(std(G), max|G| / normalized_return_max)`, `G` the running discounted return per env (reset after the step that ends an episode). |
 | `normalized_return_max` | `5.0` | Largest scaled return; match the critic support. |
-| `held_noise` | `False` | Exploration `tanh(mu + sigma * eps)` with `eps` reused for `n ~ zeta(held_noise_zeta_mu)` on `1..held_noise_max_steps` steps (defaults 2.0, 16). |
+| `held_noise` | `False` | Exploration `tanh(mu + sigma * eps)` with `eps` reused for `n ~ zeta(held_noise_zeta_mu)` on `1..held_noise_max_steps` steps (defaults 2.0, 16), drawn per env; an env starting an episode draws fresh noise. |
 | `lr_schedule` | constant | `cosine`: linear warm-up over `lr_warmup_steps` updates, cosine to `lr_end_factor` (0.5) x LR at `lr_decay_steps` (default: the run's update count from `max_frames` or `max_epochs`). |
 | `lr_per_optimizer_step` | `False` | Index each schedule by its own optimizer's steps: the actor and temperature, stepped every `policy_frequency` updates, then end mid-cosine. |
 | `replay_memory_efficient` | `False` | Store every obs once and read the next obs `n_step` env steps later in the ring; true final obs of time-outs go to a side pool. Same-step autoreset only. |
-| `replay_obs_dtype` | `float32` | Obs storage dtype (`float16`, `bfloat16`); sampled back as float32. |
+| `replay_obs_dtype` | `float32` | Obs storage dtype (`float16`, `bfloat16`); sampled back as float32. The first stored batch prints its round-trip error, with the columns that lose more than 1e-3. |
 | `replay_storage` | `device` | `host`: page-locked host memory read and written by the GPU through a mapped view. |
 | `replay_obs_compactor` | unset | Object or `'module:factory'` (called with `env_info`) with `compact_dim`, `aux_dim`, `compact(obs)` and `expand(compact, aux)`: drops reconstructible obs columns before storage and rebuilds them at sample time. The aux ints come from the obs dict key `obs_aux` and `infos['final_obs_aux']`. Memory-efficient replay only. |
 
 Network `flash_sac` (model `soft_actor_critic`): batch norm, unit-norm linear residual blocks and RMS
 norm, re-projected after every optimizer step; an ensemble critic with `2 x groups` members, a
-categorical value head (`critic: num_bins`, `v_min`, `v_max`; `num_bins: 0` = scalar Q with MSE), and
+categorical value head (`critic: num_bins`, `v_min`, `v_max`; `num_bins: 0` = scalar Q with MSE, which bounds `|Q - bias|` by about `sqrt(units)`, so use it with `normalize_reward`), and
 online and target critics run on `[obs; next_obs]` in one batch-norm pass. Keys: `actor: {units,
 blocks}`, `critic: {units, blocks, num_bins, v_min, v_max}`, `expansion`, `bn_momentum`,
 `log_std_bounds`, and optional `obs_window: {size, steps, hidden, latent}`, a Conv1d encoder over the
 last `size` obs columns laid out `(steps, size / steps)`.
+
+Size the categorical support for the entropy term as well as the scaled return: at entropy `H` per group the
+soft return shifts by `gamma^n * H * alpha / (1 - gamma^n)` (`n` = `n_step`). For 28 dims at sigma 0.15 (`H` = -13.4),
+gamma 0.98 and n 5 that is -126 alpha, -1.3 at alpha 0.01. `info/target_edge_low<h>` and `info/target_edge_high<h>`
+log the target mass on the two edge bins.

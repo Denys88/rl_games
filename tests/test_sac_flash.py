@@ -479,6 +479,34 @@ class _DropTail:
         return torch.cat([compact, 2 * a, 3 * a], dim=-1)
 
 
+def test_n_step_buffer_loads_a_one_step_checkpoint():
+    one = experience.VectorizedReplayBuffer((3,), (2,), 32, 'cpu', n_step=1)
+    one.add(torch.randn(4, 3), torch.randn(4, 2), torch.randn(4, 1), torch.randn(4, 3),
+            torch.zeros(4, 1, dtype=torch.bool))
+    folded = experience.VectorizedReplayBuffer((3,), (2,), 32, 'cpu', n_step=3, gamma=0.9)
+    folded.load_state_dict(one.state_dict())
+    assert torch.allclose(folded.discounts, torch.full_like(folded.discounts, 0.9))
+    assert torch.equal(folded.obses, one.obses)
+
+
+def test_one_step_buffer_counts_terminated_and_truncated_as_terminated():
+    buf = experience.VectorizedReplayBuffer((3,), (2,), 8, 'cpu', n_step=1)
+    done = torch.tensor([[True], [False]])
+    truncated = torch.tensor([[True], [True]])
+    buf.add(torch.randn(2, 3), torch.randn(2, 2), torch.randn(2, 1), torch.randn(2, 3), done, truncated)
+    assert buf.dones[:2].flatten().tolist() == [True, False]
+    assert buf.truncated[:2].flatten().tolist() == [False, True]
+
+
+def test_fp16_replay_reports_rounding_once(capsys):
+    buf = experience.VectorizedReplayBuffer((2,), (1,), 8, 'cpu', obs_dtype=torch.float16)
+    obs = torch.tensor([[0.01, 50.003], [0.02, 49.997]])
+    buf.add(obs, torch.zeros(2, 1), torch.zeros(2, 1), obs, torch.zeros(2, 1, dtype=torch.bool))
+    buf.add(obs, torch.zeros(2, 1), torch.zeros(2, 1), obs, torch.zeros(2, 1, dtype=torch.bool))
+    out = capsys.readouterr().out
+    assert out.count('rounds 1 column') == 1 and '1 (max |x| 50' in out
+
+
 def test_compactor_rebuilds_dropped_columns():
     b, n = 4, 2
     buffer = experience.MemoryEfficientReplayBuffer((5,), (2,), 64, 'cpu', num_envs=b, n_step=n, gamma=0.9,
@@ -569,7 +597,7 @@ def test_host_replay_is_mapped_into_the_gpu():
     b, n = 16, 2
     buffer = experience.MemoryEfficientReplayBuffer((3,), (2,), 200, 'cuda:0', num_envs=b, num_heads=2, n_step=n,
                                                     gamma=0.9, obs_dtype=torch.float16, storage='host')
-    assert buffer.storage.mapped and buffer.obs.is_cuda and buffer.storage.host_tensors[0].is_pinned()
+    assert buffer.storage.mapped and buffer.obs.is_cuda and next(iter(buffer.storage.host_tensors.values())).is_pinned()
     for t in range(30):
         trunc = torch.zeros(b, dtype=torch.bool)
         trunc[t % b] = True
@@ -580,7 +608,7 @@ def test_host_replay_is_mapped_into_the_gpu():
     assert batch['obs'].is_cuda
     assert torch.equal(batch['next_obs'][~timeout, 0], batch['obs'][~timeout, 0] + n)
     assert (batch['next_obs'][timeout, 0] % 1 == 0.5).all()
-    host = buffer.storage.host_tensors[0]  # rows written by GPU kernels are the host pages
+    host = next(iter(buffer.storage.host_tensors.values()))  # rows written by GPU kernels are the host pages
     assert host.data_ptr() == buffer.obs.data_ptr() and torch.equal(host, buffer.obs.cpu())
 
 
@@ -644,6 +672,17 @@ def test_scaled_rewards_reach_the_critic():
     assert not torch.allclose(seen['reward'], raw)
 
 
+def test_flash_min_alpha_is_one_temperature_and_edge_mass_is_logged():
+    env = PointMassTracking(16, num_groups=2)
+    agent = make_agent(env, flash_network(), max_epochs=2, init_alpha=0.01, min_alpha=0.05)
+    agent.train()
+    assert (agent.log_alpha.detach() >= math.log(0.05) - 1e-6).all()
+    agent.update(0)
+    for key in ('info/target_edge_low', 'info/target_edge_high'):
+        mass = torch.stack(agent._head_stats[key])
+        assert mass.shape[-1] == 2 and ((mass >= 0) & (mass <= 1)).all()
+
+
 # reward scaling, held noise, LR schedule
 
 
@@ -652,12 +691,14 @@ def test_return_scaler_matches_direct_computation():
     gamma, max_return = 0.9, 5.0
     scaler = sac_helper.ReturnScaler(num_heads=2, gamma=gamma, max_return=max_return, device='cpu')
     returns = torch.zeros(4, 2)
+    prev_done = torch.zeros(4, dtype=torch.bool)
     history = []
     for _ in range(30):
         r = torch.randn(4, 2) * torch.tensor([1.0, 10.0])
         done = torch.rand(4) < 0.1
         scaler.update(r, done)
-        returns = gamma * (~done).float().unsqueeze(-1) * returns + r
+        returns = gamma * (~prev_done).float().unsqueeze(-1) * returns + r
+        prev_done = done
         history.append(returns.clone())
     values = torch.stack(history).view(-1, 2)
     assert torch.allclose(scaler.abs_max, values.abs().amax(0))
@@ -668,22 +709,55 @@ def test_return_scaler_matches_direct_computation():
     assert torch.allclose(scaler.scale(r), r / denom)
 
 
-def test_held_noise_repeats_and_zeta_lengths():
+def test_return_scaler_closes_the_episode_on_its_terminal_step():
+    scaler = sac_helper.ReturnScaler(num_heads=1, gamma=0.9, max_return=5.0, device='cpu')
+    seen = []
+    for done in (False, False, True, False):
+        scaler.update(torch.ones(1, 1), torch.tensor([done]))
+        seen.append(scaler.returns.item())
+    assert seen == pytest.approx([1.0, 1.9, 2.71, 1.0])
+    restored = sac_helper.ReturnScaler(num_heads=1, gamma=0.9, max_return=5.0, device='cpu')
+    restored.load_state_dict(scaler.state_dict())
+    restored.update(torch.ones(1, 1), torch.tensor([False]))
+    assert restored.returns.item() == pytest.approx(1.9)
+
+
+def test_held_noise_repeats_per_env_and_zeta_lengths():
     pmf = sac_helper.truncated_zeta_pmf(2.0, 16)
     assert pmf[0] == pytest.approx(1 / sum(1 / n ** 2 for n in range(1, 17)))
     torch.manual_seed(0)
     noise = sac_helper.HeldNoise(2.0, 16)
-    like = torch.zeros(4, 3)
-    holds, last = [], None
-    for _ in range(4000):
+    num_envs = 64
+    like = torch.zeros(num_envs, 3)
+    last = noise(like).clone()
+    run = torch.ones(num_envs, dtype=torch.long)
+    lengths, changed_at = [], []
+    for _ in range(600):
         eps = noise(like)
-        if last is None or not torch.equal(eps, last):
-            holds.append(noise.hold)
-            last = eps.clone()
-    lengths = torch.tensor(holds[:-1], dtype=torch.float64)
+        same = (eps == last).all(dim=-1)
+        lengths += run[~same].tolist()
+        changed_at.append(~same)
+        run = torch.where(same, run + 1, torch.ones_like(run))
+        last = eps.clone()
+    lengths = torch.tensor(lengths, dtype=torch.float64)
     assert lengths.min() >= 1 and lengths.max() <= 16
-    assert lengths.mean().item() == pytest.approx(float((pmf * torch.arange(1, 17)).sum()), rel=0.1)  # 2.13
-    assert (lengths == 1).double().mean().item() == pytest.approx(float(pmf[0]), abs=0.05)
+    assert lengths.mean().item() == pytest.approx(float((pmf * torch.arange(1, 17)).sum()), rel=0.05)  # 2.13
+    assert (lengths == 1).double().mean().item() == pytest.approx(float(pmf[0]), abs=0.02)
+    changed = torch.stack(changed_at)
+    assert ((changed.any(dim=1)) & ~(changed.all(dim=1))).float().mean() > 0.9  # envs resample on their own steps
+
+
+def test_held_noise_draws_fresh_noise_at_episode_starts():
+    torch.manual_seed(0)
+    noise = sac_helper.HeldNoise(2.0, 16)
+    like = torch.zeros(8, 3)
+    first = noise(like).clone()
+    noise.left.fill_(10)  # every draw still held
+    reset = torch.zeros(8, dtype=torch.bool)
+    reset[0] = True
+    second = noise(like, reset)
+    assert not torch.equal(first[0], second[0])
+    assert torch.equal(first[1:], second[1:])
 
 
 def test_cosine_lr_factor():

@@ -181,6 +181,9 @@ class SACAgent(BaseAlgorithm):
         if config.get('normalize_reward', False):
             self.reward_scaler = sac_helper.ReturnScaler(
                 self.num_heads, self.gamma, float(config.get('normalized_return_max', 5.0)), self._device)
+        if self.ensemble_critic and not getattr(self.model.sac_network, 'num_bins', 0) and self.reward_scaler is None:
+            print('Warning: the flash_sac scalar Q head (num_bins 0) is a unit-norm row over RMS-normalized features, '
+                  '|Q - bias| <= ~sqrt(critic units); returns beyond that need normalize_reward: True')
 
         # exploration noise held over 1..held_noise_max_steps policy steps (truncated zeta)
         self.held_noise = None
@@ -334,6 +337,7 @@ class SACAgent(BaseAlgorithm):
 
         # Min alpha in EXP space (not log space!) for comparison with self.alpha
         self.min_alpha = torch.tensor(float(config.get('min_alpha', 0.01))).float().to(self._device)
+        self._log_min_alpha = float(np.log(self.min_alpha.item())) if self.min_alpha.item() > 0 else None
 
         self.frame = 0
         self.epoch_num = 0
@@ -635,6 +639,10 @@ class SACAgent(BaseAlgorithm):
         log_prob = dist.log_prob(action)
         return (log_prob.unsqueeze(1) * self.group_masks).sum(-1) - self.group_log_scale
 
+    def _floored_alpha(self):
+        """FlashSAC path: the temperature with min_alpha applied, the same value in the target and the actor loss."""
+        return torch.max(self.alpha.detach(), self.min_alpha)
+
     def _add_head_stat(self, name, value):
         self._head_stats.setdefault(name, []).append(value.detach())
 
@@ -653,7 +661,7 @@ class SACAgent(BaseAlgorithm):
             net.actor.eval()
             dist = net.actor(next_obs)
             next_action = dist.rsample()
-            bonus = (self.alpha * self._group_log_prob(dist, next_action)).t()  # (H, B)
+            bonus = (self._floored_alpha() * self._group_log_prob(dist, next_action)).t()  # (H, B)
             net.actor.train()
         obs_all = torch.cat([obs, next_obs])
         act_all = torch.cat([action, self.rescale_actions(next_action)])
@@ -676,6 +684,9 @@ class SACAgent(BaseAlgorithm):
                     target = sac_helper.project_categorical(
                         probs, reward.t().reshape(-1), terminated.reshape(-1), bonus.reshape(-1), disc,
                         net.v_min, net.v_max).view(1, h, n, bins)
+                    # target mass piled on the support edges: v_min / v_max too tight for return + entropy terms
+                    self._add_head_stat('info/target_edge_low', target[0, :, :, 0].mean(dim=-1))
+                    self._add_head_stat('info/target_edge_high', target[0, :, :, -1].mean(dim=-1))
                 losses = -(target * log_p[:, :n].reshape(2, h, n, bins)).sum(-1).mean(dim=2)  # (2, H)
             critic_loss = losses.mean()
 
@@ -703,7 +714,7 @@ class SACAgent(BaseAlgorithm):
             log_prob = self._group_log_prob(dist, action)[:n]  # (B, H)
             q, _ = net.critic(obs, net.gate_actions(self.rescale_actions(action[:n])))
             actor_q = q.reshape(2, h, n).amin(dim=0)  # (H, B)
-            alpha = torch.max(self.alpha.detach(), self.min_alpha)
+            alpha = self._floored_alpha()
             losses = (alpha.unsqueeze(-1) * log_prob.t() - actor_q).mean(dim=-1)  # (H,)
             actor_loss = losses.sum()
             entropy = -log_prob.detach().float().mean(dim=0)  # (H,)
@@ -717,6 +728,9 @@ class SACAgent(BaseAlgorithm):
 
         net.critic.train()
         self._actor_step(total_loss)
+        if self.learnable_temperature and self._log_min_alpha is not None:
+            with torch.no_grad():  # one temperature everywhere, no wind-up below the floor
+                self.log_alpha.clamp_(min=self._log_min_alpha)
         for p in net.critic.parameters():
             p.requires_grad = True
 
@@ -850,7 +864,8 @@ class SACAgent(BaseAlgorithm):
         dist = self.model.actor(obs)
 
         if sample and self.held_noise is not None:
-            actions = torch.tanh(dist.loc + dist.scale * self.held_noise(dist.loc))
+            reset = self._prev_dones if self._prev_dones.shape[0] == dist.loc.shape[0] else None
+            actions = torch.tanh(dist.loc + dist.scale * self.held_noise(dist.loc, reset))
         else:
             actions = dist.sample() if sample else dist.mean
         # Rescale from [-1, 1] to actual bounds
