@@ -32,7 +32,10 @@ class RnnWithDones(nn.Module):
         batch_size = input.size()[1]
         out_batch = []
         not_dones = 1.0-done_masks
-        has_zeros = ((not_dones.squeeze()[1:] == 0.0)
+        # flatten(1) keeps the batch dim: a bare squeeze() drops it for a single
+        # sequence, and any(dim=-1) then reduces over time instead of over envs
+        has_zeros = ((not_dones[1:] == 0.0)
+                     .flatten(1)
                      .any(dim=-1)
                      .nonzero()
                      .squeeze()
