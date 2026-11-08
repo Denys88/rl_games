@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
-from rl_games.algos_torch import model_builder, torch_ext
+from rl_games.algos_torch import model_builder, sac_helper, torch_ext
 from rl_games.common import vecenv, schedulers, experience
 from rl_games.common.a2c_common import print_statistics
 from rl_games.interfaces.base_algorithm import BaseAlgorithm
@@ -81,10 +81,17 @@ class SACAgent(BaseAlgorithm):
 
         self.num_frames_per_epoch = self.num_actors * self.num_steps_per_episode
 
-        self.log_alpha = torch.tensor(np.log(self.init_alpha)).float().to(self._device)
-        self.log_alpha.requires_grad = True
+        # n-step returns, folded at insertion; the bootstrap discount is gamma^k per row
+        self.n_step = int(config.get('n_step', 1))
+        if self.n_step < 1:
+            raise ValueError(f'n_step must be >= 1, got {self.n_step}')
+
         action_space = self.env_info['action_space']
         self.actions_num = action_space.shape[0]
+        # action groups (e.g. one per hand): one actor tower, Q twin pair, reward head and temperature each
+        self.action_groups = sac_helper.resolve_action_groups(
+            config.get('action_groups') or self.env_info.get('action_groups'), self.actions_num)
+        self.num_heads = len(self.action_groups) if self.action_groups else 1
 
         # Store proper action bounds per dimension
         self.action_low = torch.tensor(action_space.low, device=self._device, dtype=torch.float32)
@@ -108,35 +115,83 @@ class SACAgent(BaseAlgorithm):
             'actions_num': self.actions_num,
             'input_shape': obs_shape,
             'normalize_input': self.normalize_input,
+            'action_groups': self.action_groups,
         }
         self.model = self.network.build(net_config)
         self.model.to(self._device)
+        sac_network = self.model.sac_network
+        # an ensemble critic (flash_sac network) takes the per-group update path
+        self.ensemble_critic = getattr(sac_network, 'ensemble_critic', False)
+        if self.num_heads > 1 and not self.ensemble_critic:
+            raise ValueError('action_groups with more than one group need an ensemble critic network (flash_sac)')
+        self._post_actor_step = getattr(sac_network, 'post_actor_step', None)
+        self._post_critic_step = getattr(sac_network, 'post_critic_step', None)
+
+        if self.ensemble_critic:
+            groups = self.action_groups or [list(range(self.actions_num))]
+            masks = sac_helper.group_masks(groups, self.actions_num).to(self._device)
+            self.group_masks = masks.float()
+            log_scale = torch.log(self.action_scale.clamp_min(1e-8))
+            self.group_log_scale = (self.group_masks * log_scale).sum(-1)
+            self.log_alpha = torch.full((self.num_heads,), float(np.log(self.init_alpha)), device=self._device)
+        else:
+            self.log_alpha = torch.tensor(np.log(self.init_alpha)).float().to(self._device)
+        self.log_alpha.requires_grad = True
 
         print("Number of Agents", self.num_actors, "Batch Size", self.batch_size)
 
+        self.actor_lr = float(self.config['actor_lr'])
+        self.critic_lr = float(self.config['critic_lr'])
+        self.alpha_lr = float(self.config['alpha_lr'])
         self.actor_optimizer = optim.Adam(self.model.sac_network.actor.parameters(),
-                                        lr=float(self.config['actor_lr']),
+                                        lr=self.actor_lr,
                                         betas=self.config.get("actor_betas", [0.9, 0.999]),
                                         fused=True)
 
         self.critic_optimizer = optim.Adam(self.model.sac_network.critic.parameters(),
-                                        lr=float(self.config["critic_lr"]),
+                                        lr=self.critic_lr,
                                         betas=self.config.get("critic_betas", [0.9, 0.999]),
                                         fused=True)
 
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha],
-                                        lr=float(self.config["alpha_lr"]),
+                                        lr=self.alpha_lr,
                                         betas=self.config.get("alphas_betas", [0.9, 0.999]),
                                         fused=True)
 
-        self.replay_buffer = experience.VectorizedReplayBuffer(self.env_info['observation_space'].shape,
-            self.env_info['action_space'].shape,
-            self.replay_buffer_size,
-            self._device)
+        self._init_lr_schedule(config)
+        self.replay_buffer = self._build_replay_buffer(config)
 
+        # Target entropy per group: -coef * dims, or that of an isotropic Gaussian with
+        # std target_entropy_sigma per normalized action dim (0.5 n ln(2 pi e sigma^2)).
         self.target_entropy_coef = config.get("target_entropy_coef", 1.0)
-        self.target_entropy = self.target_entropy_coef * -self.env_info['action_space'].shape[0]
+        sigma = config.get('target_entropy_sigma', None)
+        dims = [len(ids) for ids in self.action_groups] if self.action_groups else [self.actions_num]
+        if sigma is not None:
+            entropies = [sac_helper.gaussian_entropy(n, float(sigma)) for n in dims]
+        else:
+            entropies = [self.target_entropy_coef * -n for n in dims]
+        if self.ensemble_critic:
+            self.target_entropy = torch.tensor(entropies, device=self._device)
+        else:
+            self.target_entropy = entropies[0]
         print("Target entropy", self.target_entropy)
+
+        # per-head reward scale from the spread of the running discounted return
+        self.reward_scaler = None
+        if config.get('normalize_reward', False):
+            self.reward_scaler = sac_helper.ReturnScaler(
+                self.num_heads, self.gamma, float(config.get('normalized_return_max', 5.0)), self._device)
+        if self.ensemble_critic and not getattr(self.model.sac_network, 'num_bins', 0) and self.reward_scaler is None:
+            print('Warning: the flash_sac scalar Q head (num_bins 0) is a unit-norm row over RMS-normalized features, '
+                  '|Q - bias| <= ~sqrt(critic units); returns beyond that need normalize_reward: True')
+
+        # exploration noise held over 1..held_noise_max_steps policy steps (truncated zeta)
+        self.held_noise = None
+        if config.get('held_noise', False):
+            self.held_noise = sac_helper.HeldNoise(float(config.get('held_noise_zeta_mu', 2.0)),
+                                                   int(config.get('held_noise_max_steps', 16)))
+        self.actor_steps = 0
+        self._head_stats = {}
 
         self.algo_observer = config['features']['observer']
 
@@ -160,6 +215,65 @@ class SACAgent(BaseAlgorithm):
                 def add_scalar(self, *_, **__): pass
                 def close(self): pass
             self.writer = _DummyWriter()
+
+    def _init_lr_schedule(self, config):
+        """lr_schedule: cosine = linear warm-up over lr_warmup_steps updates, then cosine to
+        lr_end_factor * lr at lr_decay_steps (default: the run's update count). Each schedule is
+        indexed by the update count, or with lr_per_optimizer_step by its own optimizer's steps
+        (the actor and temperature then step every policy_frequency updates)."""
+        self.lr_schedule = config.get('lr_schedule', None)
+        if self.lr_schedule not in (None, 'constant', 'cosine'):
+            raise ValueError(f"SAC lr_schedule must be 'constant' or 'cosine', got {self.lr_schedule!r}")
+        self.lr_warmup_steps = int(config.get('lr_warmup_steps', 0))
+        self.lr_end_factor = float(config.get('lr_end_factor', 0.5))
+        self.lr_per_optimizer_step = config.get('lr_per_optimizer_step', False)
+        decay = config.get('lr_decay_steps', None)
+        if decay is None and self.lr_schedule == 'cosine':
+            if self.max_frames > 0:
+                env_steps = self.max_frames / (self.num_actors * self.num_agents)
+            elif self.max_epochs > 0:
+                env_steps = self.max_epochs * self.num_steps_per_episode
+            else:
+                raise ValueError('lr_schedule cosine needs lr_decay_steps, max_frames or max_epochs')
+            decay = int(env_steps * self.num_updates_per_step)
+        self.lr_decay_steps = int(decay or 0)
+
+    def _set_lr(self, optimizer, base_lr, step):
+        if self.lr_schedule != 'cosine':
+            return
+        lr = base_lr * schedulers.cosine_lr_factor(step, self.lr_warmup_steps, self.lr_decay_steps,
+                                                   self.lr_end_factor)
+        for group in optimizer.param_groups:
+            group['lr'] = lr
+
+    def _build_replay_buffer(self, config):
+        """VectorizedReplayBuffer (default), or with replay_memory_efficient the ring that reads next obs
+        by row offset. replay_obs_dtype sets the obs storage dtype, replay_storage 'host' keeps rows in
+        page-locked host memory read by the GPU."""
+        obs_shape = self.env_info['observation_space'].shape
+        action_shape = self.env_info['action_space'].shape
+        obs_dtype = getattr(torch, config.get('replay_obs_dtype', 'float32'))
+        storage = config.get('replay_storage', 'device')
+        compactor = config.get('replay_obs_compactor', None)
+        if isinstance(compactor, str):
+            # 'module:factory', called with env_info
+            module, attr = compactor.split(':')
+            compactor = getattr(__import__(module, fromlist=[attr]), attr)(self.env_info)
+        self.obs_compactor = compactor
+        if config.get('replay_memory_efficient', False):
+            if self.autoreset_mode == 'next_step':
+                raise ValueError('replay_memory_efficient needs same_step autoreset envs')
+            if self.save_replay_buffer:
+                raise ValueError('save_replay_buffer is not supported with replay_memory_efficient')
+            return experience.MemoryEfficientReplayBuffer(
+                obs_shape, action_shape, self.replay_buffer_size, self._device,
+                num_envs=self.num_actors * self.num_agents, num_heads=self.num_heads, n_step=self.n_step,
+                gamma=self.gamma, obs_dtype=obs_dtype, storage=storage, compactor=compactor)
+        if compactor is not None:
+            raise ValueError('replay_obs_compactor needs replay_memory_efficient')
+        return experience.VectorizedReplayBuffer(
+            obs_shape, action_shape, self.replay_buffer_size, self._device, num_heads=self.num_heads,
+            n_step=self.n_step, gamma=self.gamma, obs_dtype=obs_dtype, storage=storage)
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
@@ -222,7 +336,8 @@ class SACAgent(BaseAlgorithm):
         self.obs = None
 
         # Min alpha in EXP space (not log space!) for comparison with self.alpha
-        self.min_alpha = torch.tensor(0.01).float().to(self._device)
+        self.min_alpha = torch.tensor(float(config.get('min_alpha', 0.01))).float().to(self._device)
+        self._log_min_alpha = float(np.log(self.min_alpha.item())) if self.min_alpha.item() > 0 else None
 
         self.frame = 0
         self.epoch_num = 0
@@ -310,6 +425,10 @@ class SACAgent(BaseAlgorithm):
         state['critic_optimizer'] = self.critic_optimizer.state_dict()
         state['log_alpha_optimizer'] = self.log_alpha_optimizer.state_dict()
         state['log_alpha'] = self.log_alpha.detach().cpu()
+        state['update_counter'] = self.update_counter
+        state['actor_steps'] = self.actor_steps
+        if self.reward_scaler is not None:
+            state['reward_scaler'] = self.reward_scaler.state_dict()
         if self.critic_scaler.is_enabled():
             state['critic_scaler'] = self.critic_scaler.state_dict()
             state['actor_scaler'] = self.actor_scaler.state_dict()
@@ -346,6 +465,10 @@ class SACAgent(BaseAlgorithm):
 
         if 'log_alpha' in weights:
             self.log_alpha.data.copy_(weights['log_alpha'].to(self._device))
+        self.update_counter = weights.get('update_counter', self.update_counter)
+        self.actor_steps = weights.get('actor_steps', self.actor_steps)
+        if self.reward_scaler is not None and 'reward_scaler' in weights:
+            self.reward_scaler.load_state_dict(weights['reward_scaler'])
         if 'critic_scaler' in weights and self.critic_scaler.is_enabled():
             self.critic_scaler.load_state_dict(weights['critic_scaler'])
             self.actor_scaler.load_state_dict(weights['actor_scaler'])
@@ -420,7 +543,9 @@ class SACAgent(BaseAlgorithm):
         """
         return dist.log_prob(action).sum(-1, keepdim=True) - self.log_action_scale_sum
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, step):
+    def update_critic(self, obs, action, reward, next_obs, not_done, step, discount=None):
+        # discount: per-row gamma^k of n-step windows, else gamma
+        discount = self.gamma_tensor if discount is None else discount
         with torch.no_grad():
             dist = self.model.actor(next_obs)
             next_action = dist.rsample()
@@ -440,12 +565,17 @@ class SACAgent(BaseAlgorithm):
             current_Q1, current_Q2 = self.model.critic(obs, action)
 
             # Build target_Q inside autocast to match dtypes
-            target_Q = reward + (not_done * self.gamma_tensor * target_V)
+            target_Q = reward + (not_done * discount * target_V)
 
             critic1_loss = self.c_loss(current_Q1, target_Q)
             critic2_loss = self.c_loss(current_Q2, target_Q)
             critic_loss = 0.5 * (critic1_loss + critic2_loss)
 
+        self._critic_step(critic_loss)
+        return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
+
+    def _critic_step(self, critic_loss):
+        self._set_lr(self.critic_optimizer, self.critic_lr, self.update_counter)
         self.critic_optimizer.zero_grad(set_to_none=True)
         self.critic_scaler.scale(critic_loss).backward()
         if self.critic_grad_clip > 0:
@@ -453,8 +583,8 @@ class SACAgent(BaseAlgorithm):
             torch.nn.utils.clip_grad_norm_(self.model.sac_network.critic.parameters(), self.critic_grad_clip)
         self.critic_scaler.step(self.critic_optimizer)
         self.critic_scaler.update()
-
-        return critic_loss.detach(), critic1_loss.detach(), critic2_loss.detach()
+        if self._post_critic_step is not None:
+            self._post_critic_step()
 
     def update_actor_and_alpha(self, obs, step):
         for p in self.model.sac_network.critic.parameters():
@@ -479,6 +609,17 @@ class SACAgent(BaseAlgorithm):
                 alpha_loss = None
                 total_loss = actor_loss
 
+        self._actor_step(total_loss)
+
+        for p in self.model.sac_network.critic.parameters():
+            p.requires_grad = True
+
+        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss
+
+    def _actor_step(self, total_loss):
+        step = self.actor_steps if self.lr_per_optimizer_step else self.update_counter - 1
+        self._set_lr(self.actor_optimizer, self.actor_lr, step)
+        self._set_lr(self.log_alpha_optimizer, self.alpha_lr, step)
         self.actor_optimizer.zero_grad(set_to_none=True)
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad(set_to_none=True)
@@ -489,11 +630,115 @@ class SACAgent(BaseAlgorithm):
         if self.learnable_temperature:
             self.actor_scaler.step(self.log_alpha_optimizer)
         self.actor_scaler.update()
+        self.actor_steps += 1
+        if self._post_actor_step is not None:
+            self._post_actor_step()
 
-        for p in self.model.sac_network.critic.parameters():
+    def _group_log_prob(self, dist, action):
+        """Env-space log-prob per action group, (B, H)."""
+        log_prob = dist.log_prob(action)
+        return (log_prob.unsqueeze(1) * self.group_masks).sum(-1) - self.group_log_scale
+
+    def _floored_alpha(self):
+        """FlashSAC path: the temperature with min_alpha applied, the same value in the target and the actor loss."""
+        return torch.max(self.alpha.detach(), self.min_alpha)
+
+    def _add_head_stat(self, name, value):
+        self._head_stats.setdefault(name, []).append(value.detach())
+
+    def update_critic_heads(self, obs, action, reward, next_obs, done, discount):
+        """Critic step of an ensemble critic with one twin pair per action group (reward column).
+
+        Target per group h: r_h + discount * (min-twin Q_h(s', a') - alpha_h log pi_h(a')) for a scalar
+        head; a categorical head takes the bins of the min-Q twin, shifted the same way and projected
+        back onto the bins. Online and target critics run on [obs; next_obs] with [a; a'] so batch
+        norm sees both halves (CrossQ); only the first half enters the loss. a' comes from the actor's
+        running statistics.
+        """
+        net = self.model.sac_network
+        n, h = obs.shape[0], self.num_heads
+        with torch.no_grad():
+            net.actor.eval()
+            dist = net.actor(next_obs)
+            next_action = dist.rsample()
+            bonus = (self._floored_alpha() * self._group_log_prob(dist, next_action)).t()  # (H, B)
+            net.actor.train()
+        obs_all = torch.cat([obs, next_obs])
+        act_all = torch.cat([action, self.rescale_actions(next_action)])
+        terminated = done.view(1, n).expand(h, n)
+        with torch_ext.autocast(self.amp_dtype):
+            with torch.no_grad():
+                q_t, log_p_t = net.critic_target(obs_all, act_all)
+            q, log_p = net.critic(obs_all, act_all)
+            if log_p is None:
+                disc = self.gamma_tensor if discount is None else discount.view(1, n)
+                target_v = q_t[:, n:].reshape(2, h, n).amin(dim=0) - bonus
+                target_q = reward.t() + (~terminated) * disc * target_v
+                losses = (q[:, :n].reshape(2, h, n) - target_q.detach()).pow(2).mean(dim=2)  # (2, H)
+            else:
+                bins = log_p.shape[-1]
+                disc = self.gamma if discount is None else discount.view(1, n).expand(h, n).reshape(-1)
+                with torch.no_grad():
+                    probs = sac_helper.min_twin_log_probs(
+                        q_t[:, n:].reshape(2, h * n), log_p_t[:, n:].reshape(2, h * n, bins)).exp()
+                    target = sac_helper.project_categorical(
+                        probs, reward.t().reshape(-1), terminated.reshape(-1), bonus.reshape(-1), disc,
+                        net.v_min, net.v_max).view(1, h, n, bins)
+                    # target mass piled on the support edges: v_min / v_max too tight for return + entropy terms
+                    self._add_head_stat('info/target_edge_low', target[0, :, :, 0].mean(dim=-1))
+                    self._add_head_stat('info/target_edge_high', target[0, :, :, -1].mean(dim=-1))
+                losses = -(target * log_p[:, :n].reshape(2, h, n, bins)).sum(-1).mean(dim=2)  # (2, H)
+            critic_loss = losses.mean()
+
+        self._critic_step(critic_loss)
+        if h > 1:
+            self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
+        return critic_loss.detach(), losses[0].mean().detach(), losses[1].mean().detach()
+
+    def update_actor_and_alpha_heads(self, obs, next_obs):
+        """Actor and temperature step with one loss and temperature per action group.
+
+        The actor runs on [obs; next_obs] so its batch norm sees what the critic update sees; only the
+        first half enters the loss. Q pair h sees the action with only group h's dims attached to the
+        graph, so loss h trains group h's tower. The online critic uses its running statistics.
+        """
+        net = self.model.sac_network
+        n, h = obs.shape[0], self.num_heads
+        for p in net.critic.parameters():
+            p.requires_grad = False
+        net.critic.eval()
+
+        with torch_ext.autocast(self.amp_dtype):
+            dist = net.actor(torch.cat([obs, next_obs]))
+            action = dist.rsample()
+            log_prob = self._group_log_prob(dist, action)[:n]  # (B, H)
+            q, _ = net.critic(obs, net.gate_actions(self.rescale_actions(action[:n])))
+            actor_q = q.reshape(2, h, n).amin(dim=0)  # (H, B)
+            alpha = self._floored_alpha()
+            losses = (alpha.unsqueeze(-1) * log_prob.t() - actor_q).mean(dim=-1)  # (H,)
+            actor_loss = losses.sum()
+            entropy = -log_prob.detach().float().mean(dim=0)  # (H,)
+
+            if self.learnable_temperature:
+                alpha_loss = (self.alpha * (entropy - self.target_entropy)).sum()
+                total_loss = actor_loss + alpha_loss
+            else:
+                alpha_loss = None
+                total_loss = actor_loss
+
+        net.critic.train()
+        self._actor_step(total_loss)
+        if self.learnable_temperature and self._log_min_alpha is not None:
+            with torch.no_grad():  # one temperature everywhere, no wind-up below the floor
+                self.log_alpha.clamp_(min=self._log_min_alpha)
+        for p in net.critic.parameters():
             p.requires_grad = True
 
-        return actor_loss.detach(), entropy.detach(), self.alpha.detach(), alpha_loss
+        if h > 1:
+            self._add_head_stat('losses/a_loss_head', losses)
+            self._add_head_stat('losses/entropy_head', entropy)
+            self._add_head_stat('info/alpha_head', self.alpha)
+        return actor_loss.detach(), entropy.mean(), self.alpha.detach(), alpha_loss
 
     def soft_update_params(self, net, target_net, tau):
         with torch.no_grad():
@@ -509,22 +754,33 @@ class SACAgent(BaseAlgorithm):
         )
 
     def update(self, step):
-        # The truncated column is not needed for the 1-step TD target: truncated rows
-        # store done=False with next_obs = the true final obs, so the bootstrap is
-        # already correct. It is kept for future n-step returns / diagnostics.
-        obs, action, reward, next_obs, done, _truncated = self.replay_buffer.sample(self.batch_size)
+        # The truncated column is not needed for the TD target: truncated rows store
+        # done=False with next_obs = the true final obs, so the bootstrap is already
+        # correct. It is kept for diagnostics.
+        batch = self.replay_buffer.sample_batch(self.batch_size)
+        obs, action, reward, next_obs, done = (batch['obs'], batch['action'], batch['reward'],
+                                               batch['next_obs'], batch['done'])
+        if self.reward_scaler is not None:
+            reward = self.reward_scaler.scale(reward)
         not_done = ~done
 
         obs = self.preproc_obs(obs)
         next_obs = self.preproc_obs(next_obs)
 
-        critic_loss, critic1_loss, critic2_loss = self.update_critic(obs, action, reward, next_obs, not_done, step)
+        if self.ensemble_critic:
+            critic_loss, critic1_loss, critic2_loss = self.update_critic_heads(
+                obs, action, reward, next_obs, done, batch['discount'])
+        else:
+            critic_loss, critic1_loss, critic2_loss = self.update_critic(
+                obs, action, reward, next_obs, not_done, step, batch['discount'])
         self.update_counter += 1
 
         # Delayed actor/alpha update (every policy_frequency critic updates).
         if self.update_counter % self.policy_frequency == 0:
-            actor_loss, entropy, alpha, alpha_loss = self.update_actor_and_alpha(obs, step)
-            actor_loss_info = actor_loss, entropy, alpha, alpha_loss
+            if self.ensemble_critic:
+                actor_loss_info = self.update_actor_and_alpha_heads(obs, next_obs)
+            else:
+                actor_loss_info = self.update_actor_and_alpha(obs, step)
         else:
             # No actor update: return None so skipped steps don't dilute logged means.
             actor_loss_info = None
@@ -607,7 +863,11 @@ class SACAgent(BaseAlgorithm):
         obs = self.preproc_obs(obs)
         dist = self.model.actor(obs)
 
-        actions = dist.sample() if sample else dist.mean
+        if sample and self.held_noise is not None:
+            reset = self._prev_dones if self._prev_dones.shape[0] == dist.loc.shape[0] else None
+            actions = torch.tanh(dist.loc + dist.scale * self.held_noise(dist.loc, reset))
+        else:
+            actions = dist.sample() if sample else dist.mean
         # Rescale from [-1, 1] to actual bounds
         actions = self.rescale_actions(actions)
         if actions.ndim != 2:
@@ -633,8 +893,24 @@ class SACAgent(BaseAlgorithm):
         self.mean_rewards = -float('inf')  # last_mean_rewards (best-ever watermark) is deliberately NOT reset here
         self.algo_observer.after_clear_stats()
 
+    def _replay_rewards(self, shaped_rewards, infos):
+        """Replay reward columns (B, H): the shaped env reward, or with several action groups
+        the shaped per-group rewards from infos['reward_heads']."""
+        if self.num_heads == 1:
+            return shaped_rewards.unsqueeze(1)
+        heads = infos.get('reward_heads') if isinstance(infos, dict) else None
+        if heads is None:
+            raise ValueError(f"{self.num_heads} action groups need per-group rewards in infos['reward_heads'] (B, H)")
+        heads = torch.as_tensor(heads, device=self._device).float().view(shaped_rewards.shape[0], self.num_heads)
+        return self.rewards_shaper(heads)
+
+    @staticmethod
+    def _obs_aux(obs):
+        return obs.get('obs_aux') if isinstance(obs, dict) else None
+
     def _store_transitions(self, obs, action, shaped_rewards, next_obs,
-                           dones, terminated, truncated_mask, infos):
+                           dones, terminated, truncated_mask, infos, replay_rewards=None, obs_aux=None,
+                           next_obs_aux=None):
         """Write one vec-step of transitions to replay and update episode accounting.
 
         next_step autoreset: rows whose PREVIOUS step ended an episode are
@@ -648,7 +924,13 @@ class SACAgent(BaseAlgorithm):
         directly with no masking. next_obs holds the post-reset obs at a
         truncation, so substitute the true final obs (from info, else the
         s_t proxy).
+
+        replay_rewards (B, H) are the reward columns (default: shaped_rewards).
+        With n_step > 1 the replay folds full steps, so next_step rows go in
+        with a live mask instead of being selected here.
         """
+        if replay_rewards is None:
+            replay_rewards = shaped_rewards.unsqueeze(1)
         if self.autoreset_mode == 'next_step':
             live = ~self._prev_dones
             live_f = live.float()
@@ -656,33 +938,47 @@ class SACAgent(BaseAlgorithm):
             self.current_lengths.add_(live_f)
             all_done_indices = (dones.bool() & live).nonzero(as_tuple=False)
 
-            live_idx = live.nonzero(as_tuple=True)[0]
-            if live_idx.numel() > 0:  # numel reads shape on host, no device sync
-                self.replay_buffer.add(
-                    obs.index_select(0, live_idx),
-                    action.index_select(0, live_idx),
-                    shaped_rewards.index_select(0, live_idx).unsqueeze(1),
-                    next_obs.index_select(0, live_idx),
-                    terminated.index_select(0, live_idx).unsqueeze(1),
-                    truncated_mask.index_select(0, live_idx).unsqueeze(1))
+            if self.n_step > 1:
+                self.replay_buffer.add(obs, action, replay_rewards, next_obs, terminated.unsqueeze(1),
+                                       truncated_mask.unsqueeze(1), live=live)
+            else:
+                live_idx = live.nonzero(as_tuple=True)[0]
+                if live_idx.numel() > 0:  # numel reads shape on host, no device sync
+                    self.replay_buffer.add(
+                        obs.index_select(0, live_idx),
+                        action.index_select(0, live_idx),
+                        replay_rewards.index_select(0, live_idx),
+                        next_obs.index_select(0, live_idx),
+                        terminated.index_select(0, live_idx).unsqueeze(1),
+                        truncated_mask.index_select(0, live_idx).unsqueeze(1))
         else:
             replay_next_obs = next_obs
             if truncated_mask.any():
                 replay_next_obs = next_obs.clone()
                 final_obs = infos.get('final_observation') if isinstance(infos, dict) else None
+                if isinstance(final_obs, dict):
+                    final_obs = final_obs['obs']
                 if final_obs is not None:
                     final_obs = self.cast_obs(final_obs).to(replay_next_obs.dtype)
                     replay_next_obs[truncated_mask] = final_obs[truncated_mask]
                 else:
                     replay_next_obs[truncated_mask] = obs[truncated_mask]
+                if next_obs_aux is not None:
+                    # aux of the true final obs, int (B, aux_dim)
+                    next_obs_aux = torch.where(truncated_mask.unsqueeze(-1),
+                                               torch.as_tensor(infos['final_obs_aux'], device=self._device),
+                                               next_obs_aux)
 
             self.current_rewards.add_(shaped_rewards)
             self.current_lengths.add_(1.0)
             all_done_indices = dones.nonzero(as_tuple=False)
 
+            aux = {}
+            if self.obs_compactor is not None:
+                aux = {'obs_aux': obs_aux, 'next_obs_aux': next_obs_aux}
             self.replay_buffer.add(
-                obs, action, shaped_rewards.unsqueeze(1), replay_next_obs,
-                terminated.unsqueeze(1), truncated_mask.unsqueeze(1))
+                obs, action, replay_rewards, replay_next_obs,
+                terminated.unsqueeze(1), truncated_mask.unsqueeze(1), **aux)
 
         done_indices = all_done_indices[::self.num_agents]
         self.game_rewards.update(self.current_rewards[done_indices])
@@ -709,6 +1005,7 @@ class SACAgent(BaseAlgorithm):
         critic2_losses = []
 
         obs = self.obs
+        obs_aux = self._obs_aux(obs)
         if isinstance(obs, dict):
             obs = self.obs['obs']
 
@@ -732,6 +1029,7 @@ class SACAgent(BaseAlgorithm):
 
             # Shape rewards BEFORE tracking (so logged rewards match training rewards)
             shaped_rewards = self.rewards_shaper(rewards)
+            replay_rewards = self._replay_rewards(shaped_rewards, infos)
 
             # With value_bootstrap=False the truncated column stays all-False, so
             # truncations train as hard terminations (legacy behavior).
@@ -750,18 +1048,24 @@ class SACAgent(BaseAlgorithm):
             # (incl. warmup and post-reset frames); update() never touches it.
             self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
+            if self.reward_scaler is not None:
+                self.reward_scaler.update(replay_rewards, dones.bool())
 
+            next_obs_aux = self._obs_aux(next_obs)
             self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
-                                    dones, terminated, truncated_mask, infos)
+                                    dones, terminated, truncated_mask, infos, replay_rewards,
+                                    obs_aux, next_obs_aux)
 
             obs = next_obs_processed
+            obs_aux = next_obs_aux
 
             if not random_exploration:
                 self.set_train()
 
                 update_time_start = time.perf_counter()
                 # num_updates_per_step gradient updates per env step (UTD ratio)
-                for _ in range(self.num_updates_per_step):
+                updates = self.num_updates_per_step if self.replay_buffer.can_sample() else 0
+                for _ in range(updates):
                     actor_loss_info, critic1_loss, critic2_loss = self.update(self.epoch_num)
                     self.extract_actor_stats(actor_losses, entropies, alphas, alpha_losses, actor_loss_info)
                     critic1_losses.append(critic1_loss)
@@ -830,6 +1134,14 @@ class SACAgent(BaseAlgorithm):
                     self.writer.add_scalar('losses/alpha_loss', torch_ext.mean_list(alpha_losses).item(), self.frame)
                 if len(alphas) > 0:
                     self.writer.add_scalar('info/alpha', torch_ext.mean_list(alphas).item(), self.frame)
+                # per action group, when there are several
+                for name, values in self._head_stats.items():
+                    for h, v in enumerate(torch.stack(values).float().mean(dim=0).tolist()):
+                        self.writer.add_scalar(f'{name}{h}', v, self.frame)
+                if self.lr_schedule == 'cosine':
+                    self.writer.add_scalar('info/actor_lr', self.actor_optimizer.param_groups[0]['lr'], self.frame)
+                    self.writer.add_scalar('info/critic_lr', self.critic_optimizer.param_groups[0]['lr'], self.frame)
+            self._head_stats.clear()
 
             self.writer.add_scalar('info/epochs', self.epoch_num, self.frame)
             self.algo_observer.after_print_stats(self.frame, self.epoch_num, total_time)
