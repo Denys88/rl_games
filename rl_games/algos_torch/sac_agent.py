@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from rl_games.algos_torch import model_builder, sac_helper, torch_ext
 from rl_games.common import vecenv, schedulers, experience
-from rl_games.common.a2c_common import merge_rank_stats, print_statistics
+from rl_games.common.a2c_common import merge_rank_stats, print_statistics, seed_stats_sync_snapshot
 from rl_games.interfaces.base_algorithm import BaseAlgorithm
 
 
@@ -261,6 +261,10 @@ class SACAgent(BaseAlgorithm):
             for t in list(self.model.state_dict().values()) + [self.log_alpha.data]:
                 if torch.is_tensor(t):
                     dist.broadcast(t, 0)
+        if self.normalize_input:
+            # every rank now holds rank 0's obs statistics (fresh or restored): shared history, which the
+            # per-epoch merge must not sum world_size times
+            seed_stats_sync_snapshot(self.model.running_mean_std)
 
     def _allreduce_mean_(self, tensors):
         """Average the tensors over the ranks in place, through one flat all-reduce."""
@@ -272,11 +276,12 @@ class SACAgent(BaseAlgorithm):
         torch._foreach_copy_(tensors, [f.view_as(t) for f, t in zip(flat.split([t.numel() for t in tensors]), tensors)])
 
     def _init_grad_sync(self, config):
-        """multi_gpu_overlap (default True): all-reduce each gradient from a backward hook, overlapping the
-        traffic with the rest of backward; else one flat all-reduce after backward. multi_gpu_grad_dtype:
+        """multi_gpu_overlap (default: on unless torch_compile): all-reduce each gradient from a backward hook,
+        overlapping the traffic with the rest of backward; else one flat all-reduce after backward. multi_gpu_grad_dtype:
         precision of the gradient traffic (float32 default, bfloat16 halves it)."""
         self._critic_reducer = self._actor_reducer = None
-        if not self.multi_gpu or not config.get('multi_gpu_overlap', True):
+        # under torch.compile all gradients arrive at once, so the hooks hide nothing: one flat all-reduce instead
+        if not self.multi_gpu or not config.get('multi_gpu_overlap', not config.get('torch_compile', False)):
             return
         dtype = config.get('multi_gpu_grad_dtype', None)
         dtype = None if dtype in (None, 'float32') else getattr(torch, dtype)

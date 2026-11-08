@@ -33,13 +33,17 @@ def _worker(rank, world_size, port, results, network, config):
     torch.set_num_threads(2)
     import torch.distributed as dist
     config = dict(config)
+    preset = config.pop('preset_obs_count', None)
     env = PointMassTracking(16, num_groups=config.pop('num_groups', 2), seed=10 + rank)
     agent = make_agent(env, network, seed=rank, multi_gpu=True, multi_gpu_backend='gloo', **config)
+    if preset is not None:  # as after a restore: rank 0's history, broadcast to every rank at the start
+        agent.model.running_mean_std.count.fill_(preset)
     agent.train()
     rb = agent.replay_buffer
     obs = rb.obs if hasattr(rb, 'obs') else rb.obses
     results[rank] = {'digest': _digest(agent), 'updates': agent.update_counter, 'frame': agent.frame,
                      'lr_decay_steps': agent.lr_decay_steps,
+                     'obs_count': float(agent.model.running_mean_std.count) if agent.normalize_input else None,
                      'replay_obs': obs[:64].float().clone()}
     dist.destroy_process_group()
 
@@ -90,6 +94,21 @@ def test_default_network_with_obs_normalizer_stays_identical():
         r0, r1 = results[0], results[1]
     assert torch.equal(r0['digest'], r1['digest'])
     assert r0['updates'] == r1['updates'] > 0
+
+
+def test_restored_obs_normalizer_is_not_counted_once_per_rank():
+    """A restored normalizer is the same history on every rank: the first merge adds only the new frames."""
+    import torch.multiprocessing as mp
+    port = 29730 + os.getpid() % 1000
+    config = {'max_epochs': 3, 'normalize_input': True, 'normalize_reward': False, 'held_noise': False,
+              'num_groups': 1, 'n_step': 1, 'mixed_precision': False, 'preset_obs_count': 1e6}
+    with mp.Manager() as manager:
+        results = manager.dict()
+        mp.spawn(_worker, args=(2, port, results, DEFAULT_NETWORK, config), nprocs=2, join=True)
+        r0, r1 = results[0], results[1]
+    assert torch.equal(r0['digest'], r1['digest'])
+    assert r0['obs_count'] == r1['obs_count']
+    assert 1e6 < r0['obs_count'] < 1e6 + 2000  # ~1K new frames over both ranks; summing the history gave 2e6
 
 
 def _nccl_worker(rank, world_size, port, results, config):
