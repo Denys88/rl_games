@@ -2,6 +2,8 @@ import math
 import time
 import warnings
 import numpy as np
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,6 +41,45 @@ def wrap_model_ddp(model, device, find_unused_parameters=False):
     )
     ddp.forward_seen = False
     return ddp
+
+
+def nccl_runtime_version():
+    """(major, minor, patch) of the NCCL this process runs. torch.cuda.nccl.version() is the one torch was built
+    against, which a newer nvidia-nccl wheel replaces at run time, so read the libnccl actually mapped into the
+    process. None mapped (torch links NCCL statically): torch's own version is the one that runs."""
+    import ctypes
+    path = None
+    try:
+        with open('/proc/self/maps') as maps:
+            path = next((line.split()[-1] for line in maps if 'libnccl.so' in line), None)
+    except OSError:
+        pass
+    if path is not None:
+        try:
+            code = ctypes.c_int()
+            ctypes.CDLL(path).ncclGetVersion(ctypes.byref(code))
+            return code.value // 10000, code.value // 100 % 100, code.value % 100
+        except (OSError, AttributeError):
+            pass
+    return tuple(torch.cuda.nccl.version()[:3])
+
+
+def check_nccl(device):
+    """Refuse NCCL older than 2.27 on sm_12x GPUs (RTX PRO 6000 / RTX 50 Blackwell): there every collective ends in
+    an illegal memory access (NCCL 2.26.2, the one torch 2.7 ships; 2.27.3 and later work). Applies to every
+    multi_gpu algorithm. RL_GAMES_SKIP_NCCL_CHECK=1 skips it (e.g. a patched NCCL build)."""
+    if not torch.cuda.is_available():
+        return
+    major, minor = torch.cuda.get_device_capability(device)
+    version = nccl_runtime_version()
+    if major == 12 and tuple(version) < (2, 27, 0):
+        message = (f"NCCL {'.'.join(map(str, version))} fails on {torch.cuda.get_device_name(device)} "
+                   f"(sm_{major}{minor}): every collective ends in an illegal memory access. Install NCCL >= 2.27, "
+                   f"e.g. pip install 'nvidia-nccl-cu12>=2.27' (torch 2.7 ships 2.26.2)")
+        if os.environ.get('RL_GAMES_SKIP_NCCL_CHECK', '0') == '1':
+            print(f'Warning: {message}; RL_GAMES_SKIP_NCCL_CHECK=1, continuing')
+            return
+        raise RuntimeError(message)
 
 
 def flat_allreduce_grads(model, world_size):
