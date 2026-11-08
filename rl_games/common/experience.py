@@ -249,6 +249,20 @@ def _mapped_view(host, device):
         return None
 
 
+def report_obs_rounding(raw, stored, label='replay obs'):
+    """One-time check of what storing obs in a 16-bit dtype costs: prints the columns whose round trip loses more
+    than 1e-3 (absolute). raw (N, D) float32, stored (N, D) as kept."""
+    err = (stored.float() - raw.float()).abs().amax(dim=0)
+    big = (err > 1e-3).nonzero().flatten().tolist()
+    if not big:
+        print(f'{label} stored as {stored.dtype}: max rounding error {err.max().item():.2e}')
+        return
+    mag = raw.float().abs().amax(dim=0)
+    worst = sorted(big, key=lambda i: -err[i].item())[:8]
+    cols = ', '.join(f'{i} (max |x| {mag[i].item():.3g}, error {err[i].item():.2e})' for i in worst)
+    print(f'Warning: {label} stored as {stored.dtype} rounds {len(big)} column(s) by more than 1e-3: {cols}')
+
+
 class ReplayStorage:
     """Allocates replay columns on the device ('device'), or in page-locked host memory ('host').
 
@@ -260,7 +274,7 @@ class ReplayStorage:
         if storage not in ('device', 'host'):
             raise ValueError(f"replay storage must be 'device' or 'host', got {storage!r}")
         self.device = torch.device(device)
-        self.host_tensors = []  # page-locked tensors behind the mapped views, kept alive here
+        self.host_tensors = {}  # mapped view's data_ptr -> the page-locked tensor behind it, kept alive here
         self.mapped = (storage == 'host' and self.device.type == 'cuda'
                        and _mapped_view(_page_locked((64,), torch.uint8), self.device) is not None)
         # where the columns are indexed: the compute device, or the CPU for an unmapped host ring
@@ -279,8 +293,13 @@ class ReplayStorage:
         view = _mapped_view(host, self.device)
         if view is None:
             raise RuntimeError(f'could not map {tuple(shape)} {dtype} host rows into {self.device}')
-        self.host_tensors.append(host)
+        self.host_tensors[view.data_ptr()] = host
         return view
+
+    def release(self, view):
+        """Drop the page-locked pages behind a mapped view that is no longer used."""
+        if view is not None:
+            self.host_tensors.pop(view.data_ptr(), None)
 
     def rows(self, x):
         # only host -> device copies may run asynchronously
@@ -371,6 +390,7 @@ class VectorizedReplayBuffer:
         self.capacity = capacity
         self.idx = 0
         self.full = False
+        self._rounding_checked = obs_dtype == torch.float32
 
     @torch.no_grad()
     def add(self, obs, action, reward, next_obs, done, truncated=None, live=None):
@@ -379,7 +399,8 @@ class VectorizedReplayBuffer:
         if self.folder is None:
             if live is not None:
                 raise ValueError('live masks need n_step > 1; select the live rows before add()')
-            self._write(obs, action, reward, next_obs, done, truncated)
+            # a step both terminated and truncated counts as terminated (gymnasium)
+            self._write(obs, action, reward, next_obs, done, truncated.bool() & ~done.bool())
             return
         done = _flat_flag(done)
         t = self.folder.push({
@@ -398,6 +419,10 @@ class VectorizedReplayBuffer:
         self._write(*columns)
 
     def _write(self, obs, action, reward, next_obs, done, truncated, discount=None):
+        if not self._rounding_checked:
+            self._rounding_checked = True
+            if obs.is_floating_point():
+                report_obs_rounding(obs.reshape(obs.shape[0], -1), obs.reshape(obs.shape[0], -1).to(self.obs_dtype))
         num_observations = obs.shape[0]
         if num_observations > self.capacity:
             # Earlier rows in this batch cannot survive a capacity-sized ring.
@@ -514,7 +539,10 @@ class VectorizedReplayBuffer:
         else:
             self.truncated.zero_()
         if self.discounts is not None:
-            self.discounts.copy_(state['discounts'].to(self.device))
+            if 'discounts' in state:
+                self.discounts.copy_(state['discounts'].to(self.device))
+            else:  # rows saved by a 1-step buffer: one reward, bootstrap with gamma
+                self.discounts.fill_(self.gamma)
         self.idx = state['idx']
         self.full = state['full']
 
@@ -558,7 +586,7 @@ class MemoryEfficientReplayBuffer:
         self.truncated = alloc((capacity,), torch.bool)
         self.discount = alloc((capacity,), torch.float32) if n_step > 1 else None
         # pool slot of the true final obs for time-out rows, -1 otherwise
-        self.final_slot = alloc((capacity,), torch.int64)
+        self.final_slot = alloc((capacity,), torch.int32)
         self.final_slot.fill_(-1)
 
         self._pool_obs = None
@@ -567,6 +595,7 @@ class MemoryEfficientReplayBuffer:
         self._pool_next = 0
 
         self.folder = NStepFolder(n_step, gamma)
+        self._rounding_checked = obs_dtype == torch.float32
         self.size = 0
         self.ptr = 0
         self.steps = 0  # env steps added
@@ -579,7 +608,12 @@ class MemoryEfficientReplayBuffer:
     def _stored(self, obs):
         if self.compactor is not None:
             obs = self.compactor.compact(obs)
-        return obs.to(self.obs_dtype)
+        out = obs.to(self.obs_dtype)
+        if not self._rounding_checked:
+            self._rounding_checked = True
+            if obs.is_floating_point():
+                report_obs_rounding(obs, out)
+        return out
 
     def _ensure_pool(self, count, oldest_live_step):
         """Slots for ``count`` new final obs; grows the pool rather than overwrite a slot still referenced."""
@@ -596,6 +630,8 @@ class MemoryEfficientReplayBuffer:
             obs[:size] = self._pool_obs
             if aux is not None:
                 aux[:size] = self._pool_aux
+        self.storage.release(self._pool_obs)
+        self.storage.release(self._pool_aux)
         self._pool_obs, self._pool_aux = obs, aux
         birth = np.full(new_size, np.iinfo(np.int64).min, dtype=np.int64)
         birth[:size] = self._pool_birth
@@ -606,7 +642,7 @@ class MemoryEfficientReplayBuffer:
 
     def _store_final(self, timeout, final_obs, final_aux):
         """Pool slot per env, -1 where the env did not time out at this step."""
-        slot = torch.full((self.num_envs,), -1, dtype=torch.int64, device=self.device)
+        slot = torch.full((self.num_envs,), -1, dtype=torch.int32, device=self.device)
         envs = timeout.nonzero().squeeze(-1)
         if envs.numel() == 0:
             return slot
@@ -614,8 +650,8 @@ class MemoryEfficientReplayBuffer:
         oldest_live = self.steps - self.n_step - math.ceil(self.capacity / self.num_envs) + 1
         slots = self._ensure_pool(int(envs.numel()), oldest_live)
         self._pool_birth[slots] = self.steps
-        slots_t = torch.as_tensor(slots, device=self.device)
-        rows = self.storage.rows(slots_t)
+        slots_t = torch.as_tensor(slots, dtype=torch.int32, device=self.device)
+        rows = self.storage.rows(slots_t.long())
         self._pool_obs[rows] = self.storage.rows(self._stored(final_obs[envs]))
         if self._pool_aux is not None:
             self._pool_aux[rows] = self.storage.rows(final_aux[envs].to(torch.int32))
@@ -686,7 +722,7 @@ class MemoryEfficientReplayBuffer:
         aux = self.aux[both] if self.aux is not None else None
         if self._pool_obs is not None:
             n = rows.shape[0]
-            slot = self.final_slot[rows]
+            slot = self.final_slot[rows].long()
             hit = (slot >= 0).unsqueeze(-1)
             safe = slot.clamp(min=0)
             obs[n:] = torch.where(hit, self._pool_obs[safe], obs[n:])

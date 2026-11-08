@@ -200,6 +200,9 @@ class SACAgent(BaseAlgorithm):
             self.reward_scaler = sac_helper.ReturnScaler(
                 self.num_heads, self.gamma, float(config.get('normalized_return_max', 5.0)), self._device,
                 all_reduce=dist.all_reduce if self.multi_gpu else None)
+        if self.ensemble_critic and not getattr(self.model.sac_network, 'num_bins', 0) and self.reward_scaler is None:
+            print('Warning: the flash_sac scalar Q head (num_bins 0) is a unit-norm row over RMS-normalized features, '
+                  '|Q - bias| <= ~sqrt(critic units); returns beyond that need normalize_reward: True')
 
         # exploration noise held over 1..held_noise_max_steps policy steps (truncated zeta)
         self.held_noise = None
@@ -444,6 +447,7 @@ class SACAgent(BaseAlgorithm):
 
         # Min alpha in EXP space (not log space!) for comparison with self.alpha
         self.min_alpha = torch.tensor(float(config.get('min_alpha', 0.01))).float().to(self._device)
+        self._log_min_alpha = float(np.log(self.min_alpha.item())) if self.min_alpha.item() > 0 else None
 
         self.frame = 0
         self.epoch_num = 0
@@ -753,6 +757,9 @@ class SACAgent(BaseAlgorithm):
         self.actor_scaler.step(self.actor_optimizer)
         if self.learnable_temperature:
             self.actor_scaler.step(self.log_alpha_optimizer)
+            if self.ensemble_critic and self._log_min_alpha is not None:
+                with torch.no_grad():  # flash path: one temperature everywhere, no wind-up below the floor
+                    self.log_alpha.clamp_(min=self._log_min_alpha)
         self.actor_scaler.update()
         if self._post_actor_step is not None:
             self._post_actor_step()
@@ -761,6 +768,10 @@ class SACAgent(BaseAlgorithm):
         """Env-space log-prob per action group, (B, H)."""
         log_prob = dist.log_prob(action)
         return (log_prob.unsqueeze(1) * self.group_masks).sum(-1) - self.group_log_scale
+
+    def _floored_alpha(self):
+        """FlashSAC path: the temperature with min_alpha applied, the same value in the target and the actor loss."""
+        return torch.max(self.alpha.detach(), self.min_alpha)
 
     def _add_head_stat(self, name, value):
         self._head_stats.setdefault(name, []).append(value.detach())
@@ -774,11 +785,18 @@ class SACAgent(BaseAlgorithm):
         norm sees both halves (CrossQ); only the first half enters the loss. a' comes from the actor's
         running statistics.
         """
-        critic_loss, losses = self._critic_heads_loss(obs, action, reward, next_obs, done, discount)
+        critic_loss, losses, edge = self._critic_heads_loss(obs, action, reward, next_obs, done, discount)
         self._critic_step(critic_loss)
         if self.num_heads > 1:
             self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
+        self._add_edge_stats(edge)
         return critic_loss.detach(), losses[0].mean().detach(), losses[1].mean().detach()
+
+    def _add_edge_stats(self, edge):
+        """Categorical target mass on the support's edge bins, (2, H): v_min / v_max too tight for the returns."""
+        if edge is not None:
+            self._add_head_stat('info/target_edge_low', edge[0].clone())
+            self._add_head_stat('info/target_edge_high', edge[1].clone())
 
     def _critic_heads_loss(self, obs, action, reward, next_obs, done, discount):
         """Critic loss of update_critic_heads and its (2, H) per-twin, per-head terms."""
@@ -788,11 +806,12 @@ class SACAgent(BaseAlgorithm):
             net.actor.eval()
             dist = net.actor(next_obs)
             next_action = dist.rsample()
-            bonus = (self.alpha * self._group_log_prob(dist, next_action)).t()  # (H, B)
+            bonus = (self._floored_alpha() * self._group_log_prob(dist, next_action)).t()  # (H, B)
             net.actor.train()
         obs_all = torch.cat([obs, next_obs])
         act_all = torch.cat([action, self.rescale_actions(next_action)])
         terminated = done.view(1, n).expand(h, n)
+        edge = None
         with torch_ext.autocast(self.amp_dtype):
             with torch.no_grad():
                 q_t, log_p_t = net.critic_target(obs_all, act_all)
@@ -811,9 +830,11 @@ class SACAgent(BaseAlgorithm):
                     target = sac_helper.project_categorical(
                         probs, reward.t().reshape(-1), terminated.reshape(-1), bonus.reshape(-1), disc,
                         net.v_min, net.v_max).view(1, h, n, bins)
+                    # (2, H): mass on v_min, v_max (slices: a list index would copy from the host inside a graph)
+                    edge = torch.stack([target[0, :, :, 0], target[0, :, :, -1]]).mean(dim=-1)
                 losses = -(target * log_p[:, :n].reshape(2, h, n, bins)).sum(-1).mean(dim=2)  # (2, H)
             critic_loss = losses.mean()
-        return critic_loss, losses.detach()
+        return critic_loss, losses.detach(), edge
 
     def update_actor_and_alpha_heads(self, obs, next_obs):
         """Actor and temperature step with one loss and temperature per action group.
@@ -844,7 +865,7 @@ class SACAgent(BaseAlgorithm):
             log_prob = self._group_log_prob(dist, action)[:n]  # (B, H)
             q, _ = net.critic(obs, net.gate_actions(self.rescale_actions(action[:n])))
             actor_q = q.reshape(2, h, n).amin(dim=0)  # (H, B)
-            alpha = torch.max(self.alpha.detach(), self.min_alpha)
+            alpha = self._floored_alpha()
             losses = (alpha.unsqueeze(-1) * log_prob.t() - actor_q).mean(dim=-1)  # (H,)
             actor_loss = losses.sum()
             entropy = -log_prob.detach().float().mean(dim=0)  # (H,)
@@ -917,10 +938,12 @@ class SACAgent(BaseAlgorithm):
         """Device work of one update_cuda_graph update (critic step, actor and temperature step when
         actor_step, target EMA) on the batch tensors; returns the stats as tensors. The LR schedule
         and the counters run on the host around it (they would freeze in a captured graph)."""
-        critic_loss, losses = self._critic_heads_loss(batch['obs'], batch['action'], batch['reward'],
-                                                      batch['next_obs'], batch['done'], batch['discount'])
+        critic_loss, losses, edge = self._critic_heads_loss(batch['obs'], batch['action'], batch['reward'],
+                                                            batch['next_obs'], batch['done'], batch['discount'])
         self._critic_opt_step(critic_loss)
         out = {'critic_loss': critic_loss.detach(), 'critic_losses': losses}
+        if edge is not None:
+            out['edge_mass'] = edge
         if actor_step:
             total_loss, actor_loss, a_losses, entropy, alpha_loss = self._actor_heads_loss(batch['obs'],
                                                                                           batch['next_obs'])
@@ -945,6 +968,7 @@ class SACAgent(BaseAlgorithm):
         losses = out['critic_losses']
         if self.num_heads > 1:
             self._add_head_stat('losses/c_loss_head', losses.mean(dim=0))
+        self._add_edge_stats(out.get('edge_mass'))
         actor_info = None
         if actor_step:
             self.actor_steps += 1
@@ -1031,7 +1055,8 @@ class SACAgent(BaseAlgorithm):
         dist = self.model.actor(obs)
 
         if sample and self.held_noise is not None:
-            actions = torch.tanh(dist.loc + dist.scale * self.held_noise(dist.loc))
+            reset = self._prev_dones if self._prev_dones.shape[0] == dist.loc.shape[0] else None
+            actions = torch.tanh(dist.loc + dist.scale * self.held_noise(dist.loc, reset))
         else:
             actions = dist.sample() if sample else dist.mean
         # Rescale from [-1, 1] to actual bounds
