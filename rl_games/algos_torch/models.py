@@ -62,7 +62,9 @@ class BaseModelNetwork(nn.Module):
             return self.value_mean_std(value, denorm=True) if self.normalize_value else value
 
     def get_aux_loss(self):
-        return None
+        # networks may expose auxiliary losses (e.g. actor_critic_state_aux)
+        fn = getattr(self.a2c_network, 'get_aux_loss', None)
+        return fn() if fn is not None else None
 
 
 class ModelA2C(BaseModel):
