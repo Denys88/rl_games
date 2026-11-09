@@ -1,6 +1,7 @@
 import copy
 import math
 import os
+import warnings
 
 from rl_games.common import vecenv
 
@@ -357,15 +358,21 @@ class A2CBase(BaseAlgorithm):
             raise ValueError(
                 f"schedule_type must be 'per_minibatch' (alias 'legacy') or 'standard', got '{self.schedule_type}'")
 
-        # Setting learning rate scheduler
+        # scheduler bounds are cast once: YAML 1.1 reads a bare exponent
+        # without a dot ('1e-5') as a string. The scheduler and the per-epoch
+        # rate stats both use these values.
+        self.min_lr = float(config.get('min_lr', 1e-6))
+        self.max_lr = float(config.get('max_lr', 1e-3))
+        if self.is_adaptive_lr and 'max_lr' not in config and self.global_rank == 0:
+            warnings.warn("lr_schedule: adaptive without max_lr: the default ceiling changed from 1e-2 "
+                          "to 1e-3 in rl_games 2.0. Set max_lr: 1.0e-2 for the old ceiling.", stacklevel=2)
         if self.is_adaptive_lr:
-            self.kl_threshold = config['kl_threshold']
-            min_lr, max_lr = self._adaptive_lr_bounds()
+            self.kl_threshold = float(config['kl_threshold'])
             self.scheduler = schedulers.AdaptiveScheduler(
                 self.kl_threshold,
-                min_lr=min_lr,
-                max_lr=max_lr,
-                lr_multiplier=config.get('lr_multiplier', 1.5))
+                min_lr=self.min_lr,
+                max_lr=self.max_lr,
+                lr_multiplier=float(config.get('lr_multiplier', 1.5)))
 
         elif self.linear_lr:
 
@@ -381,7 +388,7 @@ class A2CBase(BaseAlgorithm):
                     max_steps = self.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(float(config['learning_rate']),
-                    min_lr=config.get('min_lr', 1e-6),
+                    min_lr=self.min_lr,
                     max_steps=max_steps,
                     use_epochs=use_epochs,
                     apply_to_entropy=config.get('schedule_entropy', False),
@@ -720,18 +727,11 @@ class A2CBase(BaseAlgorithm):
         # if self.has_central_value:
         #    self.central_value_net.update_lr(lr)
 
-    def _adaptive_lr_bounds(self):
-        """(min_lr, max_lr) of the adaptive LR schedule, from the config: the scheduler and the
-        checkpoint restore share them, and every rank has them (non-zero ranks have no
-        AdaptiveScheduler). Cast here: YAML 1.1 reads a bare exponent ('1e-5') as a string."""
-        return float(self.config.get('min_lr', 1e-6)), float(self.config.get('max_lr', 1e-2))
-
     def _rescaled_lr(self, lr, old_lr, new_lr):
         """The adapted LR `lr` after its nominal value changed from old_lr to new_lr: times new/old,
         within the adaptive bounds (the restore and set_param share the rule)."""
         lr = lr * new_lr / old_lr if old_lr > 0 else new_lr
-        min_lr, max_lr = self._adaptive_lr_bounds()
-        return min(max(lr, min_lr), max_lr)
+        return min(max(lr, self.min_lr), self.max_lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -1881,7 +1881,7 @@ class ContinuousA2CBase(A2CBase):
                 self.model.running_mean_std.eval() # don't need to update statistics more than one miniepoch
 
         self.sync_running_stats()
-        min_lr, max_lr = self._adaptive_lr_bounds()
+        min_lr, max_lr = self.min_lr, self.max_lr
         self.scheduler_stats = {
             'scheduler_kl': torch_ext.mean_list(schedule_kls).item() if schedule_kls else float('nan'),
             'lr_mean': sum(applied_lrs) / len(applied_lrs),

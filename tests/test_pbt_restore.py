@@ -95,7 +95,7 @@ def test_checkpoint_without_runtime_values_restores_the_config_values(schedule):
 ])
 def test_adaptive_lr_moved_by_a_changed_config_value_stays_within_the_bounds(learning_rate, bounds, expected):
     child = make_cartpole_agent(learning_rate=learning_rate, **SCHEDULES["adaptive"], **bounds)
-    assert child._adaptive_lr_bounds() == (child.scheduler.min_lr, child.scheduler.max_lr)
+    assert (child.min_lr, child.max_lr) == (child.scheduler.min_lr, child.scheduler.max_lr)
     child.set_full_state_weights(runtime_state("adaptive"))
     assert child.last_lr == pytest.approx(expected)
     assert all(group["lr"] == pytest.approx(expected) for group in child.optimizer.param_groups)

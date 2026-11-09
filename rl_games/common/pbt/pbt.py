@@ -492,7 +492,7 @@ class PbtAlgoObserver(AlgoObserver):
         the learner's precision (the resolved mixed precision and the torch_compile setting). See
         `_foreign_members`."""
         mixed_precision = {torch.float16: "fp16", torch.bfloat16: "bf16"}.get(getattr(algo, "amp_dtype", None), "off")
-        torch_compile = (getattr(algo, "config", None) or {}).get("torch_compile", True)  # the runner's default
+        torch_compile = (getattr(algo, "config", None) or {}).get("torch_compile", False)  # the runner's default
         return {"rl_games_version": pbt_utils.rl_games_version(), "git_commit": pbt_utils.git_commit(),
                 "code_fingerprint": self.code_fingerprint, "settings": settings_hash(self.cfg),
                 "interval_unit": self.cfg.interval_unit,
