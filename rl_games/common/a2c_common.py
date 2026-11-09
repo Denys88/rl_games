@@ -143,6 +143,11 @@ def broadcast_rank_stats(m, broadcast):
     broadcast(m.running_var)
 
 
+def _rescaled(value, old, new):
+    """`value` after its nominal setting changed from old to new: times new/old; new when old is 0."""
+    return value * new / old if old > 0 else new
+
+
 def rescale_actions(low, high, action):
     d = (high - low) / 2.0
     m = (high + low) / 2.0
@@ -727,11 +732,15 @@ class A2CBase(BaseAlgorithm):
         # if self.has_central_value:
         #    self.central_value_net.update_lr(lr)
 
+    @property
+    def _linear_entropy(self):
+        """entropy_coef follows the linear schedule (decided on the config, the same on every rank)."""
+        return self._configured_lr_schedule == 'linear' and bool(self.config.get('schedule_entropy', False))
+
     def _rescaled_lr(self, lr, old_lr, new_lr):
         """The adapted LR `lr` after its nominal value changed from old_lr to new_lr: times new/old,
         within the adaptive bounds (the restore and set_param share the rule)."""
-        lr = lr * new_lr / old_lr if old_lr > 0 else new_lr
-        return min(max(lr, self.min_lr), self.max_lr)
+        return min(max(_rescaled(lr, old_lr, new_lr), self.min_lr), self.max_lr)
 
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
@@ -1107,7 +1116,8 @@ class A2CBase(BaseAlgorithm):
             if changed('learning_rate', lr_cfg):
                 lr = self._rescaled_lr(lr, float(stored['learning_rate']), lr_cfg)
         elif changed('learning_rate', lr_cfg):
-            lr = lr_cfg                       # linear: the new schedule takes over at its next step
+            # linear: the schedule's value at the checkpoint, times new/old (set_param's rule)
+            lr = _rescaled(float(lr), float(stored['learning_rate']), lr_cfg)
         else:
             lr = float(lr)
         self.last_lr = lr
@@ -1116,9 +1126,10 @@ class A2CBase(BaseAlgorithm):
 
         ent_cfg = float(self.config['entropy_coef'])
         entropy = weights.get('entropy_coef')
-        linear_entropy = schedule == 'linear' and self.config.get('schedule_entropy', False)
-        if entropy is None or not linear_entropy or changed('entropy_coef', ent_cfg):
+        if entropy is None or not self._linear_entropy:
             entropy = ent_cfg
+        elif changed('entropy_coef', ent_cfg):
+            entropy = _rescaled(float(entropy), float(stored['entropy_coef']), ent_cfg)
         self.entropy_coef = float(entropy)
 
         # no runtime state: the config wins over the values load_state_dict put back. The
@@ -1192,7 +1203,8 @@ class A2CBase(BaseAlgorithm):
         learning_rate: the LR under the identity schedule. Under linear, the schedule's start (rank 0
         runs it), and the current LR times new/old until its next step. Under adaptive, the adapted
         LR times new/old within [min_lr, max_lr], as a checkpoint restore does. entropy_coef under a
-        linear entropy schedule: its start too.
+        linear entropy schedule: its start, and the current value times new/old. An old value of 0
+        takes the new one.
         """
         key = 'mini_epochs' if param_name == 'mini_epochs_num' else param_name
         if key not in self.SET_PARAMS:
@@ -1204,7 +1216,7 @@ class A2CBase(BaseAlgorithm):
             if self._configured_lr_schedule == 'adaptive':
                 lr = self._rescaled_lr(self.last_lr, old, new)
             elif self._configured_lr_schedule == 'linear':
-                lr = self.last_lr * new / old
+                lr = _rescaled(self.last_lr, old, new)
                 if isinstance(self.scheduler, schedulers.LinearScheduler):
                     self.scheduler.start_lr = new
             self.config['learning_rate'] = new
@@ -1212,9 +1224,11 @@ class A2CBase(BaseAlgorithm):
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
         elif key == 'entropy_coef':
-            self.entropy_coef = self.config['entropy_coef'] = float(param_value)
+            new, old = float(param_value), float(self.config['entropy_coef'])
+            self.entropy_coef = _rescaled(self.entropy_coef, old, new) if self._linear_entropy else new
+            self.config['entropy_coef'] = new
             if getattr(self.scheduler, 'apply_to_entropy', False):
-                self.scheduler.start_entropy_coef = self.entropy_coef
+                self.scheduler.start_entropy_coef = new
         elif key == 'weight_decay':
             self.weight_decay = self.config['weight_decay'] = float(param_value)
             for param_group in self.optimizer.param_groups:

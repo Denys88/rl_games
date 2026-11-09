@@ -527,12 +527,13 @@ mutated values only on the command line (Isaac Lab's `isaaclab_rl`, IsaacGymEnvs
 resumes. The config, on a restart the restart command, is the source of truth for hyperparameters.
 Checkpoints store their run's configured `learning_rate` and `entropy_coef` as `config_hparams`.
 The checkpoint contributes only runtime state, as it is while the config value equals the stored
-one; under `adaptive` a changed `learning_rate` rescales it:
+one; under `adaptive` or `linear` a changed value rescales it by config/stored (a stored 0 takes the
+config value):
 
 | `lr_schedule` | learning rate | `entropy_coef` |
 |---|---|---|
 | `adaptive` | the checkpoint's adapted LR; if `learning_rate` changed, times config/stored, clamped to `[min_lr, max_lr]` | the config's |
-| `linear` | the checkpoint's scheduled LR; if `learning_rate` changed, the config's until the schedule's next step | with `schedule_entropy` the checkpoint's scheduled value, the config's if `entropy_coef` changed; else the config's |
+| `linear` | the checkpoint's scheduled LR; if `learning_rate` changed, times config/stored | with `schedule_entropy` the checkpoint's scheduled value, times config/stored if `entropy_coef` changed; else the config's |
 | identity / None | the config's | the config's |
 
 - Under `adaptive`, `max_lr` caps `learning_rate` mutations. The clamp applies only when
@@ -1089,7 +1090,8 @@ the new `learning_rate` and `entropy_coef`. The in-process modes build on it.
 - `learning_rate`: under identity the LR itself; under linear the schedule's start, and the current
   LR times new/old until rank 0's next scheduler step; under adaptive the adapted LR times new/old
   within `[min_lr, max_lr]`, the restore's rule. `entropy_coef` under a linear entropy schedule
-  also moves the schedule's start. `weight_decay` applies to every param group. `kl_threshold` is
+  moves the schedule's start and scales the current value by new/old. An old value of 0 takes the
+  new one. `weight_decay` applies to every param group. `kl_threshold` is
   kept on every rank, and rank 0's adaptive scheduler uses it.
 - `mini_epochs` is an int, every other value a float, so YAML integers such as `critic_coef: 2`
   can be set to fractions.
@@ -1176,7 +1178,7 @@ the new `learning_rate` and `entropy_coef`. The in-process modes build on it.
   so it ignores `restart.yaml`, `decisions.jsonl`, `owner.yaml` and `exit.yaml`.
 - Resumes take `weight_decay`, `entropy_coef` (except under a linear entropy schedule) and, under
   identity, the LR from the config. Under `adaptive` or `linear`, a `learning_rate` that differs
-  from the checkpoint's stored one rescales or replaces the checkpoint's LR
+  from the checkpoint's stored one rescales the checkpoint's LR
   ([Hyperparameters on restore](#hyperparameters-on-restore)). Before, a plain resume kept the
   checkpoint's LR and entropy.
 - A `restart.pth` written by an older parent has no base values: under `adaptive` the child scales

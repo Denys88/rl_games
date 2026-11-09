@@ -210,8 +210,9 @@ def test_set_param_entropy_under_a_linear_entropy_schedule(rank, tmp_path):
     train_until(agent, 2)
     if rank:
         as_rank1(agent)
+    scheduled = agent.entropy_coef
     agent.set_param("entropy_coef", 0.02)
-    assert agent.entropy_coef == 0.02
+    assert agent.entropy_coef == pytest.approx(scheduled * 2)       # the schedule's position times new/old
     assert agent.get_full_state_weights()["config_hparams"]["entropy_coef"] == 0.02
     if not rank:
         assert agent.scheduler.start_entropy_coef == 0.02

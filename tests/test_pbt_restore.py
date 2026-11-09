@@ -40,7 +40,7 @@ def fresh_launch(monkeypatch):
 def runtime_state(schedule, **config):
     """Checkpoint of a learner configured with learning_rate 1e-3 and entropy_coef 0.01 whose
     schedule has moved the runtime values to 2e-4 and 0.004."""
-    donor = make_cartpole_agent(learning_rate=1e-3, entropy_coef=0.01, **SCHEDULES[schedule], **config)
+    donor = make_cartpole_agent(learning_rate=1e-3, entropy_coef=0.01, **dict(SCHEDULES[schedule], **config))
     donor.update_lr(2e-4)
     donor.entropy_coef = 0.004
     return donor.get_full_state_weights()
@@ -56,7 +56,7 @@ RULE = {
     ("identity", "changed"): (1.5e-3, 0.02),
     ("identity", "old"): (1.5e-3, 0.02),
     ("linear", "unchanged"): (2e-4, 0.004),         # the schedule's position
-    ("linear", "changed"): (1.5e-3, 0.02),
+    ("linear", "changed"): (3e-4, 0.008),           # the schedule's position times config/stored
     ("linear", "old"): (2e-4, 0.004),
     ("adaptive", "unchanged"): (2e-4, 0.01),        # the adaptive walk; no entropy schedule
     ("adaptive", "changed"): (3e-4, 0.02),          # the walk moved by the factor 1.5
@@ -101,6 +101,43 @@ def test_adaptive_lr_moved_by_a_changed_config_value_stays_within_the_bounds(lea
     assert all(group["lr"] == pytest.approx(expected) for group in child.optimizer.param_groups)
 
 
+@pytest.mark.parametrize("schedule_entropy", [True, False])
+def test_linear_restart_and_in_process_load_agree_after_a_change(schedule_entropy):
+    """A changed learning_rate / entropy_coef under the linear schedule: a restart (config already
+    changed, then the restore) and an in-process transfer (set_param on the running learner, then the
+    restore) give the schedule's value times new/old, not the undecayed config value."""
+    schedule = dict(SCHEDULES["linear"], schedule_entropy=schedule_entropy)
+    state = runtime_state("linear", schedule_entropy=schedule_entropy)
+    restarted = make_cartpole_agent(learning_rate=1.5e-3, entropy_coef=0.02, **schedule)
+    restarted.set_full_state_weights(state)
+    running = make_cartpole_agent(learning_rate=1e-3, entropy_coef=0.01, **schedule)
+    running.update_lr(5e-4)
+    running.entropy_coef = 0.006
+    running.set_param("learning_rate", 1.5e-3)
+    running.set_param("entropy_coef", 0.02)
+    running.set_full_state_weights(state, set_epoch=False)
+    expected_entropy = 0.008 if schedule_entropy else 0.02
+    for agent in (restarted, running):
+        assert agent.last_lr == pytest.approx(3e-4, rel=1e-12)
+        assert agent.entropy_coef == pytest.approx(expected_entropy, rel=1e-12)
+        assert all(group["lr"] == pytest.approx(3e-4, rel=1e-12) for group in agent.optimizer.param_groups)
+
+
+def test_linear_set_param_from_a_zero_value_takes_the_new_one():
+    agent = make_cartpole_agent(learning_rate=0.0, entropy_coef=0.0, **SCHEDULES["linear"])
+    agent.set_param("learning_rate", 1e-3)
+    agent.set_param("entropy_coef", 0.01)
+    assert (agent.last_lr, agent.entropy_coef) == (1e-3, 0.01)
+    assert agent.scheduler.start_lr == 1e-3 and agent.scheduler.start_entropy_coef == 0.01
+
+
+def test_linear_set_param_scales_the_scheduled_entropy():
+    agent = make_cartpole_agent(learning_rate=1e-3, entropy_coef=0.01, **SCHEDULES["linear"])
+    agent.entropy_coef = 0.004                      # the schedule's position
+    agent.set_param("entropy_coef", 0.02)
+    assert agent.entropy_coef == pytest.approx(0.008) and agent.scheduler.start_entropy_coef == 0.02
+
+
 def test_checkpoints_store_the_configured_values():
     # PyYAML reads `3e-4` (no dot) as a string; the stored value is a float
     agent = make_cartpole_agent(learning_rate="3e-4", entropy_coef=0.01, **SCHEDULES["adaptive"])
@@ -111,13 +148,13 @@ def test_checkpoints_store_the_configured_values():
     assert state["last_lr"] == pytest.approx(1e-5)
 
 
-@pytest.mark.parametrize("schedule, learning_rate, expected_lr", [
-    ("adaptive", 1e-3, 2e-4),
-    ("adaptive", 1.5e-3, 2.5e-4),                   # 3e-4, clamped to max_lr
-    ("linear", 1e-3, 2e-4),
-    ("linear", 1.5e-3, 1.5e-3),
+@pytest.mark.parametrize("schedule, learning_rate, expected_lr, expected_entropy", [
+    ("adaptive", 1e-3, 2e-4, 0.02),
+    ("adaptive", 1.5e-3, 2.5e-4, 0.02),             # 3e-4, clamped to max_lr
+    ("linear", 1e-3, 2e-4, 0.008),                  # entropy 0.004 * 0.02 / 0.01
+    ("linear", 1.5e-3, 3e-4, 0.008),                # max_lr bounds only the adaptive walk
 ])
-def test_restore_is_the_same_on_every_rank(schedule, learning_rate, expected_lr):
+def test_restore_is_the_same_on_every_rank(schedule, learning_rate, expected_lr, expected_entropy):
     """Non-zero ranks run with lr_schedule None (an Identity scheduler; rank 0 broadcasts the LR
     at each scheduler step), so the restore must not branch on the runtime schedule: ranks that
     start with different LRs desynchronize the DDP replicas before the first broadcast."""
@@ -129,7 +166,7 @@ def test_restore_is_the_same_on_every_rank(schedule, learning_rate, expected_lr)
     assert not rank1.is_adaptive_lr and isinstance(rank1.scheduler, schedulers.IdentityScheduler)
     for agent in (rank0, rank1):
         agent.set_full_state_weights(state)
-    assert rank0.last_lr == pytest.approx(expected_lr) and rank0.entropy_coef == pytest.approx(0.02)
+    assert rank0.last_lr == pytest.approx(expected_lr) and rank0.entropy_coef == pytest.approx(expected_entropy)
     assert (rank1.last_lr, rank1.entropy_coef) == (rank0.last_lr, rank0.entropy_coef)
     assert [g["lr"] for g in rank1.optimizer.param_groups] == [g["lr"] for g in rank0.optimizer.param_groups]
 
