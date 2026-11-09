@@ -735,10 +735,10 @@ class TestMultiAgentObjective:
     def test_per_env_values_are_read_at_the_env_of_each_agent_index(self):
         values = torch.tensor([10., 20., 30., 40.])
         done = torch.tensor([[2], [6]])                       # agents 2 and 6 = envs 1 and 3 (2 agents per env)
-        assert pbt_utils.episode_sum_count(values, done, num_agents=2) == (60.0, 2)
-        assert pbt_utils.episode_sum_count(values.numpy(), done, num_agents=2) == (60.0, 2)
+        assert pbt_utils.episode_stats(values, done, num_agents=2)[:2] == (60.0, 2)
+        assert pbt_utils.episode_stats(values.numpy(), done, num_agents=2)[:2] == (60.0, 2)
         with pytest.raises(IndexError, match="out of range"):
-            pbt_utils.episode_sum_count(torch.tensor([1., 2.]), torch.tensor([[6]]), num_agents=2)
+            pbt_utils.episode_stats(torch.tensor([1., 2.]), torch.tensor([[6]]), num_agents=2)
 
     def test_observer_uses_the_algo_agent_count(self, tmp_path):
         obs = make_observer(tmp_path)

@@ -27,6 +27,12 @@ INTERVAL = 1000
 WORKSPACE = "pbt_workspace"
 
 
+def replaceable(checkpoints, reader_iteration, **kwargs):
+    """The members `member_status` marks replaceable (may take a worst slot)."""
+    status = pbt_utils.member_status(checkpoints, reader_iteration, **kwargs)
+    return {policy for policy, value in status.items() if value == pbt_utils.REPLACEABLE}
+
+
 @pytest.fixture(autouse=True)
 def fresh_launch(monkeypatch):
     """No RL_GAMES_PBT_RESTART payload and no cached restart info, before and after. A restart
@@ -432,9 +438,9 @@ class TestReplaceable:
         # at or below 6's iteration 3
         assert pbt_utils.member_status(ckpts, 10, reader_objectives=reader) == {
             0: "OK", 1: "behind", 2: "OK", 3: "OK", 4: "behind", 5: "—", 6: "OK", 7: "behind"}
-        assert pbt_utils.replaceable_members(ckpts, 10, reader_objectives=reader) == {0, 2, 3, 6}
+        assert replaceable(ckpts, 10, reader_objectives=reader) == {0, 2, 3, 6}
         # nothing to compare with: every member that reported is ranked as it stands (IsaacGymEnvs)
-        assert pbt_utils.replaceable_members(ckpts, 10) == {0, 1, 2, 3, 4, 6, 7}
+        assert replaceable(ckpts, 10) == {0, 1, 2, 3, 4, 6, 7}
 
     def test_load_reader_objectives_reads_what_the_laggards_read(self, tmp_path):
         for iteration, objective in ((3, 1.0), (5, 2.0), (6, 3.0), (9, 4.0), (12, 5.0)):
@@ -474,7 +480,7 @@ class TestReplaceable:
             fobj.write(YAML_1E6966A.format(pdir=pdir))
         ckpts = pbt_utils.load_pbt_ckpts(os.path.join(tmp_path, WORKSPACE), 0, 2, 3)
         assert pbt_utils.member_status(ckpts, 3) == {0: "—", 1: "OK"}
-        assert pbt_utils.replaceable_members(ckpts, 3) == {1}
+        assert replaceable(ckpts, 3) == {1}
 
     def test_members_that_cannot_be_replaced_stay_ranked(self):
         objectives = {0: 5.0, 1: 4.0, 2: 3.0, 3: 2.0, 4: 1.0, 5: None, 6: None, 7: None}

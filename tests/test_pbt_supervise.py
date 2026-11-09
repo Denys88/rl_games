@@ -17,7 +17,7 @@ import pytest
 import torch
 import yaml
 
-from rl_games.common.pbt import PbtCfg, pbt_utils, supervise as supervise_module
+from rl_games.common.pbt import PbtCfg, member_resume as member_resume_cli, pbt_utils, supervise as supervise_module
 from tests.test_pbt_e2e import CONFIG, EPOCH_FRAMES, INTERVAL, SCRIPT, SMALL, member_env, member_report  # noqa: F401
 from tests.test_pbt_inprocess import cartpole_member
 from tests.test_pbt_records import (Algo, CopiedIteration, ExecCalled, decide, execs, load_record,  # noqa: F401
@@ -102,8 +102,13 @@ def test_the_relaunch_gets_the_payload_an_exec_passes(tmp_path, execs, exits):
     assert resume["payload"] == exec_payload and exec_payload["frame_reached"] == 5005 + 64
     assert load_record(tmp_path / "exit") == record                     # no attempt counted
     # the relaunched process dies before its first save: the next relaunch retries the restart
+    looked = pbt_utils.member_resume(workspace(tmp_path / "exit"), 3, count_attempt=False)
+    assert looked["payload"]["attempt"] == 2 and load_record(tmp_path / "exit") == record    # nothing written
+    assert member_resume_cli.main(["--workspace", workspace(tmp_path / "exit"), "--policy-idx", "3"]) == 0
+    assert load_record(tmp_path / "exit") == record                     # json only looks
     retry = pbt_utils.member_resume(workspace(tmp_path / "exit"), 3)
     assert retry["payload"]["attempt"] == 2 and "frame_reached" not in retry["payload"]
+    assert load_record(tmp_path / "exit")["attempt"] == 2
 
 
 @pytest.mark.parametrize("finish, run_id", [(None, "abc123"), (fail_finish, "abc123-r1")], ids=["finished", "failed"])

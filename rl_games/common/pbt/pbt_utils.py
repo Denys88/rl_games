@@ -270,12 +270,6 @@ def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int,
     return scalar * episodes, episodes, 0
 
 
-def episode_sum_count(value, done_indices, num_agents: int = 1) -> tuple[float, int]:
-    """(sum, count) over the finished episodes with a finite objective, see `episode_stats`."""
-    total, count, _ = episode_stats(value, done_indices, num_agents)
-    return total, count
-
-
 def _read_text_and_ctime(path):
     """(text, ctime) of a file, or None when it is gone: members delete their old files while
     others read them. Bytes that are not UTF-8 are replaced (the file is malformed, not worth a
@@ -774,13 +768,6 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
     return status
 
 
-def replaceable_members(checkpoints: dict[int, dict | None], reader_iteration: int, **kwargs) -> set[int]:
-    """The members that may take a worst slot in this reader's view: status "OK" in `member_status`
-    (which takes the keyword arguments)."""
-    status = member_status(checkpoints, reader_iteration, **kwargs)
-    return {policy for policy, value in status.items() if value == REPLACEABLE}
-
-
 def _load_workspace_yaml(path) -> dict | None:
     """A workspace yaml, loaded and type-checked as `load_pbt_ckpts` does; None when it is gone or
     malformed."""
@@ -1083,7 +1070,7 @@ def select_dexpbt(objectives: dict[int, float | None], policy_idx: int, current_
 
     The members are ranked by objective (see `rank_members`; `order` breaks ties). The worst
     group is the last ceil(replace_fraction_worst * n) members of the ranking that reported and
-    are in `eligible` (every member that reported when None; see `replaceable_members`):
+    are in `eligible` (every member that reported when None; see `member_status`):
     IsaacGymEnvs takes the last of the whole ranking, where a member that never reported, one
     that can't act on a replacement now, or one 2+ iterations behind that ranks low only by its
     older objective, holds a slot a member that can act needs. Every member that reported stays
@@ -1343,7 +1330,7 @@ def _load_restart_record(policy_dir, policy_idx) -> dict | None:
     return record if usable else None
 
 
-def member_resume(workspace_dir, policy_idx, *, requested=False) -> dict | None:
+def member_resume(workspace_dir, policy_idx, *, requested=False, count_attempt=True) -> dict | None:
     """What a relaunch of member `policy_idx`, whose processes are gone, starts from; None when its
     directory holds nothing to resume from. Returns {"checkpoint", "checkpoint_arg",
     "restart_drop_args", "seed", "seed_arg", "params", "environ", "payload", "source"}: the
@@ -1358,7 +1345,8 @@ def member_resume(workspace_dir, policy_idx, *, requested=False) -> dict | None:
       checkpoint (iterations compared, never times): the restarted process has not saved. The
       relaunch retries the restart from restart.pth with the record's params and seed, and the
       payload is the restart's (same kind and mutated values) with the next `attempt`, which is
-      written back into restart.yaml: call this once per relaunch. With `requested`, the member
+      written back into restart.yaml: call this once per relaunch (`count_attempt=False` only
+      looks: same result, nothing written). With `requested`, the member
       ended for this restart (`pbt.restart_mode: exit`, see `rl_games.common.pbt.supervise`): the
       relaunch is the restart itself, its payload the one an exec'd restart gets, no attempt.
     - "checkpoint": the newest numbered checkpoint, with its yaml's params, as kind "resume"
@@ -1391,7 +1379,8 @@ def member_resume(workspace_dir, policy_idx, *, requested=False) -> dict | None:
         if not requested:
             payload.pop("frame_reached", None)        # what the dead restarted process played is unknown
             payload["attempt"] = int(record.get("attempt", 1)) + 1
-            write_restart_record(policy_dir, dict(record, attempt=payload["attempt"]))
+            if count_attempt:
+                write_restart_record(policy_dir, dict(record, attempt=payload["attempt"]))
         return dict(launch, checkpoint=restart_pth, seed=record.get("seed"), seed_arg=record.get("seed_arg"),
                     params=record["params"], environ=record.get("environ") or {}, payload=payload, source="restart")
     if newest is None:

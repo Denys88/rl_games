@@ -4,7 +4,7 @@
         [--format json|shell] [--checkpoint-arg NAME]
 
 `json` (the default) prints the dict, or null when the member's directory holds nothing to resume
-from. `shell` prints the exports of the payload and of a retried restart's `environ` (its wandb
+from; it only looks (add `--count-attempt` when a launcher relaunches from it). `shell` prints the exports of the payload and of a retried restart's `environ` (its wandb
 run), and a `set --` that appends the checkpoint argument, the params and, for a retried restart,
 its seed to the positional parameters, for a launcher to eval before it runs the member's command
 (argparse options and Hydra overrides take the last value; the launch-only `restart_drop_args`
@@ -15,8 +15,8 @@ resume from (the command then starts fresh):
     eval "$(python -m rl_games.common.pbt.member_resume --workspace ws --policy-idx 3 --format shell)"
     exec "$@"
 
-A call that retries a restart counts an attempt in the member's restart.yaml: run it once per
-relaunch, while none of the member's processes runs.
+`shell` (and `json --count-attempt`) retrying a restart counts an attempt in the member's
+restart.yaml: run it once per relaunch, while none of the member's processes runs.
 """
 
 import argparse
@@ -37,8 +37,12 @@ def main(argv=None) -> int:
     parser.add_argument("--checkpoint-arg", default=None,
                         help="the train script's checkpoint argument (default: the one the member's restart.yaml "
                              "or workspace yaml records, else --checkpoint)")
+    parser.add_argument("--count-attempt", action="store_true",
+                        help="json: count a retried restart's attempt in restart.yaml, as a relaunch from it does "
+                             "(shell always counts)")
     args = parser.parse_args(argv)
-    resume = pbt_utils.member_resume(args.workspace, args.policy_idx)
+    resume = pbt_utils.member_resume(args.workspace, args.policy_idx,
+                                     count_attempt=args.format == "shell" or args.count_attempt)
     if args.format == "json":
         print(json.dumps(resume, default=pbt_utils.json_default))
     elif resume is not None:

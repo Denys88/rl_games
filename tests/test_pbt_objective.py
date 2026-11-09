@@ -56,7 +56,7 @@ class TestEpisodeStats:
         assert pbt_utils.episode_stats(torch.tensor([1, 0, 1]), DONE4[:3]) == (2.0, 3, 0)
 
     def test_episode_sum_count_drops_nonfinite_entries(self):
-        assert pbt_utils.episode_sum_count(torch.tensor([1.0, NAN, 3.0, 4.0]), DONE4) == (8.0, 3)
+        assert pbt_utils.episode_stats(torch.tensor([1.0, NAN, 3.0, 4.0]), DONE4)[:2] == (8.0, 3)
 
     def test_per_env_objective_on_a_device_without_float64(self):
         # MPS has no float64: the finished envs' values are widened on the host

@@ -31,6 +31,12 @@ from tests.test_pbt_records import (INTERVAL, LR, Algo, decide, execs, member_di
 WORKSPACE = "pbt_workspace"
 
 
+def replaceable(checkpoints, reader_iteration, **kwargs):
+    """The members `member_status` marks replaceable (may take a worst slot)."""
+    status = pbt_utils.member_status(checkpoints, reader_iteration, **kwargs)
+    return {policy for policy, value in status.items() if value == pbt_utils.REPLACEABLE}
+
+
 def read(path):
     with open(path, encoding="utf-8") as fobj:
         return yaml.safe_load(fobj)
@@ -137,7 +143,7 @@ class TestMemberStatus:
         # 5 has no owner record (an older rl_games): its liveness is unknown
         assert status == {0: "OK", 1: "stale", 2: "waiting", 3: "finished", 4: "—", 5: "OK", 6: "not replaceable",
                           7: "foreign"}
-        assert pbt_utils.replaceable_members(ckpts, 10, activity=activity, lag=600, now=self.NOW) == {0, 5, 7}
+        assert replaceable(ckpts, 10, activity=activity, lag=600, now=self.NOW) == {0, 5, 7}
 
     def test_a_heartbeat_keeps_a_member_alive_and_a_new_yaml_too(self):
         ckpts = {0: self.ckpt(iteration=3, age=3600), 1: self.ckpt(age=5)}
