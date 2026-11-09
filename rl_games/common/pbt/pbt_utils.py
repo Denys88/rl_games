@@ -228,6 +228,36 @@ def json_default(value):
     return number
 
 
+def episode_env_values(value, done_indices, num_agents: int, num_envs: int) -> tuple[np.ndarray, np.ndarray]:
+    """(env indices, float64 values) of the episodes that finished on one step, for the per-env
+    estimator (`pbt.objective_window: 0`). A per-env tensor/array is read at the done envs; a
+    scalar (the mean over the envs that finished, as Isaac Lab logs it) is copied to each of them.
+    Without `done_indices` the value stands for every env: element i for env i, or the scalar for
+    all. Non-finite values are returned as they are (the caller keeps the env's previous value)."""
+    per_env = (torch.is_tensor(value) and value.numel() > 1) or (isinstance(value, np.ndarray) and value.size > 1)
+    if done_indices is None:
+        env_idx = np.arange(num_envs)
+    else:
+        idx = done_indices.reshape(-1) if torch.is_tensor(done_indices) else np.asarray(done_indices).reshape(-1)
+        env_idx = torch.as_tensor(idx).cpu().long().numpy() // max(1, int(num_agents))
+    if not per_env:
+        return env_idx, np.full(env_idx.shape[0], to_float(value), dtype=np.float64)
+    picked = value.reshape(-1)
+    size = int(picked.shape[0])
+    if done_indices is None:
+        env_idx = env_idx[:size]
+    elif env_idx.size and (int(env_idx.min()) < 0 or int(env_idx.max()) >= size):
+        raise IndexError(f"done env index {int(env_idx.max())} out of range for a per-env objective of size {size}")
+    if env_idx.size and (int(env_idx.min()) < 0 or int(env_idx.max()) >= num_envs):
+        raise IndexError(f"done env index {int(env_idx.max())} out of range for {num_envs} envs")
+    if torch.is_tensor(picked):
+        # one sync: the picked values to the host before widening them (MPS has no float64)
+        picked = picked[torch.as_tensor(env_idx, device=picked.device)].detach().cpu().double().numpy()
+    else:
+        picked = np.asarray(picked)[env_idx]
+    return env_idx, np.asarray(picked, dtype=np.float64)
+
+
 def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int, int]:
     """Objective of the episodes that finished on one step: (sum, count) over the episodes with
     a finite value, and the number of finished episodes whose value is NaN or infinite.

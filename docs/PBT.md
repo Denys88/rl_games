@@ -136,9 +136,8 @@ the workspace's `frame` and the `pbt/*` x axis stay in frames.
 
 The observer runs once per epoch, after the rollout and before the update. A PBT iteration is due
 when `progress // interval_steps` passes the last iteration; a process's first one comes at the
-first boundary after its start. It runs once every rank has a full objective window and a new
-finite objective ([Objective](#objective)), and is retried at every epoch until then, so a member's
-iterations may skip boundaries.
+first boundary after its start. It runs once the objective is known ([Objective](#objective)),
+and is retried at every epoch until then, so a member's iterations may skip boundaries.
 
 At an iteration, rank 0:
 
@@ -297,20 +296,28 @@ replaces an observer ahead of PBT's in a `MultiObserver` that writes `infos[key]
 population setting ([Member identity](#member-identity)); a function passed in code is not, and
 `code_fingerprint` covers it.
 
-A member's objective is the mean of the latest `objective_window` finished episodes of each rank (0:
-the rank's env count), pooled across ranks. That size is DexPBT's, but the estimator differs:
-DexPBT averages each env's latest episode, weighting envs equally, and the window weights episodes.
-Envs with short (failed) episodes count more, and after a (re)start, when every env's first
-episodes end together at the time limit, the mean can swing for several episode lengths: cover
-that with `start_after`.
+A member's objective is pooled across ranks. With `objective_window: 0` (the default) it is
+DexPBT's estimator: the mean of each env's latest finished episode, every env weighted equally. A
+scalar objective (the mean over the envs that finished on a step, as Isaac Lab logs it) is copied
+to each of them. With `objective_window: N` it is the mean of the latest N finished episodes of each
+rank, every episode weighted equally: envs with short (failed) episodes count more, and after the
+synchronized reset of a (re)start, when the first episodes to end are the short ones, the mean
+swings for many episode lengths (4096 envs, half the episodes running to a 600-step limit and half
+failing after 20-100 steps: std 0.12 over the next 6000 steps, against 0.009 per env).
 
-An iteration runs only when every rank's window is full and every rank has counted a finite episode
-since the previous iteration. Until then it is retried at every epoch without advancing the
-iteration counter: the member does not save, compare or get replaced, and an old mean is never
-published again. Rank 0 warns once per boundary, with the last lookup error of the interval:
+An iteration runs only when the objective is known: at 0, every env of every rank has finished an
+episode since the process start (or the last in-process change); with a window, every rank's window
+is full and every rank has counted a finite episode since the previous iteration. At 0 a NaN,
+infinite or unreadable episode leaves its env's previous value in place, so the objective stays
+known; a rank on which every env has ended an episode since its last finite one, none of them
+finite, still holds the iteration (and raises, below). Until then the iteration is retried at every
+epoch without advancing the iteration counter: the member does not save, compare or get replaced,
+and an old mean is never published again. Rank 0 warns once per boundary, with the last lookup error
+of the interval:
 
-- `waits for objective '<key>': N finished episodes counted, W per rank needed (X non-finite and
-  Y unreadable dropped)` while the windows fill;
+- `waits for objective '<key>': S of E envs have a finished episode, on k of n ranks still missing
+  some (X non-finite and Y unreadable dropped)` at 0, or `N finished episodes counted, W per rank
+  needed (...)` with a window, until the objective is known;
 - `waits for a new objective '<key>' [on k of n ranks]: V finite, X non-finite and Y unreadable
   episodes since iteration I` after that.
 
@@ -320,8 +327,9 @@ infos only on steps where an episode ends, the warnings therefore show `KeyError
 unreadable episodes: that is harmless.
 
 Every rank raises `RuntimeError` after `max_consecutive_errors` boundaries in a row at which some
-rank had failed: since the last iteration (or the process start) each of its envs ended an
-episode, at least a window of episodes ended, and none had a finite objective. That is a diverged
+rank had failed: since its last finite objective (counted from the last iteration with a window)
+each of its envs ended an episode, at least a window (at 0: the env count) of episodes ended, and
+none had a finite objective. That is a diverged
 policy, a wrong address, or infos that no longer carry the objective. Waiting for episodes to end
 never counts: after a (re)start every env resets, so with few early terminations episodes end in
 bursts at the time limit. With several ranks the decision uses the values pooled in the one
@@ -917,7 +925,7 @@ Rank 0 writes the `pbt/*` scalars at every iteration:
 
 | Scalar | |
 |---|---|
-| `pbt/objective` | the pooled window mean |
+| `pbt/objective` | the pooled objective |
 | `pbt/00_best_objective` | the best reported objective in the population |
 | `pbt/rank` | this member's rank, 1 the best (ties in the iteration's order) |
 | `pbt/restart_count` | the process's restart count |
@@ -962,7 +970,7 @@ Lines of rank 0:
 | `directory` | `""` | str | Not read by the observer. Isaac Lab-style train scripts put their log root under it. |
 | `workspace` | `pbt_workspace` | str | The workspace is `<train_dir>/<workspace>`, the same for every member. |
 | `objective` | `""` | str, required unless `objective_fn` | Dotted address of the objective in the env infos ([Objective](#objective)). |
-| `objective_window` | `0` | int >= 0 | Finished episodes per rank averaged into the objective; 0: the rank's env count. |
+| `objective_window` | `0` | int >= 0 | 0: each env's latest finished episode (DexPBT); N: the latest N finished episodes per rank. |
 | `interval_steps` | `100000` | int > 0 | Frames, or epochs with `interval_unit`, between PBT iterations. |
 | `start_after` | `0` | int >= 0 | Frames (or epochs) after each process start, or a change applied in process, before the member can be replaced; also part of the end-of-run margin. |
 | `initial_delay` | `0` | int >= 0 | Frames (or epochs) from the start of training before the member can be replaced. |

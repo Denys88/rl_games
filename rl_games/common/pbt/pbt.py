@@ -47,7 +47,8 @@ class _PooledWindow(NamedTuple):
 
     total: float       # objective sum over the windows
     count: int         # episodes in the windows
-    known: bool        # every rank's window is full
+    known: bool        # every rank's window is full (objective_window 0: every env has an episode)
+    full_ranks: int    # ranks whose window is full
     stale_ranks: int   # ranks without a finite objective since the last iteration
     failed_ranks: int  # stale ranks whose every env ended an episode since then (and a window of them)
     valid: int         # episodes since then with a finite objective
@@ -219,6 +220,8 @@ class PbtAlgoObserver(AlgoObserver):
         self._window_sum = 0.0
         self._window_count = 0
         self._window_size = max(1, self.cfg.objective_window)
+        # objective_window 0 (sized in after_init): each env's latest finished episode, DexPBT's estimator
+        self._env_value = self._env_valid = None
         self._consecutive_errors = 0
         self._last_objective_error = None
         # this rank's finished episodes since the last PBT iteration: with a finite objective (in
@@ -401,6 +404,8 @@ class PbtAlgoObserver(AlgoObserver):
         num_envs = max(1, int(getattr(algo, "num_actors", 1) or 1))
         if self.cfg.objective_window <= 0:
             self._window_size = num_envs
+            self._env_value = np.zeros(num_envs, dtype=np.float64)
+            self._env_valid = np.zeros(num_envs, dtype=bool)
         # a failed rank needs a failed episode on every env: one env in a NaN reset loop while the
         # others are mid-episode is not a diverged policy
         self._failed_envs = np.zeros(num_envs, dtype=bool)
@@ -523,12 +528,14 @@ class PbtAlgoObserver(AlgoObserver):
         self.algo.pbt_state = self._pbt_state()
 
     def process_infos(self, infos, done_indices):
-        """Accumulate the objective of finished episodes into a window of recent episodes.
+        """Accumulate the objective of finished episodes.
 
         The objective is `pbt.objective` looked up in `infos`, or the objective function's value
-        (`pbt.objective_fn`), whose exceptions propagate. `self.score` is this rank's mean over
-        the window. An episode whose objective is NaN or infinite is left out on its own (see
-        `pbt_utils.episode_stats`). For the iteration gate the rank counts its finished episodes
+        (`pbt.objective_fn`), whose exceptions propagate. `self.score` is this rank's objective:
+        with `objective_window` 0 the mean of each env's latest finished episode (DexPBT's
+        estimator), else the mean over a window of the latest finished episodes. An episode whose
+        objective is NaN or infinite is left out on its own (`pbt_utils.episode_stats`); at 0 its
+        env keeps its previous value. For the iteration gate the rank counts its finished episodes
         since the last PBT iteration: with a finite objective, with a non-finite one, and on steps
         without one (it could not be read, or the function returned None). Until it has a finite
         one, it also marks the envs that ended an episode.
@@ -542,13 +549,13 @@ class PbtAlgoObserver(AlgoObserver):
             if value is None:
                 error = f"{self._objective_name()} returned None"
             else:
-                stats = pbt_utils.episode_stats(value, done_indices, num_agents)
+                stats = self._episode_stats(value, done_indices, num_agents)
         else:
             try:
                 value = infos
                 for part in self.cfg.objective.split("."):
                     value = value[part]
-                stats = pbt_utils.episode_stats(value, done_indices, num_agents)
+                stats = self._episode_stats(value, done_indices, num_agents)
             except (KeyError, TypeError, IndexError, ValueError, RuntimeError) as exc:
                 error = repr(exc)  # the address may not resolve on every step (or every backend)
         if stats is None:
@@ -557,6 +564,9 @@ class PbtAlgoObserver(AlgoObserver):
             self._last_objective_error = error
             self._interval_unread += _num_finished(done_indices)
             self._mark_failed_envs(done_indices, num_agents)
+            return
+        if self._env_value is not None:
+            self._update_env_values(*stats, done_indices, num_agents)
             return
         total, count, nonfinite = stats
         if count and not math.isfinite(total):
@@ -574,6 +584,31 @@ class PbtAlgoObserver(AlgoObserver):
             old_total, old_count = self._window.popleft()
             self._window_sum -= old_total
             self._window_count -= old_count
+        self.score = self._window_sum / self._window_count
+
+    def _episode_stats(self, value, done_indices, num_agents):
+        """The step's episodes: (env indices, values) for the per-env estimator, else
+        `pbt_utils.episode_stats`'s (sum, count, non-finite count). Raises on a bad index."""
+        if self._env_value is not None:
+            return pbt_utils.episode_env_values(value, done_indices, num_agents, self._env_value.size)
+        return pbt_utils.episode_stats(value, done_indices, num_agents)
+
+    def _update_env_values(self, env_idx, values, done_indices, num_agents):
+        """objective_window 0: each env's latest finished episode. A finite value replaces the
+        env's; a non-finite one leaves it in place. The rank's objective is the mean over the envs
+        that have a value, known once every env has one (`_pooled_window`)."""
+        finite = np.isfinite(values)
+        count = int(finite.sum())
+        self._interval_nonfinite += int(values.size) - count
+        if count == 0:
+            if values.size:
+                self._mark_failed_envs(done_indices, num_agents)
+            return
+        self._interval_valid += count
+        self._env_value[env_idx[finite]] = values[finite]
+        self._env_valid[env_idx[finite]] = True
+        self._window_count = int(self._env_valid.sum())
+        self._window_sum = float(self._env_value[self._env_valid].sum())
         self.score = self._window_sum / self._window_count
 
     def _objective_name(self):
@@ -622,6 +657,7 @@ class PbtAlgoObserver(AlgoObserver):
             local, ranks = sums.tolist(), dist.get_world_size()
         total, count, full_ranks, fresh_ranks, failed_ranks, valid, nonfinite, unread = local
         return _PooledWindow(total=float(total), count=int(count), known=int(full_ranks) == ranks,
+                             full_ranks=int(full_ranks),
                              stale_ranks=ranks - int(fresh_ranks), failed_ranks=int(failed_ranks), valid=int(valid),
                              nonfinite=int(nonfinite), unread=int(unread), ranks=ranks)
 
@@ -686,15 +722,21 @@ class PbtAlgoObserver(AlgoObserver):
         iteration = progress // self.cfg.interval_steps
         if iteration <= self.pbt_it:
             return
-        if not pooled.known or pooled.stale_ranks:
+        # the per-env estimator holds each env's latest episode, so it needs no new one per iteration;
+        # a failed rank (every env ended an episode, none finite) still holds it, and raises
+        per_env = self._env_value is not None
+        if not pooled.known or (pooled.failed_ranks if per_env else pooled.stale_ranks):
             # decided on pooled values: every rank waits (or raises) at the same step
             self._wait_for_objective(iteration, pooled)
             return
 
         self.pbt_it = iteration
-        # the next iteration needs a new objective on every rank; its warnings report its own lookup errors
-        self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
-        self._failed_envs[:] = False
+        # the next iteration needs a new objective on every rank (per-env: counting starts over only on
+        # a rank that had one, so envs that fail in different intervals still add up to a failed rank);
+        # its warnings report its own lookup errors
+        if not per_env or self._interval_valid:
+            self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
+            self._failed_envs[:] = False
         self._wait_iteration, self._failed_boundaries = None, 0
         self._last_objective_error = None
         best_in_iteration, self.best_in_iteration = self.best_in_iteration, None
@@ -882,6 +924,10 @@ class PbtAlgoObserver(AlgoObserver):
         if pooled.known:
             ranks = f" on {pooled.stale_ranks} of {pooled.ranks} ranks" if pooled.ranks > 1 else ""
             what = f"a new objective '{name}'{ranks}: {counts}"
+        elif self._env_value is not None:
+            what = (f"objective '{name}': {pooled.count} of {self._window_size * pooled.ranks} envs have a finished "
+                    f"episode, on {pooled.ranks - pooled.full_ranks} of {pooled.ranks} ranks still missing some "
+                    f"({pooled.nonfinite} non-finite and {pooled.unread} unreadable dropped)")
         else:
             what = (f"objective '{name}': {pooled.count} finished episodes counted, {self._window_size} "
                     f"per rank needed ({pooled.nonfinite} non-finite and {pooled.unread} unreadable dropped)")
@@ -1242,6 +1288,11 @@ class PbtAlgoObserver(AlgoObserver):
         self._window_sum, self._window_count = 0.0, 0
         self.score = _UNINITIALIZED_VALUE
         self.best_in_iteration = None
+        if self._env_value is not None:
+            self._env_value[:] = 0.0
+            self._env_valid[:] = False
+            self._interval_valid = self._interval_nonfinite = self._interval_unread = 0
+            self._failed_envs[:] = False
 
     def _epoch_frames(self):
         """The frames the learner adds to `algo.frame` after this epoch's `after_steps`:

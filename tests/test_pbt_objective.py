@@ -249,6 +249,168 @@ class TestFreshObjective:
 # divergence in the middle of an interval (episodes that ended before it are finite), so the save
 # itself refuses NaN or inf weights, and a restart refuses a donor that holds them.
 
+# ---------------------------------------------------------------------------------------------
+# objective_window 0: DexPBT's estimator, each env's latest finished episode
+
+
+def per_env_member(tmp_path, num_envs=4, **pbt):
+    """A one-rank member with `num_envs` envs at objective_window 0, interval 100, iterations recorded."""
+    obs = make_observer(tmp_path, extra_pbt=dict({"interval_steps": 100}, **pbt))
+    algo = FakeAlgo(frame=0)
+    algo.train_dir, algo.num_actors, algo.writer = str(tmp_path), num_envs, BandWriter()
+    obs.after_init(algo)
+    calls = []
+    obs._pbt_iteration = lambda score, best, frame: calls.append((score, frame))
+    obs.after_steps()                                       # cadence init at frame 0
+    return obs, algo, calls
+
+
+def done_at(*envs):
+    return torch.tensor(envs, dtype=torch.long).reshape(-1, 1)
+
+
+class TestPerEnvEstimator:
+
+    def test_each_env_counts_once_with_its_latest_episode(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path)
+        obs.process_infos(success(1.0, 1.0, 1.0, 1.0), done_at(0, 1))
+        obs.process_infos(success(0.0, 0.0, 0.0, 0.0), done_at(0))      # env 0 again: its latest replaces
+        assert obs.score == pytest.approx(0.5)                          # envs 0, 1 have values: 0 and 1
+        tick(obs, algo, 100)
+        assert calls == []                                              # envs 2, 3 have none yet: waits
+        tick(obs, algo, 100, success(0.0, 0.0, 1.0, 1.0), done=done_at(2, 3))
+        assert calls == [(pytest.approx(0.75), 100)] and obs._env_value.tolist() == [0.0, 1.0, 1.0, 1.0]
+
+    def test_no_new_episode_needed_per_iteration(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path)
+        tick(obs, algo, 100, ONES)
+        tick(obs, algo, 200)                                            # no episode ended in the interval
+        assert [frame for _, frame in calls] == [100, 200]
+
+    def test_a_scalar_is_copied_to_every_env_that_finished(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path)
+        obs.process_infos({"episode": {"success": 0.25}}, done_at(0, 1, 2))
+        obs.process_infos({"episode": {"success": 1.0}}, done_at(3))
+        assert obs._env_value.tolist() == [0.25, 0.25, 0.25, 1.0] and obs.score == pytest.approx(0.4375)
+
+    def test_a_nonfinite_episode_keeps_the_envs_previous_value(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path)
+        obs.process_infos(ONES, DONE4)
+        obs.process_infos(success(NAN, 0.0, INF, 0.0), DONE4)
+        assert obs._env_value.tolist() == [1.0, 0.0, 1.0, 0.0] and obs.score == pytest.approx(0.5)
+
+    def test_an_env_that_never_finishes_holds_the_gate_with_the_counts(self, tmp_path, capsys):
+        obs, algo, calls = per_env_member(tmp_path)
+        tick(obs, algo, 100, success(1.0, 1.0, 1.0, 1.0), done=done_at(0, 1, 2))
+        tick(obs, algo, 200, success(1.0, 1.0, 1.0, 1.0), done=done_at(0, 1, 2))
+        assert calls == [] and obs.pbt_it == 0
+        out = capsys.readouterr().out
+        assert "waits for objective 'episode.success': 3 of 4 envs have a finished episode, on 1 of 1 ranks" in out
+
+    @pytest.mark.parametrize("staggered", [False, True], ids=["together", "staggered"])
+    def test_a_diverged_member_raises_after_a_complete_set(self, tmp_path, staggered):
+        """After every env has a value, NaN episodes keep the old values, so `known` stays true: the
+        failed-rank gate still stops the member, also when its envs end their NaN episodes in
+        different intervals (the counts add up across the iterations that ran meanwhile)."""
+        obs, algo, calls = per_env_member(tmp_path, max_consecutive_errors=2)
+        tick(obs, algo, 100, ONES)
+        if staggered:
+            tick(obs, algo, 200, success(NAN, NAN, NAN, NAN), done=done_at(0, 1))
+            tick(obs, algo, 300, success(NAN, NAN, NAN, NAN), done=done_at(2, 3))
+            assert [frame for _, frame in calls] == [100, 200]          # 300: failed, the first boundary
+            with pytest.raises(RuntimeError, match="2 consecutive iteration boundaries"):
+                tick(obs, algo, 400)
+        else:
+            tick(obs, algo, 200, NANS)
+            assert [frame for _, frame in calls] == [100]
+            with pytest.raises(RuntimeError, match="2 consecutive iteration boundaries"):
+                tick(obs, algo, 300)
+
+    def test_reset_clears_the_env_values(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path)
+        obs.process_infos(ONES, DONE4)
+        obs._reset_objective_window()
+        assert not obs._env_valid.any() and obs._window_count == 0
+        tick(obs, algo, 100)
+        assert calls == []                                              # waits for a new complete set
+
+    def test_window_mode_is_unchanged(self, tmp_path):
+        obs, algo, calls = per_env_member(tmp_path, objective_window=4)
+        assert obs._env_value is None
+        tick(obs, algo, 100, ONES)
+        tick(obs, algo, 200)                                            # the window needs a new episode
+        assert [frame for _, frame in calls] == [100]
+
+
+class _Episodes:
+    """Fixed-length episodes on `num_envs` envs after a synchronized reset: env e's episode i
+    succeeds (objective 1, runs to the time limit) or fails (0, ends early)."""
+
+    def __init__(self, num_envs, success_prob, rng, limit=600, fail_len=(20, 100), fixed=None):
+        self.rng, self.p, self.limit, self.fail_len, self.fixed = rng, success_prob, limit, fail_len, fixed
+        self.outcome = np.zeros(num_envs)
+        self.left = np.zeros(num_envs, dtype=int)
+        for env in range(num_envs):
+            self._new(env)
+
+    def _new(self, env):
+        p = self.p if self.fixed is None else self.fixed[env]
+        win = self.rng.random() < p
+        self.outcome[env] = 1.0 if win else 0.0
+        self.left[env] = self.limit if win else self.rng.integers(*self.fail_len)
+
+    def step(self):
+        self.left -= 1
+        done = np.flatnonzero(self.left == 0)
+        values = self.outcome.copy()
+        for env in done:
+            self._new(env)
+        return done, values
+
+
+def _scores(tmp_path, window, episodes, steps):
+    obs = make_observer(tmp_path, extra_pbt={"objective_window": window})
+    algo = FakeAlgo()
+    algo.train_dir, algo.num_actors = str(tmp_path), episodes.outcome.size
+    obs.after_init(algo)
+    trace = []
+    for _ in range(steps):
+        done, values = episodes.step()
+        obs.process_infos({"episode": {"success": torch.from_numpy(values)}}, torch.from_numpy(done).reshape(-1, 1))
+        if obs._window_count >= obs._window_size:
+            trace.append(obs.score)
+    return np.array(trace)
+
+
+def test_per_env_estimator_does_not_swing_after_a_synchronized_reset(tmp_path):
+    """4096 envs, success probability 0.5; successes run to the 600-step limit, failures end after
+    20-100 steps. After the synchronized reset of a (re)start the latest-N window first holds the
+    short failed episodes and swings for many episode lengths; each env's latest episode doesn't."""
+    steps = 6000
+    window = _scores(tmp_path / "w", 4096, _Episodes(4096, 0.5, np.random.default_rng(0)), steps)
+    per_env = _scores(tmp_path / "e", 0, _Episodes(4096, 0.5, np.random.default_rng(0)), steps)
+    assert abs(per_env.mean() - 0.5) < 0.01 and per_env.std() < 0.015
+    assert window.std() > 4 * per_env.std()
+
+
+def test_per_env_estimator_ranks_fixed_per_env_differences_right(tmp_path):
+    """Member A: half its envs always succeed (600 steps), half always fail (20 steps): 0.5 per env.
+    Member B: every env succeeds with probability 0.4, every episode 300 steps long. The window
+    weighs A's many short failures and ranks A below B; per env, A (0.5) ranks above B (0.4)."""
+    def member_a():
+        return _Episodes(512, None, np.random.default_rng(1), fail_len=(20, 21),
+                         fixed=np.repeat([1.0, 0.0], 256))
+
+    def member_b():
+        return _Episodes(512, 0.4, np.random.default_rng(2), limit=300, fail_len=(300, 301))
+
+    steps = 3000  # the means over the last 1200 steps (two of A's success cycles)
+    a_win, b_win = (_scores(tmp_path / f"w{i}", 512, m(), steps)[-1200:].mean() for i, m in enumerate((member_a, member_b)))
+    a_env, b_env = (_scores(tmp_path / f"e{i}", 0, m(), steps)[-1200:].mean() for i, m in enumerate((member_a, member_b)))
+    assert a_env == pytest.approx(0.5) and b_env == pytest.approx(0.4, abs=0.05) and a_env > b_env
+    assert a_win < 0.2 < b_win
+
+
 class DivergingAlgo(FakeAlgo):
     """A learner whose state has a policy network and, optionally, a central value net."""
 
@@ -349,8 +511,10 @@ def _gloo_member(rank, world_size, port, workdir, scenario):
             json.dump(result, fobj)
 
     for epoch in range(12):
-        bad = rank == 1 and epoch >= 3 and (scenario == "diverge" or epoch <= 6)
-        obs.process_infos({"obj": torch.full((4,), NAN if bad else 0.1 * (rank + 1))}, DONE4)
+        bad = rank == 1 and epoch >= 3 and scenario in ("diverge", "recover") and (scenario == "diverge" or epoch <= 6)
+        # "staggered": rank 1's env e finishes its first episode at epoch e, rank 0's all at epoch 0
+        done = DONE4[epoch:epoch + 1] if scenario == "staggered" and rank == 1 and epoch < 4 else DONE4
+        obs.process_infos({"obj": torch.full((4,), NAN if bad else 0.1 * (rank + 1))}, done)
         try:
             obs.after_steps()
         except RuntimeError as exc:
@@ -385,6 +549,16 @@ def test_two_process_gloo_stale_rank_holds_both_ranks(tmp_path):
     assert r1["iterations"] == [] and r0["raised"] is None and r1["raised"] is None
     # rank 0's restart decision at 720 still reaches rank 1, which leaves instead of returning
     assert r0["restarts"] == [720] and r0["returned"] and not r1["returned"]
+
+
+def test_two_process_gloo_per_env_gate_waits_for_every_env_of_every_rank(tmp_path):
+    r0, r1 = run_gloo_member(tmp_path, "staggered")
+    # objective_window 0: rank 1's last env finishes its first episode at epoch 3 (frame 180), so
+    # the iteration due at 120 waits on both ranks; then every iteration runs on the pooled mean of
+    # the 8 envs, (4 * 0.1 + 4 * 0.2) / 8
+    assert r0["trace"] == r1["trace"] == [0, 0, 0, 1, 2, 3, 3, 4, 4, 5, 6, 6]
+    assert r0["iterations"][0] == [0.15, 180] and {score for score, _ in r0["iterations"]} == {0.15}
+    assert r0["raised"] is None and r1["raised"] is None
 
 
 def test_two_process_gloo_diverged_rank_stops_every_rank(tmp_path):

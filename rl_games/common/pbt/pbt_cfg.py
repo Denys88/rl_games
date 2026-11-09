@@ -31,7 +31,7 @@ RULE_KEYS = {
 # the settings every member of a population shares, with its rule's (RULE_KEYS): see settings_hash. A key
 # added here later needs a default that keeps the earlier behaviour: configs at it keep their hash
 POPULATION_KEYS = ("num_policies", "interval_steps", "objective", "workspace", "replace_rule", "objective_fn",
-                   "interval_unit")
+                   "interval_unit", "objective_window")
 
 # IsaacGymEnvs pbt keys without a counterpart of the same name
 _IGE_KEYS = {
@@ -97,9 +97,9 @@ class PbtCfg:
     task objective that ranks curriculum progress first."""
 
     objective_window: int = 0
-    """Number of most recent finished episodes (per rank) averaged into the objective.
-    0 = the rank's number of environments: the size of DexPBT's estimator, which averages each
-    env's latest episode instead (envs weigh equally there, episodes here)."""
+    """0: DexPBT's estimator, the mean of each env's latest finished episode (envs weigh equally),
+    known once every env has finished one. N > 0: the mean of the N most recent finished episodes
+    per rank (episodes weigh equally: short ones count more)."""
 
     interval_steps: int = 100_000
     """Frames (or epochs, `interval_unit`) between PBT iterations (save, compare, replace/mutate); > 0."""

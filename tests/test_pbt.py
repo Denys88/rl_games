@@ -397,11 +397,10 @@ class TestObjectiveAggregation:
         assert obs.score == pytest.approx(0.5)             # last two episodes: 1.0, 0.0
 
     def test_best_in_iteration_tracked_per_step_once_window_full(self, tmp_path):
-        obs = make_observer(tmp_path)
+        obs = make_observer(tmp_path, extra_pbt={"objective_window": 2})
         algo = FakeAlgo(frame=0)
         algo.train_dir = str(tmp_path)
         obs.after_init(algo)
-        obs._window_size = 2
         obs.after_steps()                                  # first call: cadence init
         for v in (1.0, 1.0, 0.0, 0.0):
             obs.process_infos({"episode": {"success": v}}, None)
