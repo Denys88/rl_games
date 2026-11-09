@@ -154,6 +154,9 @@ class Envpool(IVecEnv):
 
     def reset(self):
         obs, info = self.env.reset(self.ids)
+        # a reset ends every game: the next episode's score starts at 0 (an explicit reset, e.g. a
+        # PBT in-process transfer's, would otherwise carry the interrupted games' points into it)
+        self.scores[:] = 0
 
         if self.flatten_obs:
             obs = _flatten_dict_obs(obs)

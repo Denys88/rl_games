@@ -96,3 +96,16 @@ def test_real_envpool_myosuite_guard():
             env = Envpool('', 2, env_name=MYO_ID)
     assert env.reset().shape[0] == 2
     Envpool('', 2, env_name='HalfCheetah-v4')  # non-MyoSuite: no guard on any version
+
+
+def test_reset_starts_every_score_over(monkeypatch):
+    """An explicit reset (a PBT in-process transfer resets every env) ends the games in progress:
+    their points must not carry into the next episode's infos['scores']."""
+    _stub_envpool(monkeypatch, '1.2.6')
+    env = Envpool('', 3, env_name='Breakout-v5')
+    env.env.reset = lambda ids: (np.zeros((3, 9), np.float32), {})
+    env.scores[:] = [4.0, 0.0, 7.0]
+    env.reset()
+    assert not env.scores.any()
+    env._set_scores({'reward': np.array([1.0, 0.0, 2.0])}, np.zeros(3, dtype=bool))
+    assert env.returned_scores.tolist() == [1.0, 0.0, 2.0]
