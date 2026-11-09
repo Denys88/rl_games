@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run a PBT population of the CartPole example: one train_member.py process per member, in the
-# background, sharing <train-dir>/pbt_workspace. See README.md.
+# Run a PBT population of the example (CartPole, or a config given with -- --file): one
+# train_member.py process per member, in the background, sharing <train-dir>/pbt_workspace. See README.md.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +11,7 @@ usage() {
 usage: run_population.sh [--members N] [--device cpu|cuda] [--train-dir DIR] [--seed S]
                          [--supervise] [--python PY] [--dry-run] [-- MEMBER_ARGS...]
 
-Start N members of train_member.py (CartPole PPO with PBT), one process each, and wait for
+Start N members of train_member.py (PPO with PBT: CartPole, or -- --file CONFIG), one process each, and wait for
 them. Member i logs to <train-dir>/logs/member<i>.log. The members import rl_games from this
 checkout ($REPO).
 

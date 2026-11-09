@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-"""One member of a PBT population: CartPole PPO (rl_games/configs/ppo_cartpole.yaml) trained by
-rl_games' Runner with a PbtAlgoObserver attached.
+"""One member of a PBT population: CartPole PPO (rl_games/configs/ppo_cartpole.yaml), or any rl_games
+config with --file, trained by rl_games' Runner with a PbtAlgoObserver attached.
 
 Start one process per member, each with its own --policy-idx (run_population.sh starts N):
 
@@ -14,6 +14,13 @@ agent.params.config.<key>=<value> overrides. So the script takes key=value overr
 doesn't) and hands its launch command to the observer (launch_argv). With --self-mutation or
 --transfer in_process the member takes those changes in its running process instead, and with
 --restart-mode exit it ends at a restart, for its supervisor to run the command again.
+
+With --file the member trains that config (e.g. rl_games/configs/mujoco/humanoid_envpool.yaml), ranked
+by its episode return (rl_games.common.pbt.objectives:episode_return) unless --objective-fn says
+otherwise:
+
+    python examples/pbt/train_member.py --file rl_games/configs/mujoco/humanoid_envpool.yaml \
+        --policy-idx 0 --num-policies 4 --seed 42 --train-dir runs/pbt_humanoid --interval-steps 409600
 """
 
 import argparse
@@ -30,12 +37,20 @@ OVERRIDE = re.compile(r"agent(\.[A-Za-z_][\w-]*)+=.*", re.DOTALL)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="One member of a CartPole PPO population trained with rl_games PBT (see README.md).",
+        description="One member of a PPO population trained with rl_games PBT (see README.md).",
         epilog="Overrides agent.<path>=<value>, applied last, set a value of the agent config: "
                "agent.params.config.<key> the training config (a restart appends the mutated ones), "
                "agent.params.network.<key> the network, agent.pbt.<key> the PBT section "
                "(e.g. agent.pbt.start_after=8192). Values parse as numbers, else as YAML.")
     parser.add_argument("--policy-idx", type=int, required=True, help="this member's index, 0..num-policies-1")
+    parser.add_argument("--file", default=None,
+                        help="an rl_games config to train instead of CartPole (its params; the PBT section comes "
+                             "from these options and agent.pbt.* overrides)")
+    parser.add_argument("--objective-fn", default=None,
+                        help="pbt.objective_fn (default: episode.r from the infos for CartPole, "
+                             "rl_games.common.pbt.objectives:episode_return with --file)")
+    parser.add_argument("--torch-threads", type=int, default=None,
+                        help="torch threads per member (default 1 for CartPole, the config's with --file)")
     parser.add_argument("--num-policies", type=int, default=4, help="population size (default 4)")
     parser.add_argument("--interval-steps", type=int, default=4096,
                         help="frames between PBT iterations (default 4096: 8 epochs)")
@@ -52,7 +67,8 @@ def parse_args():
     parser.add_argument("--restart-mode", choices=("exec", "exit"), default="exec",
                         help="pbt.restart_mode: exit ends the member at a restart, for its supervisor to run it again "
                              "(python -m rl_games.common.pbt.supervise, run_population.sh --supervise; default exec)")
-    parser.add_argument("--max-epochs", type=int, default=100, help="epochs per member (default 100)")
+    parser.add_argument("--max-epochs", type=int, default=None,
+                        help="epochs per member (default 100 for CartPole, the config's with --file)")
     parser.add_argument("--train-dir", default=os.path.join("runs", "pbt_cartpole"),
                         help="run directory of the population: member<i>/ per member, pbt_workspace/ shared "
                              "(default runs/pbt_cartpole); use a new one per population")
@@ -80,6 +96,8 @@ def parse_args():
     for override in args.overrides:
         if not OVERRIDE.fullmatch(override):
             parser.error(f"unrecognized argument {override!r}: overrides are agent.<path>=<value>")
+    if args.file is not None and args.lstm:
+        parser.error("--lstm changes the CartPole network; with --file set agent.params.network.rnn instead")
     if args.fake_objective is not None:
         try:
             args.fake_objective = [float(value) for value in args.fake_objective.split(",")]
@@ -119,24 +137,28 @@ def build_agent_config(args, rl_games_dir, record_episodes):
     overrides applied. Its flattened names are the PBT parameter names: agent.params.config.<key>."""
     import yaml
 
-    with open(os.path.join(rl_games_dir, "configs", "ppo_cartpole.yaml")) as f:
+    cartpole = args.file is None
+    with open(os.path.join(rl_games_dir, "configs", "ppo_cartpole.yaml") if cartpole else args.file) as f:
         params = yaml.safe_load(f)["params"]
-    params["torch_threads"] = 1  # members run side by side; this small network gains nothing from more
+    threads = args.torch_threads or (1 if cartpole else None)  # CartPole's small network gains nothing from more
+    if threads:
+        params["torch_threads"] = threads
     config = params["config"]
     config.pop("score_to_win", None)  # every member trains for max_epochs
     config.update({
-        "name": "pbt_cartpole",
         # a fixed name per member: restarts keep writing into <train_dir>/member<i>
         "full_experiment_name": f"member{args.policy_idx}",
         # the PBT workspace is <train_dir>/pbt_workspace
         "train_dir": args.train_dir,
-        "max_epochs": args.max_epochs,
         "device": args.device, "device_name": args.device,
         "multi_gpu": args.distributed,
-        "torch_compile": False,  # compiling takes longer than this run; agent.params.config.torch_compile=true
-        # episode returns in infos['episode']['r'], the PBT objective
-        "env_config": {"use_async": False, "wrap_env": record_episodes},
+        "torch_compile": False,  # compiling takes longer than a short run; agent.params.config.torch_compile=true
     })
+    if args.max_epochs is not None or cartpole:
+        config["max_epochs"] = args.max_epochs or 100
+    if cartpole:
+        # episode returns in infos['episode']['r'], the PBT objective
+        config.update({"name": "pbt_cartpole", "env_config": {"use_async": False, "wrap_env": record_episodes}})
     if args.lstm:
         params["network"]["rnn"] = {"name": "lstm", "units": 32, "layers": 1, "before_mlp": False,
                                     "concat_input": True}
@@ -145,7 +167,8 @@ def build_agent_config(args, rl_games_dir, record_episodes):
         "enabled": True,
         "policy_idx": args.policy_idx,
         "num_policies": args.num_policies,
-        "objective": "episode.r",
+        "objective": "episode.r" if cartpole else "",
+        "objective_fn": args.objective_fn or ("" if cartpole else "rl_games.common.pbt.objectives:episode_return"),
         "interval_steps": args.interval_steps,
         "replace_rule": args.replace_rule,
         "mutation_rate": args.mutation_rate,

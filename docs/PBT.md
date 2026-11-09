@@ -288,7 +288,11 @@ on every rank, with the learner as `algo`, and returns what a lookup would: a pe
 array, or a scalar, read as above. None means no objective on this step: the episodes that ended
 count as unreadable, so a function that always returns None ends in the `RuntimeError` below, like
 a vanished infos key. Its exceptions, and those from reading its value (e.g. a per-env tensor
-shorter than the envs), propagate: they are bugs. The path is imported at init on every rank
+shorter than the envs), propagate: they are bugs. `rl_games.common.pbt.objectives` has two for
+backends whose infos carry no per-episode objective: `episode_return` (the learner's running reward
+sum at the finished envs; any backend, e.g. MuJoCo on envpool) and `game_score` (envpool Atari's raw
+score at game over; the lives lost before it are NaN, so each env keeps its last game's score, and
+count as non-finite episodes). The path is imported at init on every rank
 (`validate()` checks it, and takes `objective_fn=` for a function object); a malformed path, one
 that doesn't import, or a non-callable target raises `ValueError`. Warnings name the function. It
 replaces an observer ahead of PBT's in a `MultiObserver` that writes `infos[key]` (DexLab's

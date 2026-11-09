@@ -53,6 +53,20 @@ python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 \
     examples/pbt/train_member.py --policy-idx 0 --num-policies 3 --distributed --seed 42
 ```
 
+## Any config (`--file`)
+
+`--file` trains another rl_games config in place of CartPole, ranked by its episode return
+(`rl_games.common.pbt.objectives:episode_return`; `--objective-fn` picks another):
+
+```bash
+bash examples/pbt/run_population.sh --members 4 --train-dir runs/pbt_humanoid -- \
+    --file rl_games/configs/mujoco/humanoid_envpool.yaml --interval-steps 409600 --torch-threads 8
+# envpool Atari: rank by the game score at game over
+bash examples/pbt/run_population.sh --members 4 --device cuda --train-dir runs/pbt_breakout -- \
+    --file rl_games/configs/atari/ppo_breakout_envpool.yaml --interval-steps 204800 \
+    --objective-fn rl_games.common.pbt.objectives:game_score
+```
+
 ## End-to-end test
 
 `tests/test_pbt_e2e.py` runs three-member populations of this script on CPU with real restarts
