@@ -3,6 +3,7 @@ save/load/cleanup, config, observer plumbing. All CPU, no training runs."""
 
 import os
 import random
+import sys
 import types
 
 import pytest
@@ -707,6 +708,7 @@ def _pbt_gloo_worker(rank, world_size, port, workdir, results):
             break
         algo.frame += 60
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_two_process_gloo_objective_pooling_and_restart_broadcast(tmp_path):
@@ -802,6 +804,15 @@ class TestReviewRound2:
         assert (state["frame"], state["epoch"]) == (7000, 55)
 
 
+def leave_rank():
+    """End a spawned rank whose results are saved, without the interpreter's teardown: the teardown
+    of gloo, and of a learner's summary-writer thread, sometimes aborts the process ("terminate
+    called without an active exception"), which fails the test of a rank that did its work."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
+
 def free_port():
     """A TCP port free on every address: gloo's store listens on all of them, so a port free only
     on 127.0.0.1 (another service holding it on another address) fails with EADDRINUSE."""
@@ -843,6 +854,7 @@ def _pbt_gloo_uneven_worker(rank, world_size, port, workdir, results):
         algo.frame += 60
     results[rank] = (iterations, trace)
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_two_process_gloo_window_gate_requires_every_rank(tmp_path):

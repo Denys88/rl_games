@@ -16,7 +16,7 @@ from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils, restart_info
 from tests.test_critical_fixes import make_cartpole_runner
 from tests.test_pbt_decisions import decisions
 from tests.test_pbt_inprocess import SCHEDULES, Learner, Member
-from tests.test_pbt import free_port
+from tests.test_pbt import free_port, leave_rank
 from tests.test_pbt_learner_api import CRITIC, StatesEnv, _CpuConfig
 from tests.test_pbt_records import (ENT, INTERVAL, LR, PARAMS, Algo, decide, execs, load_record,  # noqa: F401
                                     member_dir, restore_environ)
@@ -406,6 +406,7 @@ def _ddp_rank(rank, world_size, port, workdir):
                 "scaler": agent.scaler.state_dict(), "lrs": [agent.last_lr], "params": observer.pbt_params,
                 "restart_count": observer.restart_count}, os.path.join(workdir, f"rank{rank}.pt"))
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_two_ranks_load_the_donor_alike(tmp_path):

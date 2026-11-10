@@ -14,7 +14,7 @@ import yaml
 from rl_games.common.a2c_common import A2CBase
 from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
 from tests.test_critical_fixes import make_cartpole_runner
-from tests.test_pbt import free_port
+from tests.test_pbt import free_port, leave_rank
 from tests.test_pbt_decisions import decisions
 from tests.test_pbt_learner_api import SetParams, _CpuConfig, lrs
 from tests.test_pbt_records import (ENT, LR, PARAMS, Algo, ExecCalled, decide, execs, member_dir,  # noqa: F401
@@ -329,6 +329,7 @@ def _own_broadcast_rank(rank, world_size, port, workdir, results):
         algo.frame += 60
     results[rank] = (trace, broadcasts, algo.set_calls, len(algo.applied), obs.pbt_params[LR])
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_a_subclass_that_applies_its_self_mutations_gets_no_values_from_the_base(tmp_path):

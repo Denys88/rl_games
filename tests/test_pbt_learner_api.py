@@ -12,7 +12,7 @@ from rl_games.common import schedulers
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import MultiObserver, pbt_utils
 from tests.test_critical_fixes import make_cartpole_runner
-from tests.test_pbt import free_port
+from tests.test_pbt import free_port, leave_rank
 
 SCHEDULES = {
     "identity": {"lr_schedule": None},
@@ -325,6 +325,7 @@ def _ddp_rank(rank, world_size, port, workdir):
         torch.save({"model": agent.model.state_dict(), "lrs": lrs(agent), "mini_epochs": agent.mini_epochs_num,
                     "calls": observer.calls}, os.path.join(workdir, f"{name}_rank{rank}.pt"))
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_two_process_gloo_set_param_on_every_rank_keeps_the_replicas_identical(tmp_path):

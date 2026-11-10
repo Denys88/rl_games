@@ -23,7 +23,7 @@ from rl_games.common.pbt import PbtAlgoObserver, PbtCfg, pbt_utils
 from rl_games.common.pbt.pbt_cfg import settings_hash
 from tests.test_critical_fixes import make_cartpole_runner
 from tests.test_pbt_decisions import decisions, load_yaml, member
-from tests.test_pbt import free_port
+from tests.test_pbt import free_port, leave_rank
 from tests.test_pbt_learner_api import _CpuConfig
 from tests.test_pbt_records import (INTERVAL, LR, Algo, decide, execs, member_dir, report,  # noqa: F401
                                     restore_environ)
@@ -648,6 +648,7 @@ def _stop_rank(rank, world_size, port, workdir):
     agent.train()
     torch.save({"epoch": agent.epoch_num, "reasons": reasons}, os.path.join(workdir, f"rank{rank}.pt"))
     dist.destroy_process_group()
+    leave_rank()
 
 
 def test_two_ranks_stop_together_when_rank_0_sees_the_marker(tmp_path):

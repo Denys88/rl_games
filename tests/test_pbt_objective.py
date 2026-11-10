@@ -4,7 +4,6 @@ per-iteration param scalars."""
 
 import json
 import os
-import sys
 import types
 
 import numpy as np
@@ -14,7 +13,7 @@ import yaml
 
 from rl_games.common.algo_observer import AlgoObserver
 from rl_games.common.pbt import MultiObserver, PbtAlgoObserver, pbt_utils
-from tests.test_pbt import BandWriter, FakeAlgo, free_port, make_observer, synthetic_ckpt
+from tests.test_pbt import BandWriter, FakeAlgo, free_port, leave_rank, make_observer, synthetic_ckpt
 
 NAN, INF = float("nan"), float("inf")
 DONE4 = torch.arange(4).reshape(-1, 1)          # every env of a 4-env rank finished
@@ -544,11 +543,8 @@ def _gloo_member(rank, world_size, port, workdir, scenario):
         obs.after_steps()                                   # the iteration at 720: rank 1 leaves through os._exit(0)
         result["returned"] = True
     save()
-    # end as a restarting member does, without tearing the process group down: with a peer gone
-    # (os._exit) gloo's teardown sometimes aborts ("terminate called without an active exception")
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(0)
+    # end as a restarting member does, without tearing the process group down (the peer is gone)
+    leave_rank()
 
 
 def run_gloo_member(tmp_path, scenario):
