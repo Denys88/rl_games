@@ -73,7 +73,7 @@ class TestCleanup:
 
     def test_laggard_keeps_seeing_every_peer(self, tmp_path):
         """A live member far behind (restart start-ups, a slower host) finds every peer at or below
-        its iteration however far the others are ahead; 1e6966a isolated it from 21 behind."""
+        its iteration however far the others are ahead; fbc87fa isolated it from 21 behind."""
         n = 4
         it = {m: 0 for m in range(n)}
         for tick in range(1, 161):
@@ -175,7 +175,7 @@ class TestVanishingYaml:
 # ---------------------------------------------------------------------------------------------
 # Plain YAML, type checks, checkpoint path derived from the listed yaml
 
-# a workspace yaml as 1e6966a writes it (yaml.dump of plain types)
+# a workspace yaml as fbc87fa writes it (yaml.dump of plain types)
 YAML_1E6966A = """checkpoint: {pdir}/000003.pth
 experiment_name: fake_exp
 frame: 3000
@@ -202,7 +202,7 @@ class TestWorkspaceYaml:
         data = yaml.safe_load(text)
         assert data["iteration"] == 3 and data["true_objective"] == 1.5 and data["frame"] == 3000
         assert data["params"] == {LR: 3e-4, "agent.params.config.mini_epochs": 4}
-        assert yaml.load(text, Loader=yaml.FullLoader) == data      # what 1e6966a and master read
+        assert yaml.load(text, Loader=yaml.FullLoader) == data      # what fbc87fa and master read
 
     @pytest.mark.parametrize("value", [np.float64(3e-4), np.int64(4), torch.tensor(3e-4)],
                              ids=["np.float64", "np.int64", "tensor"])
@@ -213,7 +213,7 @@ class TestWorkspaceYaml:
             pbt_utils.save_pbt_checkpoint(str(pdir), 1.0, 3, FakeAlgo(), {LR: value})
         assert list(pdir.iterdir()) == []                     # no yaml, checkpoint or temp file to pick up
 
-    def test_1e6966a_yaml_still_loads(self, tmp_path):
+    def test_fbc87fa_yaml_still_loads(self, tmp_path):
         pdir = tmp_path / "000"
         pdir.mkdir()
         (pdir / "000003.yaml").write_text(YAML_1E6966A.format(pdir=pdir))
@@ -238,7 +238,7 @@ class TestWorkspaceYaml:
         assert pbt_utils.load_pbt_ckpts(str(tmp_path), 0, 1, 3)[0]["iteration"] == 2
 
     @pytest.mark.parametrize("content", [
-        # 1e6966a's FullLoader builds this float (and imports names from !!python/name)
+        # fbc87fa's FullLoader builds this float (and imports names from !!python/name)
         yaml.safe_dump(dict(GOOD, true_objective=0.0)).replace("true_objective: 0.0",
                                                                "true_objective: !!python/float 1.5").encode(),
         b"\xff\xfe garbage",
@@ -277,14 +277,14 @@ class TestWorkspaceYaml:
         (ws / "001").mkdir()
         (ws / "001" / "000004.yaml").write_text(yaml.safe_dump(dict(GOOD, iteration=4, true_objective="0.7")))
         obs.pbt_it = 5
-        obs._pbt_iteration(0.5, 0.5, 5000)                    # 1e6966a: TypeError out of the ranking
+        obs._pbt_iteration(0.5, 0.5, 5000)                    # fbc87fa: TypeError out of the ranking
         assert obs._consecutive_errors == 0 and obs.restart_flag.item() == 0
 
 
 # ---------------------------------------------------------------------------------------------
 # per-member best records, population_best(), best.yaml as a view
 
-# best/best.yaml as 1e6966a writes it: its only record
+# best/best.yaml as fbc87fa writes it: its only record
 LEGACY_BEST = """checkpoint: {best}/best_p001_000004.pth
 frame: 4000
 iteration: 4
@@ -324,7 +324,7 @@ class TestBestRecords:
                           "params": {LR: 3e-4}, "checkpoint": str(ws / "best" / "best_p000_000005.pth"),
                           "source_checkpoint": ckpt}
         assert view(ws) == record and pbt_utils.population_best(str(ws)) == record
-        # best.yaml keeps 1e6966a's keys and plain YAML: a 1e6966a member reads it as before
+        # best.yaml keeps fbc87fa's keys and plain YAML: a fbc87fa member reads it as before
         assert yaml.load((ws / "best" / "best.yaml").read_text(), Loader=yaml.FullLoader) == record
 
     def test_view_is_replaced_once_per_new_best(self, tmp_path, ckpt, monkeypatch):
@@ -390,7 +390,7 @@ class TestBestRecords:
 
     @pytest.mark.parametrize("writer", [1, 2], ids=["owner of the legacy copy", "another member"])
     def test_unreadable_view_is_never_overwritten(self, tmp_path, ckpt, monkeypatch, writer):
-        """A listed best.yaml that can't be opened may hold 1e6966a's only record of the best."""
+        """A listed best.yaml that can't be opened may hold fbc87fa's only record of the best."""
         ws = tmp_path / "ws"
         best = ws / "best"
         best.mkdir(parents=True)
@@ -446,7 +446,7 @@ class TestBestRecords:
         assert pbt_utils.population_best(str(new))["checkpoint"] == str(new / "best" / "best_p001_000003.pth")
 
     def test_overlapping_writers_end_at_the_true_max(self, tmp_path, ckpt, monkeypatch):
-        """1e6966a's interleaving: a lower writer passes its check, then publishes after the leader."""
+        """fbc87fa's interleaving: a lower writer passes its check, then publishes after the leader."""
         ws = tmp_path / "ws"
         assert pbt_utils.maybe_save_best(str(ws), 0, 1.0, 1, 100, ckpt, {})
         low_passed, high_done = threading.Event(), threading.Event()
@@ -471,7 +471,7 @@ class TestBestRecords:
 
     def test_stale_view_landing_after_the_leaders_is_rewritten(self, tmp_path, ckpt, monkeypatch):
         """The lower writer's view, built before the leader's record existed, is renamed into place
-        between the leader's view write and its re-read (1e6966a: the leader then deleted its own copy)."""
+        between the leader's view write and its re-read (fbc87fa: the leader then deleted its own copy)."""
         ws = tmp_path / "ws"
         assert pbt_utils.maybe_save_best(str(ws), 0, 1.0, 1, 100, ckpt, {})
         low_at_view, leader_wrote, low_wrote, leader_done = (threading.Event() for _ in range(4))

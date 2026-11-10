@@ -768,7 +768,7 @@ def member_status(checkpoints: dict[int, dict | None], reader_iteration: int, *,
       by yaml iteration, from `load_reader_objectives`). Its older objective may still rank below
       the reader's newer one: it would take the worst slot of a reader that is worse at equal
       frames, while in its own view that reader is the worse one, and neither would be replaced;
-    - "OK": replaceable. A yaml without the field (1e6966a) is replaceable, and so is a member 2+
+    - "OK": replaceable. A yaml without the field (fbc87fa) is replaceable, and so is a member 2+
       iterations behind that is below the reader at its iteration, or that the reader has no yaml
       at or below to compare with: it keeps its place in the ranking, as in IsaacGymEnvs, and in
       its own view it ranks below the reader too.
@@ -954,7 +954,7 @@ def _best_record(text, best_dir) -> dict | None:
 def _best_records(best_dir) -> tuple[dict[str, dict], set[str]]:
     """(readable records by file name, names listed but gone) in `best_dir`.
 
-    The view `best.yaml` counts as a record too: it holds one, and it is the only record 1e6966a
+    The view `best.yaml` counts as a record too: it holds one, and it is the only record fbc87fa
     wrote. The directory is listed before any file is opened. A listed file that is gone was
     replaced by its owner's newer record, so the directory is listed once more for that one:
     a missing file is skipped, never taken as "no best".
@@ -1006,7 +1006,7 @@ def _rebuild_best_view(best_dir, tag) -> tuple[dict[str, dict], set[str]]:
 
     Other members rebuild it too, and a view built from an older listing may land after this
     one: list again and rewrite until the view holds the best record (a few rounds). A view that
-    is listed but can't be read stays: it may hold a record (1e6966a's) that exists nowhere else.
+    is listed but can't be read stays: it may hold a record (fbc87fa's) that exists nowhere else.
     """
     for attempt in range(4):
         records, gone = _best_records(best_dir)
@@ -1019,7 +1019,7 @@ def _rebuild_best_view(best_dir, tag) -> tuple[dict[str, dict], set[str]]:
 def _drop_old_best(best_dir, policy_idx, records, gone) -> None:
     """Delete this member's best records and copies, except its two best records (the new one,
     and the previous one, which a view written concurrently may still name) and the copy the
-    view names. Records go before their copies. A copy without a record (1e6966a's, or a write
+    view names. Records go before their copies. A copy without a record (fbc87fa's, or a write
     cut short) only goes when the view could be read."""
     own = {}
     for name, record in records.items():

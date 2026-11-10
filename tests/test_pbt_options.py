@@ -503,7 +503,7 @@ def isaac_lab_parser(track):
 def test_the_legacy_command_keeps_its_length(tmp_path, monkeypatch, track, track_args, distributed):
     """A script that keeps its flags in sys.argv (no launch_argv): every restart appends only the flags
     the command lacks, so the command keeps its length, every launch argument but the replaced seed
-    and override is kept as given, and the child parses the launch values (1e6966a: about 7
+    and override is kept as given, and the child parses the launch values (fbc87fa: about 7
     arguments more per restart)."""
     monkeypatch.chdir(tmp_path)
     if distributed:

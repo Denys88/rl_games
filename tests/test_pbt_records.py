@@ -383,8 +383,8 @@ def test_restart_info_is_none_without_a_payload():
     assert restart_info() is None
 
 
-def test_a_1e6966a_payload_restarts_the_child(tmp_path, capsys):
-    """A parent of 1e6966a (no schema, kind or experiment_name) and a child of this version."""
+def test_a_fbc87fa_payload_restarts_the_child(tmp_path, capsys):
+    """A parent of fbc87fa (no schema, kind or experiment_name) and a child of this version."""
     raw = json.dumps({"policy_idx": 3, "source_policy": 3, "restart_count": 1, "iteration": 5, "frame": 5005,
                       "checkpoint": "/ws/003/restart.pth", "mutated": {LR: 1e-3}})
     child = child_process(raw, tmp_path)

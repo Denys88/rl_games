@@ -1188,7 +1188,7 @@ the new `learning_rate` and `entropy_coef`. The in-process modes build on it.
 - New keys in checkpoints (`config_hparams`, `pbt_history`, `pbt`), workspace yamls (`schema`,
   `time`, `replaceable`, `restart_count`, the identity fields, ...), best records, `restart.yaml`
   and the restart payload are ignored by older readers. Yamls without `replaceable` count as
-  replaceable, and without identity fields as unknown. 1e6966a's loader reads numbered files only,
+  replaceable, and without identity fields as unknown. fbc87fa's loader reads numbered files only,
   so it ignores `restart.yaml`, `decisions.jsonl`, `owner.yaml` and `exit.yaml`.
 - Resumes take `weight_decay`, `entropy_coef` (except under a linear entropy schedule) and, under
   identity, the LR from the config. Under `adaptive` or `linear`, a `learning_rate` that differs

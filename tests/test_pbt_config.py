@@ -122,7 +122,7 @@ class TestFieldTypes:
         assert (cfg.replace_rule, cfg.threshold_std, cfg.threshold_abs) == ("threshold", 0.1, 0.05)
 
     def test_string_floats_no_longer_crash_the_first_decision(self):
-        # 1e6966a accepted these and raised TypeError on rank 0 at the first replacement decision
+        # fbc87fa accepted these and raised TypeError on rank 0 at the first replacement decision
         cfg = PbtCfg(num_policies=8, replace_threshold_frac_absolute="1e-3", replace_threshold_frac_std="5e-1",
                      leader_params_prob="5e-1", start_after="1e8", initial_delay="1e8")
         assert (cfg.start_after, cfg.initial_delay) == (100_000_000, 100_000_000)
@@ -196,7 +196,7 @@ class TestUnknownKeys:
         assert "bogus_key" in msg
 
     def test_isaacgymenvs_keys_point_to_their_replacement(self):
-        # IsaacGymEnvs cfg/pbt/pbt_default.yaml (Hydra drops the `defaults` list); 1e6966a ignored
+        # IsaacGymEnvs cfg/pbt/pbt_default.yaml (Hydra drops the `defaults` list); fbc87fa ignored
         # change_min/change_max, so mutations silently widened to the default (1.1, 2.0)
         ige = yaml.safe_load("""
             enabled: True
@@ -276,7 +276,7 @@ pbt:
     agent.params.config.gamma: mutate_discount
     agent.params.config.tau: mutate_discount
 """,
-    # docs/PBT.md usage example at 1e6966a (test_pbt_docs.py checks the current examples)
+    # docs/PBT.md usage example at fbc87fa (test_pbt_docs.py checks the current examples)
     "docs_example": """
 pbt:
   enabled: True
@@ -297,7 +297,7 @@ pbt:
     agent.params.config.e_clip: mutate_eps_clip
     agent.params.config.gamma: mutate_discount
 """,
-    # docs/PBT.md launcher example at 1e6966a
+    # docs/PBT.md launcher example at fbc87fa
     "docs_launcher": """
 pbt:
   launcher: /path/to/_isaac_sim/python.sh
@@ -493,7 +493,7 @@ class TestLauncher:
         cfg, _ = validated(section(launcher="./python.sh"), launcher_cwd=str(tmp_path))
         assert cfg.launcher == str(script)
         monkeypatch.chdir(tmp_path)
-        # execv runs a bare name from the cwd; 1e6966a's restarts worked with it, so it still resolves
+        # execv runs a bare name from the cwd; fbc87fa's restarts worked with it, so it still resolves
         cfg, _ = validated(section(launcher="python.sh"))
         assert cfg.launcher == str(script)
 
@@ -533,7 +533,7 @@ class TestObserverInit:
             observer(tmp_path, policy_idx=4)
 
     def test_float_interval_writes_and_loads_its_iteration(self, tmp_path):
-        # 1e6966a: interval_steps 2e3 (Hydra's float) failed every save on f"{it:06d}" and raised after 5
+        # fbc87fa: interval_steps 2e3 (Hydra's float) failed every save on f"{it:06d}" and raised after 5
         obs = observer(tmp_path, interval_steps=2e3, objective_window=1)
         algo = FakeAlgo(frame=0)
         algo.train_dir, algo.writer, algo.num_actors = str(tmp_path), types.SimpleNamespace(

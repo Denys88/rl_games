@@ -142,7 +142,7 @@ class TestPrivateDraws:
         again = self_mutation(tmp_path / "b", monkeypatch, restart_count=1)
         second = self_mutation(tmp_path / "c", monkeypatch, restart_count=2)
         assert first == again                                   # reproducible for a restart
-        assert second != first                                  # 1e6966a: every restart drew the same factors
+        assert second != first                                  # fbc87fa: every restart drew the same factors
 
     def test_members_launched_with_the_same_seed_draw_differently(self, tmp_path, monkeypatch):
         member3 = self_mutation(tmp_path / "a", monkeypatch, policy_idx=3)
@@ -262,8 +262,8 @@ class RecordingDraws(PbtAlgoObserver):
 # ---------------------------------------------------------------------------------------------
 # members that never reported take no worst slot
 
-def select_dexpbt_1e6966a(objectives, policy_idx, current_objective, best_in_iteration, cfg):
-    """select_dexpbt as 1e6966a ships it: the reference of the parity check."""
+def select_dexpbt_fbc87fa(objectives, policy_idx, current_objective, best_in_iteration, cfg):
+    """select_dexpbt as fbc87fa ships it: the reference of the parity check."""
     n = cfg.num_policies
     ranked = sorted(((pbt_utils.UNINITIALIZED_VALUE if objectives.get(p) is None else objectives[p], p)
                      for p in range(n)), reverse=True)
@@ -299,7 +299,7 @@ class TestUnreportedMembers:
             report(tmp_path, idx, 3, objective)
         obs = observer(tmp_path, 6, 8)
         iterate(obs, Algo(tmp_path), 3, 1.0)
-        assert obs.restart_flag.item() == 1                     # 1e6966a: "not among the worst [7]"
+        assert obs.restart_flag.item() == 1                     # fbc87fa: "not among the worst [7]"
         assert "WARNING members [7] have not reported" in capsys.readouterr().out
 
     def test_with_every_member_reported_the_rule_is_unchanged(self):
@@ -317,7 +317,7 @@ class TestUnreportedMembers:
                 best = grid.choice([None, objectives[me], objectives[me] + 1.0])
                 seed = grid.randrange(10_000)
                 random.seed(seed)
-                expected = select_dexpbt_1e6966a(objectives, me, objectives[me], best, cfg)[0]
+                expected = select_dexpbt_fbc87fa(objectives, me, objectives[me], best, cfg)[0]
                 for kwargs in ({}, {"eligible": set(range(n))}):
                     random.seed(seed)
                     assert pbt_utils.select_dexpbt(objectives, me, objectives[me], best, cfg, **kwargs)[0] == expected
@@ -363,7 +363,7 @@ class TestReplaceable:
             report(tmp_path, idx, 6, objective)
         member6 = observer(tmp_path, 6, 8)
         iterate(member6, Algo(tmp_path), 6, 1.5)
-        assert member6.restart_flag.item() == 1                 # 1e6966a: "not among the worst [7]"
+        assert member6.restart_flag.item() == 1                 # fbc87fa: "not among the worst [7]"
         # the restarted member's first save makes it replaceable again
         report(tmp_path, 7, 7, 3.0)
         ckpts = pbt_utils.load_pbt_ckpts(os.path.join(tmp_path, WORKSPACE), 0, 8, 7)
@@ -390,7 +390,7 @@ class TestReplaceable:
         """Member 3 is slow (iteration 5, the others 7) and the objective grows 1 per iteration, so
         its older objective ranks below member 6's newer one either way. Each of the two decides
         about itself, member 3 at iteration 5 where it reads member 6's yaml 5: exactly one of them
-        decides, the one that is worse at equal frames. 1e6966a let member 3 hold member 6's worst
+        decides, the one that is worse at equal frames. fbc87fa let member 3 hold member 6's worst
         slot also when member 3 led (nobody was replaced); ruling every member 2+ iterations behind
         out of the worst group made member 6 decide also when member 3 trailed (both decided)."""
         quality = {0: 9.0, 1: 8.0, 2: 7.0, 3: quality3, 4: 6.0, 5: 5.0, 6: 2.5}
@@ -466,14 +466,14 @@ class TestReplaceable:
         assert saved_yaml(tmp_path, 7, 5)["replaceable"] is False
         member6 = observer(tmp_path, 6, 8)
         iterate(member6, Algo(tmp_path), 5, 2.0)
-        assert member6.restart_flag.item() == 1                 # 1e6966a: "not among the worst [7]"
+        assert member6.restart_flag.item() == 1                 # fbc87fa: "not among the worst [7]"
         iterate(member7, algo7, 8, 10.0)                        # out of the window: 8005 - 4000 >= 3000
         assert saved_yaml(tmp_path, 7, 8)["replaceable"] is True
         delayed = observer(tmp_path / "delayed", 0, 3, initial_delay=10_000)
         iterate(delayed, Algo(tmp_path / "delayed"), 5, 1.0)    # frame 5005 < initial_delay
         assert saved_yaml(tmp_path / "delayed", 0, 5)["replaceable"] is False
 
-    def test_a_1e6966a_yaml_is_replaceable(self, tmp_path):
+    def test_a_fbc87fa_yaml_is_replaceable(self, tmp_path):
         pdir = os.path.join(tmp_path, WORKSPACE, "001")
         os.makedirs(pdir)
         with open(os.path.join(pdir, "000003.yaml"), "w") as fobj:
@@ -526,13 +526,13 @@ class TestTies:
                     deciding.append(reader)
             assert len(deciding) == 1                           # the readers agree on one worst member
             holders.append(deciding[0])
-        assert set(holders) == {3, 4, 5, 6, 7}                  # 1e6966a: member 3 at every iteration
+        assert set(holders) == {3, 4, 5, 6, 7}                  # fbc87fa: member 3 at every iteration
 
     def test_the_replaced_member_of_a_bottom_tie_rotates_through_the_observer(self, tmp_path):
         """The same tie through after_steps: at each iteration every tied member decides about
         itself on its own copy of the workspace (the members decide at the same time). One is
         replaced, the last of the tie in the iteration's order, and another one at other
-        iterations (1e6966a: member 3 at every iteration)."""
+        iterations (fbc87fa: member 3 at every iteration)."""
         replaced = []
         for iteration in range(1, 7):
             deciding = []
@@ -556,7 +556,7 @@ class TestTies:
             order = pbt_utils.tie_break_order(WORKSPACE, iteration, 8)
             for reader in range(8):
                 random.seed(iteration)
-                expected = select_dexpbt_1e6966a(objectives, reader, objectives[reader], objectives[reader], cfg)
+                expected = select_dexpbt_fbc87fa(objectives, reader, objectives[reader], objectives[reader], cfg)
                 random.seed(iteration)
                 actual = pbt_utils.select_dexpbt(objectives, reader, objectives[reader], objectives[reader], cfg,
                                                  order=order)
@@ -570,7 +570,7 @@ class TestTies:
 
     def test_tied_leaders_take_the_best_and_the_rank_by_the_tie_order(self, tmp_path, monkeypatch):
         """Members 0 and 1 tie at the top. In member 0's iterations the population-best record and
-        pbt/rank follow the iteration's tie order (1e6966a: member 1 always owned the best, and both
+        pbt/rank follow the iteration's tie order (fbc87fa: member 1 always owned the best, and both
         ranked 1)."""
         owners = []
         monkeypatch.setattr(pbt_utils, "maybe_save_best", lambda ws, idx, *a, **k: owners.append(idx) or True)
@@ -673,7 +673,7 @@ class TestEndOfTraining:
 
 def test_no_decision_in_the_last_epoch_of_a_real_run(tmp_path):
     """CartPole PPO, 16 frames per epoch, interval 16: member 2's first boundary falls in the last
-    epoch (max_epochs 2), and no later after_steps could act on a restart. 1e6966a set the flag
+    epoch (max_epochs 2), and no later after_steps could act on a restart. fbc87fa set the flag
     and wrote restart.pth for a restart that never ran."""
     from tests.test_critical_fixes import make_cartpole_agent
     from tests.test_pbt_restore import ConstantObjective, MemberAlgo, learner
