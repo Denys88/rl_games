@@ -117,7 +117,7 @@ applied in process, and the checker requires such changes: the ranks must agree 
 an in-process self-mutation's values ran, and must all have loaded an in-process transfer's
 `restart.pth`.
 
-The adaptive LR schedule is the one Isaac Lab's and DexLab's PBT configs use, and the one where the
+The adaptive LR schedule is the one Isaac Lab's PBT configs use, and the one where the
 ranks can disagree: only rank 0 runs the scheduler (the other ranks have none and take its LR),
 while a restart restores on every rank the checkpoint's adapted LR, scaled by the restart's
 `learning_rate` mutation. The checker compares the learning rate, the optimizer's LR and its state

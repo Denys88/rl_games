@@ -1,4 +1,4 @@
-"""In-process transfers (`pbt.transfer: in_process`, O01): a transfer decision writes restart.pth and
+"""In-process transfers (`pbt.transfer: in_process`): a transfer decision writes restart.pth and
 restart.yaml as a restart's does, and every rank loads restart.pth into the running learner at the
 start of the next epoch, after the decision epoch's update, as the restarted process would restore
 it. CPU only; os.execv is captured."""

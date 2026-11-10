@@ -1,6 +1,6 @@
-"""PBT workspace: cleanup that keeps laggards' peers (H01), reads that survive concurrent
-cleanup (F12), plain and type-checked YAML with checkpoint paths derived from the listed file,
-per-member best records (F10), and the guard against a fresh launch over an earlier run's files.
+"""PBT workspace: cleanup that keeps laggards' peers, reads that survive concurrent
+cleanup, plain and type-checked YAML with checkpoint paths derived from the listed file,
+per-member best records, and the guard against a fresh launch over an earlier run's files.
 All CPU, no training runs."""
 
 import json
@@ -67,7 +67,7 @@ def in_thread(fn, *args):
 
 
 # ---------------------------------------------------------------------------------------------
-# H01: cleanup follows the slowest member and thins old files (IsaacGymEnvs)
+# cleanup follows the slowest member and thins old files (IsaacGymEnvs)
 
 class TestCleanup:
 
@@ -139,7 +139,7 @@ class TestCleanup:
 
 
 # ---------------------------------------------------------------------------------------------
-# F12: a yaml removed by its owner between the listing and the read
+# a yaml removed by its owner between the listing and the read
 
 class TestVanishingYaml:
 
@@ -282,7 +282,7 @@ class TestWorkspaceYaml:
 
 
 # ---------------------------------------------------------------------------------------------
-# F10: per-member best records, population_best(), best.yaml as a view
+# per-member best records, population_best(), best.yaml as a view
 
 # best/best.yaml as 1e6966a writes it: its only record
 LEGACY_BEST = """checkpoint: {best}/best_p001_000004.pth

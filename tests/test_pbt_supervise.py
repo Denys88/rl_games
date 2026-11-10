@@ -1,4 +1,4 @@
-"""PBT restarts through a supervisor (G04): `pbt.restart_mode: exit` ends the member at a restart
+"""PBT restarts through a supervisor: `pbt.restart_mode: exit` ends the member at a restart
 decision, and `python -m rl_games.common.pbt.supervise` runs the member's command again from the
 records (`pbt_utils.member_resume`): a requested restart, a crash after a backoff up to a retry
 cap, no relaunch after a normal end or a signal, and a process tree that stays flat. CPU only;
@@ -134,7 +134,7 @@ def test_member_resume_returns_the_launch_only_arguments(tmp_path):
 
 
 def test_a_copied_iteration_relaunches_with_the_arguments_an_exec_takes(tmp_path, exits):
-    """A subclass that replaces _pbt_iteration (DexLab's) saves its yamls without the train
+    """A subclass that replaces _pbt_iteration saves its yamls without the train
     script's checkpoint and launch-only arguments; restart.yaml records them, as the exec takes
     them from the config."""
     for idx, objective in ((0, 5.0), (1, 4.0), (2, 3.0)):

@@ -1,7 +1,7 @@
 """What PBT records about its members and their decisions: the identity fields of workspace yamls
-(K02: schema, rl_games version, git commit, code fingerprint, settings hash, precision), peers left
+(schema, rl_games version, git commit, code fingerprint, settings hash, precision), peers left
 out when their code or setup differs, the member's decisions.jsonl with a line per iteration
-outcome (G05), and the restart's cost logged by the restarted process. CPU only; os.execv is
+outcome, and the restart's cost logged by the restarted process. CPU only; os.execv is
 captured."""
 
 import importlib.metadata
@@ -63,7 +63,7 @@ def load_yaml(train_dir, name, idx=3):
 
 
 # ---------------------------------------------------------------------------------------------
-# K02: workspace yamls say which code and which population setup wrote them
+# workspace yamls say which code and which population setup wrote them
 
 def test_workspace_yamls_record_the_member(tmp_path, execs):
     for idx, objective in ((0, 5.0), (1, 4.0), (2, 3.0)):
@@ -205,7 +205,7 @@ class TestGitCommit:
 
 
 # ---------------------------------------------------------------------------------------------
-# K02: a member with other code or another setup is left out; other differences only warn
+# a member with other code or another setup is left out; other differences only warn
 
 def first_decision(train_dir, peers, *, rounds=1, **kwargs):
     """Member 3 (the worst, fingerprint 'a') decides at iterations 5.. with `peers` {idx: (objective,
@@ -283,7 +283,7 @@ def test_unknown_fields_change_nothing(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------------------------
-# G05: decisions.jsonl
+# decisions.jsonl
 
 def test_append_decision_writes_json_lines(tmp_path):
     pbt_utils.append_decision(str(tmp_path), {"outcome": "kept", "lead": np.float64(0.5), "worst": [3]})

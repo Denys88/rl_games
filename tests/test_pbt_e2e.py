@@ -199,7 +199,7 @@ def inprocess_population(tmp_path_factory, member_report):
 
 @pytest.fixture(scope="module")
 def self_mutation_inprocess_population(tmp_path_factory, member_report):
-    """DexLab's arrangement: self-mutations in process, transfers by restart."""
+    """Self-mutations in process, transfers by restart."""
     return run_population(tmp_path_factory.mktemp("pbt_e2e_self_mutation"), member_report,
                           "--self-mutation", "in_process")
 

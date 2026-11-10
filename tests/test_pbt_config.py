@@ -222,7 +222,7 @@ class TestUnknownKeys:
         assert "dbg_mode" in msg and "force_outcome" in msg
 
 
-# the pbt sections that ship today, copied verbatim; DexLab's _lstm section is identical to _mlp
+# pbt sections in use today: Isaac Lab's verbatim, a dexpbt one with grace windows and integer mutations
 SHIPPED = {
     # IsaacLab isaaclab_tasks/direct/shadow_hand/agents/rl_games_ppo_cfg.yaml
     "isaaclab_shadow_hand": """
@@ -248,8 +248,8 @@ pbt:
     agent.params.config.gamma: "mutate_discount"
     agent.params.config.tau: "mutate_discount"
 """,
-    # DexLab dexlab/tasks/tabletop/agents/rl_games_sharpa_cuboid_mlp.yaml (and _lstm)
-    "dexlab_sharpa_cuboid": """
+    # the dexpbt rule with grace windows, mutating mini_epochs (an integer) and e_clip
+    "dexpbt_grace_windows": """
 pbt:
   enabled: False
   policy_idx: 0
@@ -327,7 +327,7 @@ SHIPPED_CONFIG = {
     "isaaclab_shadow_hand": {"gamma": 0.99, "tau": 0.95, "learning_rate": "5e-4", "lr_schedule": "adaptive",
                              "kl_threshold": 0.016, "grad_norm": 1.0, "entropy_coef": 0.0, "critic_coef": 4,
                              "bounds_loss_coef": 0.0001},
-    "dexlab_sharpa_cuboid": {"gamma": 0.99, "tau": 0.95, "learning_rate": 5.0e-4, "lr_schedule": "adaptive",
+    "dexpbt_grace_windows": {"gamma": 0.99, "tau": 0.95, "learning_rate": 5.0e-4, "lr_schedule": "adaptive",
                              "kl_threshold": 0.01, "grad_norm": 1.0, "e_clip": 0.2, "mini_epochs": 5,
                              "critic_coef": 1.0},
     "docs_example": {"kl_threshold": 0.01, "entropy_coef": 0.0, "mini_epochs": 5, "e_clip": 0.2, "gamma": 0.99,
@@ -355,8 +355,8 @@ class TestShippedSections:
                               **SHIPPED_CONFIG["isaaclab_shadow_hand"])
         assert params[LR] == 5e-4 and type(params[LR]) is float          # '5e-4' as PyYAML reads it
         assert params[CONFIG + "critic_coef"] == 4 and type(params[CONFIG + "critic_coef"]) is int
-        _, params = validated(yaml.safe_load(SHIPPED["dexlab_sharpa_cuboid"])["pbt"],
-                              **SHIPPED_CONFIG["dexlab_sharpa_cuboid"])
+        _, params = validated(yaml.safe_load(SHIPPED["dexpbt_grace_windows"])["pbt"],
+                              **SHIPPED_CONFIG["dexpbt_grace_windows"])
         assert params[CONFIG + "mini_epochs"] == 5 and type(params[CONFIG + "mini_epochs"]) is int
 
 

@@ -555,7 +555,7 @@ def mark_not_replaceable(policy_dir) -> str | None:
     return path
 
 
-# --- what a member runs (K02) -----------------------------------------------------------------
+# --- what a member runs -----------------------------------------------------------------
 
 # fields whose difference makes a peer foreign: the integration's code, or another population setup
 # (pbt_cfg.settings_hash; interval_unit is part of it, listed by name for the warning); a different
@@ -606,7 +606,7 @@ def identity_mismatches(ckpt, own) -> dict[str, tuple]:
             if mine is not None and ckpt.get(key) is not None and ckpt[key] != mine}
 
 
-# --- a member's processes: owner and exit records (K03), liveness (G02) ----------------------
+# --- a member's processes: owner and exit records, liveness ----------------------
 
 # in a member's directory, written by its rank 0: the process that runs it (at init and every
 # iteration boundary) and the normal end of its training; in the workspace: the population's end

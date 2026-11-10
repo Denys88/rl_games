@@ -1,5 +1,5 @@
 """The learner API PBT's in-process paths build on: the observer hooks before_steps and
-after_train, set_param (F15) and the central value net's counters and schedule (H09). CPU only."""
+after_train, set_param and the central value net's counters and schedule. CPU only."""
 
 import datetime
 import os
@@ -146,7 +146,7 @@ def test_multi_observer_forwards_the_hooks():
     MultiObserver([AlgoObserver()]).after_train("max_epochs")
 
 
-# ---------------------------------------------------------------- set_param (F15)
+# ---------------------------------------------------------------- set_param
 
 def as_rank1(agent):
     """What the multi-GPU setup leaves on rank 1: lr_schedule None, an identity scheduler."""
@@ -347,7 +347,7 @@ def test_two_process_gloo_set_param_on_every_rank_keeps_the_replicas_identical(t
             assert r0["lrs"] == [6e-4, 6e-4]
 
 
-# ---------------------------------------------------------------- central value counters (H09)
+# ---------------------------------------------------------------- central value counters
 
 def critic_lr(agent):
     return agent.central_value_net.optimizer.param_groups[0]["lr"]

@@ -1,7 +1,7 @@
-"""PBT options: an absolute dexpbt margin (G06), per-key mutation bounds (G09), a forced outcome
-for qualifying an integration (G15), an initial mutation of fresh members (G14), launch-only
-arguments every restart drops and the nargs of the CLI helpers (H02), a legacy restart command
-that appends no flag it already has (H10), and its seed when args_cli has none (F05). CPU only."""
+"""PBT options: an absolute dexpbt margin, per-key mutation bounds, a forced outcome
+for qualifying an integration, an initial mutation of fresh members, launch-only
+arguments every restart drops and the nargs of the CLI helpers, a legacy restart command
+that appends no flag it already has, and its seed when args_cli has none. CPU only."""
 
 import argparse
 import json
@@ -40,7 +40,7 @@ def restart_record(train_dir, idx):
 
 
 # ---------------------------------------------------------------------------------------------
-# G06: an absolute margin in objective units
+# an absolute margin in objective units
 
 class TestAbsoluteMargin:
 
@@ -81,7 +81,7 @@ class TestAbsoluteMargin:
 
 
 # ---------------------------------------------------------------------------------------------
-# G09: per-key bounds clamp every replacement's values
+# per-key bounds clamp every replacement's values
 
 def up(x, **kwargs):
     """A mutation function that always raises the value."""
@@ -192,7 +192,7 @@ class TestMutationBounds:
 
 
 # ---------------------------------------------------------------------------------------------
-# G15: a forced outcome, for qualifying an integration
+# a forced outcome, for qualifying an integration
 
 class TestForcedOutcome:
 
@@ -212,7 +212,7 @@ class TestForcedOutcome:
                 assert yaml.safe_load(fobj)["forced"] == "self"
 
     def test_the_rules_take_the_forced_source(self):
-        """A subclass that replaces _pbt_iteration (DexLab's) selects through select_dexpbt or
+        """A subclass that replaces _pbt_iteration selects through select_dexpbt or
         select_threshold, called positionally: both return the forced source where the rule keeps
         mid-pack member 0."""
         objectives = {0: 2.0, 1: 1.0, 2: 3.0}
@@ -282,7 +282,7 @@ class TestForcedOutcome:
 
 
 # ---------------------------------------------------------------------------------------------
-# G14: a fresh member mutates its agent config once at init
+# a fresh member mutates its agent config once at init
 
 def fresh_member(train_dir, policy_idx=0, *, seed=42, launch_seed="42", **pbt):
     """Member `policy_idx` of 4 launched with `--seed <launch_seed>`; `seed` is params['seed'] as
@@ -398,7 +398,7 @@ class TestInitialMutation:
 
 
 # ---------------------------------------------------------------------------------------------
-# H02: launch-only arguments every restart drops; nargs in the CLI helpers
+# launch-only arguments every restart drops; nargs in the CLI helpers
 
 def member(args_cli=None, launch_argv=None, seed=42, **pbt):
     """Member 0 of 3 whose restart command the test builds (no workspace involved)."""
@@ -474,7 +474,7 @@ class TestDroppedArguments:
 
 
 # ---------------------------------------------------------------------------------------------
-# H10: the legacy restart command appends no flag it already has
+# the legacy restart command appends no flag it already has
 
 def isaac_lab_parser(track):
     """An Isaac Lab-style train script's parser: `track` 'optional' is Isaac Lab's `--track [BOOL]`,
@@ -532,7 +532,7 @@ def test_the_legacy_command_keeps_its_length(tmp_path, monkeypatch, track, track
 
 
 # ---------------------------------------------------------------------------------------------
-# F05: the legacy restart's seed without args_cli.seed
+# the legacy restart's seed without args_cli.seed
 
 @pytest.mark.parametrize("reseed, cli_seed, config_seed, expected", [
     (True, None, 42, pbt_utils.derive_seed(42, 0, 1)),         # derived from the config seed, not passed as is

@@ -1,7 +1,7 @@
-"""PBT replacement rule: PBT's draws from a private generator (F04); a worst group of the members
+"""PBT replacement rule: PBT's draws from a private generator; a worst group of the members
 that reported and can act on a replacement, every reported member still ranked, a member 2+
-iterations behind compared at its own iteration (F09, R01); ties broken per iteration (R03); no
-restart for a self-mutation that changes nothing (F07) or near the end of training (H07); the
+iterations behind compared at its own iteration; ties broken per iteration; no
+restart for a self-mutation that changes nothing or near the end of training; the
 in-process self-mutation hook. CPU only."""
 
 import json
@@ -112,7 +112,7 @@ def iterate(obs, algo, iteration, objective):
 
 
 # ---------------------------------------------------------------------------------------------
-# F04: PBT's draws come from a generator private to the member and its process start
+# PBT's draws come from a generator private to the member and its process start
 
 def self_mutation(train_dir, monkeypatch, policy_idx=3, seed=42, restart_count=0):
     """New params of member `policy_idx` of 4, the worst by a lead too small for a donor: it
@@ -260,7 +260,7 @@ class RecordingDraws(PbtAlgoObserver):
 
 
 # ---------------------------------------------------------------------------------------------
-# F09: members that never reported take no worst slot
+# members that never reported take no worst slot
 
 def select_dexpbt_1e6966a(objectives, policy_idx, current_objective, best_in_iteration, cfg):
     """select_dexpbt as 1e6966a ships it: the reference of the parity check."""
@@ -331,7 +331,7 @@ class TestUnreportedMembers:
 
 
 # ---------------------------------------------------------------------------------------------
-# R01: members that can't act on a replacement now (restarting, in a grace window, behind) take
+# members that can't act on a replacement now (restarting, in a grace window, behind) take
 # no worst slot; they stay ranked, count for the reporting gate and remain donors
 
 def table_status(out):
@@ -508,7 +508,7 @@ class TestReplaceable:
 
 
 # ---------------------------------------------------------------------------------------------
-# R03: equal objectives in an order every reader shares at an iteration, new at every iteration
+# equal objectives in an order every reader shares at an iteration, new at every iteration
 
 class TestTies:
 
@@ -590,7 +590,7 @@ class TestTies:
 
 
 # ---------------------------------------------------------------------------------------------
-# F07: a self-mutation that changes nothing is no restart
+# a self-mutation that changes nothing is no restart
 
 class TestNoOpSelfMutation:
 
@@ -627,7 +627,7 @@ class TestNoOpSelfMutation:
 
 
 # ---------------------------------------------------------------------------------------------
-# H07: no replacement decision in the last frames of a run
+# no replacement decision in the last frames of a run
 
 def decide_near_the_end(train_dir, pbt=None, **algo):
     """Member 3 of 4, far behind the others, at iteration 5 (frame 5005, interval 1000, 100 frames
@@ -700,7 +700,7 @@ def test_no_decision_in_the_last_epoch_of_a_real_run(tmp_path):
 # _apply_self_mutation: a subclass may apply a self-mutation in the running process
 
 class InProcess(PbtAlgoObserver):
-    """Applies self-mutations to the running learner instead of restarting (as DexLab's does)."""
+    """Applies self-mutations to the running learner instead of restarting."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

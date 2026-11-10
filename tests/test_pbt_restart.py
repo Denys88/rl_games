@@ -104,7 +104,7 @@ def assert_no_secret(text, secret, k=8):
     assert not leaks, f"secret fragments in the output: {sorted(leaks)[:3]}"
 
 
-# --- F01: the environment dump before a re-exec ---------------------------------------------
+# --- the environment dump before a re-exec ---------------------------------------------
 
 class TestEnvDump:
 
@@ -134,7 +134,7 @@ class TestEnvDump:
         assert_no_secret(text, token)
 
 
-# --- F02 + F03: wandb across the re-exec -------------------------------------------------------
+# --- wandb across the re-exec -------------------------------------------------------
 
 class StubRun:
     def __init__(self, run_id="abc123", finish=None):
@@ -280,7 +280,7 @@ class TestWandb:
                 PbtCfg(wandb_finish_timeout=bad)
 
 
-# --- F16: torchrun prefix of a multi-GPU member's restart ----------------------------------
+# --- torchrun prefix of a multi-GPU member's restart ----------------------------------
 
 class TestTorchrun:
 
@@ -631,7 +631,7 @@ class TestRestartEnvironment:
 
     @pytest.mark.parametrize("run", [None, StubRun()], ids=["no wandb run", "wandb run"])
     def test_observer_built_without_init_restarts(self, tmp_path, monkeypatch, execs, run):
-        # DexLab's tests build the observer with object.__new__ and set only what a restart read
+        # a downstream test may build the observer with object.__new__ and set only what a restart read
         # before the launch directory existed; it restarts from the current directory
         install_wandb(monkeypatch, run)
         monkeypatch.delenv("WANDB_RUN_ID", raising=False)
@@ -736,7 +736,7 @@ class TestNotices:
         assert "full_experiment_name" not in capsys.readouterr().out
 
 
-# --- F06: member seeds --------------------------------------------------------------------
+# --- member seeds --------------------------------------------------------------------
 
 class TestMemberSeed:
 

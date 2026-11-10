@@ -1,6 +1,6 @@
 """PBT objective function and interval unit: an objective computed by a function instead of
-looked up in the infos (G07), and the cadence, grace windows and end-of-run margin counted in
-learner epochs (G08). CPU only; os.execv is captured."""
+looked up in the infos, and the cadence, grace windows and end-of-run margin counted in
+learner epochs. CPU only; os.execv is captured."""
 
 import dataclasses
 import json
@@ -38,7 +38,7 @@ NOT_CALLABLE = 0.5
 
 
 class InProcess(PbtAlgoObserver):
-    """Applies its self-mutations in the running process (as DexLab's subclass does)."""
+    """Applies its self-mutations in the running process."""
 
     def _apply_self_mutation(self, changed):
         return True
@@ -68,7 +68,7 @@ def counts(obs):
 
 
 # ---------------------------------------------------------------------------------------------
-# G07: objective_fn(infos, done_indices, num_agents, algo) in place of the lookup of `objective`
+# objective_fn(infos, done_indices, num_agents, algo) in place of the lookup of `objective`
 
 class TestObjectiveFunction:
 
@@ -130,7 +130,7 @@ class TestObjectiveFunction:
 
     def test_equals_the_preceding_observer_pattern(self, tmp_path):
         """Without a function, an integration computes the objective in an observer ahead of PBT's
-        in a MultiObserver and writes it into the infos (DexLab's PbtObjectiveObserver). The same
+        in a MultiObserver and writes it into the infos. The same
         computation as a function gives the same windows and counts."""
         def objective(infos, done_indices, num_agents, algo):
             return None if "reward" not in infos else algo.bonus + infos["reward"]
@@ -209,7 +209,7 @@ class TestObjectiveConfig:
 
 
 # ---------------------------------------------------------------------------------------------
-# G08: interval_unit: epochs. at after_steps, epoch_num is the epoch being played: epoch_num - 1
+# interval_unit: epochs. at after_steps, epoch_num is the epoch being played: epoch_num - 1
 # have completed (and `frame` counts their frames)
 
 def epochs_member(train_dir, policy_idx=3, num_policies=4, **pbt):

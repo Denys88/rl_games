@@ -491,7 +491,7 @@ class PbtAlgoObserver(AlgoObserver):
         return self.cfg.max_member_lag * statistics.median(self._iteration_seconds)
 
     def _population(self, algo):
-        """What this member runs, recorded in its workspace yamls and learner checkpoints (K02): the
+        """What this member runs, recorded in its workspace yamls and learner checkpoints: the
         rl_games version and git commit, the integration's `code_fingerprint`, the hash of the
         population settings (`settings_hash`), the unit its iterations count (`interval_unit`) and
         the learner's precision (the resolved mixed precision and the torch_compile setting). See
@@ -1466,7 +1466,7 @@ class PbtAlgoObserver(AlgoObserver):
         launch argv, or on the legacy path `sys.argv` and the `args_cli` flags it doesn't have yet,
         with the checkpoint argument and the new params, without `restart_drop_args`."""
         cfg = self.cfg
-        # an observer built without __init__ (DexLab's tests) has a cfg without the newer keys
+        # an observer built without __init__ (a downstream test double) may have a cfg without the newer keys
         drop_args = getattr(cfg, "restart_drop_args", None)
         if self.launch_argv is not None:
             return pbt_utils.build_launch_restart_args(
@@ -1708,7 +1708,7 @@ class PbtAlgoObserver(AlgoObserver):
         """Replace this process with `command`, run from the launch directory, or end it under
         `pbt.restart_mode: exit` (`_exit_for_restart`). Called on the main thread, or by the wandb
         watchdog thread while finish() blocks the main thread."""
-        # an observer built without __init__ (DexLab's tests) has a cfg without the newer keys
+        # an observer built without __init__ (a downstream test double) may have a cfg without the newer keys
         if getattr(self.cfg, "restart_mode", "exec") == "exit":
             return self._exit_for_restart()
         launch_cwd = self._launch_cwd()

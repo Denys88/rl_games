@@ -1,7 +1,7 @@
 """PBT restore: the restore rule keyed on the configured hyperparameters (any restart, with or
-without rl_games' payload), the restart's pre-mutation values (R02), weight_decay (H05), --sigma
-on PBT restarts (H03), the member's best-reward watermark (H04), the completed epoch at the PBT
-save point (H06) and pbt_history across learner saves (F08). CPU only."""
+without rl_games' payload), the restart's pre-mutation values, weight_decay, --sigma
+on PBT restarts, the member's best-reward watermark, the completed epoch at the PBT
+save point and pbt_history across learner saves. CPU only."""
 
 import json
 import os
@@ -188,7 +188,7 @@ def test_restart_without_payload_trains_with_the_config_values(tmp_path, old_che
     assert all(group["lr"] == pytest.approx(4.5e-4) for group in child.optimizer.param_groups)
 
 
-# ---------------------------------------------------------------- H05 weight_decay
+# ---------------------------------------------------------------- weight_decay
 
 CENTRAL_VALUE = {"minibatch_size": 16, "mini_epochs": 1, "learning_rate": 1e-3, "clip_value": False,
                  "normalize_input": False, "truncate_grads": False,
@@ -210,7 +210,7 @@ def test_restore_takes_weight_decay_from_the_config(donor_decay, decay):
     assert [g["lr"] for g in critic] == [pytest.approx(1e-3)]   # the critic's config LR, not the donor's 3e-3
 
 
-# ---------------------------------------------------------------- observer decisions (R02, H04)
+# ---------------------------------------------------------------- observer decisions
 
 class Writer:
     def add_scalar(self, *args):
@@ -267,7 +267,7 @@ def decide(tmp_path, donor_state, observer, algo):
 
 @pytest.mark.parametrize("factor", [None, 1.25])
 def test_restart_moves_the_donor_lr_by_this_restarts_mutation_only(tmp_path, monkeypatch, factor):
-    """R02. The member keeps its own params: nominal learning_rate 1.3e-3, the donor's 1e-3,
+    """The member keeps its own params: nominal learning_rate 1.3e-3, the donor's 1e-3,
     the donor's adaptive walk at 1e-4. Unmutated, the child keeps the walk; mutated by f, it gets
     the walk times f, not times the 1.3 between the two members' nominal values."""
     if factor is not None:
@@ -305,7 +305,7 @@ def test_restart_checkpoint_takes_the_base_values_key_by_key(tmp_path):
 
 @pytest.mark.parametrize("fixed_name, expected", [(True, 100.0), (False, 50.0)])
 def test_restart_keeps_the_member_best_reward_watermark(tmp_path, fixed_name, expected):
-    """H04. With a fixed full_experiment_name the member keeps writing nn/<name>.pth in its run
+    """With a fixed full_experiment_name the member keeps writing nn/<name>.pth in its run
     directory: a policy worse than the member's own best must not replace it."""
     donor = make_cartpole_agent()
     donor.last_mean_rewards = 50.0
@@ -318,7 +318,7 @@ def test_restart_keeps_the_member_best_reward_watermark(tmp_path, fixed_name, ex
     assert child.last_mean_rewards == pytest.approx(expected)
 
 
-# ---------------------------------------------------------------- H06 epoch at the save point
+# ---------------------------------------------------------------- epoch at the save point
 
 class Trace(AlgoObserver):
     """(epoch, frame) at every after_steps, the PBT save and decision point."""
@@ -353,7 +353,7 @@ class Reexec(Exception):
 
 
 def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
-    """H06. The PBT save point (after_steps) comes after update_epoch and before the epoch's update
+    """The PBT save point (after_steps) comes after update_epoch and before the epoch's update
     and frame increment. restart.pth must hold the last completed epoch, or every restart skips an
     epoch and the member stops at max_epochs with an epoch of frames missing."""
     reference = Trace()
@@ -399,7 +399,7 @@ def test_restart_resumes_after_the_last_completed_epoch(tmp_path):
     assert (child.epoch_num, child.frame) == (6, 96)
 
 
-# ---------------------------------------------------------------- F08 pbt_history
+# ---------------------------------------------------------------- pbt_history
 
 def test_pbt_history_survives_the_member_saves(tmp_path):
     plain = make_cartpole_agent().get_full_state_weights()
@@ -421,7 +421,7 @@ def test_pbt_history_survives_the_member_saves(tmp_path):
     assert child.pbt_history == [] and "pbt_history" not in child.get_full_state_weights()
 
 
-# ---------------------------------------------------------------- H03 --sigma on a PBT restart
+# ---------------------------------------------------------------- --sigma on a PBT restart
 
 def restart_payload(policy_idx, checkpoint):
     return json.dumps({"policy_idx": policy_idx, "source_policy": 1, "restart_count": 1, "iteration": 3,
@@ -464,7 +464,7 @@ def pendulum_runner(train_dir, observer=None):
 
 @pytest.mark.parametrize("pbt_restart", [True, False])
 def test_sigma_flag_is_not_applied_over_a_pbt_restart(tmp_path, monkeypatch, capsys, pbt_restart):
-    """H03. The restart command keeps the launch command's --sigma: on a PBT restart it would
+    """The restart command keeps the launch command's --sigma: on a PBT restart it would
     reset the restored policy's learned log-std. Fresh launches and plain resumes apply it."""
     runner = pendulum_runner(tmp_path)
     donor = runner.algo_factory.create(runner.algo_name, base_name="donor", params=runner.params)

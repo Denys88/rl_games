@@ -1,5 +1,5 @@
-"""PBT restart records: the restart payload's schema, kind and experiment_name (K01), the
-member's restart.yaml written at the decision (the cheap part of G01), the notice of a
+"""PBT restart records: the restart payload's schema, kind and experiment_name, the
+member's restart.yaml written at the decision, the notice of a
 restarted process whose run directory changed, and a fresh launch or resume dropping a record
 of a run it doesn't continue. CPU only; os.execv is captured."""
 
@@ -252,7 +252,7 @@ def test_record_is_written_after_restart_pth_through_a_temp_file(tmp_path, monke
 
 
 class CopiedIteration(PbtAlgoObserver):
-    """Replaces _pbt_iteration wholesale, as DexLab's subclass does: its own save, rule and
+    """Replaces _pbt_iteration wholesale, as a downstream subclass may: its own save, rule and
     restart.pth, and the restart attributes and flag set as the base sets them."""
 
     def _pbt_iteration(self, score, best_in_iteration, frame):

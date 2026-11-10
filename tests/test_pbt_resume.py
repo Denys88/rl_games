@@ -1,4 +1,4 @@
-"""Resuming a PBT member (G01): the learner's PBT state in its checkpoints, restart.pth with the
+"""Resuming a PBT member: the learner's PBT state in its checkpoints, restart.pth with the
 recipient's identity, `pbt_utils.member_resume` and its CLI, and a member relaunched from what
 it picks (kind "resume", or the restart retried). CPU only; os.execv is captured."""
 
@@ -34,7 +34,7 @@ class StateAlgo(Algo):
 
 def save(train_dir, idx, iteration, objective=1.0, restart_count=0, params=None, checkpoint_arg=None):
     """Member `idx`'s PBT save at `iteration` (frame iteration * 1000), by a process with
-    `restart_count` (no identity fields: the K02 checks have their own tests)."""
+    `restart_count` (no identity fields: the identity checks have their own tests)."""
     directory = member_dir(train_dir, idx)
     os.makedirs(directory, exist_ok=True)
     params = dict(PARAMS) if params is None else params

@@ -1,7 +1,7 @@
-"""Liveness, ownership and stopping: the states a member's peers see (stale, waiting, finished; G02),
-the owner record each member's rank 0 renews at every iteration boundary and checks at start-up
-(K03), the exit record of a normal end, and a population that ends with its first member to
-finish (`stop_with_first`, O02). CPU only; os.execv is captured."""
+"""Liveness, ownership and stopping: the states a member's peers see (stale, waiting, finished),
+the owner record each member's rank 0 renews at every iteration boundary and checks at start-up,
+the exit record of a normal end, and a population that ends with its first member to
+finish (`stop_with_first`). CPU only; os.execv is captured."""
 
 import datetime
 import errno
@@ -121,7 +121,7 @@ def test_workspace_yamls_record_the_wall_clock_time(tmp_path):
 
 
 # ---------------------------------------------------------------------------------------------
-# G02: the states a reader sees
+# the states a reader sees
 
 class TestMemberStatus:
 
@@ -240,7 +240,7 @@ def test_a_member_without_new_yamls_waits_while_its_heartbeat_is_fresh(tmp_path,
 def test_a_member_ahead_of_a_lagging_reader_keeps_its_worst_slot(tmp_path, capsys, max_member_lag):
     """Member 1 saves at iteration 40, 20 ahead of the reader, which loads its yaml of iteration 18
     (it skipped 19 and 20), saved 22 iterations ago. It saves new yamls, so it doesn't wait, and
-    below the reader at iteration 18 (0.5 < 0.8) it keeps the worst slot (R01), as without liveness."""
+    below the reader at iteration 18 (0.5 < 0.8) it keeps the worst slot, as without liveness."""
     for idx, objective in ((0, 5.0), (2, 4.0)):
         report(tmp_path, idx, 20, objective)
         owner(tmp_path, idx)
@@ -263,7 +263,7 @@ def test_max_member_lag_0_judges_no_member_by_time(tmp_path, capsys):
 
 
 # ---------------------------------------------------------------------------------------------
-# K03: the owner record
+# the owner record
 
 def load_owner(train_dir, idx=3):
     return load_yaml(train_dir, pbt_utils.OWNER_RECORD, idx)
@@ -450,7 +450,7 @@ def test_no_exit_record_once_another_launch_owns_the_member(tmp_path, monkeypatc
 
 
 # ---------------------------------------------------------------------------------------------
-# O02: stop_with_first
+# stop_with_first
 
 def cartpole(train_dir, policy_idx, max_epochs=3, pbt=None, distributed=False, **config):
     """Member `policy_idx` of 2 with stop_with_first: a CartPole learner (16 frames per epoch) and its
@@ -581,7 +581,7 @@ def test_no_replacement_once_the_population_finished(tmp_path, execs):
 
 
 class CopiedIteration(PbtAlgoObserver):
-    """A subclass that replaces _pbt_iteration (as DexLab's does) and decides a restart."""
+    """A subclass that replaces _pbt_iteration and decides a restart."""
 
     def _pbt_iteration(self, score, best_in_iteration, frame):
         self.new_params, self.restart_from_checkpoint = dict(self.pbt_params), "/ws/003/restart.pth"

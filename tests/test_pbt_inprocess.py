@@ -1,5 +1,5 @@
-"""In-process self-mutations (`pbt.self_mutation: in_process`, G03) and the decision broadcast at an
-iteration boundary (G13): every rank acts on rank 0's decision in the step it is taken, a restart
+"""In-process self-mutations (`pbt.self_mutation: in_process`) and the decision broadcast at an
+iteration boundary: every rank acts on rank 0's decision in the step it is taken, a restart
 before that epoch's update. CPU only; os.execv is captured."""
 
 import datetime
@@ -284,7 +284,7 @@ def test_two_ranks_apply_an_in_process_self_mutation_alike_and_restart_together(
 
 
 # ---------------------------------------------------------------------------------------------
-# a subclass that applies its self-mutations itself, as DexLab's does
+# a subclass that applies its self-mutations itself
 
 class OwnBroadcast(PbtAlgoObserver):
     """Rank 0 applies a self-mutation itself (_apply_self_mutation returns True) and hands the

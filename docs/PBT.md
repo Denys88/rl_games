@@ -295,8 +295,8 @@ score when the game ends, at game over or the time limit; the lives lost before 
 env keeps its last game's score, and count as non-finite episodes). The path is imported at init on every rank
 (`validate()` checks it, and takes `objective_fn=` for a function object); a malformed path, one
 that doesn't import, or a non-callable target raises `ValueError`. Warnings name the function. It
-replaces an observer ahead of PBT's in a `MultiObserver` that writes `infos[key]` (DexLab's
-`PbtObjectiveObserver`), which keeps working with the same windows and counts. The path is a
+replaces an observer ahead of PBT's in a `MultiObserver` that writes `infos[key]`; such an
+observer keeps working, with the same windows and counts. The path is a
 population setting ([Member identity](#member-identity)); a function passed in code is not, and
 `code_fingerprint` covers it.
 
@@ -402,7 +402,7 @@ loaded at the decision, the donor's weights would train on the member's rollout 
 costs that one update, and no process start, env build, torchrun or wandb finish. The learner's
 observer chain must forward `before_steps` (rl_games' `MultiObserver` does, Isaac Lab's copy
 doesn't); otherwise the first epoch raises on every rank. A subclass that replaces `_pbt_iteration`
-(DexLab's) transfers by restart.
+transfers by restart.
 
 ### The supervisor
 
@@ -1088,7 +1088,7 @@ default, which `rl_games.common.pbt.MultiObserver` forwards:
   process re-executes or exits for a PBT restart. The PBT observer writes `exit.yaml` there.
 
 Isaac Lab's `isaaclab_rl` `MultiObserver` is an older copy that inherits both as silent no-ops:
-exit records and in-process transfers need rl_games' `MultiObserver`, which DexLab imports.
+exit records and in-process transfers need rl_games' `MultiObserver`.
 
 **set_param.** `algo.set_param(name, value)` changes a running learner's hyperparameter with its
 config key's meaning and updates the config too, so the next checkpoint's `config_hparams` holds
@@ -1129,8 +1129,8 @@ the new `learning_rate` and `entropy_coef`. The in-process modes build on it.
   in-process transfers and the decision lines). It returns the outcome dict that `after_steps`
   appends to `decisions.jsonl`. A copy requests a restart with `self.restart_flag[0] = 1`, which is
   acted on in the same step, and compares its grace windows in the configured unit:
-  `self._progress(frame)` against `self.initial_frame`, which holds the start in that unit (DexLab's
-  copy compares frames, which is right at the default unit). `pbt_utils.select_dexpbt` and
+  `self._progress(frame)` against `self.initial_frame`, which holds the start in that unit (a copy
+  that compares frames is right at the default unit). `pbt_utils.select_dexpbt` and
   `select_threshold` apply `force_outcome` for it.
 - A subclass that applies values in process calls `self._set_pbt_params(new_params)`, so the
   learner's checkpoints carry them.
