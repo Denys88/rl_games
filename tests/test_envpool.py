@@ -109,3 +109,17 @@ def test_reset_starts_every_score_over(monkeypatch):
     assert not env.scores.any()
     env._set_scores({'reward': np.array([1.0, 0.0, 2.0])}, np.zeros(3, dtype=bool))
     assert env.returned_scores.tolist() == [1.0, 0.0, 2.0]
+
+
+def test_time_limit_ends_the_game_score(monkeypatch):
+    """With episodic_life the score runs across lives to the game's end. A game cut off by the time
+    limit ends with lives left, and envpool restarts it: its points must not carry into the next game."""
+    _stub_envpool(monkeypatch, '1.2.6')
+    env = Envpool('', 3, env_name='Breakout-v5', has_lives=True)
+    no = np.zeros(3, dtype=bool)
+    env._set_scores({'reward': np.array([5.0, 5.0, 5.0]), 'lives': np.array([2, 2, 2]), 'time_outs': no}, no)
+    infos = {'reward': np.array([1.0, 1.0, 1.0]), 'lives': np.array([0, 2, 2]),
+             'time_outs': np.array([False, True, False])}
+    env._set_scores(infos, np.array([True, True, False]))
+    assert infos['scores'].tolist() == [6.0, 6.0, 6.0]        # each game's final (or running) score
+    assert env.scores.tolist() == [0.0, 0.0, 6.0]             # game over and time limit start over

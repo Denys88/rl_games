@@ -22,9 +22,17 @@ def episode_return(infos, done_indices, num_agents, algo):
 
 def game_score(infos, done_indices, num_agents, algo):
     """envpool Atari: the raw (unclipped) game score `infos['scores']` of each env whose game ended.
-    Under `episodic_life` an episode ends at every lost life while the score runs on to game over
-    (`lives == 0`): those episodes are NaN, so each env keeps its last game's score."""
+    Under `episodic_life` an episode ends at every lost life while the score runs on to the game's
+    end: game over (`lives == 0`) or the time limit (`time_outs`, which restarts the game with full
+    lives). The other episodes are NaN, so each env keeps its last game's score."""
     scores = np.asarray(infos["scores"], dtype=np.float64)
     if "lives" in infos:
-        scores = np.where(np.asarray(infos["lives"]) == 0, scores, np.nan)
+        game_over = _numpy(infos["lives"]) == 0
+        if "time_outs" in infos:
+            game_over |= _numpy(infos["time_outs"]).astype(bool)
+        scores = np.where(game_over, scores, np.nan)
     return scores
+
+
+def _numpy(x):
+    return np.asarray(x.cpu() if hasattr(x, "cpu") else x)

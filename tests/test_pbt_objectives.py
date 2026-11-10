@@ -30,6 +30,17 @@ def test_game_score_counts_only_finished_games():
     assert objectives.game_score({"scores": np.array([5.0])}, DONE, 1, None).tolist() == [5.0]   # no lives
 
 
+def test_game_score_counts_games_cut_off_by_the_time_limit():
+    """A game truncated at max_episode_steps ends with lives left (envpool restarts it with full
+    lives): its score counts, or an env that keeps reaching the limit never gets a value."""
+    infos = {"scores": np.array([10.0, 20.0, 30.0]), "lives": np.array([0, 2, 3]),
+             "time_outs": np.array([False, True, False])}
+    values = objectives.game_score(infos, DONE, 1, None)
+    assert values[0] == 10.0 and values[1] == 20.0 and np.isnan(values[2])
+    infos["time_outs"] = torch.tensor([False, True, False])                    # a tensor works too
+    assert objectives.game_score(infos, DONE, 1, None)[1] == 20.0
+
+
 @pytest.mark.skipif(os.name != "posix", reason="the member runs as a subprocess")
 def test_train_member_trains_a_config_file_ranked_by_its_episode_return(tmp_path):
     """--file: any rl_games config, here CartPole's, ranked by objectives.episode_return. The member
