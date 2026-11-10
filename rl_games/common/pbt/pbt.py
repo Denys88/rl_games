@@ -531,7 +531,8 @@ class PbtAlgoObserver(AlgoObserver):
         """Accumulate the objective of finished episodes.
 
         The objective is `pbt.objective` looked up in `infos`, or the objective function's value
-        (`pbt.objective_fn`), whose exceptions propagate. `self.score` is this rank's objective:
+        (`pbt.objective_fn`), whose exceptions propagate; a function that returns (value,
+        done_indices) names the episodes that count itself. `self.score` is this rank's objective:
         with `objective_window` 0 the mean of each env's latest finished episode (DexPBT's
         estimator), else the mean over a window of the latest finished episodes. An episode whose
         objective is NaN or infinite is left out on its own (`pbt_utils.episode_stats`); at 0 its
@@ -546,6 +547,10 @@ class PbtAlgoObserver(AlgoObserver):
         if self._objective_fn is not None:
             # the user's code: an exception is a bug, not an objective missing on this step
             value = self._objective_fn(infos, done_indices, num_agents, algo)
+            if isinstance(value, tuple):
+                # the function's own finished episodes (a game over, not every lost life): the others
+                # count as nothing, neither as episodes nor as failed ones
+                value, done_indices = value
             if value is None:
                 error = f"{self._objective_name()} returned None"
             else:
@@ -591,7 +596,7 @@ class PbtAlgoObserver(AlgoObserver):
         `pbt_utils.episode_stats`'s (sum, count, non-finite count). Raises on a bad index."""
         if self._env_value is not None:
             return pbt_utils.episode_env_values(value, done_indices, num_agents, self._env_value.size)
-        return pbt_utils.episode_stats(value, done_indices, num_agents)
+        return pbt_utils.episode_stats(value, done_indices, num_agents, self._failed_envs.size)
 
     def _update_env_values(self, env_idx, values, done_indices, num_agents):
         """objective_window 0: each env's latest finished episode. A finite value replaces the
@@ -777,7 +782,8 @@ class PbtAlgoObserver(AlgoObserver):
         (`before_steps`), with its restart payload, which rank 0 broadcasts next.
         """
         keys = sorted(previous)
-        message = torch.zeros(2 + len(keys), dtype=torch.float64, device=self.device)
+        # built on the host: a single process broadcasts nothing, and MPS has no float64
+        message = torch.zeros(2 + len(keys), dtype=torch.float64)
         rank0 = self.distributed_args.rank == 0
         if rank0:
             if int(self.restart_flag[0]) == 1:
@@ -789,6 +795,7 @@ class PbtAlgoObserver(AlgoObserver):
                 message[2:] = torch.tensor([float(new.get(key, previous[key])) for key in keys], dtype=torch.float64)
             self._mutate_in_process = self._transfer_in_process = False
         if distributed:
+            message = message.to(self.device)
             dist.broadcast(message, src=0)
         action, count = int(message[0]), int(message[1])
         if action == _RESTART:

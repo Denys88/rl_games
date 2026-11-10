@@ -89,8 +89,8 @@ class PbtCfg:
     it (`validate()` and the observer raise without either); there is no portable default (info
     layouts differ per backend). Examples:
     'episode.Episode_Reward/success' (Isaac Lab-style nested infos), 'scores' (flat dicts).
-    A per-env tensor is read at the finished envs; a scalar is taken as the mean over the
-    envs that finished on that step. Episodes with a NaN or infinite value are left out, and
+    A per-env tensor is read at the finished envs (one with a value per agent: the mean over
+    each env's agents); a scalar is taken as the mean over the envs that finished on that step. Episodes with a NaN or infinite value are left out, and
     an iteration waits until every rank has a finite value since the previous one (see
     `max_consecutive_errors`). If reward is stationary, a term that corresponds to
     task success is usually enough; with non-stationary rewards or curricula, prefer a true
@@ -296,8 +296,10 @@ class PbtCfg:
     empty (and is not read). It is called at every env step on every rank, as process_infos is,
     as fn(infos, done_indices, num_agents, algo) with the learner as `algo`, and returns the envs'
     objective as a looked-up value would be (a per-env tensor or array, or a scalar), or None for
-    no objective on this step (the episodes that ended count as unreadable). Its exceptions
-    propagate. The observer's `objective_fn` argument takes a function object instead."""
+    no objective on this step (the episodes that ended count as unreadable). When only some of
+    the finished episodes count (an Atari game over, not every lost life) it returns (objective,
+    done_indices) with those. Its exceptions propagate. The observer's `objective_fn` argument
+    takes a function object instead."""
 
     interval_unit: str = "frames"
     """What `interval_steps`, `start_after` and `initial_delay` count: 'frames' (the learner's

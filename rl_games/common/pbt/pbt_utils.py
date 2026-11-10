@@ -228,10 +228,21 @@ def json_default(value):
     return number
 
 
+def _agent_rows(flat, num_agents, num_envs):
+    """A flattened objective with one value per agent (num_envs * num_agents of them, env by env
+    as rl_games orders agents) as (num_envs, num_agents) rows: read at the done envs like a per-env
+    one, then averaged over each env's agents. Anything else as it is."""
+    agents = int(num_agents)
+    if agents > 1 and num_envs and int(flat.shape[0]) == int(num_envs) * agents:
+        return flat.reshape(int(num_envs), agents)
+    return flat
+
+
 def episode_env_values(value, done_indices, num_agents: int, num_envs: int) -> tuple[np.ndarray, np.ndarray]:
     """(env indices, float64 values) of the episodes that finished on one step, for the per-env
-    estimator (`pbt.objective_window: 0`). A per-env tensor/array is read at the done envs; a
-    scalar (the mean over the envs that finished, as Isaac Lab logs it) is copied to each of them.
+    estimator (`pbt.objective_window: 0`). A per-env tensor/array is read at the done envs (one
+    with a value per agent: the mean over each done env's agents); a scalar (the mean over the
+    envs that finished, as Isaac Lab logs it) is copied to each of them.
     Without `done_indices` the value stands for every env: element i for env i, or the scalar for
     all. Non-finite values are returned as they are (the caller keeps the env's previous value)."""
     per_env = (torch.is_tensor(value) and value.numel() > 1) or (isinstance(value, np.ndarray) and value.size > 1)
@@ -242,7 +253,7 @@ def episode_env_values(value, done_indices, num_agents: int, num_envs: int) -> t
         env_idx = torch.as_tensor(idx).cpu().long().numpy() // max(1, int(num_agents))
     if not per_env:
         return env_idx, np.full(env_idx.shape[0], to_float(value), dtype=np.float64)
-    picked = value.reshape(-1)
+    picked = _agent_rows(value.reshape(-1), num_agents, num_envs)
     size = int(picked.shape[0])
     if done_indices is None:
         env_idx = env_idx[:size]
@@ -255,15 +266,17 @@ def episode_env_values(value, done_indices, num_agents: int, num_envs: int) -> t
         picked = picked[torch.as_tensor(env_idx, device=picked.device)].detach().cpu().double().numpy()
     else:
         picked = np.asarray(picked)[env_idx]
-    return env_idx, np.asarray(picked, dtype=np.float64)
+    picked = np.asarray(picked, dtype=np.float64)
+    return env_idx, picked.mean(axis=1) if picked.ndim == 2 else picked
 
 
-def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int, int]:
+def episode_stats(value, done_indices, num_agents: int = 1, num_envs: int | None = None) -> tuple[float, int, int]:
     """Objective of the episodes that finished on one step: (sum, count) over the episodes with
     a finite value, and the number of finished episodes whose value is NaN or infinite.
 
     `done_indices` are agent indices (env * num_agents), one per finished env, as rl_games
-    passes them to observers. A per-env tensor/array is read at those envs, and a non-finite
+    passes them to observers. A per-env tensor/array is read at those envs (with `num_envs`, one
+    with a value per agent: the mean over each env's agents), and a non-finite
     entry drops only its own episode: one diverged env must not discard the episodes the
     other envs finished on the same step. A scalar is taken as the mean over the envs that
     finished on this step (Isaac Lab episode logs), so it is weighted by their count, and a
@@ -277,7 +290,7 @@ def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int,
     if per_env:
         if n_done == 0:
             return 0.0, 0, 0
-        picked = value.reshape(-1)
+        picked = _agent_rows(value.reshape(-1), num_agents, num_envs)
         if n_done is not None:
             size = int(picked.shape[0])
             env_idx = torch.as_tensor(idx).cpu().long() // max(1, int(num_agents))
@@ -290,6 +303,8 @@ def episode_stats(value, done_indices, num_agents: int = 1) -> tuple[float, int,
             # the picked values to the host (one sync) before widening them: MPS has no float64
             picked = picked.detach().cpu().double().numpy()
         picked = np.asarray(picked, dtype=np.float64)
+        if picked.ndim == 2:
+            picked = picked.mean(axis=1)
         finite = np.isfinite(picked)
         count = int(finite.sum())
         return float(picked[finite].sum()), count, int(picked.shape[0]) - count

@@ -273,7 +273,8 @@ step count:
 
 - a per-env tensor or array is read at the finished envs. Done indices arrive per agent
   (`env * num_agents`), as rl_games passes them to observers, and are read at
-  `index // num_agents`. A NaN or inf entry drops only its own episode;
+  `index // num_agents`. A tensor with one value per agent (`num_envs * num_agents` of them) is
+  averaged over each finished env's agents. A NaN or inf entry drops only its own episode;
 - a scalar is the mean over the envs that finished on that step (Isaac Lab episode logs), weighted
   by their count. A NaN or inf scalar drops all of them.
 
@@ -285,14 +286,15 @@ in entry points), or `PbtAlgoObserver(..., objective_fn=fn)` (setting both raise
 objective in place of the lookup. `objective` may then be empty; a set one is not read (`validate()`
 notes it). The function is called as `fn(infos, done_indices, num_agents, algo)` at every env step
 on every rank, with the learner as `algo`, and returns what a lookup would: a per-env tensor or
-array, or a scalar, read as above. None means no objective on this step: the episodes that ended
+array, or a scalar, read as above. When only some of the finished episodes count, it returns
+`(objective, done_indices)` with those; the others count as nothing. None means no objective on this step: the episodes that ended
 count as unreadable, so a function that always returns None ends in the `RuntimeError` below, like
 a vanished infos key. Its exceptions, and those from reading its value (e.g. a per-env tensor
 shorter than the envs), propagate: they are bugs. `rl_games.common.pbt.objectives` has two for
 backends whose infos carry no per-episode objective: `episode_return` (the learner's running reward
 sum at the finished envs; any backend, e.g. MuJoCo on envpool) and `game_score` (envpool Atari's raw
-score when the game ends, at game over or the time limit; the lives lost before it are NaN, so each
-env keeps its last game's score, and count as non-finite episodes). The path is imported at init on every rank
+score when the game ends, at game over or the time limit; under `episodic_life` a lost life is no
+episode for PBT, so each env keeps its last game's score). The path is imported at init on every rank
 (`validate()` checks it, and takes `objective_fn=` for a function object); a malformed path, one
 that doesn't import, or a non-callable target raises `ValueError`. Warnings name the function. It
 replaces an observer ahead of PBT's in a `MultiObserver` that writes `infos[key]`; such an

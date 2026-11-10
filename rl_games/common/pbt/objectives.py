@@ -4,7 +4,8 @@
       objective_fn: rl_games.common.pbt.objectives:episode_return
 
 Each takes the observer's (infos, done_indices, num_agents, algo) and returns per-env values that
-the observer reads at the envs that finished (docs/PBT.md, Objective). A NaN value leaves its env out.
+the observer reads at the envs that finished (docs/PBT.md, Objective), or (values, done_indices)
+with the finished episodes that count when not every one does.
 """
 
 import numpy as np
@@ -24,14 +25,17 @@ def game_score(infos, done_indices, num_agents, algo):
     """envpool Atari: the raw (unclipped) game score `infos['scores']` of each env whose game ended.
     Under `episodic_life` an episode ends at every lost life while the score runs on to the game's
     end: game over (`lives == 0`) or the time limit (`time_outs`, which restarts the game with full
-    lives). The other episodes are NaN, so each env keeps its last game's score."""
+    lives). Only those episodes count: returned as (scores, their done indices), so a lost life is
+    no episode for PBT and each env keeps its last game's score."""
     scores = np.asarray(infos["scores"], dtype=np.float64)
-    if "lives" in infos:
-        game_over = _numpy(infos["lives"]) == 0
-        if "time_outs" in infos:
-            game_over |= _numpy(infos["time_outs"]).astype(bool)
-        scores = np.where(game_over, scores, np.nan)
-    return scores
+    if "lives" not in infos:
+        return scores
+    game_over = _numpy(infos["lives"]) == 0
+    if "time_outs" in infos:
+        game_over |= _numpy(infos["time_outs"]).astype(bool)
+    agents = max(1, int(num_agents))
+    done = np.arange(scores.size) * agents if done_indices is None else _numpy(done_indices).reshape(-1)
+    return scores, done[game_over[done // agents]]
 
 
 def _numpy(x):

@@ -58,6 +58,15 @@ class TestEpisodeStats:
     def test_episode_sum_count_drops_nonfinite_entries(self):
         assert pbt_utils.episode_stats(torch.tensor([1.0, NAN, 3.0, 4.0]), DONE4)[:2] == (8.0, 3)
 
+    def test_a_value_per_agent_is_averaged_over_each_envs_agents(self):
+        value = torch.tensor([0.0, 1.0, 10.0, 11.0, 20.0, 21.0, 30.0, 31.0])   # 4 envs x 2 agents
+        done = torch.tensor([[6]])                          # env 3, as rl_games passes it: its first agent
+        idx, values = pbt_utils.episode_env_values(value, done, 2, 4)
+        assert idx.tolist() == [3] and values.tolist() == [30.5]               # not element 3 (env 1's agent)
+        assert pbt_utils.episode_stats(value, done, 2, 4) == (30.5, 1, 0)
+        assert pbt_utils.episode_stats(value.numpy(), None, 2, 4) == (0.5 + 10.5 + 20.5 + 30.5, 4, 0)
+        assert pbt_utils.episode_stats(value[::2], done, 2, 4) == (30.0, 1, 0)   # one value per env: as it is
+
     def test_per_env_objective_on_a_device_without_float64(self):
         # MPS has no float64: the finished envs' values are widened on the host
         values = torch.tensor([1.0, NAN, 0.0, 1.0]).as_subclass(NoFloat64Tensor)
@@ -125,6 +134,14 @@ class TestFreshObjective:
         assert calls[1] == (pytest.approx(0.8), 300) and obs.pbt_it == 3
         tick(obs, algo, 400)                                # the iteration started a new interval
         assert len(calls) == 2 and obs.pbt_it == 3
+
+    def test_a_single_process_decides_without_a_tensor_on_its_device(self, tmp_path):
+        """The decision message is float64, which MPS doesn't have: a single process broadcasts
+        nothing and builds it on the host, whatever its training device."""
+        obs, algo, calls = member(tmp_path)
+        obs.device = "mps"
+        tick(obs, algo, 100, ONES)
+        assert calls == [(1.0, 100)] and obs.pbt_it == 1
 
     def test_no_finite_objective_raises_after_max_consecutive_errors(self, tmp_path):
         obs, algo, calls = member(tmp_path, max_consecutive_errors=3)
