@@ -17,40 +17,6 @@ class HCRewardEnv(gym.RewardWrapper):
         return np.max([-10, reward])
 
 
-class DMControlWrapper(gym.Wrapper):
-    def __init__(self, env):
-        gym.Wrapper.__init__(self, env)
-        self.observation_space = self.env.observation_space['observations']
-        self.observation_space.dtype = np.dtype('float32')
-
-    def reset(self, **kwargs):
-        self.num_stops = 0
-        result = self.env.reset(**kwargs)
-        if isinstance(result, tuple):
-            return result[0]
-        return result
-
-    def step(self, action):
-        result = self.env.step(action)
-        if len(result) == 5:
-            observation, reward, terminated, truncated, info = result
-            done = terminated or truncated
-        else:
-            observation, reward, done, info = result
-        return observation, reward, done, info
-
-
-class DMControlObsWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
-        gym.ObservationWrapper.__init__(self, env)
-
-    def observation(self, obs):
-        return obs['observations']
-
-
-
-
-
 def _create_gymnasium_single_env(**kwargs):
     env_name = kwargs.pop('env_name')
     flatten_obs = kwargs.pop('flatten_obs', False)
@@ -75,18 +41,6 @@ def create_atari_gym_env(**kwargs):
     episode_life = kwargs.pop('episode_life',True)
     wrap_impala = kwargs.pop('wrap_impala', False)
     env = wrappers.make_atari_deepmind(name, skip=skip, episode_life=episode_life, wrap_impala=wrap_impala, **kwargs)
-    return env
-
-
-def create_dm_control_env(**kwargs):
-    frames = kwargs.pop('frames', 1)
-    name = 'dm2gym:'+ kwargs.pop('name')
-    env = gym.make(name, environment_kwargs=kwargs)
-    env = DMControlWrapper(env)
-    env = DMControlObsWrapper(env)
-    env = wrappers.TimeLimit(env, 1000)
-    if frames > 1:
-        env = wrappers.FrameStack(env, frames, False)
     return env
 
 
@@ -241,8 +195,8 @@ configurations = {
             'wrap_env': lambda env: wrap_atari(env, frame_skip=4, noop_max=30),
         },
     },
-    'CarRacing-v2' : {
-        'env_creator' : lambda **kwargs :  wrappers.make_car_racing('CarRacing-v2', skip=4),
+    'CarRacing-v3' : {
+        'env_creator' : lambda **kwargs :  wrappers.make_car_racing('CarRacing-v3', skip=4),
         'vecenv_type' : 'RAY'
     },
     'LunarLanderContinuous-v3' : {
@@ -274,10 +228,9 @@ configurations = {
         'env_creator' : lambda **kwargs : create_smac_cnn(**kwargs),
         'vecenv_type' : 'RAY'
     },
-    'dm_control' : {
-        'env_creator' : lambda **kwargs : create_dm_control_env(**kwargs),
-        'vecenv_type' : 'RAY'
-    },
+    # 'dm_control' was retired in favour of the gymnasium/envpool routes:
+    # `env_name: gymnasium` with `dm_control/<domain>-<task>-v0` (shimmy), or
+    # `env_name: envpool`. See docs/DEEPMIND_CONTROL.md.
     'atari_gym' : {
         'env_creator' : lambda **kwargs : create_atari_gym_env(**kwargs),
         'vecenv_type' : 'RAY'
