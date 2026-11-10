@@ -7,11 +7,29 @@ import random
 from collections.abc import Callable
 from typing import Any
 
+from rl_games.common.pbt.pbt_utils import plain_number
+
 
 def mutate_float(x: float, change_min: float = 1.1, change_max: float = 1.5) -> float:
     """Multiply or divide by a random factor in [change_min, change_max]."""
     k = random.uniform(change_min, change_max)
     return x / k if random.random() < 0.5 else x * k
+
+
+def mutate_float_min_1(x: float, **kwargs) -> float:
+    """mutate_float, floored at 1.0."""
+    return max(1.0, mutate_float(x, **kwargs))
+
+
+def mutate_eps_clip(x: float, **kwargs) -> float:
+    """mutate_float, clamped to the PPO clip range [0.01, 0.3]."""
+    return min(0.3, max(0.01, mutate_float(x, **kwargs)))
+
+
+def mutate_mini_epochs(x: int, **kwargs) -> int:
+    """Step the number of PPO passes by ±1, clamped to [1, 8]."""
+    new_value = x + 1 if random.random() < 0.5 else x - 1
+    return int(min(8, max(1, new_value)))
 
 
 def mutate_discount(x: float, **kwargs) -> float:
@@ -27,6 +45,9 @@ def mutate_discount(x: float, **kwargs) -> float:
 
 MUTATION_FUNCS: dict[str, Callable[..., Any]] = {
     "mutate_float": mutate_float,
+    "mutate_float_min_1": mutate_float_min_1,
+    "mutate_eps_clip": mutate_eps_clip,
+    "mutate_mini_epochs": mutate_mini_epochs,
     "mutate_discount": mutate_discount,
 }
 
@@ -37,6 +58,12 @@ def mutate(
     mutation_rate: float,
     change_range: tuple[float, float],
 ) -> dict[str, Any]:
+    """Mutate whitelisted params. Integer params need an integer rule (mutate_mini_epochs).
+
+    A numpy or torch scalar from a custom function comes back as the Python number it holds
+    (np.clip returns np.float64): the values become the member's params, which its workspace
+    yamls (plain YAML) and the restart command hold as plain numbers.
+    """
     cmin, cmax = change_range
     out: dict[str, Any] = {}
     for name, val in params.items():
@@ -48,5 +75,16 @@ def mutate(
         fn = MUTATION_FUNCS.get(fn_name)
         if fn is None:
             raise KeyError(f"Unknown mutation function: {fn_name!r}")
-        out[name] = fn(val, change_min=cmin, change_max=cmax)
+        out[name] = plain_number(fn(val, change_min=cmin, change_max=cmax))
+    return out
+
+
+def clamp_to_bounds(params: dict[str, Any], bounds: dict[str, tuple[float, float]]) -> dict[str, Any]:
+    """`params` with every value that has bounds (`pbt.mutation_bounds`, {key: (lo, hi)}) clamped
+    into them. `validate()` gives an integer param integer bounds, so it stays an int; a float
+    param written as an int (`entropy_coef: 0`) takes a float bound."""
+    out = dict(params)
+    for name, (lo, hi) in bounds.items():
+        if name in out:
+            out[name] = min(max(out[name], lo), hi)
     return out

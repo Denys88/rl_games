@@ -118,8 +118,9 @@ class Envpool(IVecEnv):
         envpool clips Atari rewards to [-1, 1] for training and exposes the
         raw reward via info['reward']. We accumulate the raw reward into
         self.scores and expose the totals as info['scores'] for tensorboard
-        reporting. With episodic_life=True we only reset the score on real
-        game-over (lives == 0) instead of per-life.
+        reporting. With episodic_life=True we only reset the score when the
+        game ends, not per life: game over (lives == 0) or the time limit
+        (info['time_outs']), after which envpool restarts the game with full lives.
         """
         if 'reward' not in infos:
             return
@@ -128,8 +129,8 @@ class Envpool(IVecEnv):
         infos['scores'] = self.returned_scores
 
         if self.has_lives:
-            all_lives_exhausted = infos['lives'] == 0
-            self.scores *= 1 - all_lives_exhausted
+            game_over = (infos['lives'] == 0) | infos.get('time_outs', False)
+            self.scores *= 1 - game_over
         else:
             if 'lives' in infos:
                 del infos['lives']
@@ -154,6 +155,9 @@ class Envpool(IVecEnv):
 
     def reset(self):
         obs, info = self.env.reset(self.ids)
+        # a reset ends every game: the next episode's score starts at 0 (an explicit reset, e.g. a
+        # PBT in-process transfer's, would otherwise carry the interrupted games' points into it)
+        self.scores[:] = 0
 
         if self.flatten_obs:
             obs = _flatten_dict_obs(obs)

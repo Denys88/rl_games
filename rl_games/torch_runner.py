@@ -264,7 +264,13 @@ class Runner:
         # model.
 
         _restore(agent, args)
-        _override_sigma(agent, args)
+        if (getattr(agent, 'config', None) or {}).get('pbt_restart', False):
+            # a PBT restart restores a trained policy (the member's or a donor's): the launch
+            # command's --sigma, which the restart command keeps, would reset its learned sigma
+            if args.get('sigma') is not None:
+                print(f"PBT restart: keeping the checkpoint's sigma, not applying sigma={args['sigma']}")
+        else:
+            _override_sigma(agent, args)
 
         # Now compile the (already restored) model. Doing it after the restore
         # keeps parameter names consistent with the checkpoint.
