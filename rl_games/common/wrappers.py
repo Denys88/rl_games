@@ -600,64 +600,34 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
         return observation * self.mask
 
 
-class OldGymWrapper(gym.Env):
-    """Wrapper to convert gymnasium env to old gym-style 4-tuple API.
+def convert_space(space):
+    """Recursively rebuild a (possibly structured) gymnasium space.
 
-    This is useful for environments that use the new gymnasium API
-    but need to interface with code expecting the old gym API.
+    Recreates each space as a proper gymnasium instance; unknown types pass
+    through unchanged. Extracted from the removed OldGymWrapper -- the old-gym
+    adapter itself is gone (it could not actually wrap a genuine old-gym env:
+    real gym.spaces instances fell through unconverted). No in-tree callers
+    remain.
     """
-    def __init__(self, env):
-        self.env = env
-        self.observation_space = self.convert_space(env.observation_space)
-        self.action_space = self.convert_space(env.action_space)
-
-    @staticmethod
-    def convert_space(space):
-        """Recursively convert/copy gymnasium spaces.
-
-        Since we now use gymnasium as gym, this mostly just recreates
-        the spaces to ensure they're proper gymnasium spaces.
-        """
-        if isinstance(space, spaces.Box):
-            return spaces.Box(
-                low=space.low,
-                high=space.high,
-                shape=space.shape,
-                dtype=space.dtype
-            )
-        elif isinstance(space, spaces.Discrete):
-            return spaces.Discrete(n=space.n)
-        elif isinstance(space, spaces.MultiDiscrete):
-            return spaces.MultiDiscrete(nvec=space.nvec)
-        elif isinstance(space, spaces.MultiBinary):
-            return spaces.MultiBinary(n=space.n)
-        elif isinstance(space, spaces.Tuple):
-            return spaces.Tuple([OldGymWrapper.convert_space(s) for s in space.spaces])
-        elif isinstance(space, spaces.Dict):
-            return spaces.Dict({k: OldGymWrapper.convert_space(s) for k, s in space.spaces.items()})
-        else:
-            # Return space as-is if unknown type
-            return space
-
-    def reset(self):
-        observation = _parse_reset_result(self.env.reset())
-        # Flatten the observation if needed
-        observation = spaces.flatten(self.observation_space, observation)
-        return observation
-
-    def step(self, action):
-        # Unflatten the action
-        action = spaces.unflatten(self.action_space, action)
-        observation, reward, done, info = _parse_step_result(self.env.step(action))
-        # Flatten the observation
-        observation = spaces.flatten(self.observation_space, observation)
-        return observation, reward, done, info
-
-    def render(self):
-        return self.env.render()
-
-    def close(self):
-        return self.env.close()
+    if isinstance(space, spaces.Box):
+        return spaces.Box(
+            low=space.low,
+            high=space.high,
+            shape=space.shape,
+            dtype=space.dtype
+        )
+    elif isinstance(space, spaces.Discrete):
+        return spaces.Discrete(n=space.n)
+    elif isinstance(space, spaces.MultiDiscrete):
+        return spaces.MultiDiscrete(nvec=space.nvec)
+    elif isinstance(space, spaces.MultiBinary):
+        return spaces.MultiBinary(n=space.n)
+    elif isinstance(space, spaces.Tuple):
+        return spaces.Tuple([convert_space(s) for s in space.spaces])
+    elif isinstance(space, spaces.Dict):
+        return spaces.Dict({k: convert_space(s) for k, s in space.spaces.items()})
+    else:
+        return space
 
 
 def make_atari(env_id, timelimit=True, noop_max=0, skip=4, sticky=False, directory=None, **kwargs):
@@ -719,3 +689,49 @@ def make_car_racing(env_id, skip=4):
 def make_atari_deepmind(env_id, noop_max=30, skip=4, sticky=False, episode_life=True, wrap_impala=False, **kwargs):
     env = make_atari(env_id, noop_max=noop_max, skip=skip, sticky=sticky, **kwargs)
     return wrap_deepmind(env, episode_life=episode_life, clip_rewards=False, wrap_impala=wrap_impala)
+
+
+class DiscretizeActions(gym.ActionWrapper):
+    """Discretize a Box action space into a Tuple of Discrete heads
+    (multi-discrete PPO over continuous control, Tang & Agrawal 2020).
+
+    Each action dimension becomes Discrete(bins) over a uniform grid between
+    that dimension's low/high. `bins` may be an int (same for every dim) or a
+    per-dimension list (heterogeneous heads).
+    """
+
+    def __init__(self, env, bins=11):
+        gym.ActionWrapper.__init__(self, env)
+        box = env.action_space
+        assert isinstance(box, spaces.Box) and len(box.shape) == 1
+        assert np.isfinite(box.low).all() and np.isfinite(box.high).all(), \
+            "DiscretizeActions needs finite Box bounds (a uniform grid over " \
+            "infinite bounds would produce nan/inf actions)"
+        dim = box.shape[0]
+        self._bins = [bins] * dim if np.isscalar(bins) else list(bins)
+        assert len(self._bins) == dim
+        self._dtype = box.dtype
+        self._grids = [np.linspace(box.low[i], box.high[i], self._bins[i])
+                       for i in range(dim)]
+        self.action_space = spaces.Tuple(
+            [spaces.Discrete(b) for b in self._bins])
+
+    def action(self, action):
+        idx = np.asarray(action, dtype=np.int64)
+        return np.array([g[i] for g, i in zip(self._grids, idx)],
+                        dtype=self._dtype)
+
+
+class OldGymWrapper:
+    """Removed in 2.0.0; the name stays so upgraders get the migration pointer.
+
+    The wrapper could not wrap a real old-gym env (gym.spaces fell through
+    unconverted, time-limit endings were reported as terminations), so no
+    alias keeps it working. Constructing it raises with the env-side contract.
+    """
+
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError(
+            "OldGymWrapper was removed in rl_games 2.0.0. Implement the gymnasium API on the "
+            "env side -- reset() -> (obs, info), step() -> (obs, reward, terminated, truncated, "
+            "info) -- see the 2.0.0 release notes and docs/MIGRATING_TO_2.0.md.")

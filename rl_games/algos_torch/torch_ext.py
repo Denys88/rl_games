@@ -1,10 +1,62 @@
 import math
 import time
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+
+def wrap_model_ddp(model, device, find_unused_parameters=False):
+    """DDP wrapper for the training forward pass only: gradients are bucket-averaged
+    across ranks during backward; running-stat buffers stay under the trainer's own
+    sync policy (broadcast_buffers=False)."""
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    class _TrackedDDP(DDP):
+        # forward_seen lets the trainer detect a training forward that
+        # bypassed the wrapper (e.g. a custom calc_gradients using the raw
+        # model): DDP hooks never fire on such a forward and ranks would
+        # silently diverge. Set here, checked and cleared per optimizer step.
+        def forward(self, *args, **kwargs):
+            out = super().forward(*args, **kwargs)
+            # Mark only a COMPLETED, grad-enabled, sync-enabled training
+            # forward: a no-grad or no_sync() forward installs no reduction
+            # hooks, so counting it would let a later raw-model backward slip
+            # past the guard and step with unsynchronized gradients.
+            if torch.is_grad_enabled() and getattr(self, 'require_backward_grad_sync', True):
+                self.forward_seen = True
+            return out
+
+    dev = torch.device(device)
+    ddp = _TrackedDDP(
+        model,
+        device_ids=[dev.index] if dev.type == 'cuda' else None,
+        broadcast_buffers=False,
+        gradient_as_bucket_view=True,
+        find_unused_parameters=find_unused_parameters,
+    )
+    ddp.forward_seen = False
+    return ddp
+
+
+def flat_allreduce_grads(model, world_size):
+    """Average gradients across ranks with a single flat all-reduce
+    (legacy multi_gpu_grad_sync: 'flat_allreduce' mode)."""
+    import torch.distributed as dist
+    grads = [p.grad.view(-1) for p in model.parameters() if p.grad is not None]
+    if not grads:
+        return
+    all_grads = torch.cat(grads)
+    dist.all_reduce(all_grads, op=dist.ReduceOp.SUM)
+    offset = 0
+    for p in model.parameters():
+        if p.grad is not None:
+            p.grad.data.copy_(
+                all_grads[offset:offset + p.numel()].view_as(p.grad.data) / world_size
+            )
+            offset += p.numel()
 from torch.optim.optimizer import Optimizer
 
 
@@ -25,10 +77,16 @@ numpy_to_torch_dtype_dict = {
 torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
-    c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
-    c3 = -1.0 / 2.0
-    kl = c1 + c2 + c3
+    """KL(N(p0_mu, p0_sigma) || N(p1_mu, p1_sigma)), summed over actions."""
+    # keep the Gaussian arithmetic in at least fp32
+    p0_mu, p0_sigma, p1_mu, p1_sigma = [
+        t.float() if t.dtype in (torch.float16, torch.bfloat16) else t
+        for t in (p0_mu, p0_sigma, p1_mu, p1_sigma)
+    ]
+    # exact form: an epsilon on the variance biased KL below zero even for identical policies
+    var_ratio = (p0_sigma / p1_sigma).square()
+    mean_delta = (p0_mu - p1_mu) / p1_sigma
+    kl = torch.log(p1_sigma / p0_sigma) + 0.5 * (var_ratio + mean_delta.square() - 1.0)
     kl = kl.sum(dim=-1) # returning mean between all steps of sum between all actions
     if reduce:
         return kl.mean()
@@ -91,25 +149,25 @@ def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
     safe_save(state, filename + '.pth')
 
+def _strip_compile_prefix(obj):
+    """Remove torch.compile's '_orig_mod.' from state-dict keys at any nesting depth.
+
+    Compiled modules (OptimizedModule) save parameters under '_orig_mod.*';
+    nested holders (central value nets, self-play snapshots) embed it mid-key
+    as 'model._orig_mod.*'. Substring removal handles both; non-string keys
+    (optimizer state ints) and non-dict values pass through untouched.
+    """
+    if isinstance(obj, dict):
+        return {(k.replace('_orig_mod.', '') if isinstance(k, str) else k): _strip_compile_prefix(v)
+                for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_compile_prefix(v) for v in obj]
+    return obj
+
+
 def load_checkpoint(filename):
     print("=> loading checkpoint '{}'".format(filename))
-    state = safe_load(filename)
-
-    # ----------------------------
-    # Fix for missing/unexpected keys:
-    # Remove the '_orig_mod.' prefix so model keys match your uncompiled model
-    if "model" in state:
-        new_model = {}
-        for k, v in state["model"].items():
-            if k.startswith("_orig_mod."):
-                new_key = k[len("_orig_mod."):]
-            else:
-                new_key = k
-            new_model[new_key] = v
-        state["model"] = new_model
-    # ----------------------------
-
-    return state
+    return _strip_compile_prefix(safe_load(filename))
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     normal = torch.distributions.normal.Normal(0, 1, validate_args=False)
@@ -158,7 +216,11 @@ def apply_masks(losses, mask=None):
     sum_mask = None
     if mask is not None:
         mask = mask.unsqueeze(1)
-        sum_mask = mask.numel()
+        # mean over VALID rows. This used to divide by numel(), which scaled
+        # every loss down by the invalid fraction — equivalent to silently
+        # lowering the LR for masked (RNN / autoreset) training. 2.0.0
+        # behavior change; see release notes.
+        sum_mask = mask.sum().clamp(min=1.0)
         res_losses = [(l * mask).sum() / sum_mask for l in losses]
     else:
         res_losses = [torch.mean(l) for l in losses]
@@ -176,11 +238,14 @@ def normalization_with_masks(values, masks):
     return normalized_values
 
 def get_mean_var_with_masks(values, masks):
-    sum_mask = masks.sum()
+    # clamp the denominators so degenerate masks (0 or 1 valid rows) yield
+    # finite (mean, 0) instead of NaN poisoning the whole batch -- same
+    # guard style as apply_masks
+    sum_mask = masks.sum().clamp(min=1.0)
     values_mask = values * masks
     values_mean = values_mask.sum() / sum_mask
     min_sqr = ((((values_mask)**2)/sum_mask).sum() - ((values_mask/sum_mask).sum())**2)
-    values_var = min_sqr * sum_mask / (sum_mask-1)
+    values_var = min_sqr * sum_mask / (sum_mask - 1).clamp(min=1.0)
     return values_mean, values_var
 
 def get_mean_std_with_masks(values, masks):
@@ -198,8 +263,10 @@ def explained_variance(y_pred, y, masks=None):
     """
 
     if masks is not None:
-        masks = masks.unsqueeze(1)
-        _, var_y = get_mean_var_with_masks(y_pred, masks)
+        # a per-row mask broadcast over value_size columns: expand it so the
+        # helper counts valid ELEMENTS, matching the pooled torch.var below
+        masks = masks.unsqueeze(1).expand_as(y)
+        _, var_y = get_mean_var_with_masks(y, masks)
         _, var_dy = get_mean_var_with_masks(y-y_pred, masks)
     else:
         # Use population variance to avoid DoF warnings when batch size is 1
@@ -214,7 +281,7 @@ def policy_clip_fraction(new_neglogp, old_neglogp, clip_param, masks=None):
                 logratio > math.log(1.0 + clip_param),
             ).float()
     if masks is not None:
-        clip_frac = clip_frac * masks/masks.sum()
+        clip_frac = (clip_frac * masks).sum() / masks.sum().clamp(min=1.0)
     else:
         clip_frac = clip_frac.mean()
     return clip_frac
@@ -309,6 +376,54 @@ def get_mean(v):
     else:
         mean = 0
     return mean
+
+
+_HALF_DTYPES = {'fp16': torch.float16, 'float16': torch.float16, 'half': torch.float16,
+                'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16}
+_OFF_NAMES = ('false', '0', 'no', 'off', 'none', 'fp32', 'tf32')
+_ON_NAMES = ('true', '1', 'yes', 'on')
+
+
+def resolve_mixed_precision(value, device='cuda'):
+    """Map the `mixed_precision` config value to an autocast dtype, or None.
+
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). True, 1 or
+    'fp16': float16 autocast with loss scaling, the meaning True had through
+    rl_games 1.6.1. 'bf16': bfloat16, only on request, because at small sigma
+    its rounding adds a KL of 0.01-0.03 per update and noise in the PPO
+    ratio. Strings from CLI or Hydra overrides ('true', 'False', '0') map the
+    same way. Half precision needs a CUDA device; elsewhere it resolves to
+    None.
+    """
+    if isinstance(value, str):
+        name = value.strip().lower()
+        if name in _OFF_NAMES:
+            return None
+        if name in _ON_NAMES:
+            value = True
+        elif name in _HALF_DTYPES:
+            value = _HALF_DTYPES[name]
+    if value is None or value is False or (type(value) is int and value == 0):
+        return None
+    if value is True or (type(value) is int and value == 1):
+        value = torch.float16
+    if value not in (torch.float16, torch.bfloat16):
+        raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
+    if not str(device).startswith('cuda'):
+        warnings.warn(f"mixed_precision needs a CUDA device; running {device} without autocast.",
+                      stacklevel=2)
+        return None
+    return value
+
+
+def autocast(dtype):
+    """Autocast context for a dtype from resolve_mixed_precision; a no-op for None."""
+    return torch.amp.autocast('cuda', enabled=dtype is not None, dtype=dtype or torch.bfloat16)
+
+
+def grad_scaler(dtype):
+    """Loss scaler for fp16. bf16 has fp32's exponent range and needs none."""
+    return torch.amp.GradScaler('cuda', enabled=dtype == torch.float16)
 
 
 class AverageMeter(nn.Module):

@@ -203,6 +203,11 @@ class SACPlayer(BasePlayer):
             float(self.env_info['action_space'].low.min()),
             float(self.env_info['action_space'].high.max())
         ]
+        # Per-dim affine rescale [-1, 1] -> env bounds (matches the trained policy).
+        self.action_low = torch.tensor(self.action_space.low, device=self.device, dtype=torch.float32)
+        self.action_high = torch.tensor(self.action_space.high, device=self.device, dtype=torch.float32)
+        self.action_scale = (self.action_high - self.action_low) / 2.0
+        self.action_bias = (self.action_high + self.action_low) / 2.0
 
         obs_shape = self.obs_shape
         self.normalize_input = self.config.get('normalize_input', False)
@@ -232,13 +237,19 @@ class SACPlayer(BasePlayer):
         if self.env is not None and env_state is not None:
             self.env.set_env_state(env_state)
 
+    def rescale_actions(self, actions):
+        """Rescale normalized [-1, 1] actions to the env action space (per-dim affine)."""
+        rescaled = actions * self.action_scale + self.action_bias
+        # Clamp to handle floating point errors
+        return rescaled.clamp(self.action_low, self.action_high)
+
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
         obs = self.model.norm_obs(obs)
         dist = self.model.actor(obs)
         actions = dist.sample() if not is_deterministic else dist.mean
-        actions = actions.clamp(*self.action_range).to(self.device)
+        actions = self.rescale_actions(actions.to(self.device))
         if self.has_batch_dimension == False:
             actions = torch.squeeze(actions.detach())
         return actions

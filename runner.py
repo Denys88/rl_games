@@ -1,5 +1,14 @@
-from distutils.util import strtobool
 import argparse, os, yaml
+
+
+def strtobool(value):
+    # local replacement for distutils.util.strtobool (distutils was removed in Python 3.12)
+    value = str(value).strip().lower()
+    if value in ('y', 'yes', 't', 'true', 'on', '1'):
+        return 1
+    if value in ('n', 'no', 'f', 'false', 'off', '0'):
+        return 0
+    raise ValueError(f"invalid truth value {value!r}")
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 

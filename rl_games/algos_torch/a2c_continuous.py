@@ -6,6 +6,7 @@ from rl_games.common import common_losses
 from rl_games.common import datasets
 
 from torch import optim
+import importlib
 import torch
 
 
@@ -33,12 +34,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'value_size': self.env_info.get('value_size', 1),
             'normalize_value': self.normalize_value,
             'normalize_input': self.normalize_input,
+            'normalize_input_init_count': self.normalize_input_init_count,
         }
 
         self.model = self.network.build(build_config)
         self.model.to(self.ppo_device)
         self.states = None
         self.init_rnn_from_model(self.model)
+        if self.kl_schedule_source == 'optimizer_step' and self.is_rnn:
+            raise ValueError("kl_schedule_source='optimizer_step' does not support recurrent (RNN) policies")
         self.last_lr = float(self.last_lr)
         self.bound_loss_type = self.config.get('bound_loss_type', 'bound') # 'regularisation' or 'bound'
         self.optimizer = optim.Adam(self.model.parameters(),
@@ -59,11 +63,15 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': self.central_value_config,
+                # the critic follows the policy's precision unless its own config sets one
+                'config': {'mixed_precision': self.config.get('mixed_precision', False),
+                           **self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
-                'zero_rnn_on_done': self.zero_rnn_on_done
+                'zero_rnn_on_done': self.zero_rnn_on_done,
+                'ddp_find_unused_parameters': self.ddp_find_unused_parameters,
+                'normalize_input_init_count': self.config.get('normalize_input_init_count'),
             }
             self.central_value_net = central_value.CentralValueTrain(**cv_config).to(self.ppo_device)
 
@@ -73,6 +81,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
 
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+        self.symmetry_loss_coef, self._symmetry_maps = self._init_symmetry_loss(self.config.get('symmetry_loss'))
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -118,6 +127,12 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 return_batch,
                 self.clip_value
             )
+        elif self._ddp_model is not None:
+            # 0-coef term keeps the value head in the autograd graph so DDP's
+            # static bucket accounting sees every parameter (exact-zero grads).
+            # Only under DDP: it turns the value head's None grads into zeros,
+            # which lets optimizer weight_decay act on an otherwise dead head.
+            c_loss = 0.0 * values.sum() + torch.zeros(1, device=self.ppo_device)
         else:
             c_loss = torch.zeros(1, device=self.ppo_device)
         if self.bound_loss_type == 'regularisation':
@@ -129,7 +144,8 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
         a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
-        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * self.bounds_loss_coef
+        bounds_coef = self.bounds_loss_coef if self.bounds_loss_coef is not None else 0.0
+        loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef + b_loss * bounds_coef
         return loss, a_loss, c_loss, entropy, b_loss, sum_mask
 
     def calc_gradients(self, input_dict):
@@ -160,17 +176,18 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'obs': obs_batch,
         }
 
-        rnn_masks = None
+        # masks may exist without an RNN: next_step-autoreset garbage rows
+        rnn_masks = input_dict.get('rnn_masks', None)
         if self.is_rnn:
-            rnn_masks = input_dict['rnn_masks']
             batch_dict['rnn_states'] = input_dict['rnn_states']
             batch_dict['seq_length'] = self.seq_length
 
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
-            res_dict = self.model(batch_dict)
+        train_model = self.train_model()
+        with torch_ext.autocast(self.amp_dtype):
+            res_dict = train_model(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
             entropy = res_dict['entropy']
@@ -190,9 +207,14 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 entropy,
                 rnn_masks
             )
+            if self.symmetry_loss_coef > 0:
+                sym_loss = self.symmetry_loss(obs_batch, mu, rnn_masks)
+                loss = loss + self.symmetry_loss_coef * sym_loss
 
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
+            if self.symmetry_loss_coef > 0:
+                self.aux_loss_dict['symmetry_loss'] = [sym_loss.detach()]
             if aux_loss is not None:
                 for k, v in aux_loss.items():
                     loss += v
@@ -215,28 +237,141 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             reduce_kl = rnn_masks is None
             kl_dist = torch_ext.policy_kl(mu.detach(), sigma.detach(), old_mu_batch, old_sigma_batch, reduce_kl)
             if rnn_masks is not None:
-                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.numel()  #/ sum_mask
+                # mean over VALID rows only: dividing by numel() understates
+                # KL by the invalid fraction and biases adaptive LR upward
+                kl_dist = (kl_dist * rnn_masks).sum() / rnn_masks.sum().clamp(min=1.0)
+        self.kl_schedule_value = kl_dist
 
-        self.diagnostics.mini_batch(self,
-        {
+        diag_batch = {
             'values': value_preds_batch,
             'returns': return_batch,
             'new_neglogp': action_log_probs,
             'old_neglogp': old_action_log_probs_batch,
-            'masks': rnn_masks
-        }, curr_e_clip, 0)
+            'masks': rnn_masks,
+            'mu': mu,
+            'sigma': sigma,
+            'advantages': advantage,
+            'actions': actions_batch,
+        }
+        measure_step = getattr(self, 'kl_schedule_source', 'reference') == 'optimizer_step'
+        log_post_step = self.use_diagnostics and self.global_rank == 0 and not self.is_rnn
+        if measure_step or log_post_step:
+            # post-step KL on the same minibatch (kl_step: this step's change;
+            # kl_post_ref: drift from the scheduler's reference); one extra
+            # no-grad forward with running statistics frozen. The scheduler
+            # needs this on EVERY rank, even when diagnostics are disabled.
+            stats_mods = [m for m in (getattr(self.model, 'running_mean_std', None), getattr(self.model, 'value_mean_std', None)) if m is not None]
+            was_training = [m.training for m in stats_mods]
+            for m in stats_mods:
+                m.eval()
+            # BatchNorm must retain training-mode batch statistics for a
+            # matched replay, but its running buffers must advance only once
+            # per optimizer update, rather than again for this measurement.
+            batchnorm_buffers = [
+                (buffer, buffer.detach().clone())
+                for module in self.model.modules()
+                if isinstance(module, torch.nn.modules.batchnorm._BatchNorm)
+                for buffer in module.buffers(recurse=False)
+            ]
+            # the model normalises obs in place in its input dict: rebuild it
+            post_dict = {'is_train': True, 'prev_actions': actions_batch, 'obs': obs_batch}
+            try:
+                with torch.no_grad(), torch_ext.autocast(self.amp_dtype):
+                    post = self.model(post_dict)
+            finally:
+                with torch.no_grad():
+                    for buffer, saved in batchnorm_buffers:
+                        buffer.copy_(saved)
+                for m, t in zip(stats_mods, was_training):
+                    m.train(t)
+            post_mu, post_sigma = post['mus'].float(), post['sigmas'].float()
+            if measure_step:
+                # Same observations and normalizer state on both sides:
+                # unlike reference KL, this responds to the step just taken.
+                # Direction matches policy_kl(new_policy, old_policy).
+                step_kl = torch_ext.policy_kl(post_mu, post_sigma, mu.detach().float(), sigma.detach().float(), False)
+                if rnn_masks is None:
+                    self.kl_schedule_value = step_kl.mean()
+                else:
+                    masks = rnn_masks.reshape(-1)
+                    self.kl_schedule_value = (step_kl * masks).sum() / masks.sum().clamp(min=1.0)
+            if log_post_step:
+                # Preserve the historical diagnostic's pre||post direction.
+                diag_batch['kl_step'] = torch_ext.policy_kl(mu.detach().float(), sigma.detach().float(), post_mu, post_sigma, False)
+                diag_batch['kl_post_ref'] = torch_ext.policy_kl(post_mu, post_sigma, old_mu_batch.float(), old_sigma_batch.float(), False)
+        self.diagnostics.mini_batch(self, diag_batch, curr_e_clip, 0)
 
         self.train_result = (a_loss, c_loss, entropy,
             kl_dist, self.last_lr, lr_mul,
             mu.detach(), sigma.detach(), b_loss)
 
+    def _init_symmetry_loss(self, cfg):
+        """Opt-in mirror-consistency loss on the policy mean (rsl-rl's mirror loss).
+
+        ``config.symmetry_loss``::
+
+            coef: 0.5                  # loss weight
+            maps: pkg.module:attr      # or an inline dict
+
+        ``maps`` holds ``obs_perm``, ``obs_sign``, ``act_perm`` and ``act_sign``:
+        the mirror of an observation is ``obs[:, obs_perm] * obs_sign`` on the raw
+        (unnormalized) layout, and likewise for actions. A string names a dict or
+        a zero-argument callable that returns one.
+        """
+        if not cfg:
+            return 0.0, None
+        if self.is_rnn:
+            raise ValueError('symmetry_loss supports feed-forward policies only')
+        if isinstance(self.obs_shape, dict):
+            raise ValueError('symmetry_loss supports flat observations only')
+        if self.multi_gpu and self.multi_gpu_grad_sync != 'flat_allreduce':
+            # the mirrored forward goes through the unwrapped model, so DDP
+            # would not sync the gradient it adds
+            raise ValueError("symmetry_loss on several GPUs needs multi_gpu_grad_sync: 'flat_allreduce'")
+        maps = cfg['maps']
+        if isinstance(maps, str):
+            module_name, attr = maps.rsplit(':', 1)
+            maps = getattr(importlib.import_module(module_name), attr)
+        if callable(maps):
+            maps = maps()
+        sizes = {'obs': self.obs_shape[0], 'act': self.actions_num}
+        tensors = []
+        for kind in ('obs', 'act'):
+            perm = torch.as_tensor(list(maps[f'{kind}_perm']), dtype=torch.long)
+            sign = torch.as_tensor(list(maps[f'{kind}_sign']), dtype=torch.float32)
+            if len(perm) != sizes[kind] or len(sign) != sizes[kind]:
+                raise ValueError(f'symmetry_loss {kind}_perm / {kind}_sign need {sizes[kind]} entries, '
+                                 f'got {len(perm)} / {len(sign)}')
+            if not torch.equal(torch.sort(perm).values, torch.arange(sizes[kind])):
+                raise ValueError(f'symmetry_loss {kind}_perm is not a permutation')
+            tensors += [perm.to(self.ppo_device), sign.to(self.ppo_device)]
+        return float(cfg.get('coef', 0.5)), tuple(tensors)
+
+    def symmetry_loss(self, obs, mu, masks=None):
+        """MSE between the policy mean on mirrored observations and the mirrored
+        (detached) policy mean on the original ones."""
+        obs_perm, obs_sign, act_perm, act_sign = self._symmetry_maps
+        mirrored = obs[:, obs_perm] * obs_sign
+        rms = getattr(self.model, 'running_mean_std', None)
+        was_training = rms is not None and rms.training
+        if was_training:
+            rms.eval()  # mirrored rows must not update the observation statistics
+        try:
+            mirrored = self.model.norm_obs(mirrored)
+        finally:
+            if was_training:
+                rms.train()
+        mu_mirrored = self.model.a2c_network({'obs': mirrored})[0].float()
+        target = (mu.float()[:, act_perm] * act_sign).detach()
+        per_row = ((mu_mirrored - target) ** 2).mean(dim=-1)
+        if masks is None:
+            return per_row.mean()
+        masks = masks.reshape(-1).to(per_row.dtype)
+        return (per_row * masks).sum() / masks.sum().clamp(min=1.0)
+
     def train_actor_critic(self, input_dict):
         self.set_train()
         self.calc_gradients(input_dict)
-
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = self.last_lr
-
         return self.train_result
 
     def reg_loss(self, mu):
@@ -253,5 +388,6 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0)**2
             b_loss = (mu_loss_low + mu_loss_high).sum(axis=-1)
         else:
-            b_loss = 0
+            # zero TENSOR, not int: the masked-loss path calls .unsqueeze on it
+            b_loss = torch.zeros(mu.shape[0], device=mu.device)
         return b_loss

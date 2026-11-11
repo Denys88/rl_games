@@ -1,14 +1,150 @@
-# RL Games: High performance RL library
+<h1 align="center">rl_games</h1>
 
-**Note:** The next release will be 2.0.0 (unreleased). It migrates fully from `gym` to `gymnasium`. EnvPool support has been restored with envpool >= 1.2.5 (Python 3.11–3.14, NumPy 2.x, MuJoCo 3.x compatible).
+<p align="center"><b>High-performance reinforcement learning for GPU-vectorized simulation.</b><br>
+PPO and SAC in PyTorch, thousands of environments per GPU, multi-GPU training, asymmetric actor-critic, ONNX export.<br>
+Trains directly on <a href="https://github.com/isaac-sim/IsaacLab">Isaac Lab</a>, vsim, <a href="docs/MJLAB.md">MJLab</a>, <a href="docs/ENVPOOL.md">EnvPool</a> and <a href="docs/MYOSUITE.md">MyoSuite</a>.</p>
 
-## Discord Channel Link 
-* https://discord.gg/hnYRq7DsQh
+<p align="center">
+<a href="https://pypi.org/project/rl-games/"><img src="https://img.shields.io/pypi/v/rl-games?label=PyPI" alt="PyPI"></a>
+<a href="https://github.com/Denys88/rl_games/actions/workflows/python-package.yml"><img src="https://github.com/Denys88/rl_games/actions/workflows/python-package.yml/badge.svg" alt="CI"></a>
+<img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python 3.11 | 3.12">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/Denys88/rl_games" alt="License"></a>
+<a href="https://discord.gg/hnYRq7DsQh"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
 
-## Papers and related links
+> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (1.2.6 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
 
-* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
+## Trained with rl_games
+
+<table width="100%">
+<tr>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif" width="100%" alt="DeXtreme: Allegro hand cube reorientation on the real robot"></td>
+<td width="50%" align="center"><img src="https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288" width="100%" alt="DexPBT: Allegro hand on a Kuka arm reorienting objects"></td>
+</tr>
+<tr>
+<td><b><a href="https://dextreme.org/">DeXtreme</a></b>: Transfer of Agile In-Hand Manipulation from Simulation to Reality (<a href="https://arxiv.org/abs/2210.13702">arXiv</a>). Trained in Isaac Gym with rl_games, deployed on the real Allegro hand.</td>
+<td><b><a href="https://sites.google.com/view/dexpbt">DexPBT</a></b>: Scaling up Dexterous Manipulation for Hand-Arm Systems with Population Based Training (<a href="https://arxiv.org/abs/2305.12127">arXiv</a>). rl_games' population-based training on an Allegro-Kuka system.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif" width="100%" alt="Shadow Hand cube reorientation in Isaac Gym"></td>
+<td width="50%" align="center"><img src="https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif" width="100%" alt="Humanoid running in Isaac Gym"></td>
+</tr>
+<tr>
+<td><b><a href="https://arxiv.org/abs/2108.10470">Isaac Gym</a></b>: High Performance GPU-Based Physics Simulation For Robot Learning. Shadow Hand cube reorientation, the OpenAI benchmark, trained in hours on a single GPU.</td>
+<td><b>Isaac Gym</b> Humanoid. The whole benchmark suite trains with rl_games; configs and results for rl_games <= 1.6.5 in <a href="docs/ISAAC_GYM.md">docs/ISAAC_GYM.md</a>.</td>
+</tr>
+</table>
+
+Also trained with rl_games: [TriFinger sim-to-real](https://s2r2-ig.github.io/), [DextrAH-RGB](https://dextrah-rgb.github.io/), [Play2Perfect](https://play2perfect.github.io/), [AMP](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs), [OSCAR](https://cremebrule.github.io/oscar-web/). Full list under [papers and projects](#papers-and-projects-using-rl_games).
+
+## Why rl_games
+
+- **Beats the reference trainers on their own tasks, same machine, same budget.** MicroDuck: 148 vs 120 final return over three seeds, and their final level reached in 3 minutes instead of 16. Go1 flat velocity: 86.8 vs 83.2. WujiHand reorientation: 19.1–20.1 vs 16.9 goal reaches per episode over three seeds, the reference's score in 1.3–1.4 h instead of 2.1 h, 21.1 on two GPUs. Lift-Cube-Yam: success 0.85 vs 0.72.
+- **Built for GPU simulators.** One process drives thousands of environments. Asymmetric actor-critic with a separate central-value critic, RNN policies, Triton GAE, `torch.compile`, DistributedDataParallel multi-GPU, population-based training, self-play, ONNX export, a live viewer with keyboard command control.
+- **Proven in sim-to-real.** DeXtreme, DexPBT, TriFinger, DextrAH-RGB and Play2Perfect trained their policies with rl_games.
+- **SAC too.** Matches or exceeds published reference scores at 1M frames on HalfCheetah, Ant and Humanoid, and keeps improving past that budget.
+
+## Results
+
+### MicroDuck: Pollen's biped, their recipe, same machine
+
+*The task plugin runs on mjlab 1.6 from our fork, [ViktorM/microduck_rl](https://github.com/ViktorM/microduck_rl) (branch `rl-games`, the default), which also carries the ONNX exporter and the deployment guide; install steps in [docs/MJLAB.md](docs/MJLAB.md).*
+
+<table width="100%">
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_forward.gif" width="100%" alt="MicroDuck walking forward under a 0.4 m/s command with commanded and measured velocity shown"></td>
+<td width="50%"><img src="docs/pictures/mjlab/microduck_comparison_wall.png" width="100%" alt="MicroDuck training reward vs wall-clock: rl_games crosses the rsl-rl final level at 3 minutes and finishes at 148 vs 120"></td>
+</tr>
+<tr>
+<td><b>Forward 0.4 m/s</b>, the shipped config's policy. The overlay shows the commanded and the measured body-frame velocity.</td>
+<td>Same environment, reward terms and 4096 x 24 geometry as Pollen's rsl-rl reference: rl_games (3 seeds) crosses the reference's final level at 3 min vs 16.3 and finishes at 148 vs 120.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_backward.gif" width="100%" alt="MicroDuck walking backward under a 0.4 m/s command"></td>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_turn.gif" width="100%" alt="MicroDuck turning in place at 1.0 rad/s"></td>
+</tr>
+<tr>
+<td><b>Backward 0.4 m/s</b>, same policy.</td>
+<td><b>Turn in place at 1.0 rad/s</b>: measured 1.0 rad/s.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/microduck_speed.gif" width="100%" alt="MicroDuck speed-lane policy walking at about 0.4 m/s under a 0.8 m/s command"></td>
+<td><b>Speed lane.</b> A tracking-gated curriculum on the forward command, a gait term and a mirror-symmetry loss take the same robot to <b>0.39 m/s</b> with no falls, against 0.33 m/s for Pollen's released policy under the same 0.8 m/s command. Recipe in <a href="docs/MJLAB.md#microduck-flat-velocity">docs/MJLAB.md</a>.</td>
+</tr>
+</table>
+
+### Unitree Go1 and WujiHand on MJLab
+
+<table width="100%">
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/go1_velocity.gif" width="100%" alt="Unitree Go1 tracking velocity commands: 1.0 m/s, a 0.7 rad/s turn, 1.5 m/s"></td>
+<td width="50%"><img src="docs/pictures/mjlab/go1_flat_comparison_5000.png" width="100%" alt="Go1 flat velocity: rl_games 97.0 vs mjlab rsl-rl reference 94.0 over the first 5000 iterations"></td>
+</tr>
+<tr>
+<td><b>Go1 flat velocity</b>, the shipped config's policy: 1.0 m/s, a 0.7 rad/s turn, then 1.5 m/s (1.1 m/s achieved).</td>
+<td>Against mjlab's rsl-rl reference, first 5000 of 10k iterations: 97.0 vs 94.0; final 86.8 vs 83.2 after the stage-2 command range opens.</td>
+</tr>
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/wujihand_reorient.gif" width="100%" alt="WujiHand in-hand cube reorientation"></td>
+<td width="50%"><img src="docs/pictures/mjlab/wuji_reorient_comparison.png" width="100%" alt="WujiHand reorientation: rl_games 19.1–20.1 vs rsl-rl fork 16.9 goal reaches per episode, three seeds"></td>
+</tr>
+<tr>
+<td><b>WujiHand in-hand reorientation</b> (<a href="https://github.com/wuji-technology/wuji-mjlab">wuji-mjlab</a>), unmodified task; the exported ONNX policy passes the project's sim2sim deployment protocol.</td>
+<td>19.1–20.1 vs 16.9 goal reaches per episode at the same training budget (three seeds), the reference's final score in 1.3–1.4 h instead of 2.1 h; 21.1 on two GPUs. Recipe and stability notes in <a href="docs/MJLAB.md">docs/MJLAB.md</a>.</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/pictures/mjlab/go1_rough_training.png" width="100%" alt="Go1 rough terrain: central value network reaches about 60 reward vs about 45 without it"></td>
+<td><b>Go1 rough terrain.</b> The asymmetric central-value critic on the privileged observation group lifts the reward from about 45 to about 60. The same recipe trains Lift-Cube-Yam manipulation to 0.85 episode success vs 0.72 for the reference. Recipes, configs and the live viewer: <a href="docs/MJLAB.md">docs/MJLAB.md</a>.</td>
+</tr>
+</table>
+
+### Unitree G1 humanoid on MJLab
+
+<table width="100%">
+<tr>
+<td width="50%" align="center"><img src="docs/pictures/mjlab/g1_velocity.gif" width="100%" alt="Unitree G1 humanoid walking toward the camera at 1.0 m/s and turning"></td>
+<td width="50%"><img src="docs/pictures/mjlab/g1_flat_training_8k.png" width="100%" alt="G1 flat velocity training reward over 10k iterations at 8192 envs on two GPUs"></td>
+</tr>
+<tr>
+<td><b>G1 flat velocity</b>: 1.0 m/s (1.05 achieved), a 0.5 rad/s turn, 0.8 m/s, no falls. 8192 environments on two GPUs with DistributedDataParallel.</td>
+<td>Training reward of that run; the clip is the iteration-4959 checkpoint. Humanoid reward is a poor proxy for walking, so the G1 config is documented by behaviour rather than by a reward comparison.</td>
+</tr>
+</table>
+
+### SAC: MuJoCo via EnvPool
+
+<table width="100%">
+<tr>
+<td width="30%" align="center"><img src="docs/pictures/sac/humanoid_v5_5M.gif" width="240" alt="Humanoid-v5 running, trained with rl_games SAC"></td>
+<td width="70%"><img src="docs/pictures/sac/humanoid_v5_5M.png" width="100%" alt="Humanoid-v5 SAC training curve to 5M frames reaching 7,066 against the 1M reference band"></td>
+</tr>
+</table>
+
+| Task (1M frames, 3 seeds) | rl_games SAC | Reference SAC |
+|------|--------------|--------------------|
+| HalfCheetah | 11,140 ± 665 | 10,469 ± 1,123 |
+| Ant | 4,706 ± 1,379 | 4,623 ± 984 |
+| Humanoid | 5,195 ± 198 | 5,044 ± 390 |
+
+Humanoid keeps improving past the 1M-frame budget: a single run extended to 5M frames reaches **7,066**, about 40% above the reference mean. Full table, plots and reproduction in [docs/SAC_BENCHMARKS.md](docs/SAC_BENCHMARKS.md).
+
+## Environments
+
+* [MJLab (MuJoCo Lab)](docs/MJLAB.md): quadruped, humanoid and MicroDuck locomotion, dexterous manipulation, live viewer play
+* [EnvPool](docs/ENVPOOL.md): high-throughput MuJoCo, Atari and DM Control
+* [MyoSuite](docs/MYOSUITE.md): musculoskeletal control, envpool-vectorized
+* [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
+* [StarCraft 2 Multi-Agent Challenge](docs/SMAC.md)
+* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md) (legacy, rl_games <= 1.6.5)
+* [Other environments](docs/OTHER.md)
+
+## Papers and projects using rl_games
+
+* Play2Perfect: What Matters in Dexterous Play Pretraining for Precise Assembly? (CoRL 2026): https://play2perfect.github.io/ https://arxiv.org/abs/2606.26428
+* DextrAH-RGB: Visuomotor Policies to Grasp Anything with Dexterous Hands: https://dextrah-rgb.github.io/ https://arxiv.org/abs/2412.01791
+* DexPBT: Scaling up Dexterous Manipulation for Hand-Arm Systems with Population Based Training: https://sites.google.com/view/dexpbt https://arxiv.org/abs/2305.12127
 * DeXtreme: Transfer of Agile In-Hand Manipulation from Simulation to Reality: https://dextreme.org/ https://arxiv.org/abs/2210.13702
+* Isaac Gym: High Performance GPU-Based Physics Simulation For Robot Learning: https://arxiv.org/abs/2108.10470
 * Transferring Dexterous Manipulation from GPU Simulation to a Remote Real-World TriFinger: https://s2r2-ig.github.io/ https://arxiv.org/abs/2108.09779
 * Is Independent Learning All You Need in the StarCraft Multi-Agent Challenge? <https://arxiv.org/abs/2011.09533>
 * Superfast Adversarial Motion Priors (AMP) implementation: https://twitter.com/xbpeng4/status/1506317490766303235 https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
@@ -16,42 +152,11 @@
 * EnvPool: A Highly Parallel Reinforcement Learning Environment Execution Engine: https://arxiv.org/abs/2206.10558 and https://github.com/sail-sg/envpool
 * TimeChamber: A Massively Parallel Large Scale Self-Play Framework: https://github.com/inspirai/TimeChamber
 
-
-## Some results on the different environments  
-
-* [NVIDIA Isaac Gym](docs/ISAAC_GYM.md)
-
-![Ant_running](https://user-images.githubusercontent.com/463063/125260924-a5969800-e2b5-11eb-931c-116cc90d4bbe.gif)
-![Humanoid_running](https://user-images.githubusercontent.com/463063/125266095-4edf8d00-e2ba-11eb-9c1a-4dc1524adf71.gif)
-
-![Allegro_Hand_400](https://user-images.githubusercontent.com/463063/125261559-38373700-e2b6-11eb-80eb-b250a0693f0b.gif)
-![Shadow_Hand_OpenAI](https://user-images.githubusercontent.com/463063/125262637-328e2100-e2b7-11eb-99af-ea546a53f66a.gif)
-
-* [Dextreme](https://dextreme.org/)
-
-![Allegro_Hand_real_world](https://user-images.githubusercontent.com/463063/216529475-3adeddea-94c3-4ac0-99db-00e7df4ba54b.gif)
-
-* [DexPBT](https://sites.google.com/view/dexpbt)
-
-![AllegroKuka](https://github.com/Denys88/rl_games/assets/463063/3c073a0a-69e7-4696-b86f-64c4c1a7e288)
-
-* [MJLab (MuJoCo Lab)](docs/MJLAB.md) — quadruped and humanoid locomotion
-
-![Go1 Flat Velocity](docs/pictures/mjlab/go1_flat_training.png)
-![Go1 Rough Velocity](docs/pictures/mjlab/go1_rough_training.png)
-![G1 Humanoid Flat Velocity](docs/pictures/mjlab/g1_flat_comparison.png)
-
-* [Starcraft 2 Multi Agents](docs/SMAC.md)
-* [BRAX](docs/BRAX.md)
-* [DeepMind Control Suite](docs/DEEPMIND_CONTROL.md)
-* [EnvPool](docs/ENVPOOL.md) — high-throughput MuJoCo / Atari / DM Control vectorized envs
-* [Random Envs](docs/OTHER.md)
-
-
-Implemented in Pytorch:
+## Implemented in PyTorch
 
 * PPO with the support of asymmetric actor-critic variant
-* Support of end-to-end GPU accelerated training pipeline with Isaac Gym and Brax
+* SAC
+* Support of end-to-end GPU accelerated training pipelines: MJLab (MuJoCo Warp), Isaac Lab. Legacy Isaac Gym: rl_games <= 1.6.5
 * Masked actions support
 * Multi-agent training, decentralized and centralized critic variants
 * Self-play 
@@ -67,7 +172,8 @@ Implemented in Pytorch:
 Explore RL Games quick and easily in colab notebooks:
 
 * [Mujoco training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mujoco_training.ipynb) Mujoco gymnasium training example.
-* [Brax training](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/brax_training.ipynb) Brax training example, with keeping all the observations and actions on GPU.
+* [MJLab training](notebooks/mjlab_training.ipynb) GPU-parallel robot locomotion with MJLab (MuJoCo Warp): trains a Unitree Go1 walking policy in minutes, renders it to video, probes command tracking. Local GPU required.
+* [MJLab training on Colab](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/mjlab_training_colab.ipynb) Same pipeline for Colab GPUs — L4/A100 recommended (T4 untested).
 * [Onnx discrete space export example with Cartpole](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_discrete.ipynb)
 * [Onnx continuous space export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_continuous.ipynb)
 * [Onnx continuous space with LSTM export example with Pendulum](https://colab.research.google.com/github/Denys88/rl_games/blob/master/notebooks/train_and_export_onnx_example_lstm_continuous.ipynb)
@@ -90,7 +196,10 @@ With optional extras (e.g. Atari, Mujoco, EnvPool):
 pip install -e ".[atari,mujoco,envpool]"
 ```
 
-Available extras: `atari`, `mujoco`, `envpool`, `brax`, `pufferlib`.
+Available extras: `atari`, `mujoco`, `envpool`. (`pufferlib` is no longer an
+extra: its current releases pin numpy<2 / old gymnasium, conflicting with this
+project's floors — `pip install pufferlib --no-deps`; the extra returns with
+pufferlib 4.0.)
 
 For high-throughput vectorized MuJoCo / Atari / DM Control training, install the `envpool` extra and see [docs/ENVPOOL.md](docs/ENVPOOL.md).
 
@@ -99,7 +208,8 @@ For high-throughput vectorized MuJoCo / Atari / DM Control training, install the
 [uv](https://docs.astral.sh/uv/) is a fast Python package manager. To create a virtual environment and install rl_games:
 
 ```bash
-uv venv --python 3.11
+# 3.12+ resolves envpool 1.2.6; a 3.11 venv falls back to envpool 1.2.5
+uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e ".[mujoco,envpool]"
 ```
@@ -124,35 +234,20 @@ howpublished = {\url{https://github.com/Denys88/rl_games}},
 ## Development setup
 
 ```bash
-uv venv --python 3.11
+uv venv --python 3.11  # project floor (Isaac Lab); .[envpool] resolves envpool 1.2.5 here
 source .venv/bin/activate
 uv pip install -e ".[atari,mujoco]"
 ```
 
 ## Training
-**NVIDIA Isaac Gym**
+**NVIDIA Isaac Gym (legacy)**
 
-Download and follow the installation instructions of Isaac Gym: https://developer.nvidia.com/isaac-gym  
-And IsaacGymEnvs: https://github.com/NVIDIA-Omniverse/IsaacGymEnvs
-
-*Ant*
-
-```bash
-python train.py task=Ant headless=True
-python train.py task=Ant test=True checkpoint=nn/Ant.pth num_envs=100
-```
-
-*Humanoid*
-
-```bash
-python train.py task=Humanoid headless=True
-python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
-```
-
-*Shadow Hand block orientation task*
-
-```python train.py task=ShadowHand headless=True```
-```python train.py task=ShadowHand test=True checkpoint=nn/ShadowHand.pth num_envs=100```
+Isaac Gym Preview is end-of-life and not supported by current rl_games
+(it requires Python <= 3.8). To run legacy Isaac Gym / IsaacGymEnvs
+projects use the last supporting release, `rl-games==1.6.5`, and its
+documentation: https://github.com/Denys88/rl_games/tree/v1.6.5 — see
+[docs/ISAAC_GYM.md](docs/ISAAC_GYM.md). For current GPU-accelerated
+training see [MJLab (MuJoCo Warp)](docs/MJLAB.md) and Isaac Lab.
 
 **Other**
 
@@ -161,15 +256,6 @@ python train.py task=Humanoid test=True checkpoint=nn/Humanoid.pth num_envs=100
 ```bash
 python runner.py --train --file rl_games/configs/atari/ppo_pong.yaml
 python runner.py --play --file rl_games/configs/atari/ppo_pong.yaml --checkpoint nn/PongNoFrameskip.pth
-```
-
-*Brax Ant*
-
-```bash
-pip install -U "jax[cuda12]"
-pip install brax
-python runner.py --train --file rl_games/configs/brax/ppo_ant.yaml
-python runner.py --play --file rl_games/configs/brax/ppo_ant.yaml --checkpoint runs/Ant_brax/nn/Ant_brax.pth
 ```
 
 ## Experiment tracking
@@ -183,6 +269,11 @@ python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml -
 python runner.py --train --file rl_games/configs/atari/ppo_breakout_torch.yaml --wandb-project-name rl-games-special-test -wandb-entity openrlbenchmark --track
 ```
 
+## Population Based Training
+
+rl_games includes the [DexPBT](https://arxiv.org/abs/2305.12127)-lineage PBT observers
+(previously maintained downstream in IsaacGymEnvs and Isaac Lab), usable with any backend
+via `rl_games.common.pbt` — see [docs/PBT.md](docs/PBT.md).
 
 ## Multi GPU
 
@@ -190,6 +281,22 @@ We use `torchrun` to orchestrate any multi-gpu runs.
 
 ```bash
 torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
+```
+
+## Triton Kernels
+
+When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations like GAE (Generalized Advantage Estimation). This replaces the Python for-loop with a single fused GPU kernel.
+
+Triton is enabled by default. To disable:
+
+```bash
+RLG_NO_TRITON=1 python runner.py --train --file rl_games/configs/mujoco/ant.yaml
+```
+
+Run the benchmark to see speedups on your hardware:
+
+```bash
+python benchmarks/bench_triton_gae.py
 ```
 
 ## Config Parameters
@@ -200,7 +307,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | algo                   |                           |         | Algorithm block.                                                                                                                                             |
 | name                   | a2c_continuous            | None    | Algorithm name. Possible values are: sac, a2c_discrete, a2c_continuous                                                                                       |
 | model                  |                           |         | Model block.                                                                                                                                                 |
-| name                   | continuous_a2c_logstd     | None    | Possible values: continuous_a2c ( expects sigma to be (0, +inf), continuous_a2c_logstd  ( expects sigma to be (-inf, +inf), a2c_discrete, a2c_multi_discrete |
+| name                   | continuous_a2c_logstd     | None    | Possible values: continuous_a2c_logstd (Gaussian, log-std parametrization), continuous_a2c_tanh, discrete_a2c, multi_discrete_a2c, soft_actor_critic       |
 | network                |                           |         | Network description.                                                                                                                                         |
 | name                   | actor_critic              |         | Possible values: actor_critic or soft_actor_critic.                                                                                                          |
 | separate               | False                     |         | Whether use or not separate network with same same architecture for critic. In almost all cases if you normalize value it is better to have it False         |
@@ -283,7 +390,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_
 | player                 |                           |         | Player configuration block.                                                                                                                                  |
 | render                 | True                      | False   | Render environment                                                                                                                                           |
 | deterministic          | True                      | True    | Use deterministic policy ( argmax or mu) or stochastic.                                                                                                      |
-| use_vecenv             | True                      | False   | Use vecenv to create environment for player                                                                                                                  |
+| use_vecenv             | True                      | auto    | Use vecenv to create environment for player. Auto: True when the env is registered without an env_creator (envpool, pufferlib, plain gymnasium entries, config-registered `vecenv_type` envs); False for creator-based and unregistered names, so a subclass `create_env()` override runs |
 | games_num              | 200                       |         | Number of games to run in the player mode.                                                                                                                   |
 | env_config             |                           |         | Env configuration block. It goes directly to the environment. This example was take for my atari wrapper.                                                    |
 | skip                   | 4                         |         | Number of frames to skip                                                                                                                                     |

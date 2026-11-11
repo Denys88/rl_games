@@ -9,7 +9,6 @@ RL Games supports both Gym and Gymnasium environments through the `gym_compat` m
 ### Fully Supported
 - **EnvPool environments**: Full support for Atari, Mujoco, and other EnvPool environments with Gymnasium
 - **Basic Gym/Gymnasium environments**: CartPole, LunarLander, etc.
-- **Brax environments**: Via Gymnasium interface
 - **Most custom environments**: That follow standard Gym/Gymnasium APIs
 
 ### Limited Support

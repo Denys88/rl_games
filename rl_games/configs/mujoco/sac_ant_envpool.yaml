@@ -38,7 +38,7 @@ params:
     critic_tau: 5e-3
     batch_size: 256
     learnable_temperature: True
-    num_updates_per_step: 32  # UTD = 32/32 = 1.0
+    utd_ratio: 1.0  # gradient updates per env frame
     policy_frequency: 2
     num_warmup_frames: 5000
     replay_buffer_size: 1000000
@@ -46,6 +46,10 @@ params:
 
     env_config:
       env_name: Ant-v5
+      use_contact_force: False
+      # The published benchmark numbers (docs/SAC_BENCHMARKS.md) were run with
+      # use_contact_force: False (27-dim obs); without it envpool's Ant-v5 adds
+      # contact forces (105-dim obs) and scores lower in a 1M-frame budget.
       seed: 5
 
     player:

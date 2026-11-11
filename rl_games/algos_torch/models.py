@@ -30,13 +30,15 @@ class BaseModel():
         obs_shape = config['input_shape']
         normalize_value = config.get('normalize_value', False)
         normalize_input = config.get('normalize_input', False)
+        obs_init_count = int(float(config.get('normalize_input_init_count') or 1))
         value_size = config.get('value_size', 1)
         return self.Network(self.network_builder.build(self.model_class, **config), obs_shape=obs_shape,
-            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size)
+            normalize_value=normalize_value, normalize_input=normalize_input, value_size=value_size,
+            obs_init_count=obs_init_count)
 
 
 class BaseModelNetwork(nn.Module):
-    def __init__(self, obs_shape, normalize_value, normalize_input, value_size):
+    def __init__(self, obs_shape, normalize_value, normalize_input, value_size, obs_init_count=1):
         nn.Module.__init__(self)
         self.obs_shape = obs_shape
         self.normalize_value = normalize_value
@@ -47,9 +49,9 @@ class BaseModelNetwork(nn.Module):
             self.value_mean_std = torch.jit.script(RunningMeanStd((self.value_size,)))
         if normalize_input:
             if isinstance(obs_shape, dict):
-                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape))
+                self.running_mean_std = torch.jit.script(RunningMeanStdObs(obs_shape, init_count=obs_init_count))
             else:
-                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape))
+                self.running_mean_std = torch.jit.script(RunningMeanStd(obs_shape, init_count=obs_init_count))
 
     def norm_obs(self, observation):
         with torch.no_grad():
@@ -164,10 +166,13 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
+                    # split by per-head size: np.split chunked EQUALLY, mis-slicing
+                    # heterogeneous heads (e.g. [3,5,7]) and crashing the forward
+                    action_masks = torch.split(
+                        action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
                 prev_actions = torch.split(prev_actions, 1, dim=-1)
-                prev_neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, prev_actions)]
+                prev_neglogp = [-c.log_prob(a.squeeze(-1)) for c, a in zip(categorical, prev_actions)]
                 prev_neglogp = torch.stack(prev_neglogp, dim=-1).sum(dim=-1)
                 entropy = [c.entropy() for c in categorical]
                 entropy = torch.stack(entropy, dim=-1).sum(dim=-1)
@@ -183,11 +188,14 @@ class ModelA2CMultiDiscrete(BaseModel):
                 if action_masks is None:
                     categorical = [Categorical(logits=logit) for logit in logits]
                 else:
-                    action_masks = np.split(action_masks, len(logits), axis=1)
+                    # split by per-head size: np.split chunked EQUALLY, mis-slicing
+                    # heterogeneous heads (e.g. [3,5,7]) and crashing the forward
+                    action_masks = torch.split(
+                        action_masks, [l.shape[-1] for l in logits], dim=1)
                     categorical = [CategoricalMasked(logits=logit, masks=mask) for logit, mask in zip(logits, action_masks)]
 
                 selected_action = [c.sample().long() for c in categorical]
-                neglogp = [-c.log_prob(a.squeeze()) for c, a in zip(categorical, selected_action)]
+                neglogp = [-c.log_prob(a) for c, a in zip(categorical, selected_action)]
                 selected_action = torch.stack(selected_action, dim=-1)
                 neglogp = torch.stack(neglogp, dim=-1).sum(dim=-1)
                 result = {
@@ -200,67 +208,48 @@ class ModelA2CMultiDiscrete(BaseModel):
                 return result
 
 
-class ModelA2CContinuous(BaseModel):
-    def __init__(self, network):
-        BaseModel.__init__(self, 'a2c')
-        self.network_builder = network
+def apply_sigma_parametrization(raw, network):
+    """Map the sigma head's raw output to (sigma, logstd).
 
-    class Network(BaseModelNetwork):
-        def __init__(self, a2c_network, **kwargs):
-            BaseModelNetwork.__init__(self, **kwargs)
-            self.a2c_network = a2c_network
-            # Compilation is handled in torch_runner.py to avoid double compilation
-            # self.forward = torch.compile(mode="reduce-overhead")(self.forward)
-
-        def get_aux_loss(self):
-            return self.a2c_network.get_aux_loss()
-
-        def is_rnn(self):
-            return self.a2c_network.is_rnn()
-
-        def get_default_rnn_state(self):
-            return self.a2c_network.get_default_rnn_state()
-
-        def get_value_layer(self):
-            return self.a2c_network.get_value_layer()
-
-        def kl(self, p_dict, q_dict):
-            p = p_dict['mu'], p_dict['sigma']
-            q = q_dict['mu'], q_dict['sigma']
-            return divergence.d_kl_normal(p, q)
-
-        def forward(self, input_dict):
-            is_train = input_dict.get('is_train', True)
-            prev_actions = input_dict.get('prev_actions', None)
-            input_dict['obs'] = self.norm_obs(input_dict['obs'])
-            mu, sigma, value, states = self.a2c_network(input_dict)
-            distr = torch.distributions.Normal(mu, sigma, validate_args=False)
-
-            if is_train:
-                entropy = distr.entropy().sum(dim=-1)
-                prev_neglogp = -distr.log_prob(prev_actions).sum(dim=-1)
-                result = {
-                    'prev_neglogp': torch.squeeze(prev_neglogp),
-                    'value': value,
-                    'entropy': entropy,
-                    'rnn_states': states,
-                    'mus': mu,
-                    'sigmas': sigma
-                }
-                return result
-            else:
-                selected_action = distr.sample().squeeze()
-                neglogp = -distr.log_prob(selected_action).sum(dim=-1)
-                result = {
-                    'neglogpacs': torch.squeeze(neglogp),
-                    'values': self.denorm_value(value),
-                    'actions': selected_action,
-                    'entropy': entropy,
-                    'rnn_states': states,
-                    'mus': mu,
-                    'sigmas': sigma
-                }
-                return result
+    'exp': raw is log-std (optionally clamped to logstd_bounds, floored by
+    min_sigma). 'softplus': sigma = softplus(raw) + min_sigma. 'scalar': raw
+    IS the std with a smooth softplus floor — entropy pressure then scales as
+    1/sigma and self-limits (the floor must be smooth: a hard clamp's
+    zero-gradient dead zone removes the restoring barrier and log-prob
+    gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
+    final sigma so log-probs stay consistent.
+    """
+    # autocast may leave the head in bf16/fp16; distribution math needs fp32
+    if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
+        raw = raw.float()
+    min_sigma = getattr(network, 'min_sigma', 0.0)
+    max_sigma = getattr(network, 'max_sigma', 0.0)
+    parametrization = getattr(network, 'sigma_parametrization', 'exp')
+    if parametrization == 'softplus':
+        sigma = torch.nn.functional.softplus(raw) + min_sigma
+    elif parametrization in ('linear', 'scalar'):
+        # 'scalar' is the reference-compat alias (rsl-rl lineage
+        # noise_std_type / std_type="scalar" = std-space); canonical name is
+        # 'linear': sigma ~= raw away from the smooth floor
+        floor = max(min_sigma, 1e-3)
+        sigma = floor + torch.nn.functional.softplus(raw - floor)
+    else:
+        logstd_bounds = getattr(network, 'logstd_bounds', None)
+        if logstd_bounds is not None:
+            raw = torch.clamp(raw, logstd_bounds[0], logstd_bounds[1])
+        sigma = torch.exp(raw)
+        if min_sigma > 0:
+            sigma = sigma + min_sigma
+        elif max_sigma <= 0:
+            return sigma, raw
+    if max_sigma > 0:
+        # smooth ceiling x/(1+x): ~identity well below the cap, saturates at
+        # max_sigma, gradient decays polynomially (tanh would hit exactly 1.0
+        # in fp32 and lose its gradient). Bounds sigma only, not the mean.
+        span = max_sigma - min_sigma  # > 0: validated by the network builder at config time
+        x = (sigma - min_sigma) / span
+        sigma = min_sigma + span * x / (1.0 + x)
+    return sigma, torch.log(sigma)
 
 
 class ModelA2CContinuousLogStd(BaseModel):
@@ -292,7 +281,9 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
-            sigma = torch.exp(logstd)
+            if mu.dtype == torch.float16 or mu.dtype == torch.bfloat16:
+                mu = mu.float()
+            sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:
                 entropy = distr.entropy().sum(dim=-1)
