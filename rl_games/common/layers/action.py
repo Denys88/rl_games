@@ -26,6 +26,7 @@ class TwoHotEncodedAction(nn.Module):
     def __init__(self, in_size, num_actions, backets=32, min_space=-1.0, max_space=1.0):
         nn.Module.__init__(self)
         assert(num_actions==1)
+        self.min_space, self.max_space = min_space, max_space
         self.value_linear = nn.Linear(in_size, backets * num_actions)
         torch.nn.init.xavier_uniform_(self.value_linear.weight, gain=0.05)
         
@@ -36,7 +37,6 @@ class TwoHotEncodedAction(nn.Module):
 
     def forward(self, input):
         out = self.value_linear(input)
-        self.distr = TwoHotDist(logits=out, min_space=-1.0, max_space=1.0)
+        self.distr = TwoHotDist(logits=out, min_space=self.min_space, max_space=self.max_space)
         out = self.distr.mode()
         return out
-        
