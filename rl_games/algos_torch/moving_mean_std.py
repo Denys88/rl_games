@@ -58,7 +58,7 @@ class GeneralizedMovingStats(nn.Module):
             std = torch.sqrt(torch.clamp_min(var, 1 / self.max ** 2) + self.eps)
             return mean, std
         elif self.impl == 'mean_std_corr':
-            corr = 1.0 - self.decay ** self.step.float()
+            corr = 1.0 - self.decay ** (self.step - 1).clamp_min(1).float()
             mean = self.mean / corr
             var = (self.sqrs / corr) - (self.mean / corr).pow(2)
             std = torch.sqrt(torch.clamp_min(var, 1 / self.max ** 2) + self.eps)
@@ -72,7 +72,7 @@ class GeneralizedMovingStats(nn.Module):
             invscale = torch.clamp_min(self.high - self.low, 1 / self.max)
             return offset, invscale
         elif self.impl == 'perc_ema_corr':
-            corr = 1 - self.decay ** self.step.float()
+            corr = 1 - self.decay ** (self.step - 1).clamp_min(1).float()
             lo = self.low / corr
             hi = self.high / corr
             invscale = torch.clamp_min(hi - lo, 1 / self.max)
