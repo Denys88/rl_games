@@ -73,7 +73,7 @@ class RunningMeanStd(nn.Module):
         return new_mean, new_var, new_count
 
     def forward(self, input, denorm:bool=False, mask:Optional[torch.Tensor]=None):
-        if self.training:
+        if self.training and input.size(0) > 0:
             if mask is not None:
                 mean, var = torch_ext.get_mean_var_with_masks(input, mask)
             else:
