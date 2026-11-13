@@ -57,11 +57,17 @@ class NoisyFactorizedLinear(nn.Linear):
 
 
 def symlog(x):
-    return torch.sign(x) * torch.log(torch.abs(x) + 1.0)
+    positive = x >= 0
+    magnitude = torch.where(positive, x, -x)
+    result = torch.log1p(magnitude)
+    return torch.where(positive, result, -result)
 
 
 def symexp(x):
-    return torch.sign(x) * (torch.exp(torch.abs(x)) - 1.0)
+    positive = x >= 0
+    magnitude = torch.where(positive, x, -x)
+    result = torch.expm1(magnitude)
+    return torch.where(positive, result, -result)
 
 class SymLog(nn.Module):
 
@@ -79,4 +85,4 @@ class SymExp(nn.Module):
         super().__init__() 
 
     def forward(self, input):
-        return symexp(input) 
+        return symexp(input)
