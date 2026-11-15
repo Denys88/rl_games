@@ -747,6 +747,7 @@ class A2CBase(BaseAlgorithm):
                     'states': states,
                     'actions': None,
                     'is_done': self.dones,
+                    'update_rnn_states': False,
                 }
                 value = self.get_central_value(input_dict)
             else:
