@@ -100,6 +100,7 @@ class GymnasiumVecEnv(IVecEnv):
         if env_creator is not None:
             # Custom env creator - use manual vectorization for multi-agent support
             self._use_native_vec = False
+            self._pending_seed = self.seed_value
             self.envs = [env_creator(**dict(self.env_kwargs)) for _ in range(num_actors)]
             sample_env = self.envs[0]
             self.observation_space = sample_env.observation_space
@@ -107,6 +108,7 @@ class GymnasiumVecEnv(IVecEnv):
         else:
             # Standard gymnasium env - use native vectorized env
             self._use_native_vec = True
+            self._pending_seed = None
 
             def make_env(idx):
                 def _init():
@@ -195,10 +197,12 @@ class GymnasiumVecEnv(IVecEnv):
 
     def reset(self):
         if self._use_native_vec:
-            obs, info = self.env.reset()
-            return obs
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed}
+            obs, info = self.env.reset(**kwargs)
         else:
-            return self._reset_manual()
+            obs = self._reset_manual()
+        self._pending_seed = None
+        return obs
 
     def _reset_manual(self):
         """Reset all envs manually (for multi-agent / custom envs)."""
@@ -207,8 +211,9 @@ class GymnasiumVecEnv(IVecEnv):
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
         all_obs = []
-        for env in self.envs:
-            obs, info = env.reset()
+        for i, env in enumerate(self.envs):
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed + i}
+            obs, info = env.reset(**kwargs)
             all_obs.append(obs)
 
         if self._use_global_observations:
@@ -231,6 +236,7 @@ class GymnasiumVecEnv(IVecEnv):
 
     def seed(self, seed):
         self.seed_value = seed
+        self._pending_seed = seed
 
     def get_number_of_agents(self):
         if not self._use_native_vec and self.envs:
