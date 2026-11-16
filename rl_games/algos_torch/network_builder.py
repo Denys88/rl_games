@@ -741,7 +741,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 if self.require_rewards:
                     rnn_in_size += 1
                 if self.require_last_actions:
-                    rnn_in_size += actions_num
+                    rnn_in_size += sum(actions_num) if self.is_multi_discrete else actions_num
 
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
                 #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
@@ -762,6 +762,8 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_discrete:
                 self.logits = torch.nn.Linear(out_size, actions_num)
+            if self.is_multi_discrete:
+                self.logits = nn.ModuleList([nn.Linear(out_size, num) for num in actions_num])
             if self.is_continuous:
                 self.mu = torch.nn.Linear(out_size, actions_num)
                 self.mu_act = self.activations_factory.create(self.space_config['mu_activation']) 
@@ -787,6 +789,9 @@ class A2CResnetBuilder(NetworkBuilder):
 
             if self.is_discrete:
                 mlp_init(self.logits.weight)
+            if self.is_multi_discrete:
+                for head in self.logits:
+                    mlp_init(head.weight)
             if self.is_continuous:
                 mu_init(self.mu.weight)
                 if self.fixed_sigma:
@@ -803,6 +808,10 @@ class A2CResnetBuilder(NetworkBuilder):
                 last_action = obs_dict['obs']['last_action']
                 if self.is_discrete:
                     last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+                elif self.is_multi_discrete:
+                    last_action = torch.cat([
+                        torch.nn.functional.one_hot(last_action[..., i].long(), num_classes=num)
+                        for i, num in enumerate(self.actions_num)], dim=-1)
             else:
                 obs = obs_dict['obs']
             if self.permute_input:
@@ -860,6 +869,9 @@ class A2CResnetBuilder(NetworkBuilder):
             if self.is_discrete:
                 logits = self.logits(out)
                 return logits, value, states
+
+            if self.is_multi_discrete:
+                return [head(out) for head in self.logits], value, states
 
             if self.is_continuous:
                 mu = self.mu_act(self.mu(out))
