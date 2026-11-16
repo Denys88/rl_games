@@ -134,7 +134,7 @@ class GymnasiumVecEnv(IVecEnv):
         if self._use_native_vec:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
             is_done = terminated | truncated
-            info['time_outs'] = truncated
+            info['time_outs'] = np.logical_and(truncated, np.logical_not(terminated))
             return next_obs, reward, is_done, info
         else:
             return self._step_manual(action)
@@ -152,8 +152,10 @@ class GymnasiumVecEnv(IVecEnv):
                 act = actions[i * num_agents:(i + 1) * num_agents]
             obs, reward, terminated, truncated, info = env.step(act)
             is_done = terminated | truncated if np.isscalar(terminated) else terminated | truncated
-            if 'time_outs' not in info:
-                info['time_outs'] = truncated
+            # The learner reconstructs termination as done & ~time_outs.
+            # A real terminal state must not bootstrap, even at a time limit.
+            info['time_outs'] = np.logical_and(
+                info.get('time_outs', truncated), np.logical_not(terminated))
 
             if np.isscalar(is_done):
                 episode_done = is_done
