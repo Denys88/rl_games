@@ -74,20 +74,22 @@ class RunningMeanStd(nn.Module):
 
     def forward(self, input, denorm:bool=False, mask:Optional[torch.Tensor]=None):
         if self.training:
+            stats_input = input
             if mask is not None:
-                mean, var = torch_ext.get_mean_var_with_masks(input, mask)
-            else:
-                mean = input.mean(self.axis) # along channel axis
-                var = input.var(self.axis, unbiased=False)
+                stats_input = input[mask.reshape(-1).to(dtype=torch.bool)]
 
-            self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(
-                self.running_mean,
-                self.running_var,
-                self.count,
-                mean,
-                var,
-                input.size(0)
-            )
+            # An empty masked selection must leave the running prior unchanged.
+            if mask is None or stats_input.size(0) > 0:
+                mean = stats_input.mean(self.axis)
+                var = stats_input.var(self.axis, unbiased=False)
+                self.running_mean, self.running_var, self.count = self._update_mean_var_count_from_moments(
+                    self.running_mean,
+                    self.running_var,
+                    self.count,
+                    mean,
+                    var,
+                    stats_input.size(0)
+                )
 
         # change shape
         if self.per_channel:
