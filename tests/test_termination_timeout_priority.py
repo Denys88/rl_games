@@ -92,10 +92,17 @@ def test_manual_timeout_flags_respect_termination(terminated, truncated, agents,
 
 
 def test_async_timeout_flags_respect_simultaneous_termination():
-    env = GymnasiumVecEnv(ENV_ID, 2, use_async=True, terminated=True, truncated=True)
+    # Native ids exist in forkserver/spawn workers without copying Gym's registry.
+    class SimultaneousEnding(gym.Wrapper):
+        def step(self, action):
+            obs, reward, _, _, info = self.env.step(action)
+            return obs, reward, True, True, info
+
+    env = GymnasiumVecEnv("CartPole-v1", 2, use_async=True,
+                          wrap_env=lambda env: SimultaneousEnding(env))
     try:
         env.reset()
-        _, _, dones, info = env.step(np.zeros((2, 2), dtype=np.float32))
+        _, _, dones, info = env.step(np.zeros(2, dtype=np.int64))
         assert dones.all()
         assert not info["time_outs"].any()
     finally:
