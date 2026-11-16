@@ -1,4 +1,5 @@
 import os
+import pickle
 import shutil
 import threading
 import time
@@ -126,8 +127,8 @@ class BasePlayer(object):
                 # without triggering the retry loop in "safe_filesystem_op()"
                 load_error = False
                 try:
-                    torch.load(self.checkpoint_to_load)
-                except (OSError, IOError, torch.TorchError) as e:
+                    torch.load(self.checkpoint_to_load, weights_only=False)
+                except (OSError, EOFError, RuntimeError, pickle.UnpicklingError) as e:
                     print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
                     load_error = True
 
