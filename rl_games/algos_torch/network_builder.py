@@ -929,6 +929,18 @@ class A2CResnetBuilder(NetworkBuilder):
         return net
 
 
+def _append_mlp_output(trunk, input_size, output_size):
+    """Append an output head without discarding a trunk's forward method."""
+    last_linear = next((m for m in reversed(list(trunk.modules()))
+                        if isinstance(m, nn.Linear)), None)
+    last_size = input_size if last_linear is None else last_linear.out_features
+    output = nn.Linear(last_size, output_size)
+    if isinstance(trunk, nn.Sequential):
+        # Preserve existing sequential checkpoint keys.
+        return nn.Sequential(*trunk.children(), output)
+    return nn.Sequential(trunk, output)
+
+
 class DiagGaussianActor(NetworkBuilder.BaseNetwork):
     """torch.distributions implementation of a diagonal Gaussian policy."""
     def __init__(self, output_dim, log_std_bounds, **mlp_args):
@@ -937,10 +949,7 @@ class DiagGaussianActor(NetworkBuilder.BaseNetwork):
         self.log_std_bounds = log_std_bounds
 
         self.trunk = self._build_mlp(**mlp_args)
-        # Find last Linear layer's out_features (robust to normalization layers being appended)
-        last_linear = next(m for m in reversed(list(self.trunk.children())) if isinstance(m, nn.Linear))
-        last_layer = last_linear.out_features
-        self.trunk = nn.Sequential(*list(self.trunk.children()), nn.Linear(last_layer, output_dim))
+        self.trunk = _append_mlp_output(self.trunk, mlp_args['input_size'], output_dim)
 
     def forward(self, obs):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
@@ -963,14 +972,10 @@ class DoubleQCritic(NetworkBuilder.BaseNetwork):
         super().__init__()
 
         self.Q1 = self._build_mlp(**mlp_args)
-        last_linear = next(m for m in reversed(list(self.Q1.children())) if isinstance(m, nn.Linear))
-        last_layer = last_linear.out_features
-        self.Q1 = nn.Sequential(*list(self.Q1.children()), nn.Linear(last_layer, output_dim))
+        self.Q1 = _append_mlp_output(self.Q1, mlp_args['input_size'], output_dim)
 
         self.Q2 = self._build_mlp(**mlp_args)
-        last_linear = next(m for m in reversed(list(self.Q2.children())) if isinstance(m, nn.Linear))
-        last_layer = last_linear.out_features
-        self.Q2 = nn.Sequential(*list(self.Q2.children()), nn.Linear(last_layer, output_dim))
+        self.Q2 = _append_mlp_output(self.Q2, mlp_args['input_size'], output_dim)
 
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0)
