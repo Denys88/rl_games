@@ -3,6 +3,7 @@ import gymnasium
 from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
 import numpy as np
+import copy
 
 # Register ALE (Atari) environments if available
 try:
@@ -145,6 +146,7 @@ class GymnasiumVecEnv(IVecEnv):
         num_agents = self._get_num_agents(sample_env)
 
         all_obs, all_rewards, all_dones, all_infos = [], [], [], []
+        final_observations = {}
         for i, env in enumerate(self.envs):
             if num_agents == 1:
                 act = actions[i]
@@ -160,6 +162,8 @@ class GymnasiumVecEnv(IVecEnv):
             else:
                 episode_done = is_done.all()
             if episode_done:
+                # reset() may mutate the same observation arrays in place.
+                final_observations[i] = copy.deepcopy(obs)
                 obs, _ = env.reset()
 
             all_obs.append(obs)
@@ -191,6 +195,18 @@ class GymnasiumVecEnv(IVecEnv):
             else:
                 time_outs.extend(to)
         merged_info = {'time_outs': np.array(time_outs)}
+        if final_observations:
+            final_obs = [final_observations.get(i, obs) for i, obs in enumerate(all_obs)]
+            if self._use_global_observations:
+                final_obs = {
+                    'obs': _concat_observations([o['obs'] for o in final_obs], concat_func),
+                    'states': _concat_observations([o['state'] for o in final_obs], np.stack),
+                }
+            else:
+                final_obs = _concat_observations(final_obs, concat_func)
+            merged_info['final_observation'] = final_obs
+            merged_info['_final_observation'] = np.repeat(
+                [i in final_observations for i in range(self.batch_size)], num_agents)
         return ret_obs, rewards, dones, merged_info
 
     def reset(self):
