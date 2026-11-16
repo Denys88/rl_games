@@ -810,7 +810,7 @@ class A2CResnetBuilder(NetworkBuilder):
                     last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
                 elif self.is_multi_discrete:
                     last_action = torch.cat([
-                        F.one_hot(last_action[..., i].long(), num_classes=num)
+                        torch.nn.functional.one_hot(last_action[..., i].long(), num_classes=num)
                         for i, num in enumerate(self.actions_num)], dim=-1)
             else:
                 obs = obs_dict['obs']
