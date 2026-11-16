@@ -302,6 +302,7 @@ class BasePlayer(object):
         sum_steps = 0
         sum_game_res = 0
         games_played = 0
+        per_env_rewards = None
         has_masks = False
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
 
@@ -333,8 +334,8 @@ class BasePlayer(object):
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
 
-            # Initialize per-environment accumulators if balance_env_rewards is enabled
-            if self.balance_env_rewards:
+            # Keep completed-episode statistics across environment resets.
+            if self.balance_env_rewards and per_env_rewards is None:
                 per_env_rewards = torch.zeros(batch_size, dtype=torch.float32)
                 per_env_steps = torch.zeros(batch_size, dtype=torch.float32)
                 per_env_game_res = torch.zeros(batch_size, dtype=torch.float32)
