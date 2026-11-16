@@ -302,8 +302,13 @@ class BasePlayer(object):
         sum_steps = 0
         sum_game_res = 0
         games_played = 0
-        has_masks = False
-        has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+        mask_getter = None
+        has_vector_masks = getattr(self.env, "has_action_masks", None)
+        has_legacy_mask = getattr(self.env, "has_action_mask", None)
+        if has_vector_masks is not None and has_vector_masks():
+            mask_getter = self.env.get_action_masks
+        elif has_legacy_mask is not None and has_legacy_mask():
+            mask_getter = self.env.get_action_mask
 
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
@@ -311,9 +316,6 @@ class BasePlayer(object):
             # print('setting agent weights for selfplay')
             # self.env.create_agent(self.env.config)
             # self.env.set_weights(range(8),self.get_weights())
-
-        if has_masks_func:
-            has_masks = self.env.has_action_mask()
 
         self.wait_for_checkpoint()
 
@@ -346,8 +348,8 @@ class BasePlayer(object):
                 if self.evaluation and n % self.update_checkpoint_freq == 0:
                     self.maybe_load_new_checkpoint()
 
-                if has_masks:
-                    masks = self.env.get_action_mask()
+                if mask_getter is not None:
+                    masks = mask_getter()
                     action = self.get_masked_action(
                         obses, masks, is_deterministic)
                 else:
