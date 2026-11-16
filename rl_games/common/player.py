@@ -303,6 +303,7 @@ class BasePlayer(object):
         sum_game_res = 0
         games_played = 0
         has_masks = False
+        next_step_autoreset = self.env_info.get('autoreset_mode') == 'next_step'
         has_masks_func = getattr(self.env, "has_action_mask", None) is not None
 
         op_agent = getattr(self.env, "create_agent", None)
@@ -332,6 +333,7 @@ class BasePlayer(object):
 
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
+            previous_dones = torch.zeros(batch_size, dtype=torch.bool)
 
             # Initialize per-environment accumulators if balance_env_rewards is enabled
             if self.balance_env_rewards:
@@ -354,8 +356,22 @@ class BasePlayer(object):
                     action = self.get_action(obses, is_deterministic)
 
                 obses, r, done, info = self.env_step(self.env, action)
-                cr += r
-                steps += 1
+                if next_step_autoreset:
+                    live = ~previous_dones
+                    cr += torch.where(live, r, torch.zeros_like(r))
+                    steps += live
+                    recurrent_resets = done.bool() | previous_dones
+                    done = done.bool() & live
+                    previous_dones = done.clone()
+                else:
+                    cr += r
+                    steps += 1
+                    recurrent_resets = done
+
+                if self.is_rnn:
+                    reset_indices = recurrent_resets.nonzero(as_tuple=False)
+                    for state in self.states:
+                        state[:, reset_indices, :] = 0.0
 
                 if render:
                     self.env.render(mode='human')
@@ -366,10 +382,6 @@ class BasePlayer(object):
                 done_count = len(done_indices)
                 games_played += done_count
                 if done_count > 0:
-                    if self.is_rnn:
-                        for s in self.states:
-                            s[:, all_done_indices, :] = s[:,
-                                                        all_done_indices, :] * 0.0
                     game_res = 0.0
                     if isinstance(info, dict):
                         if 'battle_won' in info:
