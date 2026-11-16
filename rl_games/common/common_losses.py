@@ -114,5 +114,5 @@ def normalize_advantage(advantage):
     Normalize advantages.
     """
     mean = advantage.mean()
-    std = advantage.std() + 1e-8
+    std = advantage.std(unbiased=advantage.numel() > 1) + 1e-8
     return (advantage - mean) / std

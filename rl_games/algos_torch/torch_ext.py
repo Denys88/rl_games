@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from rl_games.common.common_losses import normalize_advantage
+
 
 def wrap_model_ddp(model, device, find_unused_parameters=False):
     """DDP wrapper for the training forward pass only: gradients are bucket-averaged
@@ -229,7 +231,7 @@ def apply_masks(losses, mask=None):
 
 def normalization_with_masks(values, masks):
     if masks is None:
-        return (values - values.mean()) / (values.std() + 1e-8)
+        return normalize_advantage(values)
 
     values_mean, values_var = get_mean_var_with_masks(values, masks)
     values_std = torch.sqrt(values_var)
