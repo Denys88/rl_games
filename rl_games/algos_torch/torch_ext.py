@@ -461,5 +461,5 @@ class IdentityRNN(nn.Module):
         assert(in_shape == out_shape)
         self.identity = torch.nn.Identity()
 
-    def forward(self, x, h):
+    def forward(self, x, h, done_masks=None, bptt_len=0):
         return self.identity(x), h
