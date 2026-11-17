@@ -6,6 +6,7 @@ the review:
 2. LayerNorm2d: batch statistics, frozen gamma/beta, beta == 1; conv1d LayerNorm
 3. BasePlayer.maybe_load_new_checkpoint: weights_only probe + torch.TorchError
 4. CentralValueTrain.update_multiagent_tensors: dones not regrouped per env
+5. normalize_rms_advantage without normalize_advantage: missing advantage_mean_std
 """
 
 import threading
@@ -459,5 +460,46 @@ def test_central_value_minibatch_dones_match_its_state_rows(tmp_path, recurrent)
     episode_start = (states[:, 1] == 0).long()
     assert episode_start.sum() >= 4 * num_envs              # several episodes per env
     assert dones.flatten().long().tolist() == episode_start.tolist()
+
+
+# ---------------------------------------------------------------------------
+# 5. normalize_rms_advantage without normalize_advantage
+# ---------------------------------------------------------------------------
+
+def test_rms_advantage_flag_without_normalize_advantage_trains(tmp_path, capsys):
+    """advantage_mean_std exists only when normalize_advantage is on too, but
+    set_eval / set_train / get_stats_weights / set_stats_weights (and the
+    diagnostics) looked at normalize_rms_advantage alone: AttributeError
+    "'A2CAgent' object has no attribute 'advantage_mean_std'"."""
+    agent = _ppo_agent(tmp_path, normalize_advantage=False, normalize_rms_advantage=True,
+                       use_diagnostics=True)
+    assert 'normalize_rms_advantage is ignored' in capsys.readouterr().out
+    assert agent.normalize_rms_advantage is False
+    assert not hasattr(agent, 'advantage_mean_std')
+
+    agent.set_eval()
+    agent.set_train()
+    stats = agent.get_stats_weights()
+    assert 'advantage_mean_std' not in stats
+    agent.set_stats_weights(stats)
+
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    agent.train_epoch()
+    agent.diagnostics.epoch(agent, current_epoch=1)         # PpoDiagnostics reads the flag too
+    assert 'diagnostics/exp_var' in agent.diagnostics.diag_dict
+    assert not any('rms_advantage' in k for k in agent.diagnostics.diag_dict)
+
+
+def test_rms_advantage_with_normalize_advantage_is_unchanged(tmp_path):
+    agent = _ppo_agent(tmp_path, normalize_advantage=True, normalize_rms_advantage=True)
+    assert agent.normalize_rms_advantage is True
+    agent.set_eval()
+    assert not agent.advantage_mean_std.training
+    agent.set_train()
+    assert agent.advantage_mean_std.training
+    stats = agent.get_stats_weights()
+    assert 'advantage_mean_std' in stats
+    agent.set_stats_weights(stats)
 
 
