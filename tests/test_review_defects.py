@@ -8,6 +8,7 @@ the review:
 4. CentralValueTrain.update_multiagent_tensors: dones not regrouped per env
 5. normalize_rms_advantage without normalize_advantage: missing advantage_mean_std
 6. SelfPlayManager check_scores: algo.game_scores does not exist
+7. DiscreteA2CBase.train: observer.after_print_stats called twice per epoch
 """
 
 import threading
@@ -597,5 +598,48 @@ def test_self_play_without_check_scores_still_uses_rewards():
     manager.update(algo)
 
     assert algo.vec_env.calls == [([0], {'model': 'weights'})]
+
+
+# ---------------------------------------------------------------------------
+# 7. DiscreteA2CBase.train calls the observer once per epoch
+# ---------------------------------------------------------------------------
+
+def _count_observer_calls(agent):
+    counts = {'write_stats': 0, 'after_print_stats': 0}
+
+    def counted(name, fn):
+        def wrapper(*args, **kwargs):
+            counts[name] += 1
+            return fn(*args, **kwargs)
+        return wrapper
+
+    agent.write_stats = counted('write_stats', agent.write_stats)
+    agent.algo_observer.after_print_stats = counted(
+        'after_print_stats', agent.algo_observer.after_print_stats)
+    return counts
+
+
+def test_discrete_train_calls_after_print_stats_once_per_epoch():
+    """DiscreteA2CBase.train called algo_observer.after_print_stats right after
+    write_stats, which already calls it: two observer calls (and two sets of
+    scores/* scalars) per epoch for discrete PPO, one for continuous."""
+    from tests.test_critical_fixes import make_cartpole_agent
+
+    agent = make_cartpole_agent(max_epochs=3)
+    counts = _count_observer_calls(agent)
+    agent.train()
+
+    assert counts['write_stats'] == 3
+    assert counts['after_print_stats'] == counts['write_stats']
+
+
+def test_continuous_train_calls_after_print_stats_once_per_epoch(tmp_path):
+    """The reference behaviour the discrete loop now matches."""
+    agent = _ppo_agent(tmp_path, max_epochs=3)
+    counts = _count_observer_calls(agent)
+    agent.train()
+
+    assert counts['write_stats'] == 3
+    assert counts['after_print_stats'] == counts['write_stats']
 
 
