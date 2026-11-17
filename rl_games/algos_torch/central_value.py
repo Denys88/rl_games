@@ -261,7 +261,10 @@ class CentralValueTrain(nn.Module):
         returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-        dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        # same per-env regrouping as the values (one row per env and step, taken from the
+        # env's first agent); dones carry no value dimension, hence -1 and not value_size
+        dones = dones.view(self.num_actors, self.num_agents, self.horizon_length, -1).transpose(0, 1)
+        dones = dones.contiguous().view(ma_batch_size, -1)[:batch_size]
 
         return value_preds, returns, actions, dones
 

@@ -5,6 +5,7 @@ the review:
 1. _build_sequential_mlp: stale in_size with norm_only_first_layer
 2. LayerNorm2d: batch statistics, frozen gamma/beta, beta == 1; conv1d LayerNorm
 3. BasePlayer.maybe_load_new_checkpoint: weights_only probe + torch.TorchError
+4. CentralValueTrain.update_multiagent_tensors: dones not regrouped per env
 """
 
 import threading
@@ -298,5 +299,165 @@ def test_maybe_load_new_checkpoint_without_pending_checkpoint_is_a_noop(monkeypa
     monkeypatch.setattr(torch, 'load', lambda *a, **k: pytest.fail('nothing to load'))
     player.maybe_load_new_checkpoint()
     assert _same_weights(_weights(player), before)
+
+
+# ---------------------------------------------------------------------------
+# 4. CentralValueTrain.update_multiagent_tensors regroups dones like values
+# ---------------------------------------------------------------------------
+
+class _CentralValueShim:
+    """The attributes update_multiagent_tensors reads."""
+
+    def __init__(self, num_actors, num_agents, horizon_length, value_size):
+        self.num_actors = num_actors
+        self.num_agents = num_agents
+        self.horizon_length = horizon_length
+        self.value_size = value_size
+        self.batch_size = horizon_length * num_actors
+
+
+def _regroup(num_actors, num_agents, horizon, value_size, dones_buffer=None):
+    """Feed update_multiagent_tensors what the rollout feeds it: buffers of
+    shape [horizon, num_actors * num_agents, ...] (agents of one env adjacent)
+    through swap_and_flatten01. Values encode (env, t) as env * 100 + t; so do
+    the dones unless a buffer is given."""
+    from rl_games.algos_torch.central_value import CentralValueTrain
+    from rl_games.common.a2c_common import swap_and_flatten01
+
+    env_of_column = torch.arange(num_actors * num_agents) // num_agents
+    code = env_of_column.expand(horizon, -1) * 100 + torch.arange(horizon).view(-1, 1)
+    values = code.unsqueeze(-1).expand(-1, -1, value_size).float()
+    if dones_buffer is None:
+        dones_buffer = code
+    shim = _CentralValueShim(num_actors, num_agents, horizon, value_size)
+    return CentralValueTrain.update_multiagent_tensors(
+        shim, swap_and_flatten01(values), swap_and_flatten01(values.clone()), None,
+        swap_and_flatten01(dones_buffer))
+
+
+def test_central_value_dones_rows_follow_the_value_rows():
+    """values/returns were regrouped to one block of `horizon` rows per env,
+    dones were only truncated: with 4 actors, 2 agents, horizon 3 the value
+    rows belonged to envs [0,0,0,1,1,1,2,2,2,3,3,3] and the dones rows to
+    envs [0,0,0,0,0,0,1,1,1,1,1,1]."""
+    num_actors, num_agents, horizon = 4, 2, 3
+    values, returns, _, dones = _regroup(num_actors, num_agents, horizon, value_size=1)
+
+    expected = (torch.arange(num_actors).repeat_interleave(horizon) * 100
+                + torch.arange(horizon).repeat(num_actors))
+    assert (expected // 100).tolist() == [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
+    assert values.squeeze(-1).long().tolist() == expected.tolist()
+    assert returns.squeeze(-1).long().tolist() == expected.tolist()
+    assert dones.squeeze(-1).tolist() == expected.tolist()
+    assert dones.shape == (num_actors * horizon, 1)         # shape unchanged for value_size 1
+
+
+def test_central_value_done_flag_lands_on_its_own_env_row():
+    """Same defect with a real uint8 dones buffer: env 2 finishes at t == 1."""
+    num_actors, num_agents, horizon = 4, 2, 3
+    dones_buffer = torch.zeros((horizon, num_actors * num_agents), dtype=torch.uint8)
+    dones_buffer[1, 2 * num_agents:3 * num_agents] = 1     # both agents of env 2
+
+    _, _, _, dones = _regroup(num_actors, num_agents, horizon, 1, dones_buffer)
+
+    assert dones.dtype == torch.uint8
+    assert dones.flatten().nonzero().flatten().tolist() == [2 * horizon + 1]
+
+
+def test_central_value_dones_regroup_does_not_assume_value_size_one():
+    """dones carry no value dimension; view(ma_batch_size, value_size) raised
+    for value_size > 1."""
+    num_actors, num_agents, horizon, value_size = 4, 2, 3, 2
+    values, _, _, dones = _regroup(num_actors, num_agents, horizon, value_size)
+
+    assert values.shape == (num_actors * horizon, value_size)
+    assert dones.shape == (num_actors * horizon, 1)
+    assert dones.squeeze(-1).tolist() == values[:, 0].long().tolist()
+
+
+@pytest.mark.parametrize('recurrent', [False, True])
+def test_central_value_minibatch_dones_match_its_state_rows(tmp_path, recurrent):
+    """End to end on a 2-agent PPO agent with a central value: at train time
+    every central-value row must carry the done flag of the env its state row
+    belongs to. Episode lengths differ per env, so another env's flags do not
+    line up (pre-fix: 21 of 80 rows wrong)."""
+    from gymnasium import spaces
+    from rl_games.torch_runner import Runner
+    from tests.test_ppo_masking import _ppo_params
+    from tests.test_sac_correctness import SameStepFakeVecEnv, OBS_DIM
+
+    num_envs, num_agents, horizon = 4, 2, 20
+
+    class TwoAgentEnv(SameStepFakeVecEnv):
+        """obs/rewards/dones: one row per (env, agent), agents of an env
+        adjacent; states: one row per env = [env_id, step_in_episode, ...]."""
+
+        def __init__(self):
+            super().__init__(num_envs)
+            self.ep_lens = np.array([3, 4, 5, 7], dtype=np.int64)
+
+        def _wrap(self, obs):
+            return {'obs': torch.from_numpy(np.repeat(obs, num_agents, axis=0)),
+                    'states': torch.from_numpy(obs.copy())}
+
+        def reset(self):
+            return self._wrap(super().reset())
+
+        def step(self, actions):
+            obs, rewards, dones, infos = super().step(actions.detach().cpu().numpy())
+            return (self._wrap(obs), torch.from_numpy(np.repeat(rewards, num_agents)),
+                    torch.from_numpy(np.repeat(dones, num_agents)),
+                    {'time_outs': np.repeat(infos['time_outs'], num_agents)})
+
+        def get_env_info(self):
+            info = super().get_env_info()
+            info['agents'] = num_agents
+            info['state_space'] = spaces.Box(-np.inf, np.inf, (OBS_DIM,), dtype=np.float32)
+            return info
+
+        def set_train_info(self, frame, algo):
+            pass
+
+    torch.manual_seed(7)
+    np.random.seed(7)
+    env = TwoAgentEnv()
+    cv_network = {'name': 'actor_critic', 'central_value': True,
+                  'mlp': {'units': [16], 'activation': 'elu', 'initializer': {'name': 'default'}}}
+    if recurrent:
+        cv_network['rnn'] = {'name': 'lstm', 'units': 8, 'layers': 1}
+    params = _ppo_params(
+        num_envs=num_envs, env_info=env.get_env_info(), train_dir=str(tmp_path),
+        horizon_length=horizon, minibatch_size=num_envs * num_agents * horizon, seq_length=5,
+        central_value_config={
+            'minibatch_size': num_envs * horizon, 'mini_epochs': 1, 'learning_rate': 1e-4,
+            'clip_value': False, 'normalize_input': False, 'truncate_grads': False,
+            'network': cv_network})
+    params['seed'] = 7
+    runner = Runner()
+    runner.load({'params': params})
+    runner.params['config']['vec_env'] = env
+    agent = runner.algo_factory.create(runner.algo_name, base_name='cv_dones', params=runner.params)
+    central_value = agent.central_value_net
+    assert agent.num_agents == num_agents and central_value.is_rnn == recurrent
+
+    batches = []
+    calc_gradients = central_value.calc_gradients
+
+    def spy(batch):
+        batches.append((batch['obs'].clone(), batch['dones'].clone()))
+        return calc_gradients(batch)
+
+    central_value.calc_gradients = spy
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    agent.train_epoch()
+
+    states, dones = batches[0]
+    assert states.shape == (num_envs * horizon, OBS_DIM) and dones.shape == (num_envs * horizon, 1)
+    assert states[:, 0].long().tolist() == torch.arange(num_envs).repeat_interleave(horizon).tolist()
+    # the buffer's done flag marks the first step of an episode (and of the rollout)
+    episode_start = (states[:, 1] == 0).long()
+    assert episode_start.sum() >= 4 * num_envs              # several episodes per env
+    assert dones.flatten().long().tolist() == episode_start.tolist()
 
 
