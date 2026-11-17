@@ -246,10 +246,11 @@ class SACPlayer(BasePlayer):
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
-        obs = self.model.norm_obs(obs)
-        dist = self.model.actor(obs)
-        actions = dist.sample() if not is_deterministic else dist.mean
-        actions = self.rescale_actions(actions.to(self.device))
+        with torch.no_grad():
+            obs = self.model.norm_obs(obs)
+            dist = self.model.actor(obs)
+            actions = dist.sample() if not is_deterministic else dist.mean
+            actions = self.rescale_actions(actions.to(self.device))
         if self.has_batch_dimension == False:
             actions = torch.squeeze(actions.detach())
         return actions

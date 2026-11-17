@@ -9,6 +9,7 @@ the review:
 5. normalize_rms_advantage without normalize_advantage: missing advantage_mean_std
 6. SelfPlayManager check_scores: algo.game_scores does not exist
 7. DiscreteA2CBase.train: observer.after_print_stats called twice per epoch
+8. SACPlayer.get_action: inference with autograd enabled
 """
 
 import threading
@@ -641,5 +642,46 @@ def test_continuous_train_calls_after_print_stats_once_per_epoch(tmp_path):
 
     assert counts['write_stats'] == 3
     assert counts['after_print_stats'] == counts['write_stats']
+
+
+# ---------------------------------------------------------------------------
+# 8. SACPlayer.get_action runs without autograd
+# ---------------------------------------------------------------------------
+
+def _make_sac_player():
+    from rl_games.algos_torch.players import SACPlayer
+    from tests.test_critical_fixes import _load_params, SAC_YAML
+    from tests.test_sac_correctness import FakeNextStepVecEnv
+
+    params = _load_params(SAC_YAML)
+    cfg = params['config']
+    cfg.pop('env_config', None)
+    cfg.update({'env_info': FakeNextStepVecEnv(2).get_env_info(),
+                'device_name': 'cpu', 'normalize_input': False})
+    return SACPlayer(params)
+
+
+@pytest.mark.parametrize('is_deterministic', [True, False])
+@pytest.mark.parametrize('has_batch_dimension', [True, False])
+def test_sac_player_get_action_runs_without_autograd(is_deterministic, has_batch_dimension):
+    """Unlike the PPO players, SACPlayer.get_action ran the actor with autograd
+    enabled: every inference step built a graph, and the deterministic action
+    (dist.mean) came back attached to it."""
+    from tests.test_sac_correctness import OBS_DIM
+
+    player = _make_sac_player()
+    player.has_batch_dimension = has_batch_dimension
+    grad_enabled = []
+    player.model.sac_network.actor.register_forward_hook(
+        lambda module, args, output: grad_enabled.append(torch.is_grad_enabled()))
+    obs = torch.zeros(3, OBS_DIM) if has_batch_dimension else torch.zeros(OBS_DIM)
+
+    assert torch.is_grad_enabled()
+    action = player.get_action(obs, is_deterministic=is_deterministic)
+
+    assert grad_enabled == [False]
+    assert not action.requires_grad and action.grad_fn is None
+    assert torch.is_grad_enabled()                          # caller's grad mode is restored
+    assert action.shape == ((3, 2) if has_batch_dimension else (2,))
 
 
