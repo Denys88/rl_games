@@ -10,6 +10,7 @@ the review:
 6. SelfPlayManager check_scores: algo.game_scores does not exist
 7. DiscreteA2CBase.train: observer.after_print_stats called twice per epoch
 8. SACPlayer.get_action: inference with autograd enabled
+9. D2RLNet.forward: activation/normalization order differs between layers
 """
 
 import threading
@@ -685,3 +686,58 @@ def test_sac_player_get_action_runs_without_autograd(is_deterministic, has_batch
     assert action.shape == ((3, 2) if has_batch_dimension else (2,))
 
 
+# ---------------------------------------------------------------------------
+# 9. D2RLNet applies activation -> normalization on every layer
+# ---------------------------------------------------------------------------
+
+def _d2rl(norm, units=(8, 6, 5), input_size=4):
+    from rl_games.algos_torch.d2rl import D2RLNet
+    torch.manual_seed(0)
+    return D2RLNet(input_size, list(units), [torch.nn.ReLU() for _ in units], norm)
+
+
+def _d2rl_reference(net, x):
+    """activation -> norm on EVERY layer: the order _build_sequential_mlp and
+    the conv builders use for the same `normalization` option."""
+    out = net.norm_layers[0](net.activations[0](net.linears[0](x)))
+    for i in range(1, net.num_layers):
+        out = torch.cat([out, x], dim=1)
+        out = net.norm_layers[i](net.activations[i](net.linears[i](out)))
+    return out
+
+
+@pytest.mark.parametrize('norm', ['layer_norm', 'batch_norm'])
+def test_d2rl_applies_activation_then_norm_on_every_layer(norm):
+    """The first layer ran activation -> norm, the remaining layers
+    norm -> activation."""
+    net = _d2rl(norm)
+    order = []
+    for i in range(net.num_layers):
+        net.activations[i].register_forward_hook(lambda m, a, o, i=i: order.append(('act', i)))
+        net.norm_layers[i].register_forward_hook(lambda m, a, o, i=i: order.append(('norm', i)))
+    x = torch.randn(7, 4)
+
+    out = net(x)
+
+    assert order == [(kind, i) for i in range(net.num_layers) for kind in ('act', 'norm')]
+    order.clear()
+    assert torch.equal(out, _d2rl_reference(net, x))
+    if norm == 'layer_norm':
+        # the trunk ends on the norm, as the sequential MLP does: not a ReLU output
+        assert (out < 0).any()
+        assert torch.allclose(out.mean(dim=1), torch.zeros(7), atol=1e-5)
+
+
+def test_d2rl_without_normalization_is_unchanged():
+    """The order only matters when a normalization is configured."""
+    net = _d2rl(None)
+    x = torch.randn(7, 4)
+
+    out = x
+    for i in range(net.num_layers):
+        if i > 0:
+            out = torch.cat([out, x], dim=1)
+        out = torch.relu(net.linears[i](out))
+
+    assert torch.equal(net(x), out)
+    assert (net(x) >= 0).all()
