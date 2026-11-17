@@ -7,6 +7,7 @@ the review:
 3. BasePlayer.maybe_load_new_checkpoint: weights_only probe + torch.TorchError
 4. CentralValueTrain.update_multiagent_tensors: dones not regrouped per env
 5. normalize_rms_advantage without normalize_advantage: missing advantage_mean_std
+6. SelfPlayManager check_scores: algo.game_scores does not exist
 """
 
 import threading
@@ -501,5 +502,100 @@ def test_rms_advantage_with_normalize_advantage_is_unchanged(tmp_path):
     stats = agent.get_stats_weights()
     assert 'advantage_mean_std' in stats
     agent.set_stats_weights(stats)
+
+
+# ---------------------------------------------------------------------------
+# 6. SelfPlayManager reads game scores from the observer
+# ---------------------------------------------------------------------------
+
+class _Recorder:
+    def __init__(self):
+        self.calls = []
+
+    def add_scalar(self, *args):
+        self.calls.append(args)
+
+    def set_weights(self, indexes, weights):
+        self.calls.append((list(indexes), weights))
+
+
+class _SelfPlayAlgo:
+    """What SelfPlayManager.update and DefaultAlgoObserver touch on the algo."""
+    games_to_track = 100
+    ppo_device = 'cpu'
+    num_agents = 1
+    num_actors = 4
+    frame = 123
+    writer = None
+
+    def __init__(self, observer):
+        self.game_rewards = torch_ext.AverageMeter(1, self.games_to_track)
+        self.vec_env = _Recorder()
+        self.algo_observer = observer
+        self.algo_observer.after_init(self)
+        self.cleared = 0
+
+    def clear_stats(self):
+        self.cleared += 1
+        self.game_rewards.clear()
+        self.algo_observer.after_clear_stats()
+
+    def get_weights(self):
+        return {'model': 'weights'}
+
+    def finish_games(self, rewards, scores):
+        self.game_rewards.update(torch.tensor(rewards).unsqueeze(1))
+        self.algo_observer.process_infos({'scores': np.asarray(scores, dtype=np.float32)},
+                                         torch.arange(len(scores)))
+
+
+def _self_play_manager(check_scores):
+    from rl_games.algos_torch.self_play_manager import SelfPlayManager
+    return SelfPlayManager({'update_score': 0.5, 'games_to_check': 4,
+                            'check_scores': check_scores}, _Recorder())
+
+
+def test_self_play_check_scores_reads_the_observer_meter():
+    """check_scores: True read algo.game_scores, an attribute the algorithm
+    never had (the meter is DefaultAlgoObserver.game_scores): AttributeError
+    on the first update."""
+    from rl_games.common.algo_observer import DefaultAlgoObserver
+
+    algo = _SelfPlayAlgo(DefaultAlgoObserver())
+    manager = _self_play_manager(check_scores=True)
+    # rewards far below update_score, scores above it: only the scores can trigger
+    algo.finish_games(rewards=[-5.0] * 4, scores=[1.0] * 4)
+
+    manager.update(algo)
+
+    assert algo.vec_env.calls == [([0], {'model': 'weights'})]
+    assert algo.cleared == 1
+    assert len(algo.algo_observer.game_scores) == 0         # cleared with the rest of the stats
+    assert manager.writter.calls == [('selfplay/iters_update_weigths', 1, 123)]
+    assert manager.env_indexes.tolist() == [1]
+
+
+def test_self_play_check_scores_ignores_rewards():
+    from rl_games.common.algo_observer import DefaultAlgoObserver
+
+    algo = _SelfPlayAlgo(DefaultAlgoObserver())
+    manager = _self_play_manager(check_scores=True)
+    algo.finish_games(rewards=[5.0] * 4, scores=[0.0] * 4)   # rewards above, scores below
+
+    manager.update(algo)
+
+    assert algo.vec_env.calls == [] and algo.cleared == 0
+
+
+def test_self_play_without_check_scores_still_uses_rewards():
+    from rl_games.common.algo_observer import AlgoObserver
+
+    algo = _SelfPlayAlgo(AlgoObserver())                    # an observer with no score meter
+    manager = _self_play_manager(check_scores=False)
+    algo.game_rewards.update(torch.full((4, 1), 5.0))
+
+    manager.update(algo)
+
+    assert algo.vec_env.calls == [([0], {'model': 'weights'})]
 
 
