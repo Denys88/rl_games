@@ -126,6 +126,9 @@ class NetworkBuilder:
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
+                # set before the `continue` below: the next layer's input size
+                # advances whether or not this layer gets a normalization
+                in_size = unit
 
                 if not need_norm:
                     continue
@@ -135,7 +138,6 @@ class NetworkBuilder:
                     layers.append(torch.nn.LayerNorm(unit))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm1d(unit))
-                in_size = unit
 
             return nn.Sequential(*layers)
 
