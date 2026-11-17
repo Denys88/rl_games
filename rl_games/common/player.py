@@ -122,20 +122,16 @@ class BasePlayer(object):
         with self.checkpoint_mutex:
             if self.checkpoint_to_load is not None:
                 print(f"Evaluation: loading new checkpoint {self.checkpoint_to_load}...")
-                # try if we can load anything from the pth file, this will quickly fail if the file is corrupted
-                # without triggering the retry loop in "safe_filesystem_op()"
-                load_error = False
+                # restore() reads the file once, through torch_ext.load_checkpoint, before it
+                # touches the model: a corrupted or partially written file fails there (no retry
+                # loop on that path) and leaves the current weights in place. No separate probe:
+                # a bare torch.load() is weights_only on torch >= 2.6 and rejects ordinary
+                # rl_games checkpoints (numpy scalar in last_mean_rewards), and it read the file twice.
                 try:
-                    torch.load(self.checkpoint_to_load)
-                except (OSError, IOError, torch.TorchError) as e:
-                    print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
-                    load_error = True
-
-                if not load_error:
-                    try:
-                        self.restore(self.checkpoint_to_load)
-                    except Exception as e:
-                        print(f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load}: {e}")
+                    self.restore(self.checkpoint_to_load)
+                except Exception as e:
+                    print(f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load} "
+                          f"(corrupted or incompatible file?): {type(e).__name__}: {e}")
 
                 # whether we succeeded or not, forget about this checkpoint
                 self.checkpoint_to_load = None

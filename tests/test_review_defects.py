@@ -4,6 +4,7 @@ the review:
 
 1. _build_sequential_mlp: stale in_size with norm_only_first_layer
 2. LayerNorm2d: batch statistics, frozen gamma/beta, beta == 1; conv1d LayerNorm
+3. BasePlayer.maybe_load_new_checkpoint: weights_only probe + torch.TorchError
 """
 
 import threading
@@ -195,5 +196,107 @@ def test_cnn1d_layer_norm_normalizes_channels_for_any_length():
         assert torch.allclose(full[i:i + 1], cnn(x[i:i + 1]), atol=1e-5)
     norm = cnn[2]
     assert norm.weight.shape == (8,) and norm.weight.requires_grad
+
+
+# ---------------------------------------------------------------------------
+# 3. BasePlayer.maybe_load_new_checkpoint
+# ---------------------------------------------------------------------------
+
+def _make_eval_player(seed):
+    """PpoPlayerContinuous built without an env, put in the state the
+    evaluation watcher leaves it in (mutex + pending checkpoint path)."""
+    from rl_games.algos_torch.players import PpoPlayerContinuous
+    from tests.test_ppo_masking import _ppo_params
+    from tests.test_sac_correctness import FakeNextStepVecEnv
+
+    torch.manual_seed(seed)
+    params = _ppo_params(env_info=FakeNextStepVecEnv(2).get_env_info())
+    params['config']['device_name'] = 'cpu'
+    player = PpoPlayerContinuous(params)
+    player.checkpoint_mutex = threading.Lock()
+    return player
+
+
+def _weights(player):
+    return {k: v.clone() for k, v in player.model.state_dict().items()}
+
+
+def _same_weights(a, b):
+    return a.keys() == b.keys() and all(torch.equal(a[k], b[k]) for k in a)
+
+
+def _write_agent_checkpoint(tmp_path):
+    """A checkpoint as A2CBase.save writes it once a best reward was recorded:
+    last_mean_rewards is then a numpy scalar (mean_rewards[0])."""
+    from tests.test_ppo_masking import make_ppo_agent
+
+    agent, _ = make_ppo_agent(seed=11, train_dir=str(tmp_path / 'runs'))
+    agent.last_mean_rewards = np.float32(1.5)
+    agent.save(str(tmp_path / 'ckpt'))
+    return str(tmp_path / 'ckpt.pth'), {k: v.clone() for k, v in agent.model.state_dict().items()}
+
+
+def test_maybe_load_new_checkpoint_loads_an_ordinary_checkpoint_once(tmp_path, monkeypatch):
+    """The corruption probe was a bare torch.load(path): weights_only=True on
+    torch >= 2.6, which rejects the numpy scalar in last_mean_rewards with
+    pickle.UnpicklingError -- and the except clause named torch.TorchError,
+    which does not exist, so the handler itself raised AttributeError and the
+    evaluation worker never picked up a checkpoint."""
+    path, trained = _write_agent_checkpoint(tmp_path)
+    assert isinstance(torch_ext.load_checkpoint(path)['last_mean_rewards'], np.floating)
+
+    player = _make_eval_player(seed=3)
+    assert not _same_weights(_weights(player), trained)
+    player.checkpoint_to_load = path
+
+    loads = []
+    real_load = torch.load
+
+    def counting_load(f, *args, **kwargs):
+        loads.append(f)
+        return real_load(f, *args, **kwargs)
+
+    monkeypatch.setattr(torch, 'load', counting_load)
+    player.maybe_load_new_checkpoint()
+
+    assert _same_weights(_weights(player), trained)
+    assert player.checkpoint_to_load is None
+    assert loads == [path], f'checkpoint file read {len(loads)} times'
+
+
+@pytest.mark.parametrize('damage', ['garbage', 'truncated', 'missing'])
+def test_maybe_load_new_checkpoint_survives_a_bad_file(tmp_path, damage, capsys):
+    """A partially written / corrupted / vanished file must be reported and
+    skipped, leaving the current weights in place."""
+    path, _ = _write_agent_checkpoint(tmp_path)
+    bad = tmp_path / 'bad.pth'
+    if damage == 'garbage':
+        bad.write_bytes(b'this is not a checkpoint')
+    elif damage == 'truncated':
+        data = open(path, 'rb').read()
+        bad.write_bytes(data[:len(data) // 2])
+
+    player = _make_eval_player(seed=3)
+    before = _weights(player)
+    player.checkpoint_to_load = str(bad)
+
+    player.maybe_load_new_checkpoint()                      # pre-fix: AttributeError (torch.TorchError)
+
+    assert _same_weights(_weights(player), before)
+    assert player.checkpoint_to_load is None
+    assert 'failed to load new checkpoint' in capsys.readouterr().out
+
+    # and the worker is still usable: the next good checkpoint loads
+    player.checkpoint_to_load = path
+    player.maybe_load_new_checkpoint()
+    assert not _same_weights(_weights(player), before)
+
+
+def test_maybe_load_new_checkpoint_without_pending_checkpoint_is_a_noop(monkeypatch):
+    player = _make_eval_player(seed=3)
+    before = _weights(player)
+    monkeypatch.setattr(torch, 'load', lambda *a, **k: pytest.fail('nothing to load'))
+    player.maybe_load_new_checkpoint()
+    assert _same_weights(_weights(player), before)
 
 
