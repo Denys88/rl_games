@@ -307,37 +307,48 @@ class CoordConv2d(nn.Conv2d):
                         self.padding, self.dilation, self.groups)
 
 
-class LayerNorm2d(nn.Module):
+class LayerNorm2d(nn.GroupNorm):
     """
-    Layer norm the just works on the channel axis for a Conv2d
-    Ref:
-    - code modified from https://github.com/Scitator/Run-Skeleton-Run/blob/master/common/modules/LayerNorm.py
-    - paper: https://arxiv.org/abs/1607.06450
-    Usage:
-        ln = LayerNormConv(3)
-        x = Variable(torch.rand((1,3,4,2)))
-        ln(x).size()
+    Layer norm for conv feature maps [B, C, H, W]: every sample is normalized
+    with its own mean/std over (C, H, W), followed by a learnable per-channel
+    scale (`weight`, init 1) and shift (`bias`, init 0). This is
+    nn.GroupNorm(1, C); a sample's output does not depend on the rest of the
+    batch, so rollouts and training minibatches see the same function.
+    Paper: https://arxiv.org/abs/1607.06450
+
+    This layer used to normalize with per-channel statistics over
+    (batch, H, W) -- batch statistics with no running estimate -- and kept
+    its scale/shift as constant buffers `gamma`/`beta` of shape [C, 1, 1],
+    both ones. Checkpoints with those buffers still load: `gamma` becomes
+    `weight` and `beta` becomes `bias`, so the affine part is carried over
+    unchanged and is trainable from then on. The statistics cannot be carried
+    over, so such a network's outputs differ from the ones it was trained
+    with. `weight`/`bias` are parameters the old layer did not have, so
+    optimizer state saved with such a checkpoint does not fit the model:
+    players and weight-only restores work, a full training resume does not.
     """
 
-    def __init__(self, features, eps=1e-6):
-        super().__init__()
-        self.register_buffer("gamma", torch.ones(features).unsqueeze(-1).unsqueeze(-1))
-        self.register_buffer("beta", torch.ones(features).unsqueeze(-1).unsqueeze(-1))
-
-        self.eps = eps
+    def __init__(self, features, eps=1e-5):
+        super().__init__(1, features, eps=eps)
         self.features = features
 
-    def _check_input_dim(self, input):
-        if input.size(1) != self.gamma.nelement():
-            raise ValueError('got {}-feature tensor, expected {}'
-                             .format(input.size(1), self.features))
-
-    def forward(self, x):
-        self._check_input_dim(x)
-        x_flat = x.transpose(1,-1).contiguous().view((-1, x.size(1)))
-        mean = x_flat.mean(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
-        std = x_flat.std(0).unsqueeze(-1).unsqueeze(-1).expand_as(x)
-        return self.gamma.expand_as(x) * (x - mean) / (std + self.eps) + self.beta.expand_as(x)
+    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
+                              missing_keys, unexpected_keys, error_msgs):
+        legacy = False
+        for old, new in (('gamma', 'weight'), ('beta', 'bias')):
+            if prefix + old in state_dict:
+                value = state_dict.pop(prefix + old)
+                state_dict.setdefault(prefix + new, value.reshape(-1))
+                legacy = True
+        if legacy:
+            warnings.warn(
+                f"LayerNorm2d '{prefix[:-1]}': checkpoint written by the old batch-statistics layer. "
+                "gamma/beta were loaded as weight/bias, but the layer now normalizes each sample "
+                "over (C, H, W), so outputs differ from the ones the checkpoint was trained with. "
+                "weight/bias are new trainable parameters: optimizer state saved with this "
+                "checkpoint does not match the model.")
+        super()._load_from_state_dict(state_dict, prefix, local_metadata, strict,
+                                      missing_keys, unexpected_keys, error_msgs)
 
 
 class DiscreteActionsEncoder(nn.Module):
