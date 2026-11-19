@@ -33,7 +33,7 @@ def smooth_clamp(x, mi: float, mx: float):
     """
     Smoothly clamps the input x between mi and mx.
     """
-    return 1/(1 + torch.exp((-(x-mi)/(mx-mi)+0.5)*4)) * (mx-mi) + mi
+    return torch.sigmoid(((x - mi) / (mx - mi) - 0.5) * 4) * (mx - mi) + mi
 
 
 def smoothed_actor_loss(
