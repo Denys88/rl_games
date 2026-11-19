@@ -769,6 +769,10 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
                 self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
+                self.logstd_bounds = self.space_config.get('logstd_bounds', None)
+                self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
+                if self.sigma_parametrization == 'scalar':
+                    self.sigma_parametrization = 'linear'
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
