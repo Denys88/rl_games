@@ -237,6 +237,7 @@ class SACPlayer(BasePlayer):
         # Clamp to handle floating point errors
         return rescaled.clamp(self.action_low, self.action_high)
 
+    @torch.no_grad()
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
