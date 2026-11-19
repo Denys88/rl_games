@@ -799,10 +799,12 @@ class A2CResnetBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             if self.require_rewards or self.require_last_actions:
                 obs = obs_dict['obs']['observation']
-                reward = obs_dict['obs']['reward']
-                last_action = obs_dict['obs']['last_action']
-                if self.is_discrete:
-                    last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+                if self.require_rewards:
+                    reward = obs_dict['obs']['reward']
+                if self.require_last_actions:
+                    last_action = obs_dict['obs']['last_action']
+                    if self.is_discrete:
+                        last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
             else:
                 obs = obs_dict['obs']
             if self.permute_input:
