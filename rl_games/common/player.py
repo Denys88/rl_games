@@ -20,27 +20,15 @@ class BasePlayer(object):
         self.load_networks(params)
         self.env_name = self.config['env_name']
         self.player_config = self.config.get('player', {})
-        self.env_config = self.config.get('env_config', {})
-        self.env_config = self.player_config.get('env_config', self.env_config)
+        base_env_cfg = self.config.get('env_config') or {}
+        player_env_cfg = self.player_config.get('env_config')
+        self.env_config = dict(base_env_cfg if player_env_cfg is None else player_env_cfg)
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
-        self.seed = self.env_config.pop('seed', None)
+        self.seed = self.env_config.pop('seed', base_env_cfg.get('seed'))
+        self._seed_pending = False
         self.balance_env_rewards = self.player_config.get('balance_env_rewards', False)
-
-        if self.env_info is None:
-            use_vecenv = self.player_config.get(
-                'use_vecenv', self._default_use_vecenv(self.env_name))
-            if use_vecenv:
-                print('[BasePlayer] Creating vecenv: ', self.env_name)
-                self.env = vecenv.create_vec_env(
-                    self.env_name, self.config['num_actors'], **self.env_config)
-                self.env_info = self.env.get_env_info()
-            else:
-                print('[BasePlayer] Creating regular env: ', self.env_name)
-                self.env = self.create_env()
-                self.env_info = env_configurations.get_env_info(self.env)
-        else:
-            self.env = config.get('vec_env')
+        self._init_env(config)
 
         self.num_agents = self.env_info.get('agents', 1)
         self.value_size = self.env_info.get('value_size', 1)
@@ -246,8 +234,38 @@ class BasePlayer(object):
             actions = actions.cpu().numpy()
         return actions
 
+    def _init_env(self, config):
+        if self.env_info is not None:
+            self.env = config.get('vec_env')
+            return
+        use_vecenv = self.player_config.get(
+            'use_vecenv', self._default_use_vecenv(self.env_name))
+        if use_vecenv:
+            print('[BasePlayer] Creating vecenv: ', self.env_name)
+            vecenv_config = dict(self.env_config)
+            if self.seed is not None:
+                vecenv_config['seed'] = self.seed
+            self.env = vecenv.create_vec_env(
+                self.env_name, self.config['num_actors'], **vecenv_config)
+            self.env_info = self.env.get_env_info()
+        else:
+            print('[BasePlayer] Creating regular env: ', self.env_name)
+            self.env = self.create_env()
+            if self.seed is not None and hasattr(self.env, 'seed'):
+                self.env.seed(self.seed)
+            self._seed_pending = self.seed is not None
+            self.env_info = env_configurations.get_env_info(self.env)
+
     def env_reset(self, env):
-        obs = env.reset()
+        seed = getattr(self, 'seed', None)
+        if getattr(self, '_seed_pending', False) and seed is not None:
+            self._seed_pending = False
+            try:
+                obs = env.reset(seed=seed)
+            except TypeError:
+                obs = env.reset()
+        else:
+            obs = env.reset()
         if isinstance(obs, tuple) and len(obs) == 2 and isinstance(obs[1], dict):
             obs = obs[0]   # gymnasium (obs, info) reset
         return self.obs_to_torch(obs)
