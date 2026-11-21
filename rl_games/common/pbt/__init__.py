@@ -6,6 +6,8 @@
 
 from rl_games.common.pbt.mutation import mutate
 from rl_games.common.pbt.pbt import MultiObserver, PbtAlgoObserver
-from rl_games.common.pbt.pbt_cfg import PbtCfg
+from rl_games.common.pbt.pbt_cfg import PbtCfg, validate
+from rl_games.common.pbt.pbt_utils import member_seed, population_best, restart_info
 
-__all__ = ["MultiObserver", "PbtAlgoObserver", "PbtCfg", "mutate"]
+__all__ = ["MultiObserver", "PbtAlgoObserver", "PbtCfg", "member_seed", "mutate", "population_best", "restart_info",
+           "validate"]
