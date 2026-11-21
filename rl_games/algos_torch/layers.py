@@ -19,7 +19,8 @@ class NoisyLinear(nn.Linear):
     def reset_parameters(self):
         std = math.sqrt(3 / self.in_features)
         self.weight.data.uniform_(-std, std)
-        self.bias.data.uniform_(-std, std)
+        if self.bias is not None:
+            self.bias.data.uniform_(-std, std)
 
     def forward(self, input):
         self.epsilon_weight.normal_()
@@ -41,7 +42,7 @@ class NoisyFactorizedLinear(nn.Linear):
             self.sigma_bias = nn.Parameter(torch.full((out_features,), sigma_init))
 
     def forward(self, input):
-        self.epsison_input.normal_()
+        self.epsilon_input.normal_()
         self.epsilon_output.normal_()
 
         func = lambda x: torch.sign(x) * torch.sqrt(torch.abs(x))
@@ -50,7 +51,7 @@ class NoisyFactorizedLinear(nn.Linear):
 
         bias = self.bias
         if bias is not None:
-            bias = bias + self.sigma_bias * eps_out.t()
+            bias = bias + self.sigma_bias * eps_out.squeeze(-1)
         noise_v = torch.mul(eps_in, eps_out)
         return F.linear(input, self.weight + self.sigma_weight * noise_v, bias)
 
