@@ -126,8 +126,6 @@ class NetworkBuilder:
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
-                # set before the `continue` below: the next layer's input size
-                # advances whether or not this layer gets a normalization
                 in_size = unit
 
                 if not need_norm:
@@ -749,7 +747,8 @@ class A2CResnetBuilder(NetworkBuilder):
                     rnn_in_size += actions_num
 
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                if self.rnn_ln:
+                    self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
                 'input_size': mlp_input_size,
@@ -774,6 +773,10 @@ class A2CResnetBuilder(NetworkBuilder):
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
                 self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
+                self.logstd_bounds = self.space_config.get('logstd_bounds', None)
+                self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
+                if self.sigma_parametrization == 'scalar':
+                    self.sigma_parametrization = 'linear'
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
@@ -804,10 +807,12 @@ class A2CResnetBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             if self.require_rewards or self.require_last_actions:
                 obs = obs_dict['obs']['observation']
-                reward = obs_dict['obs']['reward']
-                last_action = obs_dict['obs']['last_action']
-                if self.is_discrete:
-                    last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+                if self.require_rewards:
+                    reward = obs_dict['obs']['reward']
+                if self.require_last_actions:
+                    last_action = obs_dict['obs']['last_action']
+                    if self.is_discrete:
+                        last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
             else:
                 obs = obs_dict['obs']
             if self.permute_input:

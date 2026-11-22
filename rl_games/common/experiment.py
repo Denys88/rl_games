@@ -6,7 +6,7 @@ class Experiment:
         self.config = copy.deepcopy(config)
         self.best_config = copy.deepcopy(self.config)
         self.experiment_config = experiment_config
-        self.best_results = -100500, 0
+        self.best_results = float("-inf"), 0
         self.use_best_prev_result = self.experiment_config.get('use_best_prev_result', True)
 
         self.experiments = self.experiment_config['experiments']
@@ -14,7 +14,7 @@ class Experiment:
         self.last_exp_idx = self.experiment_config.get('start_exp', 0)
         self.sub_idx = self.experiment_config.get('start_sub_exp', 0)
 
-        self.done = False
+        self.done = not self.experiments
         self.results = {}
         self.create_config()
 
@@ -45,26 +45,26 @@ class Experiment:
             yaml.dump(self.current_config, outfile, default_flow_style=False)
 
     def get_next_config(self):
+        if self.done:
+            return None
+
         config = self.current_config
-        max_vals = len(self.experiments[0]['exp'][0]['value'])
+        max_vals = len(self.experiments[self.last_exp_idx]['exp'][0]['value'])
         self.sub_idx += 1
         if self.sub_idx >= max_vals:
             self.sub_idx = 0
             self.last_exp_idx += 1
             if self.last_exp_idx >= len(self.experiments):
                 self.done = True
-            else:
-                self.last_exp_idx += 1
 
         self.create_config()
         return config
 
-    #def __iter__(self):
-    #    print('__iter__')
-    #    return self
+    def __iter__(self):
+        return self
 
     def __next__(self):
-        print('__next__')
-        res = self.get_next_config()
-        if res is not None:
-            yield res
+        config = self.get_next_config()
+        if config is None:
+            raise StopIteration
+        return config

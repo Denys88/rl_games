@@ -2,15 +2,18 @@
 torch 2.15 / numpy 2.5 / Python 3.13). One section per defect, numbered as in
 the review:
 
-1. _build_sequential_mlp: stale in_size with norm_only_first_layer
 2. LayerNorm2d: batch statistics, frozen gamma/beta, beta == 1; conv1d LayerNorm
-3. BasePlayer.maybe_load_new_checkpoint: weights_only probe + torch.TorchError
+3. BasePlayer.maybe_load_new_checkpoint: one checkpoint read, through restore()
 4. CentralValueTrain.update_multiagent_tensors: dones not regrouped per env
 5. normalize_rms_advantage without normalize_advantage: missing advantage_mean_std
 6. SelfPlayManager check_scores: algo.game_scores does not exist
 7. DiscreteA2CBase.train: observer.after_print_stats called twice per epoch
-8. SACPlayer.get_action: inference with autograd enabled
 9. D2RLNet.forward: activation/normalization order differs between layers
+
+Items 1 (MLP input size with norm_only_first_layer) and 8 (SACPlayer inference
+under autograd) were fixed on master while this branch was open and are
+covered by tests/test_first_layer_normalization.py and
+tests/test_sac_player_inference.py.
 """
 
 import threading
@@ -34,51 +37,6 @@ def _ppo_agent(tmp_path, **config_overrides):
     agent, _ = make_ppo_agent(train_dir=str(tmp_path), **config_overrides)
     agent.vec_env.set_train_info = lambda frame, algo: None   # the shared fake env has no such hook
     return agent
-
-
-# ---------------------------------------------------------------------------
-# 1. _build_sequential_mlp: in_size must advance on every layer
-# ---------------------------------------------------------------------------
-
-UNITS = [256, 128, 64]
-CHAINED = [(10, 256), (256, 128), (128, 64)]
-MLP_NORMS = (torch.nn.LayerNorm, torch.nn.BatchNorm1d)
-
-
-def _linear_sizes(seq):
-    return [(m.in_features, m.out_features) for m in seq if isinstance(m, torch.nn.Linear)]
-
-
-@pytest.mark.parametrize('norm', ['layer_norm', 'batch_norm'])
-def test_mlp_norm_only_first_layer_chains_non_uniform_units(norm):
-    """`in_size = unit` sat after `if not need_norm: continue`, so once the
-    first layer had been normalized every later Linear kept the first layer's
-    width as its input: units [256, 128, 64] built Linear(256, 64) and the
-    forward raised 'mat1 and mat2 shapes cannot be multiplied (3x128 and
-    256x64)'. Uniform units hid it."""
-    mlp = _base_network()._build_sequential_mlp(
-        10, UNITS, 'relu', torch.nn.Linear,
-        norm_only_first_layer=True, norm_func_name=norm)
-
-    assert _linear_sizes(mlp) == CHAINED
-    assert mlp(torch.randn(3, 10)).shape == (3, 64)
-    # the option still does what it says: one norm, right after the first activation
-    norms = [i for i, m in enumerate(mlp) if isinstance(m, MLP_NORMS)]
-    assert norms == [2]
-
-
-@pytest.mark.parametrize('norm_only_first_layer', [False, True])
-@pytest.mark.parametrize('norm', [None, 'layer_norm', 'batch_norm'])
-def test_mlp_layer_sizes_chain_for_every_norm_setting(norm_only_first_layer, norm):
-    """The settings that already worked keep their layer layout."""
-    mlp = _base_network()._build_sequential_mlp(
-        10, UNITS, 'relu', torch.nn.Linear,
-        norm_only_first_layer=norm_only_first_layer, norm_func_name=norm)
-
-    assert _linear_sizes(mlp) == CHAINED
-    assert mlp(torch.randn(3, 10)).shape == (3, 64)
-    expected_norms = 0 if norm is None else (1 if norm_only_first_layer else len(UNITS))
-    assert sum(isinstance(m, MLP_NORMS) for m in mlp) == expected_norms
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +201,10 @@ def _write_agent_checkpoint(tmp_path):
 
 
 def test_maybe_load_new_checkpoint_loads_an_ordinary_checkpoint_once(tmp_path, monkeypatch):
-    """The corruption probe was a bare torch.load(path): weights_only=True on
-    torch >= 2.6, which rejects the numpy scalar in last_mean_rewards with
-    pickle.UnpicklingError -- and the except clause named torch.TorchError,
-    which does not exist, so the handler itself raised AttributeError and the
-    evaluation worker never picked up a checkpoint."""
+    """An ordinary checkpoint (numpy scalar in last_mean_rewards) is picked up
+    by the evaluation worker, and the file is read exactly once: restore()
+    loads it through torch_ext.load_checkpoint, with no separate torch.load()
+    probe reading it a second time."""
     path, trained = _write_agent_checkpoint(tmp_path)
     assert isinstance(torch_ext.load_checkpoint(path)['last_mean_rewards'], np.floating)
 
@@ -271,9 +228,10 @@ def test_maybe_load_new_checkpoint_loads_an_ordinary_checkpoint_once(tmp_path, m
 
 
 @pytest.mark.parametrize('damage', ['garbage', 'truncated', 'missing'])
-def test_maybe_load_new_checkpoint_survives_a_bad_file(tmp_path, damage, capsys):
-    """A partially written / corrupted / vanished file must be reported and
-    skipped, leaving the current weights in place."""
+def test_maybe_load_new_checkpoint_survives_a_bad_file(tmp_path, damage):
+    """Without the probe it is restore() that meets a partially written /
+    corrupted / vanished file: it must still be skipped, leaving the current
+    weights in place."""
     path, _ = _write_agent_checkpoint(tmp_path)
     bad = tmp_path / 'bad.pth'
     if damage == 'garbage':
@@ -286,11 +244,10 @@ def test_maybe_load_new_checkpoint_survives_a_bad_file(tmp_path, damage, capsys)
     before = _weights(player)
     player.checkpoint_to_load = str(bad)
 
-    player.maybe_load_new_checkpoint()                      # pre-fix: AttributeError (torch.TorchError)
+    player.maybe_load_new_checkpoint()
 
     assert _same_weights(_weights(player), before)
     assert player.checkpoint_to_load is None
-    assert 'failed to load new checkpoint' in capsys.readouterr().out
 
     # and the worker is still usable: the next good checkpoint loads
     player.checkpoint_to_load = path
@@ -643,47 +600,6 @@ def test_continuous_train_calls_after_print_stats_once_per_epoch(tmp_path):
 
     assert counts['write_stats'] == 3
     assert counts['after_print_stats'] == counts['write_stats']
-
-
-# ---------------------------------------------------------------------------
-# 8. SACPlayer.get_action runs without autograd
-# ---------------------------------------------------------------------------
-
-def _make_sac_player():
-    from rl_games.algos_torch.players import SACPlayer
-    from tests.test_critical_fixes import _load_params, SAC_YAML
-    from tests.test_sac_correctness import FakeNextStepVecEnv
-
-    params = _load_params(SAC_YAML)
-    cfg = params['config']
-    cfg.pop('env_config', None)
-    cfg.update({'env_info': FakeNextStepVecEnv(2).get_env_info(),
-                'device_name': 'cpu', 'normalize_input': False})
-    return SACPlayer(params)
-
-
-@pytest.mark.parametrize('is_deterministic', [True, False])
-@pytest.mark.parametrize('has_batch_dimension', [True, False])
-def test_sac_player_get_action_runs_without_autograd(is_deterministic, has_batch_dimension):
-    """Unlike the PPO players, SACPlayer.get_action ran the actor with autograd
-    enabled: every inference step built a graph, and the deterministic action
-    (dist.mean) came back attached to it."""
-    from tests.test_sac_correctness import OBS_DIM
-
-    player = _make_sac_player()
-    player.has_batch_dimension = has_batch_dimension
-    grad_enabled = []
-    player.model.sac_network.actor.register_forward_hook(
-        lambda module, args, output: grad_enabled.append(torch.is_grad_enabled()))
-    obs = torch.zeros(3, OBS_DIM) if has_batch_dimension else torch.zeros(OBS_DIM)
-
-    assert torch.is_grad_enabled()
-    action = player.get_action(obs, is_deterministic=is_deterministic)
-
-    assert grad_enabled == [False]
-    assert not action.requires_grad and action.grad_fn is None
-    assert torch.is_grad_enabled()                          # caller's grad mode is restored
-    assert action.shape == ((3, 2) if has_batch_dimension else (2,))
 
 
 # ---------------------------------------------------------------------------
