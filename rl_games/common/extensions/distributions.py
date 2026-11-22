@@ -62,15 +62,15 @@ class OneHotDist(distr.one_hot_categorical.OneHotCategoricalStraightThrough):
 class TwoHotDist(distr.one_hot_categorical.OneHotCategorical):
 
   def __init__(self, logits=None, probs=None, min_space=-20.0, max_space=20.0, unimix_ratio=0.0):
-    orig_logits = logits
     if logits is not None and probs is None and unimix_ratio > 0.0:
       probs = F.softmax(logits, dim=-1)
       probs = probs * (1.0-unimix_ratio) + unimix_ratio / probs.shape[-1]
       logits = None
     super().__init__(logits=logits, probs=probs)
 
-    self.buckets = torch.linspace(min_space, max_space, steps=255, device=orig_logits.device)
-    self.width = (self.buckets[-1] - self.buckets[0]) / 255
+    self.buckets = torch.linspace(min_space, max_space, steps=self.event_shape[0],
+                                  device=self.logits.device, dtype=self.logits.dtype)
+    self.width = (self.buckets[-1] - self.buckets[0]) / (len(self.buckets) - 1)
 
   def mode(self):
     _mode = super().probs * self.buckets
@@ -78,14 +78,14 @@ class TwoHotDist(distr.one_hot_categorical.OneHotCategorical):
     return res
 
   def log_prob(self, x):
-    x = (x - self.buckets[0]) / self.width
+    x = ((x - self.buckets[0]) / self.width).clamp(0, len(self.buckets) - 1)
 
     lower_indices = (x).to(torch.int64)
     lower_indices = torch.clip(lower_indices, min=0, max=len(self.buckets)-2)
     
     upper_indices = lower_indices + 1
-    lower_weight = torch.abs(x - upper_indices)
-    upper_weight = torch.abs(x - lower_indices)
+    upper_weight = x - lower_indices
+    lower_weight = 1 - upper_weight
 
     lower_log_prob = super().log_prob(F.one_hot(lower_indices.squeeze(1), num_classes=len(self.buckets))).unsqueeze(1)
     upper_log_prob = super().log_prob(F.one_hot(upper_indices.squeeze(1), num_classes=len(self.buckets))).unsqueeze(1)

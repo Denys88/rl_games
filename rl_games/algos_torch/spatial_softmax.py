@@ -12,6 +12,8 @@ class SpatialSoftArgmax(nn.Module):
     locations, effectively performing a soft arg-max
     over the feature dimension.
 
+    Each feature produces its expected row and column coordinates, in that order.
+
     References:
         [1]: End-to-End Training of Deep Visuomotor Policies,
         https://arxiv.org/abs/1504.00702
@@ -33,14 +35,16 @@ class SpatialSoftArgmax(nn.Module):
         if self.normalize:
             return torch.stack(
                 torch.meshgrid(
-                    torch.linspace(-1, 1, w, device=device),
                     torch.linspace(-1, 1, h, device=device),
+                    torch.linspace(-1, 1, w, device=device),
+                    indexing="ij",
                 )
             )
         return torch.stack(
             torch.meshgrid(
-                torch.arange(0, w, device=device),
                 torch.arange(0, h, device=device),
+                torch.arange(0, w, device=device),
+                indexing="ij",
             )
         )
 

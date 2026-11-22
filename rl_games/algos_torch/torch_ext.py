@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from rl_games.common.common_losses import normalize_advantage
+
 
 def wrap_model_ddp(model, device, find_unused_parameters=False):
     """DDP wrapper for the training forward pass only: gradients are bucket-averaged
@@ -229,7 +231,7 @@ def apply_masks(losses, mask=None):
 
 def normalization_with_masks(values, masks):
     if masks is None:
-        return (values - values.mean()) / (values.std() + 1e-8)
+        return normalize_advantage(values)
 
     values_mean, values_var = get_mean_var_with_masks(values, masks)
     values_std = torch.sqrt(values_var)
@@ -295,13 +297,16 @@ class CoordConv2d(nn.Conv2d):
                          padding, dilation, groups, bias)
     @staticmethod
     def get_coord(x):
-        key = int(x.size(0)), int(x.size(2)), int(x.size(3)), x.type()
+        key = int(x.size(2)), int(x.size(3)), x.dtype, x.device
         if key not in CoordConv2d.pool:
             theta = torch.Tensor([[[1, 0, 0], [0, 1, 0]]])
-            coord = torch.nn.functional.affine_grid(theta, torch.Size([1, 1, x.size(2), x.size(3)])).permute([0, 3, 1, 2]).repeat(
-                x.size(0), 1, 1, 1).type_as(x)
+            coord = torch.nn.functional.affine_grid(
+                theta, torch.Size([1, 1, x.size(2), x.size(3)]),
+                align_corners=False).permute([0, 3, 1, 2]).type_as(x)
             CoordConv2d.pool[key] = coord
-        return CoordConv2d.pool[key]
+        # Coordinates are identical for every batch row. Cache their spatial
+        # storage once; expansion is a view and also handles changing batches.
+        return CoordConv2d.pool[key].expand(x.size(0), -1, -1, -1)
     def forward(self, x):
         return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
@@ -461,5 +466,5 @@ class IdentityRNN(nn.Module):
         assert(in_shape == out_shape)
         self.identity = torch.nn.Identity()
 
-    def forward(self, x, h):
+    def forward(self, x, h, done_masks=None, bptt_len=0):
         return self.identity(x), h

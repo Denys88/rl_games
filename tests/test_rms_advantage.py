@@ -79,6 +79,46 @@ def test_state_dict_keys_stable_for_old_checkpoints():
     fresh.load_state_dict(gms.state_dict())
 
 
+@pytest.mark.parametrize('impl', ['mean_std_corr', 'perc_ema_corr'])
+@pytest.mark.parametrize('decay', [0.0, 0.5, 0.9])
+def test_bias_correction_matches_weighted_batch_statistics(impl, decay):
+    batches = [torch.tensor([1., 3.]), torch.tensor([-2., 6.]), torch.tensor([5., 7.])]
+    normalizer = GeneralizedMovingStats((1,), impl=impl, decay=decay, perclo=.25, perchi=.75)
+    for count, batch in enumerate(batches, start=1):
+        output = normalizer(batch)
+        weights = np.array([decay ** i for i in range(count - 1, -1, -1)])
+        values = np.stack([x.numpy() for x in batches[:count]])
+        if impl == 'mean_std_corr':
+            offset = np.average(values.mean(axis=1), weights=weights)
+            second_moment = np.average((values ** 2).mean(axis=1), weights=weights)
+            scale = np.sqrt(second_moment - offset ** 2)
+        else:
+            quantiles = np.quantile(values, [.25, .75], axis=1)
+            offset, high = np.average(quantiles, axis=1, weights=weights)
+            scale = high - offset
+        actual_offset, actual_scale = normalizer.get_mean_std()
+        assert actual_offset.item() == pytest.approx(offset, rel=1e-5, abs=1e-6)
+        assert actual_scale.item() == pytest.approx(scale, rel=1e-5, abs=1e-6)
+        torch.testing.assert_close(output, ((batch - offset) / scale).clamp(-5, 5))
+        assert normalizer.step.item() == count + 1
+
+        restored = GeneralizedMovingStats((1,), impl=impl, decay=decay, perclo=.25, perchi=.75)
+        restored.load_state_dict(normalizer.state_dict())
+        normalizer = restored
+
+
+@pytest.mark.parametrize('impl', ['mean_std_corr', 'perc_ema_corr'])
+def test_bias_corrected_initial_and_masked_statistics_are_finite(impl):
+    normalizer = GeneralizedMovingStats((1,), impl=impl, decay=.9)
+    initial = {name: value.clone() for name, value in normalizer.state_dict().items()}
+    normalizer.eval()
+    assert torch.isfinite(normalizer(torch.tensor([1., 3.]))).all()
+    normalizer.train()
+    assert torch.isfinite(normalizer(torch.tensor([1., 3.]), mask=torch.zeros(2))).all()
+    for name, value in normalizer.state_dict().items():
+        assert torch.equal(value, initial[name])
+
+
 def test_diagnostics_reads_live_attributes():
     class FakeAgent:
         normalize_rms_advantage = True

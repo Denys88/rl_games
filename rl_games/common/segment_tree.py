@@ -25,6 +25,7 @@ class SegmentTree(object):
             for max and 0 for sum.
         """
         assert capacity > 0 and capacity & (capacity - 1) == 0, "capacity must be positive and a power of 2."
+        self._neutral_element = neutral_element
         self._capacity = capacity
         self._value = [neutral_element for _ in range(2 * capacity)]
         self._operation = operation
@@ -63,10 +64,18 @@ class SegmentTree(object):
             end = self._capacity
         if end < 0:
             end += self._capacity
+        if start < 0:
+            start += self._capacity
+        if not 0 <= start <= self._capacity or not 0 <= end <= self._capacity:
+            raise IndexError("segment endpoint outside tree capacity")
+        if start >= end:
+            return self._neutral_element
         end -= 1
         return self._reduce_helper(start, end, 1, 0, self._capacity - 1)
 
     def __setitem__(self, idx, val):
+        if not 0 <= idx < self._capacity:
+            raise IndexError("leaf index outside tree capacity")
         # index of the leaf
         idx += self._capacity
         self._value[idx] = val

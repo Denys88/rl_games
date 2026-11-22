@@ -747,6 +747,7 @@ class A2CBase(BaseAlgorithm):
                     'states': states,
                     'actions': None,
                     'is_done': self.dones,
+                    'update_rnn_states': False,
                 }
                 value = self.get_central_value(input_dict)
             else:
@@ -1497,7 +1498,7 @@ class DiscreteA2CBase(A2CBase):
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = common_losses.normalize_advantage(advantages)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1845,7 +1846,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = common_losses.normalize_advantage(advantages)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
