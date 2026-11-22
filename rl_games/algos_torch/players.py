@@ -134,17 +134,14 @@ class PpoPlayerDiscrete(BasePlayer):
         logits = res_dict['logits']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
-        if self.is_multi_discrete:
-            if is_deterministic:
-                action = [torch.argmax(logit.detach(), axis=-1).squeeze() for logit in logits]
-                return torch.stack(action,dim=-1)
-            else:    
-                return action.squeeze().detach()
-        else:
-            if is_deterministic:
-                return torch.argmax(logits.detach(), axis=-1).squeeze()
+        if is_deterministic:
+            if self.is_multi_discrete:
+                action = torch.stack(
+                    [torch.argmax(logit, dim=-1) for logit in logits], dim=-1)
             else:
-                return action.squeeze().detach()
+                action = torch.argmax(logits, dim=-1)
+        action = action.detach()
+        return action if self.has_batch_dimension else action.squeeze(0)
 
     def get_action(self, obs, is_deterministic=False):
         if not self.has_batch_dimension:
@@ -163,17 +160,14 @@ class PpoPlayerDiscrete(BasePlayer):
         logits = res_dict['logits']
         action = res_dict['actions']
         self.states = res_dict['rnn_states']
-        if self.is_multi_discrete:
-            if is_deterministic:
-                action = [torch.argmax(logit.detach(), axis=1).squeeze() for logit in logits]
-                return torch.stack(action, dim=-1)
+        if is_deterministic:
+            if self.is_multi_discrete:
+                action = torch.stack(
+                    [torch.argmax(logit, dim=-1) for logit in logits], dim=-1)
             else:
-                return action.squeeze().detach()
-        else:
-            if is_deterministic:
-                return torch.argmax(logits.detach(), axis=-1).squeeze()
-            else:
-                return action.squeeze().detach()
+                action = torch.argmax(logits, dim=-1)
+        action = action.detach()
+        return action if self.has_batch_dimension else action.squeeze(0)
 
     def restore(self, fn):
         checkpoint = torch_ext.load_checkpoint(fn)
@@ -243,6 +237,7 @@ class SACPlayer(BasePlayer):
         # Clamp to handle floating point errors
         return rescaled.clamp(self.action_low, self.action_high)
 
+    @torch.no_grad()
     def get_action(self, obs, is_deterministic=False):
         if self.has_batch_dimension == False:
             obs = unsqueeze_obs(obs)
