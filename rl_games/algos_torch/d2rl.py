@@ -22,12 +22,14 @@ class D2RLNet(torch.nn.Module):
                 self.norm_layers.append(torch.nn.Identity())
 
     def forward(self, input):
+        # activation -> norm on every layer: the order _build_sequential_mlp and the
+        # conv builders use for the same `normalization` option
         x = self.linears[0](input)
         x = self.activations[0](x)
         x = self.norm_layers[0](x)
         for i in range(1,self.num_layers):
             x = torch.cat([x,input], dim=1)
             x = self.linears[i](x)
-            x = self.norm_layers[i](x)  
-            x = self.activations[i](x)               
+            x = self.activations[i](x)
+            x = self.norm_layers[i](x)
         return x
