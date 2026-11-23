@@ -93,11 +93,13 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
         torch_ext.save_checkpoint(fn, state)
 
     def restore(self, fn, set_epoch=True):
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False))
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
     def restore_central_value_function(self, fn):
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False))
         self.set_central_value_function_weights(checkpoint)
 
     def get_masked_action_values(self, obs, action_masks):

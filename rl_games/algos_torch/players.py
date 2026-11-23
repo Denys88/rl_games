@@ -69,7 +69,8 @@ class PpoPlayerContinuous(BasePlayer):
             return current_action
 
     def restore(self, fn):
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False), map_location='cpu')
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
@@ -170,7 +171,8 @@ class PpoPlayerDiscrete(BasePlayer):
         return action if self.has_batch_dimension else action.squeeze(0)
 
     def restore(self, fn):
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False), map_location='cpu')
         self.model.load_state_dict(checkpoint['model'])
         if self.normalize_input and 'running_mean_std' in checkpoint:
             self.model.running_mean_std.load_state_dict(checkpoint['running_mean_std'])
@@ -220,7 +222,8 @@ class SACPlayer(BasePlayer):
         self.is_rnn = self.model.is_rnn()
 
     def restore(self, fn):
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False), map_location='cpu')
         self.model.sac_network.actor.load_state_dict(checkpoint['actor'])
         self.model.sac_network.critic.load_state_dict(checkpoint['critic'])
         self.model.sac_network.critic_target.load_state_dict(checkpoint['critic_target'])

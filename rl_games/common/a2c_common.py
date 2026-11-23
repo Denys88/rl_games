@@ -976,7 +976,7 @@ class A2CBase(BaseAlgorithm):
 
         # last_mean_rewards is the best reward ever achieved (misleading name).
         # Saved so a restart doesn't overwrite the "best ever" checkpoint.
-        state['last_mean_rewards'] = self.last_mean_rewards
+        state['last_mean_rewards'] = float(self.last_mean_rewards)
 
         if self.vec_env is not None:
             env_state = self.vec_env.get_env_state()
@@ -1138,6 +1138,30 @@ class A2CBase(BaseAlgorithm):
                 obs_batch = obs_batch.float() / 255.0
         return obs_batch
 
+    def _bootstrap_timeouts(self, rewards, previous_values, infos):
+        if not self.value_bootstrap or 'time_outs' not in infos:
+            return
+        timeouts = torch.as_tensor(infos['time_outs'], device=rewards.device, dtype=torch.bool).reshape(-1, 1)
+        # Same-step simulators without terminal observations historically use
+        # the previous value as a proxy. Their reset observation belongs to a
+        # different episode and must never be used for this target.
+        values = previous_values
+        final_obs = infos.get('final_observation')
+        has_final_value_obs = final_obs is not None and (
+            not self.has_central_value or isinstance(final_obs, dict) and 'states' in final_obs)
+        if self.autoreset_mode == 'next_step' or has_final_value_obs:
+            if not timeouts.any():
+                return
+            if self.autoreset_mode == 'next_step':
+                values = self.get_values(self.obs)
+            else:
+                values = self.get_values(self.obs_to_tensors(final_obs))
+                if '_final_observation' in infos:
+                    valid = torch.as_tensor(infos['_final_observation'], device=rewards.device,
+                                            dtype=torch.bool).reshape(-1, 1)
+                    values = torch.where(valid, values, previous_values)
+        rewards.add_(torch.where(timeouts, values, 0.0), alpha=self.gamma)
+
     def play_steps(self):
         update_list = self.update_list
 
@@ -1175,8 +1199,7 @@ class A2CBase(BaseAlgorithm):
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
+            self._bootstrap_timeouts(shaped_rewards, res_dict['values'], infos)
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
@@ -1283,9 +1306,7 @@ class A2CBase(BaseAlgorithm):
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
+            self._bootstrap_timeouts(shaped_rewards, res_dict['values'], infos)
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 

@@ -1,5 +1,6 @@
 """Evaluation checkpoint probes must handle full states and partial writes."""
 
+import pickle
 import threading
 
 import numpy as np
@@ -10,12 +11,12 @@ from rl_games.algos_torch import torch_ext
 from rl_games.common.player import BasePlayer
 
 
-def _player(path):
+def _player(path, *, trusted=False):
     player = BasePlayer.__new__(BasePlayer)
     player.checkpoint_mutex = threading.Lock()
     player.checkpoint_to_load = str(path) if path is not None else None
     player.loaded = []
-    player.restore = lambda filename: player.loaded.append(torch_ext.load_checkpoint(filename))
+    player.restore = lambda filename: player.loaded.append(torch_ext.load_checkpoint(filename, trusted=trusted))
     return player
 
 
@@ -26,7 +27,7 @@ def test_evaluation_loads_serialized_training_checkpoint(tmp_path, with_environm
     if with_environment_state:
         payload["env_state"] = {"position": np.array([1.5, -2.0], dtype=np.float32)}
     torch.save(payload, path)
-    player = _player(path)
+    player = _player(path, trusted=with_environment_state)
     player.maybe_load_new_checkpoint()
     assert player.checkpoint_to_load is None
     assert len(player.loaded) == 1
@@ -75,3 +76,16 @@ def test_no_pending_checkpoint_is_a_noop():
     player = _player(None)
     player.maybe_load_new_checkpoint()
     assert not player.loaded
+
+
+def test_checkpoint_with_legacy_objects_requires_explicit_trust(tmp_path):
+    path = tmp_path / "legacy.pth"
+    torch.save({"env_state": np.arange(3)}, path)
+    with pytest.raises(pickle.UnpicklingError, match="trust-checkpoint"):
+        torch_ext.load_checkpoint(path)
+    with pytest.raises(TypeError, match="boolean"):
+        torch_ext.load_checkpoint(path, trusted="false")
+    player = _player(path)
+    player.maybe_load_new_checkpoint()
+    assert not player.loaded
+    assert player.checkpoint_to_load is None

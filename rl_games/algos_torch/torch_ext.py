@@ -1,4 +1,5 @@
 import math
+import pickle
 import time
 import warnings
 import numpy as np
@@ -133,19 +134,20 @@ def safe_filesystem_op(func, *args, **kwargs):
 def safe_save(state, filename):
     return safe_filesystem_op(torch.save, state, filename)
 
-def safe_load(filename):
-    if hasattr(torch.serialization, 'safe_globals'):
-        # PyTorch 2.6+: use safe_globals context manager
-        with torch.serialization.safe_globals({
-            "numpy.core.multiarray.scalar": np.core.multiarray.scalar,
-            "numpy.dtype": np.dtype,
-            "numpy.dtypes.Float32DType": lambda: np.dtype("float32")
-        }):
-            checkpoint = torch.load(filename, weights_only=False)
-    else:
-        # PyTorch < 2.6: safe_globals not available
-        checkpoint = torch.load(filename, weights_only=False)
-    return checkpoint
+def safe_load(filename, *, trusted=False, map_location=None):
+    """Restrict unpickling unless a caller explicitly trusts the checkpoint."""
+    if not isinstance(trusted, bool):
+        raise TypeError("trusted_checkpoint must be a boolean")
+    try:
+        return torch.load(filename, weights_only=not trusted, map_location=map_location)
+    except pickle.UnpicklingError as exc:
+        if trusted:
+            raise
+        raise pickle.UnpicklingError(
+            f"Restricted checkpoint loading failed for {filename}. For a trusted legacy "
+            "training state, pass --trust-checkpoint or set trusted_checkpoint: true."
+        ) from exc
+
 
 def save_checkpoint(filename, state):
     print("=> saving checkpoint '{}'".format(filename + '.pth'))
@@ -167,9 +169,9 @@ def _strip_compile_prefix(obj):
     return obj
 
 
-def load_checkpoint(filename):
+def load_checkpoint(filename, *, trusted=False, map_location=None):
     print("=> loading checkpoint '{}'".format(filename))
-    return _strip_compile_prefix(safe_load(filename))
+    return _strip_compile_prefix(safe_load(filename, trusted=trusted, map_location=map_location))
 
 def parameterized_truncated_normal(uniform, mu, sigma, a, b):
     normal = torch.distributions.normal.Normal(0, 1, validate_args=False)

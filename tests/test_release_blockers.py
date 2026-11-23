@@ -2,6 +2,9 @@
 class): seed 0, legacy seq_len, SAC multi_gpu guard, adaptive-LR resume."""
 
 import copy
+import runpy
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -76,3 +79,25 @@ def test_adaptive_lr_state_survives_resume():
     before = (legacy.last_lr, legacy.entropy_coef)
     legacy.set_full_state_weights(state)
     assert (legacy.last_lr, legacy.entropy_coef) == before
+
+
+@pytest.mark.parametrize("multi_gpu, rank", [(False, 0), (True, 2)])
+def test_cli_seed_override_creates_missing_env_config(tmp_path, monkeypatch, multi_gpu, rank):
+    root = Path(__file__).resolve().parents[1]
+    config = root / 'rl_games/configs/ppo_cartpole.yaml'
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['runner.py', '--train', '--file', str(config), '--seed', '42'])
+    if multi_gpu:
+        monkeypatch.setenv('RANK', str(rank))
+        load = Runner.load
+
+        def distributed_load(runner, params):
+            params['params']['config']['multi_gpu'] = True
+            return load(runner, params)
+
+        monkeypatch.setattr(Runner, 'load', distributed_load)
+    seeds = []
+    monkeypatch.setattr(Runner, 'run', lambda runner, args: seeds.append(
+        (runner.seed, runner.params['config']['env_config']['seed'])))
+    runpy.run_path(str(root / 'runner.py'), run_name='__main__')
+    assert seeds == [(42 + rank, 42 + rank)]

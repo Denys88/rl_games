@@ -21,6 +21,8 @@ if __name__ == '__main__':
     ap.add_argument("-t", "--train", required=False, help="train network", action='store_true')
     ap.add_argument("-p", "--play", required=False, help="play(test) network", action='store_true')
     ap.add_argument("-c", "--checkpoint", required=False, help="path to checkpoint")
+    ap.add_argument("--trust-checkpoint", action="store_true",
+                    help="allow Python pickle objects when loading a trusted legacy checkpoint")
     ap.add_argument("-f", "--file", required=True, help="path to config")
     ap.add_argument("-na", "--num_actors", type=int, default=0, required=False,
                     help="number of envs running in parallel, if larger than 0 will overwrite the value in yaml config")
@@ -43,12 +45,15 @@ if __name__ == '__main__':
     with open(config_name, 'r') as stream:
         config = yaml.safe_load(stream)
 
+        if args['trust_checkpoint']:
+            config['params']['config']['trusted_checkpoint'] = True
+
         if args['num_actors'] > 0:
             config['params']['config']['num_actors'] = args['num_actors']
 
         if args['seed'] > 0:
             config['params']['seed'] = args['seed']
-            config['params']['config']['env_config']['seed'] = args['seed']
+            config['params']['config'].setdefault('env_config', {})['seed'] = args['seed']
 
         from rl_games.torch_runner import Runner
 

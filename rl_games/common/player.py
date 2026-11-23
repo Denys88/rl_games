@@ -1,5 +1,4 @@
 import os
-import pickle
 import shutil
 import threading
 import time
@@ -50,7 +49,7 @@ class BasePlayer(object):
         self.has_batch_dimension = False
         self.has_central_value = self.config.get(
             'central_value_config') is not None
-        self.device_name = self.config.get('device_name', 'cuda')
+        self.device_name = self.player_config.get('device', config.get('device_name', config.get('device', 'cuda')))
         self.render_env = self.player_config.get('render', False)
         # 1000000000 is a large number that should be enough for any practical purpose
         self.games_num = self.player_config.get('games_num', 1000000000)
@@ -111,20 +110,10 @@ class BasePlayer(object):
         with self.checkpoint_mutex:
             if self.checkpoint_to_load is not None:
                 print(f"Evaluation: loading new checkpoint {self.checkpoint_to_load}...")
-                # try if we can load anything from the pth file, this will quickly fail if the file is corrupted
-                # without triggering the retry loop in "safe_filesystem_op()"
-                load_error = False
                 try:
-                    torch.load(self.checkpoint_to_load, weights_only=False)
-                except (OSError, EOFError, RuntimeError, pickle.UnpicklingError) as e:
-                    print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
-                    load_error = True
-
-                if not load_error:
-                    try:
-                        self.restore(self.checkpoint_to_load)
-                    except Exception as e:
-                        print(f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load}: {e}")
+                    self.restore(self.checkpoint_to_load)
+                except Exception as e:
+                    print(f"Evaluation: failed to load new checkpoint {self.checkpoint_to_load}: {e}")
 
                 # whether we succeeded or not, forget about this checkpoint
                 self.checkpoint_to_load = None

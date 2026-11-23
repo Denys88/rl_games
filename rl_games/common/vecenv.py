@@ -1,6 +1,7 @@
 from rl_games.common.ivecenv import IVecEnv
 from rl_games.common.env_configurations import configurations
 from rl_games.common.tr_helpers import dicts_to_dict_with_arrays
+import copy
 import numpy as np
 import random
 from time import sleep
@@ -105,8 +106,10 @@ class RayWorker:
         """
         next_state, reward, terminated, truncated, info = self.env.step(action)
         is_done = terminated or truncated if np.isscalar(terminated) else terminated | truncated
-        if 'time_outs' not in info:
-            info['time_outs'] = truncated
+        info = dict(info, time_outs=np.logical_and(info.get('time_outs', truncated), np.logical_not(terminated)))
+        if np.any(info['time_outs']) and 'final_observation' not in info:
+            # The reset below may mutate arrays returned by the final step.
+            info['final_observation'] = copy.deepcopy(next_state)
 
         if np.isscalar(is_done):
             episode_done = is_done
@@ -261,7 +264,9 @@ class RayVecEnv(IVecEnv):
             actions: Actions for all workers (type depends on env).
 
         """
-        newobs, newstates, newrewards, newdones, newinfos = [], [], [], [], []
+        newobs, newrewards, newdones, newinfos = [], [], [], []
+        final_obs = []
+        final_mask = []
         res_obs = []
         if self.num_agents == 1:
             for (action, worker) in zip(actions, self.workers):	        
@@ -273,30 +278,19 @@ class RayVecEnv(IVecEnv):
         all_res = self.ray.get(res_obs)
         for res in all_res:
             cobs, crewards, cdones, cinfos = res
-            if self.use_global_obs:
-                newobs.append(cobs["obs"])
-                newstates.append(cobs["state"])
-            else:
-                newobs.append(cobs)
+            final = cinfos.get('final_observation')
+            final_obs.append(final if final is not None else cobs)
+            final_mask.append(final is not None)
+            newobs.append(cobs)
             newrewards.append(crewards)
             newdones.append(cdones)
             newinfos.append(cinfos)
 
-        if self.obs_type_dict:
-            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
-        else:
-            ret_obs = self.concat_func(newobs)
-
-        if self.use_global_obs:
-            newobsdict = {}
-            newobsdict["obs"] = ret_obs
-
-            if self.state_type_dict:
-                newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
-            else:
-                newobsdict["states"] = np.stack(newstates)            
-            ret_obs = newobsdict
+        ret_obs = self._batch_observations(newobs)
+        dones = self.concat_func(newdones)
         if self.concat_infos:
+            if any(final_mask):
+                newinfos = [{k: v for k, v in info.items() if k != 'final_observation'} for info in newinfos]
             newinfos = dicts_to_dict_with_arrays(newinfos, False)
         else:
             # Without concat_infos a list of per-worker dicts was returned, so
@@ -304,7 +298,10 @@ class RayVecEnv(IVecEnv):
             # Deliver a merged dict instead (time_outs plus the scores/battle_won
             # keys DefaultAlgoObserver tracks).
             newinfos = _merge_ray_infos(newinfos)
-        return ret_obs, self.concat_func(newrewards), self.concat_func(newdones), newinfos
+        if any(final_mask):
+            newinfos['final_observation'] = self._batch_observations(final_obs)
+            newinfos['_final_observation'] = np.logical_and(np.repeat(final_mask, self.num_agents), dones)
+        return ret_obs, self.concat_func(newrewards), dones, newinfos
 
     def get_env_info(self):
         res = self.workers[0].get_env_info.remote()
@@ -326,30 +323,23 @@ class RayVecEnv(IVecEnv):
 
     def reset(self):
         res_obs = [worker.reset.remote() for worker in self.workers]
-        newobs, newstates = [],[]
-        for res in res_obs:
-            cobs = self.ray.get(res)
-            if self.use_global_obs:
-                newobs.append(cobs["obs"])
-                newstates.append(cobs["state"])
-            else:
-                newobs.append(cobs)
+        return self._batch_observations([self.ray.get(res) for res in res_obs])
 
-        if self.obs_type_dict:
-            ret_obs = dicts_to_dict_with_arrays(newobs, self.num_agents == 1)
-        else:
-            ret_obs = self.concat_func(newobs)
-
+    def _batch_observations(self, observations):
         if self.use_global_obs:
-            newobsdict = {}
-            newobsdict["obs"] = ret_obs
+            actor_obs = [o['obs'] for o in observations]
+        else:
+            actor_obs = observations
+        if self.obs_type_dict:
+            actor_batch = dicts_to_dict_with_arrays(actor_obs, self.num_agents == 1)
+        else:
+            actor_batch = self.concat_func(actor_obs)
+        if not self.use_global_obs:
+            return actor_batch
 
-            if self.state_type_dict:
-                newobsdict["states"] = dicts_to_dict_with_arrays(newstates, True)
-            else:
-                newobsdict["states"] = np.stack(newstates)            
-            ret_obs = newobsdict
-        return ret_obs
+        states = [o['state'] for o in observations]
+        state_batch = dicts_to_dict_with_arrays(states, True) if self.state_type_dict else np.stack(states)
+        return {'obs': actor_batch, 'states': state_batch}
     
     def close(self):
         """Close all workers and shutdown Ray if we initialized it."""

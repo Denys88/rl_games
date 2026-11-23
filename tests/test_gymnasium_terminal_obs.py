@@ -109,6 +109,24 @@ def test_live_only_step_does_not_allocate_final_observations():
     assert "final_observation" not in info
 
 
+def test_partial_agent_timeout_keeps_the_observation_before_worker_reset(monkeypatch):
+    env = _manual(1, agents=2, episode_length=1)
+    worker = env.envs[0]
+    step = worker.step
+
+    def step_with_live_agent(action):
+        obs, reward, terminated, truncated, info = step(action)
+        truncated[1] = False
+        return obs, reward, terminated, truncated, info
+
+    monkeypatch.setattr(worker, 'step', step_with_live_agent)
+    env.reset()
+    _, _, dones, info = env.step(np.zeros((2, 2)))
+    np.testing.assert_array_equal(dones, [True, False])
+    np.testing.assert_array_equal(info['_final_observation'], dones)
+    np.testing.assert_array_equal(info['final_observation'][:, 1], [1, 1])
+
+
 def test_sac_replay_bootstraps_from_actual_manual_terminal_state(tmp_path):
     def create_vec(count, unused_episode_length):
         return _manual(count, episode_length=3)

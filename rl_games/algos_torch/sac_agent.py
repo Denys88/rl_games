@@ -316,7 +316,7 @@ class SACAgent(BaseAlgorithm):
 
         # set_full_state_weights restores last_mean_rewards (and frame/epoch above);
         # saving it keeps the best-ever checkpoint watermark across restarts.
-        state['last_mean_rewards'] = self.last_mean_rewards
+        state['last_mean_rewards'] = float(self.last_mean_rewards)
 
         if self.vec_env is not None:
             state['env_state'] = self.vec_env.get_env_state()
@@ -372,7 +372,8 @@ class SACAgent(BaseAlgorithm):
     def restore(self, fn, set_epoch=True):
         if not os.path.exists(fn):
             raise FileNotFoundError(f"Checkpoint file not found: {fn}")
-        checkpoint = torch_ext.load_checkpoint(fn)
+        checkpoint = torch_ext.load_checkpoint(
+            fn, trusted=self.config.get('trusted_checkpoint', False))
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
     def get_param(self, param_name):
@@ -722,6 +723,8 @@ class SACAgent(BaseAlgorithm):
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
 
+            # The simulator may overwrite its observation storage in step().
+            replay_obs = obs.clone()
             step_start = time.perf_counter()
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
@@ -751,7 +754,7 @@ class SACAgent(BaseAlgorithm):
             self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
 
-            self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
+            self._store_transitions(replay_obs, action, shaped_rewards, next_obs_processed,
                                     dones, terminated, truncated_mask, infos)
 
             obs = next_obs_processed
