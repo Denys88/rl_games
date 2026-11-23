@@ -399,8 +399,9 @@ class VectorizedReplayBuffer:
         if self.folder is None:
             if live is not None:
                 raise ValueError('live masks need n_step > 1; select the live rows before add()')
-            # a step both terminated and truncated counts as terminated (gymnasium)
-            self._write(obs, action, reward, next_obs, done, truncated.bool() & ~done.bool())
+            # flags are stored as given: the 1-step target reads only `done`, and the caller's convention for
+            # `done` is not known here (a mask would clear every time-out flag when done = terminated | time_out)
+            self._write(obs, action, reward, next_obs, done, truncated)
             return
         done = _flat_flag(done)
         t = self.folder.push({

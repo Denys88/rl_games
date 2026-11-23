@@ -489,15 +489,6 @@ def test_n_step_buffer_loads_a_one_step_checkpoint():
     assert torch.equal(folded.obses, one.obses)
 
 
-def test_one_step_buffer_counts_terminated_and_truncated_as_terminated():
-    buf = experience.VectorizedReplayBuffer((3,), (2,), 8, 'cpu', n_step=1)
-    done = torch.tensor([[True], [False]])
-    truncated = torch.tensor([[True], [True]])
-    buf.add(torch.randn(2, 3), torch.randn(2, 2), torch.randn(2, 1), torch.randn(2, 3), done, truncated)
-    assert buf.dones[:2].flatten().tolist() == [True, False]
-    assert buf.truncated[:2].flatten().tolist() == [False, True]
-
-
 def test_fp16_replay_reports_rounding_once(capsys):
     buf = experience.VectorizedReplayBuffer((2,), (1,), 8, 'cpu', obs_dtype=torch.float16)
     obs = torch.tensor([[0.01, 50.003], [0.02, 49.997]])
