@@ -1,5 +1,5 @@
 """Regression tests for the 2.0 release-blocker batch (silent-wrong-behavior
-class): seed 0, legacy seq_len, SAC multi_gpu guard, adaptive-LR resume."""
+class): seed 0, legacy seq_len, SAC multi_gpu checkpoint writes, adaptive-LR resume."""
 
 import copy
 
@@ -47,13 +47,19 @@ def test_legacy_seq_len_falls_back_instead_of_silently_dropping():
     assert agent.seq_length == 8
 
 
-def test_sac_rejects_multi_gpu():
-    # SAC reads RANK only to gate the writer -- no DDP wrapper, no gradient
-    # collective. torchrun silently trained N independent agents racing on
-    # the same checkpoint files. Refuse loudly until real support exists.
+def test_sac_multi_gpu_only_rank_zero_writes_checkpoints(tmp_path):
+    # SAC used to refuse multi_gpu: it read RANK only to gate the writer, so torchrun
+    # silently trained N independent agents racing on the same checkpoint files.
+    # It is data-parallel now. tests/test_sac_multigpu.py checks that the ranks end
+    # with the same networks; the checkpoint files are rank 0's alone to write.
     from tests.test_sac_correctness import make_fake_env_sac_agent
-    with pytest.raises(NotImplementedError, match='multi_gpu is not supported for SAC'):
-        make_fake_env_sac_agent(multi_gpu=True)
+    agent, _ = make_fake_env_sac_agent()
+    agent.global_rank = 1
+    agent.save(str(tmp_path / 'rank1'))
+    assert not list(tmp_path.iterdir())
+    agent.global_rank = 0
+    agent.save(str(tmp_path / 'rank0'))
+    assert [f.name for f in tmp_path.iterdir()] == ['rank0.pth']
 
 
 def test_adaptive_lr_state_survives_resume():
