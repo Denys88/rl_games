@@ -36,10 +36,11 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             'normalize_input': self.normalize_input,
             'normalize_input_init_count': self.normalize_input_init_count,
         }
-        if self.store_states and hasattr(self, 'state_space'):
+        if self.state_aux_config is not None:
             build_config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(build_config)
+        self._check_state_aux_network()
         self.model.to(self.ppo_device)
         self.states = None
         self.init_rnn_from_model(self.model)
@@ -84,12 +85,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
 
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
 
-        if self.distill_config is not None:
-            from rl_games.common.distillation import TeacherDistillation
-            self.distill = TeacherDistillation.from_config(
-                self.distill_config, self.state_space.shape, self.actions_num, self.ppo_device, self.is_discrete)
-            if self.has_central_value and self.distill.warm_start_value:
-                self.distill.warm_start_central_value(self.central_value_net.model)
+        self._init_distillation()
         self.symmetry_loss_coef, self._symmetry_maps = self._init_symmetry_loss(self.config.get('symmetry_loss'))
         self.algo_observer.after_init(self)
 
@@ -205,8 +201,16 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
             mu = res_dict['mus']
             sigma = res_dict['sigmas']
 
+            actor_loss_func = self.actor_loss_func
+            if self.distill is not None:
+                # teacher-chosen actions are not samples of the student: no actor loss
+                student_rows = self.distill.student_rows(input_dict)
+
+                def actor_loss_func(*args):
+                    return self.actor_loss_func(*args) * student_rows
+
             loss, a_loss, c_loss, entropy, b_loss, sum_mask = self.calc_losses(
-                self.actor_loss_func,
+                actor_loss_func,
                 old_action_log_probs_batch,
                 action_log_probs,
                 advantage,
@@ -223,7 +227,7 @@ class A2CAgent(a2c_common.ContinuousA2CBase):
                 loss = loss + self.symmetry_loss_coef * sym_loss
 
             if self.distill is not None:
-                d_loss = self.distill.loss(res_dict, input_dict['states'], rnn_masks)
+                d_loss = self.distill.loss(res_dict, input_dict, rnn_masks)
                 loss = self.distill.combine(loss, 0.5 * c_loss * self.critic_coef, d_loss, self.epoch_num)
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}

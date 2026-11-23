@@ -16,6 +16,9 @@ Config, under `network`:
 The agent must store `states` (algo config `state_aux: {}` turns that on; the
 env returns {'obs': ..., 'states': ...}) and passes `state_shape` in the
 build config. The loss is picked up through the model's get_aux_loss().
+
+Built without `state_shape` (players, play scripts) the network has no head
+and loads a training checkpoint as the plain actor-critic.
 """
 
 import torch
@@ -35,32 +38,44 @@ class StateAuxBuilder(network_builder.A2CBuilder):
             super().__init__(params, **kwargs)
             if self.separate:
                 raise NotImplementedError('actor_critic_state_aux needs a shared trunk (separate: False)')
-            if state_shape is None:
-                raise ValueError("actor_critic_state_aux needs 'state_shape' in the build config "
-                                 "(set algo config `state_aux: {}` and an env that returns states)")
+            if not len(self.units):
+                raise ValueError('actor_critic_state_aux needs at least one mlp layer (mlp.units) '
+                                 'to read the latent from')
             cfg = params.get('state_aux', {})
             self.aux_coef = float(cfg.get('coef', 1.0))
             indices = cfg.get('indices', None)
-            self.register_buffer('aux_indices',
-                                 torch.as_tensor(indices, dtype=torch.long) if indices is not None else torch.empty(0, dtype=torch.long))
+            self.register_buffer('aux_indices', torch.as_tensor(indices if indices is not None else [],
+                                                                dtype=torch.long))
+            self._latent = None
+            self._aux_loss = None
+            # The head exists only for training. Without `state_shape` (players,
+            # play scripts) the network is the plain actor-critic and the head's
+            # tensors in a training checkpoint are skipped on load.
+            self.aux_head = None
+            self.aux_target_norm = None
+            if state_shape is None:
+                return
             out_dim = len(indices) if indices is not None else int(state_shape[0])
-            units = list(cfg.get('units', [256]))
-            latent = self.units[-1] if len(self.units) else self._calc_input_size(self.actor_cnn, kwargs.get('input_shape'))
-            layers, size = [], latent
-            for u in units:
+            layers, size = [], self.units[-1]
+            for u in list(cfg.get('units', [256])):
                 layers += [nn.Linear(size, u), nn.ELU()]
                 size = u
             layers.append(nn.Linear(size, out_dim))
             self.aux_head = nn.Sequential(*layers)
             self.aux_target_norm = RunningMeanStd((out_dim,))
-            self._latent = None
-            self._aux_loss = None
             self.actor_mlp.register_forward_hook(lambda m, i, o: setattr(self, '_latent', o))
+
+        def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+            if self.aux_head is None:
+                for k in [k for k in state_dict if k.startswith((prefix + 'aux_head.', prefix + 'aux_target_norm.'))]:
+                    del state_dict[k]
+            super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
         def forward(self, obs_dict):
             out = super().forward(obs_dict)
             states = obs_dict.get('states', None)
-            if states is not None and obs_dict.get('is_train', True) and self._latent is not None:
+            if (self.aux_head is not None and states is not None and obs_dict.get('is_train', True)
+                    and self._latent is not None):
                 target = states.float()
                 if self.aux_indices.numel():
                     target = target[:, self.aux_indices]

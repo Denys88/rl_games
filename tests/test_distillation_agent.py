@@ -203,3 +203,156 @@ def test_state_aux_network_trains_through_the_agent(tmp_path):
     agent.train_epoch()
     assert 'state_aux' in agent.aux_loss_dict
     assert any(not torch.equal(w0[k], v) for k, v in head.state_dict().items())
+
+
+def _separate_network(discrete):
+    network = _network(discrete)
+    network['separate'] = True
+    return network
+
+
+def _actor_params(agent):
+    net = agent.model.a2c_network
+    head = net.logits if agent.is_discrete else net.mu
+    return {k: v.clone() for k, v in list(net.actor_mlp.state_dict().items()) + list(head.state_dict().items())}
+
+
+@pytest.mark.parametrize('discrete', [True, False])
+def test_teacher_rows_carry_no_actor_loss(tmp_path, discrete):
+    """beta-mixing with PPO on: a teacher-chosen action is not a sample of the
+    student, so a PPO term on it is advantage-weighted behaviour cloning. With
+    beta 1 every row is the teacher's and the actor must not move (separate
+    critic, distillation and entropy terms off)."""
+    algo = 'a2c_discrete' if discrete else 'a2c_continuous'
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, algo, actions_num=3, state_dim=OBS_DIM)
+    moved = {}
+    for beta in (1.0, 0.0):
+        torch.manual_seed(0)
+        cfg = dict(teacher_cfg, loss='kl' if discrete else 'mse', coef=0.0, ppo_coef=1.0, beta=beta)
+        agent = _make_agent(tmp_path, _DictObsEnv(NUM_ENVS, discrete), discrete, _separate_network(discrete),
+                            distillation=cfg)
+        before = _actor_params(agent)
+        agent.epoch_num += 1
+        agent.train_epoch()
+        after = _actor_params(agent)
+        moved[beta] = any(not torch.equal(before[k], after[k]) for k in before)
+        flags = agent.experience_buffer.tensor_dict['from_teacher']
+        assert flags.shape == (HORIZON, NUM_ENVS) and bool(flags.all()) == (beta == 1.0)
+        assert torch.isfinite(agent.aux_loss_dict['distill'][0])            # still monitored at coef 0
+    assert not moved[1.0]
+    assert moved[0.0]
+
+
+def test_minibatches_carry_teacher_outputs_not_states(tmp_path):
+    """The teacher runs once per epoch over the rollout; the update reads its
+    outputs from the minibatch and never calls it."""
+    torch.manual_seed(0)
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=OBS_DIM)
+    teacher_cfg.update({'coef': 1.0, 'ppo_coef': 1.0, 'beta': 0.5})
+    agent = _make_agent(tmp_path, _DictObsEnv(NUM_ENVS, True), True, _network(True), distillation=teacher_cfg)
+    calls = []
+    forward = agent.distill.teacher_forward
+    agent.distill.teacher_forward = lambda states: (calls.append(states.shape[0]), forward(states))[1]
+    agent.epoch_num += 1
+    agent.train_epoch()
+    keys = set(agent.dataset.values_dict)
+    assert {'teacher_logits', 'from_teacher'} <= keys and 'states' not in keys
+    assert agent.dataset.values_dict['teacher_logits'].shape == (NUM_ENVS * HORIZON, 3)
+    # HORIZON mixing calls on the beta rows, then exactly one pass over the batch
+    assert calls[-1] == NUM_ENVS * HORIZON and len(calls) <= HORIZON + 1
+    assert all(n <= NUM_ENVS for n in calls[:-1])
+
+
+@pytest.mark.parametrize('block', ['distillation', 'state_aux'])
+def test_multi_agent_envs_are_rejected(tmp_path, block):
+    """States are stored per env and observations per agent: rows would not line up."""
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=OBS_DIM)
+    env = _DictObsEnv(NUM_ENVS, True)
+    info = dict(env.get_env_info(), agents=2)
+    extra = {'distillation': teacher_cfg} if block == 'distillation' else {'state_aux': {}}
+    with pytest.raises(ValueError, match=f'{block} does not support multi-agent'):
+        _make_agent(tmp_path, env, True, _network(True), env_info=info, **extra)
+
+
+def test_dict_state_space_is_rejected(tmp_path):
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=OBS_DIM)
+    env = _DictObsEnv(NUM_ENVS, True)
+    box = spaces.Box(-np.inf, np.inf, (OBS_DIM,), dtype=np.float32)
+    info = dict(env.get_env_info(), state_space=spaces.Dict({'a': box}))
+    with pytest.raises(ValueError, match='Box state space'):
+        _make_agent(tmp_path, env, True, _network(True), env_info=info, distillation=teacher_cfg)
+
+
+def test_multi_discrete_student_is_rejected_at_init(tmp_path):
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=OBS_DIM)
+    env = _DictObsEnv(NUM_ENVS, True)
+    info = dict(env.get_env_info(), action_space=spaces.Tuple([spaces.Discrete(3), spaces.Discrete(2)]))
+    network = _network(True)
+    network['space'] = {'multi_discrete': {}}
+    with pytest.raises(NotImplementedError, match='multi-discrete'):
+        from rl_games.torch_runner import Runner  # noqa: F401
+        _make_agent(tmp_path, env, True, network, env_info=info, distillation=teacher_cfg)
+
+
+def test_adaptive_lr_with_a_pure_distillation_phase_warns(tmp_path):
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_continuous', actions_num=3, state_dim=OBS_DIM)
+    teacher_cfg.update({'loss': 'mse', 'coef': 1.0, 'ppo_coef': [[0, 0.0], [5, 1.0]], 'beta': 0.0})
+    with pytest.warns(UserWarning, match='collapse the learning rate'):
+        _make_agent(tmp_path, _DictObsEnv(NUM_ENVS, False), False, _network(False),
+                    distillation=teacher_cfg, lr_schedule='adaptive')
+
+
+def test_state_aux_checkpoint_loads_without_the_head(tmp_path):
+    """Players build the network without `state_shape`: the checkpoint of a
+    state_aux run must load there as the plain actor-critic."""
+    from rl_games.algos_torch.model_builder import ModelBuilder
+    torch.manual_seed(0)
+    env = _DictObsEnv(NUM_ENVS, discrete=True)
+    network = _network(True, name='actor_critic_state_aux', state_aux={'coef': 1.0, 'units': [8]})
+    agent = _make_agent(tmp_path, env, True, network, state_aux={})
+    agent.epoch_num += 1
+    agent.train_epoch()
+    checkpoint = {'_orig_mod.' + k: v for k, v in agent.model.state_dict().items()}   # as a compiled run saves it
+    assert any('aux_head' in k for k in checkpoint)
+
+    params = {'algo': {'name': 'a2c_discrete'}, 'model': {'name': 'discrete_a2c'}, 'network': network}
+    player_model = ModelBuilder().load(params).build(           # the build dict BasePlayer uses
+        {'actions_num': 3, 'input_shape': (OBS_DIM,), 'num_seqs': 1, 'value_size': 1,
+         'normalize_value': False, 'normalize_input': False})
+    assert player_model.a2c_network.aux_head is None
+    player_model.load_state_dict({k[len('_orig_mod.'):]: v for k, v in checkpoint.items()})   # strict
+    obs = torch.randn(5, OBS_DIM)
+    agent.model.eval()
+    player_model.eval()
+    with torch.no_grad():
+        ref = agent.model({'obs': obs.clone(), 'is_train': False, 'prev_actions': None, 'rnn_states': None})
+        out = player_model({'obs': obs.clone(), 'is_train': False, 'prev_actions': None, 'rnn_states': None})
+    assert torch.allclose(ref['logits'], out['logits'])
+    assert player_model.get_aux_loss() is None
+
+
+def test_state_aux_network_without_the_algo_block_is_a_clear_error(tmp_path):
+    """Without `state_aux: {}` the network would be built head-less and train
+    as a plain actor-critic without saying so."""
+    env = _DictObsEnv(NUM_ENVS, discrete=True)
+    aux_network = _network(True, name='actor_critic_state_aux', state_aux={'coef': 1.0, 'units': [8]})
+    with pytest.raises(ValueError, match='needs algo config `state_aux'):
+        _make_agent(tmp_path, env, True, aux_network)
+
+
+def test_recurrent_student_trains_with_distillation(tmp_path):
+    """Sequence minibatches slice the cached teacher outputs and the
+    teacher-row flags like every other per-row entry."""
+    torch.manual_seed(0)
+    _, teacher_cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=OBS_DIM)
+    teacher_cfg.update({'coef': 1.0, 'ppo_coef': 1.0, 'beta': 0.5})
+    network = _network(True, rnn={'name': 'lstm', 'units': 8, 'layers': 1})
+    agent = _make_agent(tmp_path, _DictObsEnv(NUM_ENVS, True), True, network,
+                        distillation=teacher_cfg, seq_length=4)
+    assert agent.is_rnn
+    for _ in range(2):
+        agent.epoch_num += 1
+        agent.train_epoch()
+    assert agent.dataset.values_dict['teacher_logits'].shape == (NUM_ENVS * HORIZON, 3)
+    assert torch.isfinite(agent.aux_loss_dict['distill'][0])
+    assert all(torch.isfinite(p).all() for p in agent.model.parameters())

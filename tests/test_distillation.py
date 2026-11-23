@@ -253,3 +253,141 @@ def test_from_config_rejects_recurrent_teacher(tmp_path):
     _, cfg = _teacher_yaml_and_checkpoint(tmp_path, 'a2c_discrete', actions_num=3, state_dim=6, rnn=True)
     with pytest.raises(NotImplementedError, match='feedforward'):
         TeacherDistillation.from_config(cfg, (6,), 3, 'cpu', is_discrete=True)
+
+
+def test_empty_or_malformed_schedule_is_rejected():
+    """yaml `ppo_coef:` parses to None; read as 0 it would be pure DAgger forever."""
+    t = _Teacher(4, 5)
+    for bad in (None, [], [[0, 1.0], [5]], 'on'):
+        with pytest.raises(ValueError, match='ppo_coef'):
+            _distill(t, True, ppo_coef=bad)
+    d = _distill(t, True, coef=[[0, 1.0], [10, 0.0]], ppo_coef=[[0, 0.0], [10, 1.0]])
+    assert d.has_pure_distillation_phase()
+    assert not _distill(t, True, coef=0.1, ppo_coef=1.0).has_pure_distillation_phase()
+
+
+def test_mix_actions_flags_the_teacher_rows():
+    torch.manual_seed(4)
+    t = _Teacher(4, 5)
+    N = 400
+    states = torch.randn(N, 4)
+    logits = torch.randn(N, 5)
+    dist = torch.distributions.Categorical(logits=logits)
+
+    def res():
+        a = dist.sample()
+        return {'logits': logits, 'actions': a, 'neglogpacs': -dist.log_prob(a)}
+
+    off = _distill(t, True, beta=0.0).mix_actions(res(), states, epoch=0)
+    assert off['from_teacher'].shape == (N,) and not off['from_teacher'].any()
+    full = _distill(t, True, beta=1.0).mix_actions(res(), states, epoch=0)
+    assert full['from_teacher'].all()
+    half = _distill(t, True, beta=0.5).mix_actions(res(), states, epoch=0)
+    assert 0.35 < half['from_teacher'].mean().item() < 0.65
+    assert set(half['from_teacher'].unique().tolist()) == {0.0, 1.0}
+
+
+def test_mix_actions_survives_a_row_without_valid_actions():
+    """CategoricalMasked keeps such a row a finite distribution; so must the teacher's."""
+    from rl_games.common.extensions.distributions import CategoricalMasked
+    torch.manual_seed(5)
+    t = _Teacher(4, 5)
+    d = _distill(t, True, beta=1.0)
+    states = torch.randn(6, 4)
+    masks = torch.ones(6, 5, dtype=torch.bool)
+    masks[2] = False
+    student = CategoricalMasked(logits=torch.randn(6, 5), masks=masks)
+    a = student.sample()
+    out = d.mix_actions({'logits': student.logits, 'actions': a, 'neglogpacs': -student.log_prob(a)},
+                        states, epoch=0, action_masks=masks)
+    assert torch.isfinite(out['neglogpacs']).all()
+    loss = d.loss({'logits': student.logits}, states, action_masks=masks)
+    assert torch.isfinite(loss)
+
+
+def test_mix_actions_samples_around_the_clipped_teacher_mean():
+    torch.manual_seed(6)
+    t = _Teacher(4, 3, discrete=False, seed=3)
+    with torch.no_grad():
+        t.lin.weight.mul_(40.0)                      # teacher means far outside [-1, 1]
+    states = torch.randn(256, 4)
+    mus, sig = torch.zeros(256, 3), torch.full((256, 3), 0.5)
+
+    def res():
+        return {'mus': mus, 'sigmas': sig, 'actions': mus.clone(), 'neglogpacs': torch.zeros(256)}
+
+    raw = _distill(t, False, beta=1.0).mix_actions(res(), states, epoch=0)
+    clipped = _distill(t, False, beta=1.0, teacher_mu_clip=1.0).mix_actions(res(), states, epoch=0)
+    assert raw['actions'].abs().max() > 10.0
+    assert clipped['actions'].abs().max() < 1.0 + 6 * 0.5     # mean within +-1, teacher sigma 0.5
+
+
+@pytest.mark.parametrize('discrete', [True, False])
+def test_cached_targets_give_the_same_loss_as_labelling_on_the_spot(discrete):
+    torch.manual_seed(7)
+    t = _Teacher(4, 3, discrete=discrete)
+    d = _distill(t, discrete, teacher_mu_clip=0.5, target_chunk=5)   # 5 rows per teacher forward
+    states = torch.randn(23, 4)
+    targets = d.targets(states)
+    if discrete:
+        assert set(targets) == {'teacher_logits'}
+        student = {'logits': torch.randn(23, 3)}
+    else:
+        assert set(targets) == {'teacher_mus', 'teacher_sigmas'}
+        assert targets['teacher_mus'].abs().max() <= 0.5
+        student = {'mus': torch.randn(23, 3), 'sigmas': torch.full((23, 3), 0.7)}
+    assert all(v.shape[0] == 23 and not v.requires_grad for v in targets.values())
+    assert torch.allclose(d.loss(student, targets), d.loss(student, states), atol=1e-6)
+    # a minibatch is a row slice of the cached targets
+    sl = slice(4, 15)
+    part = {k: v[sl] for k, v in targets.items()}
+    assert torch.allclose(d.loss({k: v[sl] for k, v in student.items()}, part),
+                          d.loss({k: v[sl] for k, v in student.items()}, states[sl]), atol=1e-6)
+
+
+def test_combine_keeps_a_non_finite_distillation_loss_out_at_zero_coef():
+    t = _Teacher(4, 5)
+    d = _distill(t, True, coef=[[0, 1.0], [10, 0.0]], ppo_coef=1.0)
+    ppo, value, nan = torch.tensor(3.0), torch.tensor(0.7), torch.tensor(float('nan'))
+    assert torch.equal(d.combine(ppo, value, nan, epoch=10), ppo)        # monitoring only
+    assert torch.isnan(d.combine(ppo, value, nan, epoch=0))              # the term is on
+
+
+@pytest.mark.parametrize('separate', [False, True])
+def test_warm_start_reproduces_the_teacher_value_function(separate):
+    """A `separate: True` teacher keeps its critic in critic_mlp; the central
+    value has one trunk named actor_mlp. By name alone the copy would stack
+    the teacher's value head on its actor trunk."""
+    from rl_games.algos_torch.model_builder import ModelBuilder
+    torch.manual_seed(8)
+
+    def build(network, model):
+        params = {'algo': {'name': 'a2c_discrete'}, 'model': {'name': model}, 'network': network}
+        return ModelBuilder().load(params).build(
+            {'actions_num': 3, 'input_shape': (6,), 'num_seqs': 1, 'value_size': 1,
+             'normalize_value': True, 'normalize_input': True}).eval()
+
+    mlp = {'units': [32, 16], 'activation': 'elu', 'initializer': {'name': 'default'}}
+    teacher = build({'name': 'actor_critic', 'separate': separate, 'space': {'discrete': {}}, 'mlp': mlp},
+                    'discrete_a2c')
+    cv = build({'name': 'actor_critic', 'separate': False, 'central_value': True, 'mlp': mlp}, 'central_value')
+    d = _distill(teacher, True)
+    copied, skipped = d.warm_start_central_value(cv)
+    assert copied > 0 and skipped == 0
+    x = torch.randn(64, 6)
+    with torch.no_grad():
+        v_teacher = teacher({'obs': x.clone(), 'is_train': False})['values']
+        v_cv = cv({'obs': x.clone(), 'is_train': False, 'actions': None, 'is_done': None})['values']
+    assert torch.allclose(v_teacher, v_cv, atol=1e-6)
+
+
+def test_relative_teacher_paths_resolve_against_the_repository_root(tmp_path, monkeypatch):
+    import os
+    from rl_games.common.distillation import _resolve_path
+    monkeypatch.chdir(tmp_path)
+    rel = os.path.join('rl_games', 'configs', 'ppo_cartpole.yaml')
+    assert not os.path.exists(rel)
+    assert os.path.isfile(_resolve_path(rel))
+    assert _resolve_path('no/such/file.yaml') == 'no/such/file.yaml'       # left for open() to report
+    (tmp_path / 'local.yaml').write_text('x: 1')
+    assert _resolve_path('local.yaml') == 'local.yaml'                     # the working directory wins
