@@ -128,6 +128,11 @@ class SACAgent(BaseAlgorithm):
             raise ValueError('action_groups with more than one group need an ensemble critic network (flash_sac)')
         self._post_actor_step = getattr(sac_network, 'post_actor_step', None)
         self._post_critic_step = getattr(sac_network, 'post_critic_step', None)
+        if self.ensemble_critic and 'min_alpha' not in config:
+            # flash path: the floor also enters the critic target and clamps log alpha, so a default floor would
+            # pin the temperature (tracking runs settle near 2e-4, far below 0.01). Off unless the config sets one.
+            self.min_alpha = torch.zeros_like(self.min_alpha)
+            self._log_min_alpha = None
 
         if self.ensemble_critic:
             groups = self.action_groups or [list(range(self.actions_num))]

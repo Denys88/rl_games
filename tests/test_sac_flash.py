@@ -671,6 +671,18 @@ def test_scaled_rewards_reach_the_critic():
     assert not torch.allclose(seen['reward'], raw)
 
 
+def test_min_alpha_floor_is_off_by_default_for_the_flash_network(monkeypatch):
+    """The flash path's floor enters the critic target and clamps log alpha: it applies only when the config sets
+    it. The default network keeps its 0.01 floor in the actor loss."""
+    monkeypatch.delitem(FLASH_CONFIG, 'min_alpha')
+    agent = make_agent(PointMassTracking(16, num_groups=2), flash_network(), max_epochs=1)
+    assert agent.min_alpha.item() == 0.0 and agent._log_min_alpha is None
+    agent = make_agent(PointMassTracking(16, num_groups=2), flash_network(), max_epochs=1, min_alpha=0.05)
+    assert agent.min_alpha.item() == pytest.approx(0.05) and agent._log_min_alpha == pytest.approx(math.log(0.05))
+    agent, _ = make_fake_env_sac_agent()
+    assert agent.min_alpha.item() == pytest.approx(0.01)
+
+
 def test_flash_min_alpha_is_one_temperature_and_edge_mass_is_logged():
     env = PointMassTracking(16, num_groups=2)
     agent = make_agent(env, flash_network(), max_epochs=2, init_alpha=0.01, min_alpha=0.05)
