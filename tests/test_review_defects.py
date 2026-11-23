@@ -6,6 +6,8 @@ review (reproduced on torch 2.15 / numpy 2.5 / Python 3.13):
 - SelfPlayManager check_scores read algo.game_scores, which does not exist
 - DiscreteA2CBase.train called observer.after_print_stats twice per epoch
 - D2RLNet.forward applied activation and normalization in a different order per layer
+- end to end: multi-agent central value dones stay with their env
+  (the regrouping itself is unit-tested in tests/test_recurrent_dones.py)
 """
 
 import numpy as np
@@ -386,3 +388,94 @@ def test_d2rl_without_normalization_is_unchanged():
 
     assert torch.equal(net(x), out)
     assert (net(x) >= 0).all()
+# ---------------------------------------------------------------------------
+# Central value dones follow their env, end to end
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize('recurrent', [False, True])
+def test_central_value_minibatch_dones_match_its_state_rows(tmp_path, recurrent):
+    """End to end on a 2-agent PPO agent with a central value: at train time
+    every central-value row must carry the done flag of the env its state row
+    belongs to. Episode lengths differ per env, so another env's flags do not
+    line up (before the fix on master: 21 of 80 rows wrong). The regrouping
+    itself is unit-tested in tests/test_recurrent_dones.py; this runs it on
+    the tensors a real rollout produces."""
+    from gymnasium import spaces
+    from rl_games.torch_runner import Runner
+    from tests.test_ppo_masking import _ppo_params
+    from tests.test_sac_correctness import SameStepFakeVecEnv, OBS_DIM
+
+    num_envs, num_agents, horizon = 4, 2, 20
+
+    class TwoAgentEnv(SameStepFakeVecEnv):
+        """obs/rewards/dones: one row per (env, agent), agents of an env
+        adjacent; states: one row per env = [env_id, step_in_episode, ...]."""
+
+        def __init__(self):
+            super().__init__(num_envs)
+            self.ep_lens = np.array([3, 4, 5, 7], dtype=np.int64)
+
+        def _wrap(self, obs):
+            return {'obs': torch.from_numpy(np.repeat(obs, num_agents, axis=0)),
+                    'states': torch.from_numpy(obs.copy())}
+
+        def reset(self):
+            return self._wrap(super().reset())
+
+        def step(self, actions):
+            obs, rewards, dones, infos = super().step(actions.detach().cpu().numpy())
+            return (self._wrap(obs), torch.from_numpy(np.repeat(rewards, num_agents)),
+                    torch.from_numpy(np.repeat(dones, num_agents)),
+                    {'time_outs': np.repeat(infos['time_outs'], num_agents)})
+
+        def get_env_info(self):
+            info = super().get_env_info()
+            info['agents'] = num_agents
+            info['state_space'] = spaces.Box(-np.inf, np.inf, (OBS_DIM,), dtype=np.float32)
+            return info
+
+        def set_train_info(self, frame, algo):
+            pass
+
+    torch.manual_seed(7)
+    np.random.seed(7)
+    env = TwoAgentEnv()
+    cv_network = {'name': 'actor_critic', 'central_value': True,
+                  'mlp': {'units': [16], 'activation': 'elu', 'initializer': {'name': 'default'}}}
+    if recurrent:
+        cv_network['rnn'] = {'name': 'lstm', 'units': 8, 'layers': 1}
+    params = _ppo_params(
+        num_envs=num_envs, env_info=env.get_env_info(), train_dir=str(tmp_path),
+        horizon_length=horizon, minibatch_size=num_envs * num_agents * horizon, seq_length=5,
+        central_value_config={
+            'minibatch_size': num_envs * horizon, 'mini_epochs': 1, 'learning_rate': 1e-4,
+            'clip_value': False, 'normalize_input': False, 'truncate_grads': False,
+            'network': cv_network})
+    params['seed'] = 7
+    runner = Runner()
+    runner.load({'params': params})
+    runner.params['config']['vec_env'] = env
+    agent = runner.algo_factory.create(runner.algo_name, base_name='cv_dones', params=runner.params)
+    central_value = agent.central_value_net
+    assert agent.num_agents == num_agents and central_value.is_rnn == recurrent
+
+    batches = []
+    calc_gradients = central_value.calc_gradients
+
+    def spy(batch):
+        batches.append((batch['obs'].clone(), batch['dones'].clone()))
+        return calc_gradients(batch)
+
+    central_value.calc_gradients = spy
+    agent.init_tensors()
+    agent.obs = agent.env_reset()
+    agent.train_epoch()
+
+    states, dones = batches[0]
+    assert states.shape == (num_envs * horizon, OBS_DIM) and dones.shape == (num_envs * horizon,)
+    assert states[:, 0].long().tolist() == torch.arange(num_envs).repeat_interleave(horizon).tolist()
+    # the buffer's done flag marks the first step of an episode (and of the rollout)
+    episode_start = (states[:, 1] == 0).long()
+    assert episode_start.sum() >= 4 * num_envs              # several episodes per env
+    assert dones.flatten().long().tolist() == episode_start.tolist()
