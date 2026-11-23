@@ -421,6 +421,12 @@ class A2CBase(BaseAlgorithm):
 
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
+        if self.normalize_rms_advantage and not self.normalize_advantage:
+            # RMS statistics are a mode OF advantage normalization: with it off there is
+            # nothing to normalize and no advantage_mean_std. Resolved here so that every
+            # later check of the flag (eval/train mode, stats weights, diagnostics) agrees.
+            print('WARNING: normalize_rms_advantage is ignored because normalize_advantage is False')
+            self.normalize_rms_advantage = False
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
