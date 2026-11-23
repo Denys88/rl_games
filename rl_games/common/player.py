@@ -1,4 +1,5 @@
 import os
+import pickle
 import shutil
 import threading
 import time
@@ -19,27 +20,15 @@ class BasePlayer(object):
         self.load_networks(params)
         self.env_name = self.config['env_name']
         self.player_config = self.config.get('player', {})
-        self.env_config = self.config.get('env_config', {})
-        self.env_config = self.player_config.get('env_config', self.env_config)
+        base_env_cfg = self.config.get('env_config') or {}
+        player_env_cfg = self.player_config.get('env_config')
+        self.env_config = dict(base_env_cfg if player_env_cfg is None else player_env_cfg)
         self.env_info = self.config.get('env_info')
         self.clip_actions = config.get('clip_actions', True)
-        self.seed = self.env_config.pop('seed', None)
+        self.seed = self.env_config.pop('seed', base_env_cfg.get('seed'))
+        self._seed_pending = False
         self.balance_env_rewards = self.player_config.get('balance_env_rewards', False)
-
-        if self.env_info is None:
-            use_vecenv = self.player_config.get(
-                'use_vecenv', self._default_use_vecenv(self.env_name))
-            if use_vecenv:
-                print('[BasePlayer] Creating vecenv: ', self.env_name)
-                self.env = vecenv.create_vec_env(
-                    self.env_name, self.config['num_actors'], **self.env_config)
-                self.env_info = self.env.get_env_info()
-            else:
-                print('[BasePlayer] Creating regular env: ', self.env_name)
-                self.env = self.create_env()
-                self.env_info = env_configurations.get_env_info(self.env)
-        else:
-            self.env = config.get('vec_env')
+        self._init_env(config)
 
         self.num_agents = self.env_info.get('agents', 1)
         self.value_size = self.env_info.get('value_size', 1)
@@ -126,8 +115,8 @@ class BasePlayer(object):
                 # without triggering the retry loop in "safe_filesystem_op()"
                 load_error = False
                 try:
-                    torch.load(self.checkpoint_to_load)
-                except (OSError, IOError, torch.TorchError) as e:
+                    torch.load(self.checkpoint_to_load, weights_only=False)
+                except (OSError, EOFError, RuntimeError, pickle.UnpicklingError) as e:
                     print(f"Evaluation: checkpoint file is likely corrupted {self.checkpoint_to_load}: {e}")
                     load_error = True
 
@@ -245,8 +234,38 @@ class BasePlayer(object):
             actions = actions.cpu().numpy()
         return actions
 
+    def _init_env(self, config):
+        if self.env_info is not None:
+            self.env = config.get('vec_env')
+            return
+        use_vecenv = self.player_config.get(
+            'use_vecenv', self._default_use_vecenv(self.env_name))
+        if use_vecenv:
+            print('[BasePlayer] Creating vecenv: ', self.env_name)
+            vecenv_config = dict(self.env_config)
+            if self.seed is not None:
+                vecenv_config['seed'] = self.seed
+            self.env = vecenv.create_vec_env(
+                self.env_name, self.config['num_actors'], **vecenv_config)
+            self.env_info = self.env.get_env_info()
+        else:
+            print('[BasePlayer] Creating regular env: ', self.env_name)
+            self.env = self.create_env()
+            if self.seed is not None and hasattr(self.env, 'seed'):
+                self.env.seed(self.seed)
+            self._seed_pending = self.seed is not None
+            self.env_info = env_configurations.get_env_info(self.env)
+
     def env_reset(self, env):
-        obs = env.reset()
+        seed = getattr(self, 'seed', None)
+        if getattr(self, '_seed_pending', False) and seed is not None:
+            self._seed_pending = False
+            try:
+                obs = env.reset(seed=seed)
+            except TypeError:
+                obs = env.reset()
+        else:
+            obs = env.reset()
         if isinstance(obs, tuple) and len(obs) == 2 and isinstance(obs[1], dict):
             obs = obs[0]   # gymnasium (obs, info) reset
         return self.obs_to_torch(obs)
@@ -302,8 +321,15 @@ class BasePlayer(object):
         sum_steps = 0
         sum_game_res = 0
         games_played = 0
-        has_masks = False
-        has_masks_func = getattr(self.env, "has_action_mask", None) is not None
+        per_env_rewards = None
+        next_step_autoreset = self.env_info.get('autoreset_mode') == 'next_step'
+        mask_getter = None
+        has_vector_masks = getattr(self.env, "has_action_masks", None)
+        has_legacy_mask = getattr(self.env, "has_action_mask", None)
+        if has_vector_masks is not None and has_vector_masks():
+            mask_getter = self.env.get_action_masks
+        elif has_legacy_mask is not None and has_legacy_mask():
+            mask_getter = self.env.get_action_mask
 
         op_agent = getattr(self.env, "create_agent", None)
         if op_agent:
@@ -311,9 +337,6 @@ class BasePlayer(object):
             # print('setting agent weights for selfplay')
             # self.env.create_agent(self.env.config)
             # self.env.set_weights(range(8),self.get_weights())
-
-        if has_masks_func:
-            has_masks = self.env.has_action_mask()
 
         self.wait_for_checkpoint()
 
@@ -332,9 +355,10 @@ class BasePlayer(object):
 
             cr = torch.zeros(batch_size, dtype=torch.float32)
             steps = torch.zeros(batch_size, dtype=torch.float32)
+            previous_dones = torch.zeros(batch_size, dtype=torch.bool)
 
-            # Initialize per-environment accumulators if balance_env_rewards is enabled
-            if self.balance_env_rewards:
+            # Keep completed-episode statistics across environment resets.
+            if self.balance_env_rewards and per_env_rewards is None:
                 per_env_rewards = torch.zeros(batch_size, dtype=torch.float32)
                 per_env_steps = torch.zeros(batch_size, dtype=torch.float32)
                 per_env_game_res = torch.zeros(batch_size, dtype=torch.float32)
@@ -346,16 +370,30 @@ class BasePlayer(object):
                 if self.evaluation and n % self.update_checkpoint_freq == 0:
                     self.maybe_load_new_checkpoint()
 
-                if has_masks:
-                    masks = self.env.get_action_mask()
+                if mask_getter is not None:
+                    masks = mask_getter()
                     action = self.get_masked_action(
                         obses, masks, is_deterministic)
                 else:
                     action = self.get_action(obses, is_deterministic)
 
                 obses, r, done, info = self.env_step(self.env, action)
-                cr += r
-                steps += 1
+                if next_step_autoreset:
+                    live = ~previous_dones
+                    cr += torch.where(live, r, torch.zeros_like(r))
+                    steps += live
+                    recurrent_resets = done.bool() | previous_dones
+                    done = done.bool() & live
+                    previous_dones = done.clone()
+                else:
+                    cr += r
+                    steps += 1
+                    recurrent_resets = done
+
+                if self.is_rnn:
+                    reset_indices = recurrent_resets.nonzero(as_tuple=False)
+                    for state in self.states:
+                        state[:, reset_indices, :] = 0.0
 
                 if render:
                     self.env.render(mode='human')
@@ -366,10 +404,6 @@ class BasePlayer(object):
                 done_count = len(done_indices)
                 games_played += done_count
                 if done_count > 0:
-                    if self.is_rnn:
-                        for s in self.states:
-                            s[:, all_done_indices, :] = s[:,
-                                                        all_done_indices, :] * 0.0
                     game_res = 0.0
                     if isinstance(info, dict):
                         if 'battle_won' in info:

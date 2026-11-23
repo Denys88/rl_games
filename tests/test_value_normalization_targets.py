@@ -61,3 +61,51 @@ def test_old_values_and_returns_use_final_normalization_stats(base, masked):
             dataset['old_values'], prediction, 0.2, dataset['returns'], True).mean()
         loss.backward()
         assert torch.equal(prediction.grad, torch.zeros_like(prediction.grad))
+
+
+@pytest.mark.parametrize('base', [ContinuousA2CBase, DiscreteA2CBase])
+def test_all_invalid_rollout_preserves_value_normalization(base):
+    n = 4
+    rms = RunningMeanStd((1,))
+    rms(torch.tensor([[1.0], [3.0]]))
+    expected_rms = copy.deepcopy(rms).eval()
+    agent = SimpleNamespace(
+        config={}, normalize_value=True, normalize_advantage=False,
+        has_central_value=False, use_action_masks=False, value_mean_std=rms,
+        dataset=PPODataset(n, n, False, False, 'cpu', 1),
+    )
+    batch = {
+        'values': torch.ones(n, 1), 'returns': torch.full((n, 1), 2.0),
+        'obses': torch.zeros(n, 3), 'actions': torch.zeros(n, 2),
+        'neglogpacs': torch.zeros(n), 'dones': torch.ones(n),
+        'mus': torch.zeros(n, 2), 'sigmas': torch.ones(n, 2),
+        'rnn_masks': torch.zeros(n),
+    }
+
+    base.prepare_dataset(agent, batch)
+
+    for key, expected in expected_rms.state_dict().items():
+        torch.testing.assert_close(rms.state_dict()[key], expected)
+    torch.testing.assert_close(
+        agent.dataset.values_dict['old_values'], expected_rms(batch['values']))
+    torch.testing.assert_close(
+        agent.dataset.values_dict['returns'], expected_rms(batch['returns']))
+
+
+@pytest.mark.parametrize('scripted', [False, True])
+def test_empty_normalizer_batch_preserves_subsequent_updates(scripted):
+    rms = RunningMeanStd((2,))
+    if scripted:
+        rms = torch.jit.script(rms)
+    expected_rms = copy.deepcopy(rms)
+    first = torch.tensor([[1.0, 2.0], [3.0, 6.0]])
+    second = torch.tensor([[5.0, -1.0]])
+    rms(first)
+    expected_rms(first)
+
+    result = rms(torch.empty(0, 2))
+
+    assert result.shape == (0, 2)
+    for key, expected in expected_rms.state_dict().items():
+        torch.testing.assert_close(rms.state_dict()[key], expected)
+    torch.testing.assert_close(rms(second), expected_rms(second))

@@ -242,7 +242,11 @@ class CentralValueTrain(nn.Module):
                 'rnn_states': self.rnn_states,
                 'is_train': False
             })
-        value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
+        value = res_dict['values']
+        # Bootstrap reads the next observation without consuming it in the
+        # rollout's recurrent stream; the next action query will consume it.
+        if input_dict.get('update_rnn_states', True):
+            self.rnn_states = res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
