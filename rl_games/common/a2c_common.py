@@ -1589,8 +1589,6 @@ class DiscreteA2CBase(A2CBase):
                                 a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, 
                                 scaled_time, scaled_play_time, curr_frames)
 
-                self.algo_observer.after_print_stats(frame, epoch_num, total_time)
-
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()
                     mean_shaped_rewards = self.game_shaped_rewards.get_mean()
