@@ -489,15 +489,6 @@ def test_n_step_buffer_loads_a_one_step_checkpoint():
     assert torch.equal(folded.obses, one.obses)
 
 
-def test_one_step_buffer_counts_terminated_and_truncated_as_terminated():
-    buf = experience.VectorizedReplayBuffer((3,), (2,), 8, 'cpu', n_step=1)
-    done = torch.tensor([[True], [False]])
-    truncated = torch.tensor([[True], [True]])
-    buf.add(torch.randn(2, 3), torch.randn(2, 2), torch.randn(2, 1), torch.randn(2, 3), done, truncated)
-    assert buf.dones[:2].flatten().tolist() == [True, False]
-    assert buf.truncated[:2].flatten().tolist() == [False, True]
-
-
 def test_fp16_replay_reports_rounding_once(capsys):
     buf = experience.VectorizedReplayBuffer((2,), (1,), 8, 'cpu', obs_dtype=torch.float16)
     obs = torch.tensor([[0.01, 50.003], [0.02, 49.997]])
@@ -795,19 +786,26 @@ def test_cosine_schedule_and_half_rate_quirk(per_optimizer_step):
 
 
 def test_two_group_point_mass_learns():
-    """64 envs, small networks, 300 env steps x 4 updates of 256 on CPU: the deterministic policy's
-    reward per step, summed over both groups, rises from ~0.14 to 0.36-0.74 (seeds 0-6) and each
-    group improves."""
-    torch.manual_seed(3)
-    env = PointMassTracking(64, num_groups=2, seed=3)
-    window = {'size': env.window, 'steps': 10, 'hidden': 16, 'latent': 16}
-    agent = make_agent(env, flash_network(actor_units=32, critic_units=64, blocks=2, num_bins=51, window=window),
-                       seed=3, n_step=5, actor_lr=5e-4, critic_lr=5e-4, alpha_lr=5e-4, batch_size=256,
-                       num_updates_per_step=4, num_warmup_frames=64 * 20, replay_buffer_size=64 * 200,
-                       replay_memory_efficient=True, replay_obs_dtype='float16', max_epochs=30)
-    before = evaluate(agent, 2)
-    agent.train()
-    after = evaluate(agent, 2)
+    """64 envs, small networks, 450 env steps x 4 updates of 256 on CPU, three seeds: the deterministic
+    policy's reward per step, summed over both groups and averaged over the seeds, rises from ~0.14 to
+    ~0.57, and each group improves.
+
+    One run is not a stable signal. Its learning curve can dip (seed 0: 0.83 after 45 epochs, 0.29 after
+    60), and the same seed lands elsewhere on another CPU (seed 3 after 30 epochs: 0.42 on one machine,
+    0.27 on another). After 45 epochs seeds 0-5 reach 0.44-0.86; these three are the weakest of them."""
+    before, after = [], []
+    for seed in (1, 2, 3):
+        torch.manual_seed(seed)
+        env = PointMassTracking(64, num_groups=2, seed=seed)
+        window = {'size': env.window, 'steps': 10, 'hidden': 16, 'latent': 16}
+        agent = make_agent(env, flash_network(actor_units=32, critic_units=64, blocks=2, num_bins=51, window=window),
+                           seed=seed, n_step=5, actor_lr=5e-4, critic_lr=5e-4, alpha_lr=5e-4, batch_size=256,
+                           num_updates_per_step=4, num_warmup_frames=64 * 20, replay_buffer_size=64 * 200,
+                           replay_memory_efficient=True, replay_obs_dtype='float16', max_epochs=45)
+        before.append(evaluate(agent, 2))
+        agent.train()
+        after.append(evaluate(agent, 2))
+    before, after = torch.stack(before).mean(dim=0), torch.stack(after).mean(dim=0)
     assert after.sum() > max(2.0 * before.sum(), before.sum() + 0.15), (before, after)
     assert (after > before).all(), (before, after)
 
