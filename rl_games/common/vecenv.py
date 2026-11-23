@@ -413,3 +413,8 @@ def _create_mjlab(config_name, num_actors, **kwargs):
     from rl_games.envs.mjlab_vecenv import MjlabVecEnv
     return MjlabVecEnv(config_name, num_actors, **kwargs)
 register('MJLAB', _create_mjlab)
+
+def _create_point_mass_tracking(config_name, num_actors, **kwargs):
+    from rl_games.envs.test.point_mass_tracking import PointMassTracking
+    return PointMassTracking(num_actors, **kwargs)
+register('POINT_MASS_TRACKING', _create_point_mass_tracking)

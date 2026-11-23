@@ -1,3 +1,5 @@
+import math
+
 
 
 class RLScheduler:
@@ -57,3 +59,12 @@ class LinearScheduler(RLScheduler):
             entropy_coef = self.min_entropy_coef + (self.start_entropy_coef - self.min_entropy_coef) * mul
 
         return lr, entropy_coef     
+
+def cosine_lr_factor(step, warmup_steps, decay_steps, end_factor):
+    """LR multiplier: linear 0 -> 1 over warmup_steps, cosine 1 -> end_factor until decay_steps, then end_factor."""
+    if step < warmup_steps:
+        return step / warmup_steps
+    if step < decay_steps:
+        progress = (step - warmup_steps) / max(decay_steps - warmup_steps, 1)
+        return end_factor + (1.0 - end_factor) * 0.5 * (1.0 + math.cos(math.pi * progress))
+    return end_factor
