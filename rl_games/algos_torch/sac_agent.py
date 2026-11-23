@@ -180,6 +180,8 @@ class SACAgent(BaseAlgorithm):
             if mode is True or mode in ('reduce-overhead', 'max-autotune'):
                 raise ValueError("update_cuda_graph captures the whole update; torch_compile must not add CUDA "
                                  "graphs of its own: use 'default' or 'max-autotune-no-cudagraphs'")
+            if self.multi_gpu:
+                self._check_cuda_graph_ranks_on_one_host()
             self._make_capturable()
             self.graph_step = sac_helper.CudaGraphStep(self._update_step,
                                                        warmup=int(config.get('update_cuda_graph_warmup', 3)))
@@ -327,6 +329,19 @@ class SACAgent(BaseAlgorithm):
         t = torch.tensor([1.0 if flag else 0.0], device=self._device)
         dist.all_reduce(t, op=dist.ReduceOp.MIN)
         return bool(t.item())
+
+    def _check_cuda_graph_ranks_on_one_host(self):
+        """update_cuda_graph under multi_gpu: the captured update contains the gradient all-reduce. A replay launches
+        its kernels only, which moves the data between GPUs of one machine; across machines the transport needs
+        host-side work that a replay does not run. Only GPUs of one node are checked, so ranks on different machines
+        are refused. A collective: every rank calls it at the same point."""
+        one_host = sac_helper.ranks_share_host(lambda t: dist.all_reduce(t, op=dist.ReduceOp.MAX), self._device)
+        if not one_host and os.environ.get('RL_GAMES_ALLOW_MULTI_NODE_CUDA_GRAPH', '0') != '1':
+            raise ValueError(
+                'update_cuda_graph with multi_gpu needs every rank on one machine: the captured update contains the '
+                'gradient all-reduce, and replaying an NCCL collective is only checked between GPUs of one node. '
+                'Turn update_cuda_graph off for multi-node runs, or set RL_GAMES_ALLOW_MULTI_NODE_CUDA_GRAPH=1 to '
+                'try it.')
 
     def _make_capturable(self):
         for opt in (self.actor_optimizer, self.critic_optimizer, self.log_alpha_optimizer):

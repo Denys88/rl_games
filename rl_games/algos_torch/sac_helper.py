@@ -1,3 +1,6 @@
+import hashlib
+import socket
+
 import torch
 from torch import distributions as pyd
 import math
@@ -298,6 +301,24 @@ class CudaGraphStep:
             self.graphs[branch] = graph
         self.graphs[branch].replay()
         return {k: v.clone() for k, v in self.outputs[branch].items()}
+
+
+def host_fingerprint(hostname):
+    """48 bits of a host-name hash as two integers that float32 holds exactly, followed by their negations: an
+    elementwise MAX over the ranks leaves each value equal to minus its negation only when every rank sent the
+    same name."""
+    digest = hashlib.sha1(hostname.encode()).digest()
+    a, b = float(int.from_bytes(digest[:3], 'big')), float(int.from_bytes(digest[3:6], 'big'))
+    return [a, b, -a, -b]
+
+
+def ranks_share_host(all_reduce_max, device, hostname=None):
+    """True when every rank runs on the same machine. all_reduce_max: in-place elementwise MAX over the ranks
+    (a collective: every rank must call this at the same point)."""
+    t = torch.tensor(host_fingerprint(hostname or socket.gethostname()), dtype=torch.float32, device=device)
+    all_reduce_max(t)
+    a, b, neg_a, neg_b = t.tolist()
+    return a == -neg_a and b == -neg_b
 
 
 class OverlappedGradAllReduce:

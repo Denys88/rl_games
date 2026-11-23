@@ -10,6 +10,7 @@ import torch
 sys.path.insert(0, os.path.dirname(__file__))
 from test_sac_flash import flash_network, make_agent
 
+from rl_games.algos_torch import sac_helper
 from rl_games.envs.test.point_mass_tracking import PointMassTracking
 
 
@@ -27,6 +28,24 @@ def _digest(agent):
     return torch.cat(tensors)
 
 
+def _graph_host_check(agent, rank):
+    """The agent's update_cuda_graph host check (collectives: the same three calls on every rank): on this machine,
+    with every rank reporting its own host name, and then with the override set."""
+    from unittest import mock
+    agent._check_cuda_graph_ranks_on_one_host()  # raises if the ranks of this run looked like different machines
+    outcome = {'same_machine': True}
+    with mock.patch('socket.gethostname', return_value=f'node-{rank}'):
+        try:
+            agent._check_cuda_graph_ranks_on_one_host()
+            outcome['refused'] = False
+        except ValueError as e:
+            outcome['refused'] = 'every rank on one machine' in str(e)
+        with mock.patch.dict(os.environ, {'RL_GAMES_ALLOW_MULTI_NODE_CUDA_GRAPH': '1'}):
+            agent._check_cuda_graph_ranks_on_one_host()
+            outcome['override'] = True
+    return outcome
+
+
 def _worker(rank, world_size, port, results, network, config):
     os.environ.update({'RANK': str(rank), 'LOCAL_RANK': str(rank), 'WORLD_SIZE': str(world_size),
                        'MASTER_ADDR': '127.0.0.1', 'MASTER_PORT': str(port)})
@@ -42,6 +61,7 @@ def _worker(rank, world_size, port, results, network, config):
     rb = agent.replay_buffer
     obs = rb.obs if hasattr(rb, 'obs') else rb.obses
     results[rank] = {'digest': _digest(agent), 'updates': agent.update_counter, 'frame': agent.frame,
+                     'graph_hosts': _graph_host_check(agent, rank),
                      'lr_decay_steps': agent.lr_decay_steps,
                      'obs_count': float(agent.model.running_mean_std.count) if agent.normalize_input else None,
                      'replay_obs': obs[:64].float().clone()}
@@ -75,6 +95,26 @@ def test_ranks_stay_identical(replay_memory_efficient, overlap):
     assert r0['frame'] == r1['frame'] == 960  # max_frames counts both ranks: 3 epochs x 16 envs x 10 steps x 2
     assert not torch.equal(r0['replay_obs'], r1['replay_obs'])  # own envs, own replay
     assert r0['lr_decay_steps'] == 3 * 10 * 2  # the cosine spans each rank's 3 epochs x 10 steps x 2 updates
+
+
+def test_cuda_graph_host_check_over_a_real_collective():
+    """update_cuda_graph with multi_gpu is refused unless every rank is on one machine: the two ranks of the run
+    pass, are refused when each reports its own host name, and pass again with the override."""
+    for rank_result in _run(True, True):
+        assert rank_result['graph_hosts'] == {'same_machine': True, 'refused': True, 'override': True}
+
+
+def test_host_fingerprint_separates_host_names():
+    def reduce_with(*others):  # elementwise MAX with the other ranks' fingerprints, as all_reduce(MAX) leaves it
+        def all_reduce_max(t):
+            for name in others:
+                t.copy_(torch.maximum(t, torch.tensor(sac_helper.host_fingerprint(name))))
+        return all_reduce_max
+
+    assert sac_helper.ranks_share_host(reduce_with('node-a', 'node-a'), 'cpu', hostname='node-a')
+    assert not sac_helper.ranks_share_host(reduce_with('node-a', 'node-b'), 'cpu', hostname='node-a')
+    assert not sac_helper.ranks_share_host(reduce_with('node-b'), 'cpu', hostname='node-a')
+    assert all(float(torch.tensor(v, dtype=torch.float32)) == v for v in sac_helper.host_fingerprint('node-a'))
 
 
 def test_overlapped_and_flat_allreduce_agree():
