@@ -2,6 +2,7 @@
 
 import pickle
 import threading
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
@@ -9,6 +10,11 @@ import torch
 
 from rl_games.algos_torch import torch_ext
 from rl_games.common.player import BasePlayer
+
+
+@dataclass
+class _SimulatorState:
+    step: int
 
 
 def _player(path, *, trusted=False):
@@ -20,10 +26,31 @@ def _player(path, *, trusted=False):
     return player
 
 
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+def test_preexisting_numpy_reward_checkpoint_loads_by_default(tmp_path, dtype):
+    path = tmp_path / 'best.pth'
+    torch.save({'model': {'weight': torch.ones(1)}, 'last_mean_rewards': dtype(3.5)}, path)
+
+    checkpoint = torch_ext.load_checkpoint(path, map_location='cpu')
+    assert checkpoint['last_mean_rewards'] == 3.5
+    assert type(checkpoint['last_mean_rewards']) is dtype
+    torch.testing.assert_close(checkpoint['model']['weight'], torch.ones(1))
+
+
+def test_restricted_load_preserves_caller_registered_globals(tmp_path):
+    path = tmp_path / 'best.pth'
+    torch.save({'last_mean_rewards': np.float32(3.5)}, path)
+    with torch.serialization.safe_globals([np.dtype]):
+        previous = set(torch.serialization.get_safe_globals())
+        torch_ext.load_checkpoint(path)
+        assert set(torch.serialization.get_safe_globals()) == previous
+
+
 @pytest.mark.parametrize("with_environment_state", [False, True])
 def test_evaluation_loads_serialized_training_checkpoint(tmp_path, with_environment_state):
     path = tmp_path / "training.pth"
-    payload = {"model": {"weight": torch.arange(4, dtype=torch.float32)}, "epoch": 7}
+    payload = {"model": {"weight": torch.arange(4, dtype=torch.float32)}, "epoch": 7,
+               "last_mean_rewards": np.float32(3.5)}
     if with_environment_state:
         payload["env_state"] = {"position": np.array([1.5, -2.0], dtype=np.float32)}
     torch.save(payload, path)
@@ -32,6 +59,7 @@ def test_evaluation_loads_serialized_training_checkpoint(tmp_path, with_environm
     assert player.checkpoint_to_load is None
     assert len(player.loaded) == 1
     torch.testing.assert_close(player.loaded[0]["model"]["weight"], payload["model"]["weight"])
+    assert player.loaded[0]['last_mean_rewards'] == 3.5
     if with_environment_state:
         np.testing.assert_array_equal(player.loaded[0]["env_state"]["position"],
                                       payload["env_state"]["position"])
@@ -78,9 +106,10 @@ def test_no_pending_checkpoint_is_a_noop():
     assert not player.loaded
 
 
-def test_checkpoint_with_legacy_objects_requires_explicit_trust(tmp_path):
+@pytest.mark.parametrize('env_state', [np.arange(3), _SimulatorState(step=7)])
+def test_checkpoint_with_legacy_objects_requires_explicit_trust(tmp_path, env_state):
     path = tmp_path / "legacy.pth"
-    torch.save({"env_state": np.arange(3)}, path)
+    torch.save({"last_mean_rewards": np.float32(3.5), "env_state": env_state}, path)
     with pytest.raises(pickle.UnpicklingError, match="trust-checkpoint"):
         torch_ext.load_checkpoint(path)
     with pytest.raises(TypeError, match="boolean"):
@@ -89,3 +118,5 @@ def test_checkpoint_with_legacy_objects_requires_explicit_trust(tmp_path):
     player.maybe_load_new_checkpoint()
     assert not player.loaded
     assert player.checkpoint_to_load is None
+    restored = torch_ext.load_checkpoint(path, trusted=True)
+    np.testing.assert_equal(restored['env_state'], env_state)

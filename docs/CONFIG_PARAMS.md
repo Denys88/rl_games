@@ -382,11 +382,11 @@ the `central_value_config` key overrides the top-level one. No effect under
 ### `trusted_checkpoint`
 
 PPO and SAC load checkpoints with PyTorch's restricted weights loader by default.
-Tensor weights, optimizer states, and metadata made of plain Python numbers,
-strings and containers work with this loader. Legacy checkpoints can also
-contain NumPy objects or custom simulator classes. For a file from a trusted
-source, pass `--trust-checkpoint` to `runner.py` or set `config.trusted_checkpoint`
-to the YAML boolean `true` to enable Python pickle loading. During continuous
+Tensor weights, optimizer states, plain Python metadata, and NumPy `float32`
+or `float64` rewards saved by older trainers work with this loader. Custom
+simulator classes or NumPy arrays in `env_state` require an explicit opt-in.
+For a file from a trusted source, pass `--trust-checkpoint` to `runner.py` or
+set `config.trusted_checkpoint` to the YAML boolean `true`. During continuous
 evaluation this setting applies to every checkpoint loaded from the monitored
 directory.
 

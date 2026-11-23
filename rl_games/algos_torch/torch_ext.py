@@ -1,5 +1,6 @@
 import math
 import pickle
+import threading
 import time
 import warnings
 import numpy as np
@@ -134,15 +135,39 @@ def safe_filesystem_op(func, *args, **kwargs):
 def safe_save(state, filename):
     return safe_filesystem_op(torch.save, state, filename)
 
+
+_REWARD_DTYPE_CLASSES = (np.dtypes.Float32DType, np.dtypes.Float64DType)
+
+
+def _restore_numpy_reward(dtype, data):
+    # Older trainers stored last_mean_rewards as a NumPy floating-point scalar.
+    if type(dtype) not in _REWARD_DTYPE_CLASSES or type(data) is not bytes or len(data) != dtype.itemsize:
+        raise pickle.UnpicklingError('Expected a float32 or float64 NumPy reward scalar')
+    return np.frombuffer(data, dtype=dtype, count=1)[0]
+
+
+_LEGACY_REWARD_GLOBALS = {
+    (_restore_numpy_reward, 'numpy.core.multiarray.scalar'),   # NumPy 1.x checkpoint
+    (_restore_numpy_reward, 'numpy._core.multiarray.scalar'),  # NumPy 2.x checkpoint
+    np.dtype, *_REWARD_DTYPE_CLASSES,
+}
+_checkpoint_load_lock = threading.RLock()
+
+
 def safe_load(filename, *, trusted=False, map_location=None):
     """Restrict unpickling unless a caller explicitly trusts the checkpoint."""
     if not isinstance(trusted, bool):
         raise TypeError("trusted_checkpoint must be a boolean")
+    if trusted:
+        return torch.load(filename, weights_only=False, map_location=map_location)
     try:
-        return torch.load(filename, weights_only=not trusted, map_location=map_location)
+        # PyTorch's allowlist is process-wide. Overlapping contexts would remove
+        # each other's entries on exit. Preserve entries registered by the caller.
+        with _checkpoint_load_lock:
+            added = _LEGACY_REWARD_GLOBALS.difference(torch.serialization.get_safe_globals())
+            with torch.serialization.safe_globals(list(added)):
+                return torch.load(filename, weights_only=True, map_location=map_location)
     except pickle.UnpicklingError as exc:
-        if trusted:
-            raise
         raise pickle.UnpicklingError(
             f"Restricted checkpoint loading failed for {filename}. For a trusted legacy "
             "training state, pass --trust-checkpoint or set trusted_checkpoint: true."
