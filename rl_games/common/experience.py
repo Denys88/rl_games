@@ -350,7 +350,8 @@ class ExperienceBuffer:
 
         self.num_actors = algo_info['num_actors']
         self.horizon_length = algo_info['horizon_length']
-        self.has_central_value = algo_info['has_central_value']
+        # 'states' are stored for a central value net, teacher distillation or state_aux
+        self.store_states = algo_info.get('store_states', algo_info['has_central_value'])
         self.use_action_masks = algo_info.get('use_action_masks', False)
         batch_size = self.num_actors * self.num_agents
         self.is_discrete = False
@@ -387,7 +388,7 @@ class ExperienceBuffer:
         state_base_shape = self.state_base_shape
 
         self.tensor_dict['obses'] = self._create_tensor_from_space(env_info['observation_space'], obs_base_shape)
-        if self.has_central_value:
+        if self.store_states:
             # Some envs omit state_space despite central_value being enabled.
             # Fall back to observation_space and raise a clear error if even that is missing.
             state_space = env_info.get('state_space', None)

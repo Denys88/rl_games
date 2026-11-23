@@ -31,6 +31,19 @@ from rl_games.common import common_losses
 from rl_games.triton_kernels import compute_gae
 
 
+def _add_states_consumers_to_dataset(agent, dataset_dict, batch_dict):
+    """Per-row extras for the minibatches: the teacher's outputs for the
+    rollout (one forward per epoch) with the teacher-action flags, and the raw
+    states for the state_aux head. A function, not a method: prepare_dataset
+    is also driven with bare stand-in agents that have neither attribute."""
+    distill = getattr(agent, 'distill', None)
+    if distill is not None:
+        dataset_dict.update(distill.targets(batch_dict['states']))
+        dataset_dict['from_teacher'] = batch_dict['from_teacher']
+    if getattr(agent, 'state_aux_config', None) is not None:
+        dataset_dict['states'] = batch_dict['states']
+
+
 def swap_and_flatten01(arr):
     """
     swap and then flatten axes 0 and 1
@@ -308,6 +321,17 @@ class A2CBase(BaseAlgorithm):
             else:
                 self.state_shape = self.state_space.shape
 
+        # Frozen-teacher distillation (rl_games/common/distillation.py): the
+        # teacher consumes privileged `states`, so they are stored and passed
+        # into minibatches even without a central value net.
+        self.distill_config = self.config.get('distillation', None)
+        self.distill = None                     # built by the agent once the model exists
+        # state_aux: {} -> the network regresses `states` as an auxiliary loss (actor_critic_state_aux)
+        self.state_aux_config = self.config.get('state_aux', None)
+        self.store_states = (self.has_central_value or self.distill_config is not None
+                             or self.state_aux_config is not None)
+        if self.store_states and not hasattr(self, 'state_space'):
+            self.state_space = self.env_info.get('state_space', None) or self.observation_space
         self.self_play_config = self.config.get('self_play_config', None)
         self.has_self_play_config = self.self_play_config is not None
 
@@ -392,6 +416,7 @@ class A2CBase(BaseAlgorithm):
         self.network = config['network']
         self.rewards_shaper = config['reward_shaper']
         self.num_agents = self.env_info.get('agents', 1)
+        self._check_states_consumers()
 
         # next_step autoreset (envpool, native gymnasium 1.x vector envs): the
         # reset step's row is garbage — action ignored, filler reward, obs is
@@ -658,6 +683,8 @@ class A2CBase(BaseAlgorithm):
         for k, v in self.aux_loss_dict.items():
             self.writer.add_scalar('losses/' + k, torch_ext.mean_list(v).item(), frame)
         self.writer.add_scalar('info/last_lr', last_lr * lr_mul, frame)
+        if self.distill is not None:
+            self.distill.log(self.writer, self.epoch_num, frame)
         if self.scaler.is_enabled():
             self.writer.add_scalar('info/grad_scale', self.scaler.get_scale(), frame)
             self.writer.add_scalar('info/skipped_steps', self.skipped_steps, frame)
@@ -712,6 +739,46 @@ class A2CBase(BaseAlgorithm):
         # if self.has_central_value:
         #    self.central_value_net.update_lr(lr)
 
+    def _check_states_consumers(self):
+        """distillation and state_aux read `states` row by row next to `obs`.
+        The buffer keeps states per env and obs per agent, so with several
+        agents the rows would not line up; a Dict state space has no single
+        vector to feed the teacher or the regression head."""
+        users = [name for name, on in (('distillation', self.distill_config is not None),
+                                       ('state_aux', self.state_aux_config is not None)) if on]
+        if not users:
+            return
+        users = ', '.join(users)
+        if self.num_agents > 1:
+            raise ValueError(f"{users} does not support multi-agent envs (agents = {self.num_agents}): "
+                             "states are stored per env, observations per agent")
+        if type(self.state_space).__name__ == 'Dict':
+            raise ValueError(f"{users} needs a Box state space, got a Dict state space")
+
+    def _init_distillation(self):
+        """Build the frozen teacher once the model (and central value) exist."""
+        if self.distill_config is None:
+            return
+        if getattr(self, 'is_multi_discrete', False):
+            raise NotImplementedError('distillation does not support multi-discrete action spaces')
+        from rl_games.common.distillation import TeacherDistillation
+        self.distill = TeacherDistillation.from_config(
+            self.distill_config, self.state_space.shape, self.actions_num, self.ppo_device, self.is_discrete)
+        if self.has_central_value and self.distill.warm_start_value:
+            self.distill.warm_start_central_value(self.central_value_net.model)
+        if self.is_adaptive_lr and self.distill.has_pure_distillation_phase() and self.global_rank == 0:
+            warnings.warn("distillation with lr_schedule: adaptive: while ppo_coef is 0 the KL between "
+                          "consecutive policies is driven by the distillation term and can collapse the "
+                          "learning rate; use lr_schedule: fixed or linear for that phase", stacklevel=2)
+
+    def _check_state_aux_network(self):
+        """Built without `state_shape`, actor_critic_state_aux has no head
+        (that is how players load it); a training run must not end up there."""
+        net = getattr(self.model, 'a2c_network', None)
+        if net is not None and hasattr(net, 'aux_head') and net.aux_head is None:
+            raise ValueError("actor_critic_state_aux needs algo config `state_aux: {}` (and an env that "
+                             "returns states) to train its auxiliary head")
+
     def get_action_values(self, obs):
         processed_obs = self._preproc_obs(obs['obs'])
         self.model.eval()
@@ -724,6 +791,8 @@ class A2CBase(BaseAlgorithm):
 
         with torch.no_grad(), torch_ext.autocast(self.amp_dtype):
             res_dict = self.inference_model()(input_dict)
+            if self.distill is not None:
+                res_dict = self.distill.mix_actions(res_dict, obs['states'], self.epoch_num)
             if self.has_central_value:
                 states = obs['states']
                 input_dict = {
@@ -779,9 +848,12 @@ class A2CBase(BaseAlgorithm):
             'num_actors': self.num_actors,
             'horizon_length': self.horizon_length,
             'has_central_value': self.has_central_value,
+            'store_states': self.store_states,
             'use_action_masks': self.use_action_masks
         }
-        self.experience_buffer = ExperienceBuffer(self.env_info, algo_info, self.ppo_device)
+        # beta-mixing flags rows whose env action came from the teacher
+        aux_tensor_dict = {'from_teacher': ()} if self.distill_config is not None else None
+        self.experience_buffer = ExperienceBuffer(self.env_info, algo_info, self.ppo_device, aux_tensor_dict)
 
         val_shape = (self.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
@@ -859,6 +931,12 @@ class A2CBase(BaseAlgorithm):
     def env_reset(self):
         obs = self.vec_env.reset()
         obs = self.obs_to_tensors(obs)
+        if self.store_states and 'states' not in obs:
+            needs = [name for name, on in (('central_value_config', self.has_central_value),
+                                           ('distillation', self.distill_config is not None),
+                                           ('state_aux', self.state_aux_config is not None)) if on]
+            raise ValueError(f"{', '.join(needs)} needs the env to return {{'obs': ..., 'states': ...}}, "
+                             f"got observation keys {sorted(obs.keys())}")
         # a fresh reset invalidates the autoreset tracker: the first row after
         # an explicit reset is always a real step, never a filler reset row
         self._autoreset_prev_dones = None
@@ -1163,7 +1241,7 @@ class A2CBase(BaseAlgorithm):
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
+            if self.store_states:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
             step_time_start = time.perf_counter()
@@ -1271,7 +1349,7 @@ class A2CBase(BaseAlgorithm):
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
-            if self.has_central_value:
+            if self.store_states:
                 self.experience_buffer.update_data('states', n, self.obs['states'])
 
             step_time_start = time.perf_counter()
@@ -1385,6 +1463,8 @@ class DiscreteA2CBase(A2CBase):
         self.update_list = ['actions', 'neglogpacs', 'values']
         if self.use_action_masks:
             self.update_list += ['action_masks']
+        if self.distill_config is not None:
+            self.update_list += ['from_teacher']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
@@ -1513,6 +1593,8 @@ class DiscreteA2CBase(A2CBase):
 
         if self.use_action_masks:
             dataset_dict['action_masks'] = batch_dict['action_masks']
+
+        _add_states_consumers_to_dataset(self, dataset_dict, batch_dict)
 
         self.dataset.update_values_dict(dataset_dict)
         if self.has_central_value:
@@ -1688,6 +1770,8 @@ class ContinuousA2CBase(A2CBase):
     def init_tensors(self):
         A2CBase.init_tensors(self)
         self.update_list = ['actions', 'neglogpacs', 'values', 'mus', 'sigmas']
+        if self.distill_config is not None:
+            self.update_list += ['from_teacher']
         self.tensor_list = self.update_list + ['obses', 'states', 'dones']
 
     def train_epoch(self):
@@ -1860,6 +1944,7 @@ class ContinuousA2CBase(A2CBase):
         dataset_dict['rnn_masks'] = rnn_masks
         dataset_dict['mu'] = mus
         dataset_dict['sigma'] = sigmas
+        _add_states_consumers_to_dataset(self, dataset_dict, batch_dict)
 
         self.dataset.update_values_dict(dataset_dict)
 

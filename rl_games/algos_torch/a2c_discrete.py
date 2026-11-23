@@ -38,8 +38,11 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'normalize_input': self.normalize_input,
             'normalize_input_init_count': self.normalize_input_init_count,
         }
+        if self.state_aux_config is not None:
+            config['state_shape'] = self.state_space.shape
 
         self.model = self.network.build(config)
+        self._check_state_aux_network()
         self.model.to(self.ppo_device)
         self.init_rnn_from_model(self.model)
 
@@ -80,6 +83,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
         if self.normalize_value:
             self.value_mean_std = self.central_value_net.model.value_mean_std if self.has_central_value else self.model.value_mean_std
         self.has_value_loss = self.use_experimental_cv or not self.has_central_value
+
+        self._init_distillation()
         self.algo_observer.after_init(self)
 
     def update_epoch(self):
@@ -107,6 +112,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
         with torch.no_grad():
             res_dict = self.inference_model()(input_dict)
+            if self.distill is not None:
+                res_dict = self.distill.mix_actions(res_dict, obs['states'], self.epoch_num, action_masks)
             if self.has_central_value:
                 input_dict = {
                     'is_train': False,
@@ -147,6 +154,8 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             'prev_actions': actions_batch,
             'obs': obs_batch,
         }
+        if self.state_aux_config is not None:
+            batch_dict['states'] = input_dict['states']
         if self.use_action_masks:
             batch_dict['action_masks'] = input_dict['action_masks']
 
@@ -165,6 +174,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             values = res_dict['values']
             entropy = res_dict['entropy']
             a_loss = self.actor_loss_func(old_action_log_probs_batch, action_log_probs, advantage, self.ppo, curr_e_clip)
+            if self.distill is not None:
+                # teacher-chosen actions are not samples of the student: no actor loss
+                a_loss = a_loss * self.distill.student_rows(input_dict)
 
             if self.has_value_loss:
                 c_loss = common_losses.critic_loss(self.model, value_preds_batch, values, curr_e_clip, return_batch, self.clip_value)
@@ -179,9 +191,16 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
 
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy = losses[0], losses[1], losses[2]
-            loss = a_loss + 0.5 * c_loss * self.critic_coef - entropy * self.entropy_coef
+            value_loss = 0.5 * c_loss * self.critic_coef
+            loss = a_loss + value_loss - entropy * self.entropy_coef
+            if self.distill is not None:
+                d_loss = self.distill.loss(res_dict, input_dict, rnn_masks,
+                                           action_masks=batch_dict.get('action_masks', None))
+                loss = self.distill.combine(loss, value_loss, d_loss, self.epoch_num)
             aux_loss = self.model.get_aux_loss()
             self.aux_loss_dict = {}
+            if self.distill is not None:
+                self.aux_loss_dict['distill'] = [d_loss.detach()]
             if aux_loss is not None:
                 for k, v in aux_loss.items():
                     loss += v
