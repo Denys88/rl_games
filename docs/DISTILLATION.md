@@ -13,6 +13,10 @@ visits. Three schedules turn one mechanism into the usual variants:
 | DAgger -> PPO fine-tune | 0 then 1 | 1 -> 0 | 0.5 -> 0 |
 | teacher-guided RL | 1 | small constant | 0 |
 
+The teacher-guided row is Kickstarting (Schmitt et al., 2018); distillation
+on the student's own state distribution is analysed in Czarnecki et al.,
+2019 (Distilling Policy Distillation).
+
 ## Config
 
 ```yaml
@@ -33,37 +37,55 @@ config:
 
 What happens inside the agent:
 
-- `states` are stored in the experience buffer and passed into every
-  minibatch whenever the block is present (not only with a central value net).
+- `states` are stored in the experience buffer whenever the block is present
+  (not only with a central value net). Once per epoch the teacher labels the
+  whole rollout batch; the minibatches carry its logits (discrete) or means
+  and sigmas (continuous), so the update itself never calls the teacher.
 - `get_action_values`: with probability `beta` a row's env action is the
-  teacher's sample; the student's `neglogp` is recomputed for those rows so the
-  PPO importance ratios stay valid.
+  teacher's sample (drawn around the clipped mean when `teacher_mu_clip` is
+  set). Those rows are flagged `from_teacher` and carry **no actor loss**: the
+  action was not sampled from the student, so a PPO term on it would be
+  advantage-weighted behaviour cloning of the teacher, not a policy gradient.
+  They still train the critic and the distillation term. With `beta` b the
+  actor loss is therefore averaged over a (1 - b) share of the rows.
 - `calc_gradients`: `loss = ppo_coef * (actor + entropy + bounds) + critic
-  + coef * KL(teacher || student)` on the minibatch's states; logged as
-  `losses/distill`, with `info/distill_coef`, `info/ppo_coef`,
-  `info/teacher_beta`. `ppo_coef` scales the policy part only, so the value
-  head keeps fitting the student's returns through the pure-DAgger phase
-  instead of meeting PPO cold (with a central value net this is moot: it
-  trains on its own and is warm-started).
+  + coef * KL(teacher || student)`; logged as `losses/distill` (the last
+  minibatch of the epoch, like every auxiliary loss), with
+  `info/distill_coef`, `info/ppo_coef`, `info/teacher_beta`. `ppo_coef`
+  scales the policy part only, so the value head keeps fitting the student's
+  returns through the pure-DAgger phase instead of meeting PPO cold (with a
+  central value net this is moot: it trains on its own and is warm-started).
+  At `coef` 0 the term is monitoring only and stays out of the graph.
 - Discrete envs with `use_action_masks`: the teacher's logits get the same
   masks as the student's, both in the loss and in the beta-mixing.
 - Warm start: every teacher tensor whose name and shape match a tensor of the
   central-value model is copied (trunk, value head, input and value
   normalisers). The teacher's critic is a privileged-state value function, so
   the student's central value starts from it instead of from scratch. Use the
-  teacher's MLP as the `central_value_config` network for a full match.
+  teacher's MLP as the `central_value_config` network for a full match. A
+  `separate: True` teacher keeps its critic in `critic_mlp`; that trunk is
+  copied into the central value's single trunk.
 
 The env must return `{'obs': ..., 'states': ...}` and expose `state_space`
 in `get_env_info()` (a missing `states` key fails at the first reset with a
-message naming the config block that needs it).
+message naming the config block that needs it). `teacher_config` and
+`teacher_checkpoint` may be relative: to the working directory first, then to
+the repository root.
 
-Limits: the teacher is feedforward (it gets no rnn states), teacher and
-student share the action space type (`a2c_discrete` <-> `a2c_discrete`,
-`a2c_continuous` <-> `a2c_continuous`; checked at init), multi-discrete is
-not supported. With `lr_schedule: adaptive` the KL between consecutive
+Continuous losses: `kl` matches the whole Gaussian, so it also pulls the
+student's sigma to the teacher's (usually annealed small, which leaves PPO
+little exploration noise afterwards) and scales the mean gradient by
+1 / sigma_s^2. `mse` matches the means only and leaves sigma to PPO.
+
+Limits, all checked at init: the teacher is feedforward (it gets no rnn
+states), teacher and student share the action space type (`a2c_discrete` <->
+`a2c_discrete`, `a2c_continuous` <-> `a2c_continuous`), multi-discrete is not
+supported, the env is single-agent (states are stored per env, observations
+per agent) and the state space is a Box. A schedule key that is present but
+empty is an error. With `lr_schedule: adaptive` the KL between consecutive
 student policies is driven by the distillation term during the DAgger phase
 and can collapse the learning rate; use `fixed` or `linear` there (the Panda
-config does).
+config does; a config that combines the two gets a warning).
 
 ## Vision env: Craftax-Classic
 
@@ -149,6 +171,24 @@ not the representation but exploration / credit assignment for a grasp that
 random pixel policies never stumble on; the teacher's actions supply exactly
 that, a state-prediction target does not.
 
+Caveats on this comparison:
+
+- **The arms are not on the same task.** `obs: pixels | both` turns the env's
+  `vision` flag on, and in playground 0.2 `PandaPickCubeCartesian` then counts
+  success on the cube's height alone (the 3-D distance otherwise) and drops
+  the action-rate and no-IK-solution reward terms. The teacher row was
+  trained and scored with `obs: state`, i.e. on the stricter criterion; the
+  three pixel rows on the easier one. The scratch student's 0.00 is under the
+  easier criterion, so the gap to the distilled student stands, but "reaches
+  the teacher's success" compares two definitions.
+- **The distilled arm differs from the baselines in more than the teacher.**
+  It also has an asymmetric central value on `states`, warm-started from the
+  teacher's critic, and a fixed learning rate; the scratch and state-aux arms
+  have neither. A pixel student with the same central value and schedule but
+  no distillation term is the missing control, so the reading below ("the
+  bottleneck is exploration") is a hypothesis, not a result.
+- One seed per arm.
+
 What it took (the first attempt failed, `runs/panda_pick_pixels_distill_v1_failed_*`):
 
 - **Fixed learning rate.** The distillation term makes consecutive policies
@@ -179,6 +219,13 @@ trained side by side on one GPU (scratch 44k fps, distilled 32k fps).
 Achievement rates at 98M frames (teacher / scratch / distilled):
 collect_iron 0.84 / 0.69 / 0.69, make_iron_pickaxe 0.49 / 0.20 / 0.19,
 make_iron_sword 0.40 / 0.42 / 0.48, defeat_skeleton 0.80 / 0.62 / 0.63.
+
+Craftax-Classic's symbolic vector (1345 = 7x9x21 + 22) is the same local
+map, inventory and intrinsics the image shows, so this run measures
+cross-modal distillation (help with representation learning), not privileged
+information: there is no imitation gap by construction. As on Panda, only the
+distilled arm has the warm-started central value, and the teacher's 98M
+frames are not counted in the students' frame axis.
 
 Reading:
 

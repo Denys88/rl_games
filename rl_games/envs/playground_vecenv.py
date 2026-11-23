@@ -1,6 +1,8 @@
 """mujoco_playground (MJX + Warp physics, built-in batch renderer) for rl_games.
 
-Any playground env (manipulation / dm_control_suite / locomotion) with
+Playground envs whose `_get_obs(data, info)` returns one state vector
+(manipulation, dm_control_suite; the locomotion envs return a dict of
+`state` / `privileged_state` and are not wired up yet) with
 
   obs: state   -> float32 (N, state_dim)          the env's privileged state vector
   obs: pixels  -> uint8   (N, H, W, 3)            camera 0 of the built-in renderer
@@ -12,6 +14,14 @@ rl_games/common/distillation.py). The state vector is the env's own
 `_get_obs(data, info)` (e.g. 66-d for PandaPickCubeCartesian, 5-d for
 CartpoleBalance), computed from the same `data` the pixels are rendered
 from, so it is identical in every obs mode.
+
+The TASK is not identical in every obs mode: `obs: pixels | both` switches
+the env's own `vision` flag on, and some envs change their reward or
+termination with it. PandaPickCubeCartesian (playground 0.2) then judges
+success on the cube's height alone, not its 3-D distance to the target, and
+drops the action-rate and no-IK-solution reward terms; CartpoleBalance uses a
+different dense reward. A teacher trained with `obs: state` is therefore
+trained and scored on another variant of the task than its pixel student.
 
 Episodes: brax EpisodeWrapper (time limit -> `time_outs`) + AutoReset with
 `full_reset=True` (a fresh random reset on done). `time_outs` is rebuilt from
@@ -127,6 +137,9 @@ class PlaygroundVecEnv(IVecEnv):
         # spaces (state dim from a probe reset)
         st, (pix, state) = self._reset_fn(self._next_key())
         self._state = st
+        if not hasattr(state, 'shape'):
+            raise ValueError(f"{self.env_name}: _get_obs returns {type(state).__name__}, not one state vector "
+                             "(locomotion envs return a dict of 'state' / 'privileged_state')")
         self.state_dim = int(state.shape[-1])
         self.state_space = gym.spaces.Box(-np.inf, np.inf, shape=(self.state_dim,), dtype=np.float32)
         self.pixel_space = gym.spaces.Box(0, 255, shape=(cam_res[0], cam_res[1], 3), dtype=np.uint8)
