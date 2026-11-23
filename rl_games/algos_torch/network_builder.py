@@ -202,7 +202,10 @@ class NetworkBuilder:
                 layers.append(act)
                 in_channels = conv['filters']
                 if norm_func_name == 'layer_norm':
-                    layers.append(torch.nn.LayerNorm(in_channels))
+                    # per-sample norm over (C, L), the conv1d counterpart of
+                    # torch_ext.LayerNorm2d; nn.LayerNorm(C) normalizes the last
+                    # dim (L) of a [B, C, L] tensor and raises unless L == C
+                    layers.append(torch.nn.GroupNorm(1, in_channels))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm1d(in_channels))  
             return nn.Sequential(*layers)
