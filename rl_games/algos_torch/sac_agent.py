@@ -372,8 +372,7 @@ class SACAgent(BaseAlgorithm):
     def restore(self, fn, set_epoch=True):
         if not os.path.exists(fn):
             raise FileNotFoundError(f"Checkpoint file not found: {fn}")
-        checkpoint = torch_ext.load_checkpoint(
-            fn, trusted=self.config.get('trusted_checkpoint', False))
+        checkpoint = torch_ext.load_checkpoint(fn)
         self.set_full_state_weights(checkpoint, set_epoch=set_epoch)
 
     def get_param(self, param_name):

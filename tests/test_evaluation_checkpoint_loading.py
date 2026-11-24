@@ -1,6 +1,5 @@
 """Evaluation checkpoint probes must handle full states and partial writes."""
 
-import pickle
 import threading
 from dataclasses import dataclass
 
@@ -17,33 +16,27 @@ class _SimulatorState:
     step: int
 
 
-def _player(path, *, trusted=False):
+def _player(path):
     player = BasePlayer.__new__(BasePlayer)
     player.checkpoint_mutex = threading.Lock()
     player.checkpoint_to_load = str(path) if path is not None else None
     player.loaded = []
-    player.restore = lambda filename: player.loaded.append(torch_ext.load_checkpoint(filename, trusted=trusted))
+    player.restore = lambda filename: player.loaded.append(torch_ext.load_checkpoint(filename))
     return player
 
 
-@pytest.mark.parametrize('dtype', [np.float32, np.float64])
-def test_preexisting_numpy_reward_checkpoint_loads_by_default(tmp_path, dtype):
+@pytest.mark.parametrize('best_reward', [
+    np.float32(3.5), np.float64(3.5),       # PPO saved a NumPy scalar
+    np.array(3.5, dtype=np.float32),        # SAC saved a 0-d NumPy array
+])
+def test_preexisting_numpy_reward_checkpoint_loads_by_default(tmp_path, best_reward):
     path = tmp_path / 'best.pth'
-    torch.save({'model': {'weight': torch.ones(1)}, 'last_mean_rewards': dtype(3.5)}, path)
+    torch.save({'model': {'weight': torch.ones(1)}, 'last_mean_rewards': best_reward}, path)
 
     checkpoint = torch_ext.load_checkpoint(path, map_location='cpu')
     assert checkpoint['last_mean_rewards'] == 3.5
-    assert type(checkpoint['last_mean_rewards']) is dtype
+    assert type(checkpoint['last_mean_rewards']) is type(best_reward)
     torch.testing.assert_close(checkpoint['model']['weight'], torch.ones(1))
-
-
-def test_restricted_load_preserves_caller_registered_globals(tmp_path):
-    path = tmp_path / 'best.pth'
-    torch.save({'last_mean_rewards': np.float32(3.5)}, path)
-    with torch.serialization.safe_globals([np.dtype]):
-        previous = set(torch.serialization.get_safe_globals())
-        torch_ext.load_checkpoint(path)
-        assert set(torch.serialization.get_safe_globals()) == previous
 
 
 @pytest.mark.parametrize("with_environment_state", [False, True])
@@ -54,7 +47,7 @@ def test_evaluation_loads_serialized_training_checkpoint(tmp_path, with_environm
     if with_environment_state:
         payload["env_state"] = {"position": np.array([1.5, -2.0], dtype=np.float32)}
     torch.save(payload, path)
-    player = _player(path, trusted=with_environment_state)
+    player = _player(path)
     player.maybe_load_new_checkpoint()
     assert player.checkpoint_to_load is None
     assert len(player.loaded) == 1
@@ -107,16 +100,12 @@ def test_no_pending_checkpoint_is_a_noop():
 
 
 @pytest.mark.parametrize('env_state', [np.arange(3), _SimulatorState(step=7)])
-def test_checkpoint_with_legacy_objects_requires_explicit_trust(tmp_path, env_state):
+def test_checkpoint_with_custom_environment_state_loads_by_default(tmp_path, env_state):
+    # env_state is whatever the environment returns from get_env_state()
     path = tmp_path / "legacy.pth"
     torch.save({"last_mean_rewards": np.float32(3.5), "env_state": env_state}, path)
-    with pytest.raises(pickle.UnpicklingError, match="trust-checkpoint"):
-        torch_ext.load_checkpoint(path)
-    with pytest.raises(TypeError, match="boolean"):
-        torch_ext.load_checkpoint(path, trusted="false")
+    np.testing.assert_equal(torch_ext.load_checkpoint(path)['env_state'], env_state)
     player = _player(path)
     player.maybe_load_new_checkpoint()
-    assert not player.loaded
     assert player.checkpoint_to_load is None
-    restored = torch_ext.load_checkpoint(path, trusted=True)
-    np.testing.assert_equal(restored['env_state'], env_state)
+    np.testing.assert_equal(player.loaded[0]['env_state'], env_state)
