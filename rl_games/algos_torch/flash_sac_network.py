@@ -317,7 +317,14 @@ class FlashSACBuilder(NetworkBuilder):
             return gated.repeat(2, 1, 1)
 
         def post_actor_step(self):
-            project_weights(self.actor)
+            (self._project_actor or project_weights)(self.actor)
 
         def post_critic_step(self):
-            project_weights(self.critic)
+            (self._project_critic or project_weights)(self.critic)
+
+        _project_actor = _project_critic = None
+
+        def compile_projection(self):
+            """Fuse the per-layer re-projection kernels (torch.compile, no CUDA graphs: it writes parameters)."""
+            self._project_actor = torch.compile(project_weights)
+            self._project_critic = torch.compile(project_weights)
