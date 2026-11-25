@@ -1,4 +1,4 @@
-"""Evaluation checkpoint probes must handle full states and partial writes."""
+"""Evaluation checkpoint probes must handle full states, partial writes and no monitored dir."""
 
 import threading
 
@@ -7,7 +7,10 @@ import pytest
 import torch
 
 from rl_games.algos_torch import torch_ext
+from rl_games.algos_torch.players import PpoPlayerContinuous
 from rl_games.common.player import BasePlayer
+from tests.test_ppo_masking import _ppo_params
+from tests.test_sac_correctness import EP_LEN, FakeNextStepVecEnv
 
 
 def _player(path):
@@ -17,6 +20,14 @@ def _player(path):
     player.loaded = []
     player.restore = lambda filename: player.loaded.append(torch_ext.load_checkpoint(filename))
     return player
+
+
+def _evaluation_player(env, **player_config):
+    # built by the constructor, as a launch builds it: `_player` skips it and sets the lock by hand
+    params = _ppo_params(
+        num_envs=env.num_envs, env_info=env.get_env_info(), vec_env=env, device_name="cpu",
+        player={"evaluation": True, "print_stats": False, **player_config})
+    return PpoPlayerContinuous(params)
 
 
 @pytest.mark.parametrize("with_environment_state", [False, True])
@@ -75,3 +86,20 @@ def test_no_pending_checkpoint_is_a_noop():
     player = _player(None)
     player.maybe_load_new_checkpoint()
     assert not player.loaded
+
+
+def test_evaluation_without_monitored_dir_has_nothing_to_load():
+    player = _evaluation_player(FakeNextStepVecEnv(2))
+    assert player.dir_to_monitor is None
+    player.wait_for_checkpoint()
+    player.maybe_load_new_checkpoint()
+    assert player.checkpoint_to_load is None
+
+
+def test_evaluation_without_monitored_dir_plays_its_games():
+    env = FakeNextStepVecEnv(2)
+    player = _evaluation_player(env, games_num=env.num_envs, max_steps=EP_LEN)
+    player.run()
+    # one full episode per env: the loop got past the checkpoint probe of its first step
+    assert env.t.tolist() == [EP_LEN] * env.num_envs
+    assert player.checkpoint_to_load is None
