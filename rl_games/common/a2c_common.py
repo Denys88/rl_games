@@ -254,6 +254,8 @@ class A2CBase(BaseAlgorithm):
             # total number of GPUs across all nodes
             self.world_size = int(os.getenv("WORLD_SIZE", "1"))
 
+            torch.cuda.set_device(self.local_rank)
+            torch_ext.check_nccl(self.local_rank)
             dist.init_process_group("nccl", rank=self.global_rank, world_size=self.world_size)
 
             self.device_name = 'cuda:' + str(self.local_rank)

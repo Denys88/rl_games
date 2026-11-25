@@ -283,6 +283,9 @@ We use `torchrun` to orchestrate any multi-gpu runs.
 torchrun --standalone --nnodes=1 --nproc_per_node=2 runner.py --train --file rl_games/configs/ppo_cartpole.yaml
 ```
 
+SAC trains data-parallel as well (`multi_gpu: True`): each rank steps its own envs into its own replay and
+the gradients are averaged every update; see the SAC options in [docs/CONFIG_PARAMS.md](docs/CONFIG_PARAMS.md).
+
 ## Triton Kernels
 
 When [Triton](https://github.com/triton-lang/triton) is installed, rl_games automatically uses custom Triton kernels for performance-critical operations like GAE (Generalized Advantage Estimation). This replaces the Python for-loop with a single fused GPU kernel.
