@@ -99,6 +99,23 @@ def test_no_pending_checkpoint_is_a_noop():
     assert not player.loaded
 
 
+def test_evaluation_without_a_monitored_directory_does_not_crash():
+    # run() polls maybe_load_new_checkpoint() whenever player.evaluation is on; the mutex it
+    # takes used to exist only when player.dir_to_monitor was set as well
+    from rl_games.algos_torch.players import PpoPlayerContinuous
+    from tests.test_ppo_masking import _ppo_params
+    from tests.test_sac_correctness import FakeNextStepVecEnv
+
+    params = _ppo_params(env_info=FakeNextStepVecEnv(2).get_env_info())
+    params['config'].update(device_name='cpu', player={'evaluation': True})
+    player = PpoPlayerContinuous(params)
+    assert player.evaluation and player.dir_to_monitor is None
+
+    player.maybe_load_new_checkpoint()
+    player.wait_for_checkpoint()
+    assert player.checkpoint_to_load is None
+
+
 @pytest.mark.parametrize('env_state', [np.arange(3), _SimulatorState(step=7)])
 def test_checkpoint_with_custom_environment_state_loads_by_default(tmp_path, env_state):
     # env_state is whatever the environment returns from get_env_state()

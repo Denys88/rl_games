@@ -72,9 +72,11 @@ class BasePlayer(object):
         self.dir_to_monitor = self.player_config.get("dir_to_monitor")
         # path to the newest checkpoint
         self.checkpoint_to_load: Optional[str] = None
+        # created whether or not a directory is watched: run() polls
+        # maybe_load_new_checkpoint() whenever evaluation is on
+        self.checkpoint_mutex = threading.Lock()
 
         if self.evaluation and self.dir_to_monitor is not None:
-            self.checkpoint_mutex = threading.Lock()
             self.eval_checkpoint_dir = os.path.join(self.dir_to_monitor, "eval_checkpoints")
             os.makedirs(self.eval_checkpoint_dir, exist_ok=True)
 
