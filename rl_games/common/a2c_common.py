@@ -1179,7 +1179,15 @@ class A2CBase(BaseAlgorithm):
                 (self.horizon_length, self.num_actors * self.num_agents),
                 dtype=torch.float32, device=self.ppo_device)
 
+        # A recurrent central value needs the same state bookkeeping as in play_steps_rnn,
+        # even though the actor here has no RNN: record its state at sequence starts and
+        # reset it at episode ends, or training replays it from states the rollout never used.
+        cv_rnn = self.has_central_value and self.central_value_net.is_rnn
+
         for n in range(self.horizon_length):
+            if cv_rnn:
+                self.central_value_net.pre_step_rnn(n)
+
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -1192,6 +1200,12 @@ class A2CBase(BaseAlgorithm):
                 if prev_dones is None:
                     prev_dones = torch.zeros_like(self.dones)
                 mb_valid[n] = 1.0 - prev_dones.float()
+                if cv_rnn and self.zero_rnn_on_done:
+                    # filler reset row: re-zero so the first real row of the new episode
+                    # starts from a clean state (as play_steps_rnn does)
+                    reset_idx = prev_dones.nonzero(as_tuple=False)
+                    if len(reset_idx) > 0:
+                        self.central_value_net.post_step_rnn(reset_idx)
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -1225,6 +1239,8 @@ class A2CBase(BaseAlgorithm):
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
+            if cv_rnn and len(all_done_indices) > 0:
+                self.central_value_net.post_step_rnn(all_done_indices)
 
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
@@ -1252,6 +1268,14 @@ class A2CBase(BaseAlgorithm):
         batch_dict['step_time'] = step_time
         if self.mask_autoreset_rows:
             batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
+            if cv_rnn and self.zero_rnn_on_done:
+                # same train-time reset as play_steps_rnn: also fire it ENTERING the
+                # first real row after a filler reset row (GAE above used the pure copy)
+                rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
+                garbage = (mb_valid == 0.0)
+                rnn_dones[1:] = torch.maximum(
+                    rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
+                batch_dict['dones'] = swap_and_flatten01(rnn_dones)
 
         return batch_dict
 
