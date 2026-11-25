@@ -1142,6 +1142,10 @@ class A2CBase(BaseAlgorithm):
 
     def play_steps(self):
         update_list = self.update_list
+        # the actor is feedforward here, but the central value can be recurrent:
+        # its states are recorded and reset exactly as in play_steps_rnn, or
+        # training would start every sequence from states the rollout never had
+        cv_is_rnn = self.has_central_value and self.central_value_net.is_rnn
 
         step_time = 0.0
         if self.mask_autoreset_rows:
@@ -1150,6 +1154,9 @@ class A2CBase(BaseAlgorithm):
                 dtype=torch.float32, device=self.ppo_device)
 
         for n in range(self.horizon_length):
+            if cv_is_rnn:
+                self.central_value_net.pre_step_rnn(n)
+
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -1162,6 +1169,15 @@ class A2CBase(BaseAlgorithm):
                 if prev_dones is None:
                     prev_dones = torch.zeros_like(self.dones)
                 mb_valid[n] = 1.0 - prev_dones.float()
+                if cv_is_rnn and self.zero_rnn_on_done:
+                    # this row is a filler reset row for envs with prev_dones:
+                    # get_action_values just absorbed the dead episode's
+                    # terminal state into the central critic's freshly zeroed
+                    # states — re-zero them so the first real row of the new
+                    # episode starts from a clean state
+                    reset_idx = prev_dones.nonzero(as_tuple=False)
+                    if len(reset_idx) > 0:
+                        self.central_value_net.post_step_rnn(reset_idx)
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -1197,6 +1213,9 @@ class A2CBase(BaseAlgorithm):
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
 
+            if cv_is_rnn and len(all_done_indices) > 0:
+                self.central_value_net.post_step_rnn(all_done_indices)
+
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
             self.game_lengths.update(self.current_lengths[env_done_indices])
@@ -1223,8 +1242,24 @@ class A2CBase(BaseAlgorithm):
         batch_dict['step_time'] = step_time
         if self.mask_autoreset_rows:
             batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
+            if cv_is_rnn and self.zero_rnn_on_done:
+                batch_dict['dones'] = self._autoreset_rnn_dones(mb_valid)
 
         return batch_dict
+
+    def _autoreset_rnn_dones(self, mb_valid):
+        """Batch 'dones' of a next_step-autoreset rollout with zero_rnn_on_done.
+
+        Batch 'dones' feeds ONLY the RNN state-reset path at train time (GAE
+        consumed the pure buffer copy): also fire the reset ENTERING the first
+        real row after a filler reset row, mirroring the rollout-side re-zero
+        of the absorbed state.
+        """
+        rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
+        garbage = (mb_valid == 0.0)
+        rnn_dones[1:] = torch.maximum(
+            rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
+        return swap_and_flatten01(rnn_dones)
 
     def play_steps_rnn(self):
         update_list = self.update_list
@@ -1339,15 +1374,7 @@ class A2CBase(BaseAlgorithm):
         if self.mask_autoreset_rows:
             batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
             if self.zero_rnn_on_done:
-                # batch 'dones' feeds ONLY the RNN state-reset path at train
-                # time (GAE above consumed the pure buffer copy): also fire the
-                # reset ENTERING the first real row after a filler reset row,
-                # mirroring the rollout-side re-zero of the absorbed state
-                rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
-                garbage = (mb_valid == 0.0)
-                rnn_dones[1:] = torch.maximum(
-                    rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
-                batch_dict['dones'] = swap_and_flatten01(rnn_dones)
+                batch_dict['dones'] = self._autoreset_rnn_dones(mb_valid)
         states = []
         for mb_s in mb_rnn_states:
             t_size = mb_s.size()[0] * mb_s.size()[2]
