@@ -263,7 +263,11 @@ class CentralValueTrain(nn.Module):
                 'rnn_states': self.rnn_states,
                 'is_train': False
             })
-        value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
+        value = res_dict['values']
+        # Bootstrap reads the next observation without consuming it in the
+        # rollout's recurrent stream; the next action query will consume it.
+        if input_dict.get('update_rnn_states', True):
+            self.rnn_states = res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
@@ -282,7 +286,10 @@ class CentralValueTrain(nn.Module):
         returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-        dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        # dones are per agent row like the tensors above: same env-major -> agent-major
+        # reorder, so that row e keeps the dones of env e
+        dones = dones.view(self.num_actors, self.num_agents, self.horizon_length).transpose(0, 1)
+        dones = dones.contiguous().view(ma_batch_size)[:batch_size]
 
         return value_preds, returns, actions, dones
 

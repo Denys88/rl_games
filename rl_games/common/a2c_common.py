@@ -268,6 +268,8 @@ class A2CBase(BaseAlgorithm):
             # total number of GPUs across all nodes
             self.world_size = int(os.getenv("WORLD_SIZE", "1"))
 
+            torch.cuda.set_device(self.local_rank)
+            torch_ext.check_nccl(self.local_rank)
             dist.init_process_group("nccl", rank=self.global_rank, world_size=self.world_size)
 
             self.device_name = 'cuda:' + str(self.local_rank)
@@ -777,6 +779,7 @@ class A2CBase(BaseAlgorithm):
                     'states': states,
                     'actions': None,
                     'is_done': self.dones,
+                    'update_rnn_states': False,
                 }
                 value = self.get_central_value(input_dict)
             else:
@@ -1617,7 +1620,7 @@ class DiscreteA2CBase(A2CBase):
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = common_losses.normalize_advantage(advantages)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values
@@ -1962,7 +1965,7 @@ class ContinuousA2CBase(A2CBase):
                 if self.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = common_losses.normalize_advantage(advantages)
 
         dataset_dict = {}
         dataset_dict['old_values'] = values

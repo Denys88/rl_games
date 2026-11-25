@@ -3,6 +3,7 @@ import gymnasium
 from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
 import numpy as np
+import copy
 
 # Register ALE (Atari) environments if available
 try:
@@ -100,6 +101,7 @@ class GymnasiumVecEnv(IVecEnv):
         if env_creator is not None:
             # Custom env creator - use manual vectorization for multi-agent support
             self._use_native_vec = False
+            self._pending_seed = self.seed_value
             self.envs = [env_creator(**dict(self.env_kwargs)) for _ in range(num_actors)]
             sample_env = self.envs[0]
             self.observation_space = sample_env.observation_space
@@ -107,6 +109,7 @@ class GymnasiumVecEnv(IVecEnv):
         else:
             # Standard gymnasium env - use native vectorized env
             self._use_native_vec = True
+            self._pending_seed = None
 
             def make_env(idx):
                 def _init():
@@ -134,7 +137,7 @@ class GymnasiumVecEnv(IVecEnv):
         if self._use_native_vec:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
             is_done = terminated | truncated
-            info['time_outs'] = truncated
+            info['time_outs'] = np.logical_and(truncated, np.logical_not(terminated))
             return next_obs, reward, is_done, info
         else:
             return self._step_manual(action)
@@ -145,6 +148,7 @@ class GymnasiumVecEnv(IVecEnv):
         num_agents = self._get_num_agents(sample_env)
 
         all_obs, all_rewards, all_dones, all_infos = [], [], [], []
+        final_observations = {}
         for i, env in enumerate(self.envs):
             if num_agents == 1:
                 act = actions[i]
@@ -152,14 +156,18 @@ class GymnasiumVecEnv(IVecEnv):
                 act = actions[i * num_agents:(i + 1) * num_agents]
             obs, reward, terminated, truncated, info = env.step(act)
             is_done = terminated | truncated if np.isscalar(terminated) else terminated | truncated
-            if 'time_outs' not in info:
-                info['time_outs'] = truncated
+            # The learner reconstructs termination as done & ~time_outs.
+            # A real terminal state must not bootstrap, even at a time limit.
+            info['time_outs'] = np.logical_and(
+                info.get('time_outs', truncated), np.logical_not(terminated))
 
             if np.isscalar(is_done):
                 episode_done = is_done
             else:
                 episode_done = is_done.all()
             if episode_done:
+                # reset() may mutate the same observation arrays in place.
+                final_observations[i] = copy.deepcopy(obs)
                 obs, _ = env.reset()
 
             all_obs.append(obs)
@@ -191,14 +199,28 @@ class GymnasiumVecEnv(IVecEnv):
             else:
                 time_outs.extend(to)
         merged_info = {'time_outs': np.array(time_outs)}
+        if final_observations:
+            final_obs = [final_observations.get(i, obs) for i, obs in enumerate(all_obs)]
+            if self._use_global_observations:
+                final_obs = {
+                    'obs': _concat_observations([o['obs'] for o in final_obs], concat_func),
+                    'states': _concat_observations([o['state'] for o in final_obs], np.stack),
+                }
+            else:
+                final_obs = _concat_observations(final_obs, concat_func)
+            merged_info['final_observation'] = final_obs
+            merged_info['_final_observation'] = np.repeat(
+                [i in final_observations for i in range(self.batch_size)], num_agents)
         return ret_obs, rewards, dones, merged_info
 
     def reset(self):
         if self._use_native_vec:
-            obs, info = self.env.reset()
-            return obs
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed}
+            obs, info = self.env.reset(**kwargs)
         else:
-            return self._reset_manual()
+            obs = self._reset_manual()
+        self._pending_seed = None
+        return obs
 
     def _reset_manual(self):
         """Reset all envs manually (for multi-agent / custom envs)."""
@@ -207,8 +229,9 @@ class GymnasiumVecEnv(IVecEnv):
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
         all_obs = []
-        for env in self.envs:
-            obs, info = env.reset()
+        for i, env in enumerate(self.envs):
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed + i}
+            obs, info = env.reset(**kwargs)
             all_obs.append(obs)
 
         if self._use_global_observations:
@@ -231,6 +254,7 @@ class GymnasiumVecEnv(IVecEnv):
 
     def seed(self, seed):
         self.seed_value = seed
+        self._pending_seed = seed
 
     def get_number_of_agents(self):
         if not self._use_native_vec and self.envs:
