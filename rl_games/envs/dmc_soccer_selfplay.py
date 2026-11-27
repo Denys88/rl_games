@@ -9,7 +9,7 @@ self-play): observations are egocentric and team-relative (team_goal_*,
 opponent_goal_*, teammate_i_*, opponent_i_*), so the same policy plays both
 home and away. rl_games sees num_actors = num_matches * controlled players.
 
-Native envpool row contract (verified against envpool 1.2.7, see
+Native envpool row contract (verified against envpool 1.2.7 and 1.2.8, see
 docs/DMC_SOCCER_SELFPLAY.md):
   * every per-player array -- obs values AND the reward -- is batched over
     `num_envs * 2 * team_size` rows; `terminated`/`truncated` stay per-MATCH,

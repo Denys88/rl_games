@@ -73,7 +73,7 @@ python -m rl_games.envs.dmc_soccer_tools tournament --run-dir runs/boxhead_socce
 
 ### The native envpool row contract
 
-Verified against envpool 1.2.7; `rl_games/envs/dmc_soccer_selfplay.py` is
+Verified against envpool 1.2.7 and 1.2.8; `rl_games/envs/dmc_soccer_selfplay.py` is
 written to it and `tests/test_dmc_soccer.py` pins it.
 
 - **Per-player batching.** Every observation value *and the reward* is
