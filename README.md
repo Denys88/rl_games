@@ -12,7 +12,7 @@ Trains directly on <a href="https://github.com/isaac-sim/IsaacLab">Isaac Lab</a>
 <a href="https://discord.gg/hnYRq7DsQh"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (1.2.6 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
+> **2.0.0 (unreleased):** gymnasium only, Python >= 3.11, EnvPool restored (>= 1.2.7 on Python 3.12+, 1.2.5 on 3.11). See [docs/GYMNASIUM_COMPATIBILITY.md](docs/GYMNASIUM_COMPATIBILITY.md) for the API changes.
 
 ## Trained with rl_games
 
@@ -208,7 +208,7 @@ For high-throughput vectorized MuJoCo / Atari / DM Control training, install the
 [uv](https://docs.astral.sh/uv/) is a fast Python package manager. To create a virtual environment and install rl_games:
 
 ```bash
-# 3.12+ resolves envpool 1.2.6; a 3.11 venv falls back to envpool 1.2.5
+# 3.12+ resolves envpool 1.2.8; a 3.11 venv falls back to envpool 1.2.5
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -e ".[mujoco,envpool]"
