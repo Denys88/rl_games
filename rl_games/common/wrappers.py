@@ -170,18 +170,17 @@ class MaxAndSkipEnv(gym.Wrapper):
         for i in range(self._skip):
             obs, reward, done, info = _parse_step_result(self.env.step(action))
             if self.use_max:
-                if i == self._skip - 2: self._obs_buffer[0] = obs
-                if i == self._skip - 1: self._obs_buffer[1] = obs
+                self._obs_buffer[i % 2] = obs
             else:
                 self._obs_buffer[0] = obs
 
             total_reward += reward
             if done:
                 break
-        # Note that the observation on the done=True frame
-        # doesn't matter
+        # An early end still needs the last observed frames, especially when
+        # the transition is truncated and its final observation is bootstrapped.
         if self.use_max:
-            max_frame = self._obs_buffer.max(axis=0)
+            max_frame = self._obs_buffer[0].copy() if i == 0 else self._obs_buffer.max(axis=0)
         else:
             max_frame = self._obs_buffer[0]
 
