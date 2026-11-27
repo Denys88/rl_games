@@ -591,6 +591,30 @@ def test_agent_feeds_the_compactor_aux_and_final_aux(from_env):
     assert torch.equal(next_step[plain], step[plain] + 3)
 
 
+def test_replay_keeps_pre_step_obs_and_aux_when_the_env_reuses_its_storage():
+    """obs and obs_aux are read before env.step() and stored after it. An env that returns the
+    same tensors every step, overwritten in place, must not turn the stored step into the next
+    one: the replay would hold (s_{t+1}, a_t, s_{t+n}) and the compactor aux of step t+1."""
+    class ReusingStorage(_StepCountTracking):
+        def _full(self, obs):
+            full = super()._full(obs)
+            if not hasattr(self, 'storage'):
+                self.storage = {key: torch.empty_like(value) for key, value in full.items()}
+            for key, value in full.items():
+                self.storage[key].copy_(value)
+            return self.storage
+
+    env = ReusingStorage(16, num_groups=2, episode_length=12)
+    agent = make_agent(env, flash_network(), n_step=3, max_epochs=4, replay_memory_efficient=True,
+                       replay_obs_compactor=_StepCountCompactor(env.get_env_info()))
+    agent.train()
+    batch = agent.replay_buffer.sample_batch(512)
+    step, next_step = batch['obs'][:, -1], batch['next_obs'][:, -1]   # the step count, rebuilt from the aux
+    plain = ~batch['truncated'][:, 0] & ~batch['done'][:, 0]
+    assert plain.any()
+    assert torch.equal(next_step[plain], step[plain] + 3)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason='needs CUDA')
 def test_host_replay_is_mapped_into_the_gpu():
     b, n = 16, 2

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import gymnasium as gym
 import numpy as np
+import pytest
 import torch
 
 from rl_games.common import env_configurations, vecenv
@@ -188,3 +189,19 @@ def test_e2e_cartpole_determinism_vecenv_and_regular():
         )
     )
     assert torch.equal(c1.env_reset(c1.env), c2.env_reset(c2.env))
+
+
+@pytest.mark.parametrize("override, legacy, expected", [
+    ({}, {}, "cpu"),
+    ({}, {"device_name": "cuda:1"}, "cuda:1"),
+    ({"device": "cpu"}, {"device_name": "cuda:1"}, "cpu"),
+])
+def test_player_device_precedence(override, legacy, expected):
+    params = _base_params({}, True, player_extra=override)
+    cfg = params['config']
+    cfg.pop('device_name')
+    cfg.update(device='cpu', env_info={
+        'action_space': gym.spaces.Discrete(2),
+        'observation_space': gym.spaces.Box(-1, 1, (4,), dtype=np.float32),
+    }, **legacy)
+    assert _DummyPlayer(params).device == torch.device(expected)

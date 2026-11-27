@@ -808,3 +808,26 @@ def test_benchmark_probe_exits_with_hint_when_envpool_missing():
                          capture_output=True, text=True, timeout=120)
     assert res.returncode == 1
     assert 'uv sync --extra envpool --extra mujoco' in res.stderr
+
+
+def test_replay_preserves_pre_step_observation_when_storage_is_reused(tmp_path):
+    class ReusingEnv(FakeNextStepVecEnv):
+        def _obs(self):
+            obs = super()._obs()
+            if not hasattr(self, 'buffer'):
+                self.buffer = np.empty_like(obs)
+            self.buffer[:] = obs
+            return self.buffer
+
+    agent, _ = make_fake_env_sac_agent(env_cls=ReusingEnv, num_envs=1,
+                                       num_steps_per_episode=3, train_dir=str(tmp_path))
+    try:
+        agent.init_tensors()
+        agent.obs = agent.env_reset()
+        agent.play_steps(random_exploration=True)
+        buffer = agent.replay_buffer
+        assert buffer.idx == 3
+        torch.testing.assert_close(buffer.obses[:3, 1], torch.tensor([0., 1., 2.]))
+        torch.testing.assert_close(buffer.next_obses[:3, 1], torch.tensor([1., 2., 3.]))
+    finally:
+        agent.writer.close()

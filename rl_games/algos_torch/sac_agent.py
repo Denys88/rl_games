@@ -572,7 +572,7 @@ class SACAgent(BaseAlgorithm):
 
         # set_full_state_weights restores last_mean_rewards (and frame/epoch above);
         # saving it keeps the best-ever checkpoint watermark across restarts.
-        state['last_mean_rewards'] = self.last_mean_rewards
+        state['last_mean_rewards'] = float(self.last_mean_rewards)
 
         if self.vec_env is not None:
             state['env_state'] = self.vec_env.get_env_state()
@@ -1235,6 +1235,9 @@ class SACAgent(BaseAlgorithm):
                 with torch.no_grad():
                     action = self.act(obs.float(), self.env_info["action_space"].shape, sample=True)
 
+            # The simulator may overwrite its observation storage in step().
+            replay_obs = obs.clone()
+            replay_obs_aux = obs_aux.clone() if obs_aux is not None else None
             step_start = time.perf_counter()
             with torch.no_grad():
                 next_obs, rewards, dones, infos = self.env_step(action)
@@ -1268,9 +1271,9 @@ class SACAgent(BaseAlgorithm):
                 self.reward_scaler.update(replay_rewards, dones.bool())
 
             next_obs_aux = self._obs_aux(next_obs)
-            self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
+            self._store_transitions(replay_obs, action, shaped_rewards, next_obs_processed,
                                     dones, terminated, truncated_mask, infos, replay_rewards,
-                                    obs_aux, next_obs_aux)
+                                    replay_obs_aux, next_obs_aux)
 
             obs = next_obs_processed
             obs_aux = next_obs_aux

@@ -423,6 +423,12 @@ class A2CBase(BaseAlgorithm):
 
         self.normalize_advantage = config['normalize_advantage']
         self.normalize_rms_advantage = config.get('normalize_rms_advantage', False)
+        if self.normalize_rms_advantage and not self.normalize_advantage:
+            # RMS statistics are a mode OF advantage normalization: with it off there is
+            # nothing to normalize and no advantage_mean_std. Resolved here so that every
+            # later check of the flag (eval/train mode, stats weights, diagnostics) agrees.
+            print('WARNING: normalize_rms_advantage is ignored because normalize_advantage is False')
+            self.normalize_rms_advantage = False
         self.normalize_input = self.config['normalize_input']
         self.normalize_value = self.config.get('normalize_value', False)
         self.truncate_grads = self.config.get('truncate_grads', False)
@@ -978,7 +984,7 @@ class A2CBase(BaseAlgorithm):
 
         # last_mean_rewards is the best reward ever achieved (misleading name).
         # Saved so a restart doesn't overwrite the "best ever" checkpoint.
-        state['last_mean_rewards'] = self.last_mean_rewards
+        state['last_mean_rewards'] = float(self.last_mean_rewards)
 
         if self.vec_env is not None:
             env_state = self.vec_env.get_env_state()
@@ -1140,6 +1146,32 @@ class A2CBase(BaseAlgorithm):
                 obs_batch = obs_batch.float() / 255.0
         return obs_batch
 
+    def _bootstrap_timeouts(self, rewards, previous_values, infos):
+        if not self.value_bootstrap or 'time_outs' not in infos:
+            return
+        timeouts = torch.as_tensor(infos['time_outs'], device=rewards.device, dtype=torch.bool).reshape(-1, 1)
+        # Same-step simulators without terminal observations historically use
+        # the previous value as a proxy. Their reset observation belongs to a
+        # different episode and must never be used for this target.
+        values = previous_values
+        final_obs = infos.get('final_observation')
+        has_final_value_obs = final_obs is not None and (
+            not self.has_central_value or isinstance(final_obs, dict) and 'states' in final_obs)
+        if self.autoreset_mode == 'next_step' or has_final_value_obs:
+            if not timeouts.any():
+                return
+            if self.autoreset_mode == 'next_step':
+                values = self.get_values(self.obs)
+            else:
+                values = self.get_values(self.obs_to_tensors(final_obs))
+                if '_final_observation' in infos:
+                    valid = torch.as_tensor(infos['_final_observation'], device=rewards.device,
+                                            dtype=torch.bool).reshape(-1, 1)
+                    values = torch.where(valid, values, previous_values)
+        # gamma * values first, as master did: add_(x, alpha=gamma) may fuse the multiply and the add, which
+        # rounds differently and changes fixed-seed runs on envs that keep the pre-step value
+        rewards.add_(torch.where(timeouts, self.gamma * values, 0.0))
+
     def play_steps(self):
         update_list = self.update_list
 
@@ -1149,7 +1181,15 @@ class A2CBase(BaseAlgorithm):
                 (self.horizon_length, self.num_actors * self.num_agents),
                 dtype=torch.float32, device=self.ppo_device)
 
+        # A recurrent central value needs the same state bookkeeping as in play_steps_rnn,
+        # even though the actor here has no RNN: record its state at sequence starts and
+        # reset it at episode ends, or training replays it from states the rollout never used.
+        cv_rnn = self.has_central_value and self.central_value_net.is_rnn
+
         for n in range(self.horizon_length):
+            if cv_rnn:
+                self.central_value_net.pre_step_rnn(n)
+
             if self.use_action_masks:
                 masks = self.vec_env.get_action_masks()
                 res_dict = self.get_masked_action_values(self.obs, masks)
@@ -1162,6 +1202,12 @@ class A2CBase(BaseAlgorithm):
                 if prev_dones is None:
                     prev_dones = torch.zeros_like(self.dones)
                 mb_valid[n] = 1.0 - prev_dones.float()
+                if cv_rnn and self.zero_rnn_on_done:
+                    # filler reset row: re-zero so the first real row of the new episode
+                    # starts from a clean state (as play_steps_rnn does)
+                    reset_idx = prev_dones.nonzero(as_tuple=False)
+                    if len(reset_idx) > 0:
+                        self.central_value_net.post_step_rnn(reset_idx)
 
             for k in update_list:
                 self.experience_buffer.update_data(k, n, res_dict[k])
@@ -1177,8 +1223,7 @@ class A2CBase(BaseAlgorithm):
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
+            self._bootstrap_timeouts(shaped_rewards, res_dict['values'], infos)
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
@@ -1196,6 +1241,8 @@ class A2CBase(BaseAlgorithm):
 
             all_done_indices = self.dones.nonzero(as_tuple=False)
             env_done_indices = all_done_indices[::self.num_agents]
+            if cv_rnn and len(all_done_indices) > 0:
+                self.central_value_net.post_step_rnn(all_done_indices)
 
             self.game_rewards.update(self.current_rewards[env_done_indices])
             self.game_shaped_rewards.update(self.current_shaped_rewards[env_done_indices])
@@ -1223,6 +1270,14 @@ class A2CBase(BaseAlgorithm):
         batch_dict['step_time'] = step_time
         if self.mask_autoreset_rows:
             batch_dict['rnn_masks'] = swap_and_flatten01(mb_valid)
+            if cv_rnn and self.zero_rnn_on_done:
+                # same train-time reset as play_steps_rnn: also fire it ENTERING the
+                # first real row after a filler reset row (GAE above used the pure copy)
+                rnn_dones = self.experience_buffer.tensor_dict['dones'].clone()
+                garbage = (mb_valid == 0.0)
+                rnn_dones[1:] = torch.maximum(
+                    rnn_dones[1:], garbage[:-1].to(rnn_dones.dtype))
+                batch_dict['dones'] = swap_and_flatten01(rnn_dones)
 
         return batch_dict
 
@@ -1285,9 +1340,7 @@ class A2CBase(BaseAlgorithm):
             step_time += (step_time_end - step_time_start)
 
             shaped_rewards = self.rewards_shaper(rewards)
-
-            if self.value_bootstrap and 'time_outs' in infos:
-                shaped_rewards.add_(self.gamma * res_dict['values'] * self.cast_obs(infos['time_outs']).unsqueeze(1).float())
+            self._bootstrap_timeouts(shaped_rewards, res_dict['values'], infos)
 
             self.experience_buffer.update_data('rewards', n, shaped_rewards)
 
@@ -1563,8 +1616,6 @@ class DiscreteA2CBase(A2CBase):
                 self.write_stats(total_time, epoch_num, step_time, play_time, update_time,
                                 a_losses, c_losses, entropies, kls, last_lr, lr_mul, frame, 
                                 scaled_time, scaled_play_time, curr_frames)
-
-                self.algo_observer.after_print_stats(frame, epoch_num, total_time)
 
                 if self.game_rewards.current_size > 0:
                     mean_rewards = self.game_rewards.get_mean()

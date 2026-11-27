@@ -649,3 +649,34 @@ def test_masked_moments_finite_on_degenerate_masks():
     mean, var = get_mean_var_with_masks(v, m)
     assert torch.allclose(mean, v.mean(), atol=1e-6)
     assert torch.allclose(var, v.var(unbiased=True), atol=1e-5)
+
+
+@pytest.mark.parametrize("rnn", [True, False])
+@pytest.mark.parametrize("env_cls, expected_value", [
+    (FakeNextStepVecEnv, EP_LEN),
+    (lambda n, t: SameStepFakeVecEnv(n, t, provide_final_obs=True), EP_LEN),
+    (SameStepFakeVecEnv, EP_LEN - 1),  # historical fallback when the env discarded the final observation
+    (lambda n, t: FakeNextStepVecEnv(n, t, terminate_instead=True), 0),
+])
+def test_timeout_target_uses_final_observation(rnn, env_cls, expected_value):
+    agent, _ = make_ppo_agent(env_cls=env_cls, rnn=rnn, value_bootstrap=True)
+    rollout_forward = agent.get_action_values
+
+    def step_number_value(obs):
+        return obs['obs'][:, 1:2].clone()
+
+    def get_action_values(obs):
+        result = rollout_forward(obs)
+        result['values'] = step_number_value(obs)
+        return result
+
+    agent.get_values = step_number_value
+    agent.get_action_values = get_action_values
+    try:
+        batch = _rollout_batch(agent)
+        final = batch['obses'][:, 1] == EP_LEN - 1
+        assert final.any()
+        targets = batch['returns'][final]
+        torch.testing.assert_close(targets, torch.full_like(targets, 1.0 + agent.gamma * expected_value))
+    finally:
+        agent.writer.close()

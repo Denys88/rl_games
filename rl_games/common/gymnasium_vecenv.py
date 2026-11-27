@@ -165,9 +165,10 @@ class GymnasiumVecEnv(IVecEnv):
                 episode_done = is_done
             else:
                 episode_done = is_done.all()
-            if episode_done:
+            if np.any(is_done):
                 # reset() may mutate the same observation arrays in place.
                 final_observations[i] = copy.deepcopy(obs)
+            if episode_done:
                 obs, _ = env.reset()
 
             all_obs.append(obs)
@@ -209,8 +210,7 @@ class GymnasiumVecEnv(IVecEnv):
             else:
                 final_obs = _concat_observations(final_obs, concat_func)
             merged_info['final_observation'] = final_obs
-            merged_info['_final_observation'] = np.repeat(
-                [i in final_observations for i in range(self.batch_size)], num_agents)
+            merged_info['_final_observation'] = dones.copy()
         return ret_obs, rewards, dones, merged_info
 
     def reset(self):

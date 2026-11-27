@@ -14,7 +14,8 @@ class SelfPlayManager:
     def update(self, algo):
         self.updates_num += 1
         if self.check_scores:
-            data = algo.game_scores
+            # the score meter lives on the observer (DefaultAlgoObserver.game_scores), not on the algo
+            data = algo.algo_observer.game_scores
         else:
             data = algo.game_rewards
 

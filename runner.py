@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
         if args['seed'] > 0:
             config['params']['seed'] = args['seed']
-            config['params']['config']['env_config']['seed'] = args['seed']
+            config['params']['config'].setdefault('env_config', {})['seed'] = args['seed']
 
         from rl_games.torch_runner import Runner
 
