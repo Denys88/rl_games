@@ -110,6 +110,8 @@ class SumSegmentTree(SegmentTree):
         if array values are probabilities, this function
         allows to sample indexes according to the discrete
         probability efficiently.
+        A draw rounded to the total mass selects the final positive leaf.
+        Trees with zero total priority cannot be sampled.
         Parameters
         ----------
         perfixsum: float
@@ -119,10 +121,13 @@ class SumSegmentTree(SegmentTree):
         idx: int
             highest index satisfying the prefixsum constraint
         """
-        assert 0 <= prefixsum <= self.sum() + 1e-5
+        total = self.sum()
+        assert 0 <= prefixsum <= total + 1e-5
+        if total <= 0:
+            raise ValueError("cannot sample a tree with zero total priority")
         idx = 1
         while idx < self._capacity:  # while non-leaf
-            if self._value[2 * idx] > prefixsum:
+            if self._value[2 * idx] > prefixsum or self._value[2 * idx + 1] == 0:
                 idx = 2 * idx
             else:
                 prefixsum -= self._value[2 * idx]
