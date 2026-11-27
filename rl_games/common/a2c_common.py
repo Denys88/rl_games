@@ -1168,7 +1168,9 @@ class A2CBase(BaseAlgorithm):
                     valid = torch.as_tensor(infos['_final_observation'], device=rewards.device,
                                             dtype=torch.bool).reshape(-1, 1)
                     values = torch.where(valid, values, previous_values)
-        rewards.add_(torch.where(timeouts, values, 0.0), alpha=self.gamma)
+        # gamma * values first, as master did: add_(x, alpha=gamma) may fuse the multiply and the add, which
+        # rounds differently and changes fixed-seed runs on envs that keep the pre-step value
+        rewards.add_(torch.where(timeouts, self.gamma * values, 0.0))
 
     def play_steps(self):
         update_list = self.update_list
