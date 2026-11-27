@@ -219,7 +219,11 @@ def apply_sigma_parametrization(raw, network):
     gradients ~1/sigma^2 blow up at the floor). logstd is recomputed from the
     final sigma so log-probs stay consistent.
     """
+    # autocast may leave the head in bf16/fp16; distribution math needs fp32
+    if raw.dtype == torch.float16 or raw.dtype == torch.bfloat16:
+        raw = raw.float()
     min_sigma = getattr(network, 'min_sigma', 0.0)
+    max_sigma = getattr(network, 'max_sigma', 0.0)
     parametrization = getattr(network, 'sigma_parametrization', 'exp')
     if parametrization == 'softplus':
         sigma = torch.nn.functional.softplus(raw) + min_sigma
@@ -236,8 +240,15 @@ def apply_sigma_parametrization(raw, network):
         sigma = torch.exp(raw)
         if min_sigma > 0:
             sigma = sigma + min_sigma
-        else:
+        elif max_sigma <= 0:
             return sigma, raw
+    if max_sigma > 0:
+        # smooth ceiling x/(1+x): ~identity well below the cap, saturates at
+        # max_sigma, gradient decays polynomially (tanh would hit exactly 1.0
+        # in fp32 and lose its gradient). Bounds sigma only, not the mean.
+        span = max_sigma - min_sigma  # > 0: validated by the network builder at config time
+        x = (sigma - min_sigma) / span
+        sigma = min_sigma + span * x / (1.0 + x)
     return sigma, torch.log(sigma)
 
 
@@ -270,6 +281,8 @@ class ModelA2CContinuousLogStd(BaseModel):
             prev_actions = input_dict.get('prev_actions', None)
             input_dict['obs'] = self.norm_obs(input_dict['obs'])
             mu, logstd, value, states = self.a2c_network(input_dict)
+            if mu.dtype == torch.float16 or mu.dtype == torch.bfloat16:
+                mu = mu.float()
             sigma, logstd = apply_sigma_parametrization(logstd, self.a2c_network)
             distr = torch.distributions.Normal(mu, sigma, validate_args=False)
             if is_train:

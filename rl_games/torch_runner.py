@@ -32,12 +32,16 @@ def _default_compile_modes(agent):
     return mode, mode
 
 
-def _compile_sac_submodules(sac_network, actor_mode, critic_mode):
+def _compile_sac_submodules(sac_network, actor_mode, critic_mode, dynamic=None):
     """Compile the submodules SAC actually invokes (never model.forward),
-    in place so optimizer param refs and state_dict keys are unchanged."""
-    sac_network.actor.compile(mode=actor_mode)
-    sac_network.critic.compile(mode=critic_mode)
-    sac_network.critic_target.compile(mode=critic_mode)
+    in place so optimizer param refs and state_dict keys are unchanged.
+    dynamic=False keeps one static graph per batch size (acting, update): no kernel
+    is re-tuned for a new size later, which a captured CUDA graph cannot allow."""
+    sac_network.actor.compile(mode=actor_mode, dynamic=dynamic)
+    sac_network.critic.compile(mode=critic_mode, dynamic=dynamic)
+    sac_network.critic_target.compile(mode=critic_mode, dynamic=dynamic)
+    if hasattr(sac_network, 'compile_projection'):
+        sac_network.compile_projection()
 
 
 def _restore(agent, args):
@@ -278,8 +282,9 @@ class Runner:
         # across sequential rollout calls and LSTM internal allocations violate
         # CUDA graph memory pool constraints during backward pass.
 
-        # Enable torch.compile for performance if requested
-        compile_config = self.params.get('config', {}).get('torch_compile', True)
+        # Off by default: on default-size networks compile costs about 1 % of
+        # total throughput and adds startup time; it pays on large networks.
+        compile_config = self.params.get('config', {}).get('torch_compile', False)
 
         if compile_config is False:
             print("torch.compile: Disabled")
@@ -300,7 +305,8 @@ class Runner:
 
             sac_network = getattr(agent.model, 'sac_network', None)
             if sac_network is not None:
-                _compile_sac_submodules(sac_network, actor_mode, critic_mode)
+                dynamic = False if self.params['config'].get('update_cuda_graph', False) else None
+                _compile_sac_submodules(sac_network, actor_mode, critic_mode, dynamic)
                 print(f"torch.compile: Enabled for SAC actor (mode='{actor_mode}') and critics (mode='{critic_mode}')")
             else:
                 print(f"torch.compile: Enabled for actor with mode='{actor_mode}'")

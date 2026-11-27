@@ -1,10 +1,15 @@
 import math
 import time
+import warnings
 import numpy as np
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+from rl_games.common.common_losses import normalize_advantage
 
 
 def wrap_model_ddp(model, device, find_unused_parameters=False):
@@ -38,6 +43,45 @@ def wrap_model_ddp(model, device, find_unused_parameters=False):
     )
     ddp.forward_seen = False
     return ddp
+
+
+def nccl_runtime_version():
+    """(major, minor, patch) of the NCCL this process runs. torch.cuda.nccl.version() is the one torch was built
+    against, which a newer nvidia-nccl wheel replaces at run time, so read the libnccl actually mapped into the
+    process. None mapped (torch links NCCL statically): torch's own version is the one that runs."""
+    import ctypes
+    path = None
+    try:
+        with open('/proc/self/maps') as maps:
+            path = next((line.split()[-1] for line in maps if 'libnccl.so' in line), None)
+    except OSError:
+        pass
+    if path is not None:
+        try:
+            code = ctypes.c_int()
+            ctypes.CDLL(path).ncclGetVersion(ctypes.byref(code))
+            return code.value // 10000, code.value // 100 % 100, code.value % 100
+        except (OSError, AttributeError):
+            pass
+    return tuple(torch.cuda.nccl.version()[:3])
+
+
+def check_nccl(device):
+    """Refuse NCCL older than 2.27 on sm_12x GPUs (RTX PRO 6000 / RTX 50 Blackwell): there every collective ends in
+    an illegal memory access (NCCL 2.26.2, the one torch 2.7 ships; 2.27.3 and later work). Applies to every
+    multi_gpu algorithm. RL_GAMES_SKIP_NCCL_CHECK=1 skips it (e.g. a patched NCCL build)."""
+    if not torch.cuda.is_available():
+        return
+    major, minor = torch.cuda.get_device_capability(device)
+    version = nccl_runtime_version()
+    if major == 12 and tuple(version) < (2, 27, 0):
+        message = (f"NCCL {'.'.join(map(str, version))} fails on {torch.cuda.get_device_name(device)} "
+                   f"(sm_{major}{minor}): every collective ends in an illegal memory access. Install NCCL >= 2.27, "
+                   f"e.g. pip install 'nvidia-nccl-cu12>=2.27' (torch 2.7 ships 2.26.2)")
+        if os.environ.get('RL_GAMES_SKIP_NCCL_CHECK', '0') == '1':
+            print(f'Warning: {message}; RL_GAMES_SKIP_NCCL_CHECK=1, continuing')
+            return
+        raise RuntimeError(message)
 
 
 def flat_allreduce_grads(model, world_size):
@@ -76,10 +120,16 @@ numpy_to_torch_dtype_dict = {
 torch_to_numpy_dtype_dict = {value: key for (key, value) in numpy_to_torch_dtype_dict.items()}
 
 def policy_kl(p0_mu, p0_sigma, p1_mu, p1_sigma, reduce: bool = True):
-    c1 = torch.log(p1_sigma/p0_sigma + 1e-5)
-    c2 = (p0_sigma**2 + (p1_mu - p0_mu)**2)/(2.0 * (p1_sigma**2 + 1e-5))
-    c3 = -1.0 / 2.0
-    kl = c1 + c2 + c3
+    """KL(N(p0_mu, p0_sigma) || N(p1_mu, p1_sigma)), summed over actions."""
+    # keep the Gaussian arithmetic in at least fp32
+    p0_mu, p0_sigma, p1_mu, p1_sigma = [
+        t.float() if t.dtype in (torch.float16, torch.bfloat16) else t
+        for t in (p0_mu, p0_sigma, p1_mu, p1_sigma)
+    ]
+    # exact form: an epsilon on the variance biased KL below zero even for identical policies
+    var_ratio = (p0_sigma / p1_sigma).square()
+    mean_delta = (p0_mu - p1_mu) / p1_sigma
+    kl = torch.log(p1_sigma / p0_sigma) + 0.5 * (var_ratio + mean_delta.square() - 1.0)
     kl = kl.sum(dim=-1) # returning mean between all steps of sum between all actions
     if reduce:
         return kl.mean()
@@ -222,7 +272,7 @@ def apply_masks(losses, mask=None):
 
 def normalization_with_masks(values, masks):
     if masks is None:
-        return (values - values.mean()) / (values.std() + 1e-8)
+        return normalize_advantage(values)
 
     values_mean, values_var = get_mean_var_with_masks(values, masks)
     values_std = torch.sqrt(values_var)
@@ -288,13 +338,16 @@ class CoordConv2d(nn.Conv2d):
                          padding, dilation, groups, bias)
     @staticmethod
     def get_coord(x):
-        key = int(x.size(0)), int(x.size(2)), int(x.size(3)), x.type()
+        key = int(x.size(2)), int(x.size(3)), x.dtype, x.device
         if key not in CoordConv2d.pool:
             theta = torch.Tensor([[[1, 0, 0], [0, 1, 0]]])
-            coord = torch.nn.functional.affine_grid(theta, torch.Size([1, 1, x.size(2), x.size(3)])).permute([0, 3, 1, 2]).repeat(
-                x.size(0), 1, 1, 1).type_as(x)
+            coord = torch.nn.functional.affine_grid(
+                theta, torch.Size([1, 1, x.size(2), x.size(3)]),
+                align_corners=False).permute([0, 3, 1, 2]).type_as(x)
             CoordConv2d.pool[key] = coord
-        return CoordConv2d.pool[key]
+        # Coordinates are identical for every batch row. Cache their spatial
+        # storage once; expansion is a view and also handles changing batches.
+        return CoordConv2d.pool[key].expand(x.size(0), -1, -1, -1)
     def forward(self, x):
         return torch.nn.functional.conv2d(torch.cat([x, self.get_coord(x).type_as(x)], 1), self.weight, self.bias, self.stride,
                         self.padding, self.dilation, self.groups)
@@ -371,9 +424,52 @@ def get_mean(v):
     return mean
 
 
-def default_mixed_precision():
-    """bf16 autocast default: on for CUDA GPUs with native bf16 support."""
-    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+_HALF_DTYPES = {'fp16': torch.float16, 'float16': torch.float16, 'half': torch.float16,
+                'bf16': torch.bfloat16, 'bfloat16': torch.bfloat16}
+_OFF_NAMES = ('false', '0', 'no', 'off', 'none', 'fp32', 'tf32')
+_ON_NAMES = ('true', '1', 'yes', 'on')
+
+
+def resolve_mixed_precision(value, device='cuda'):
+    """Map the `mixed_precision` config value to an autocast dtype, or None.
+
+    False, None or 0: no autocast (fp32 weights, TF32 matmuls). True, 1 or
+    'fp16': float16 autocast with loss scaling, the meaning True had through
+    rl_games 1.6.1. 'bf16': bfloat16, only on request, because at small sigma
+    its rounding adds a KL of 0.01-0.03 per update and noise in the PPO
+    ratio. Strings from CLI or Hydra overrides ('true', 'False', '0') map the
+    same way. Half precision needs a CUDA device; elsewhere it resolves to
+    None.
+    """
+    if isinstance(value, str):
+        name = value.strip().lower()
+        if name in _OFF_NAMES:
+            return None
+        if name in _ON_NAMES:
+            value = True
+        elif name in _HALF_DTYPES:
+            value = _HALF_DTYPES[name]
+    if value is None or value is False or (type(value) is int and value == 0):
+        return None
+    if value is True or (type(value) is int and value == 1):
+        value = torch.float16
+    if value not in (torch.float16, torch.bfloat16):
+        raise ValueError(f"mixed_precision must be False, 'fp16' or 'bf16', got {value!r}")
+    if not str(device).startswith('cuda'):
+        warnings.warn(f"mixed_precision needs a CUDA device; running {device} without autocast.",
+                      stacklevel=2)
+        return None
+    return value
+
+
+def autocast(dtype):
+    """Autocast context for a dtype from resolve_mixed_precision; a no-op for None."""
+    return torch.amp.autocast('cuda', enabled=dtype is not None, dtype=dtype or torch.bfloat16)
+
+
+def grad_scaler(dtype):
+    """Loss scaler for fp16. bf16 has fp32's exponent range and needs none."""
+    return torch.amp.GradScaler('cuda', enabled=dtype == torch.float16)
 
 
 class AverageMeter(nn.Module):
@@ -411,5 +507,5 @@ class IdentityRNN(nn.Module):
         assert(in_shape == out_shape)
         self.identity = torch.nn.Identity()
 
-    def forward(self, x, h):
+    def forward(self, x, h, done_masks=None, bptt_len=0):
         return self.identity(x), h

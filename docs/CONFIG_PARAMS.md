@@ -34,6 +34,44 @@ params:
 
 **Ray note:** `torch.set_num_threads()` only affects the trainer process. Ray workers (`RayWorker`) are separate processes that use their own default thread count. This setting does NOT propagate to Ray workers.
 
+## Precision (under `config:`)
+
+### `mixed_precision`
+
+Selects autocast for the policy and critic forward passes, in rollouts and in updates. Default: `False`. Applies to: PPO, the central value network, SAC.
+
+| Value | Matmuls | Loss scaling |
+|---|---|---|
+| `False` | TF32: fp32 weights, 10-bit mantissa inputs | none |
+| `fp16` | float16 autocast | `GradScaler` |
+| `bf16` | bfloat16 autocast | none |
+
+`True` selects `fp16`. fp16 overflows above 65,504: with large returns, keep `normalize_value: true`. The central value network follows this key unless `central_value_config` sets its own. Half precision needs a CUDA device.
+
+Keep the default for continuous control. bf16 keeps 8 significant bits, so it rounds the policy mean by up to 0.4 %. Once sigma drops below about 0.1, that rounding adds noise to the PPO ratio and a KL of 0.01 to 0.03 per update at any learning rate. With `lr_schedule: adaptive`, the rate then falls to `min_lr`. fp16 rounds 8 times finer and does neither.
+
+| Rounding noise before any update | sigma 0.19 | sigma 0.067 | sigma 0.024 |
+|---|---|---|---|
+| Samples outside the PPO clip range, bf16 | 0.1 % | 7.8 % | 57 % |
+| Samples outside the PPO clip range, fp16 | 0.0 % | 0.0 % | 0.0 % |
+
+| MicroDuck task, 4096 envs | bf16 | TF32 |
+|---|---|---|
+| Velocity, final return (2 seeds) | 136.1, 138.3 | 149.7, 148.1 |
+| Ball walk, final return (seed 42) | 13.8 | 25.0 |
+| Training throughput, frames/s | 130.1k | 133.4k |
+
+Use `fp16` when the network update dominates the iteration time, for example with image encoders. With small MLPs the simulator dominates and TF32 is as fast.
+
+### `torch_compile`
+
+Wraps the model forwards in `torch.compile`. Default: `False`. Accepts `True`, a mode name
+(`default`, `reduce-overhead`, `max-autotune`) or a dict with `mode` and `critic_mode`.
+
+On default-size policy networks compile is a net loss of about 1 % of total throughput (RTX PRO 6000,
+torch 2.13), and it adds startup time. It pays on large networks, about +2–3 % at
+`[4096, 2048, 1024]`. `docs/TORCH_COMPILE.md` covers the modes.
+
 ## Adaptive LR (under `config:`)
 
 ### `schedule_type`
@@ -46,19 +84,27 @@ config:
   lr_schedule: adaptive
   schedule_type: per_minibatch   # default; 'legacy' is a permanent alias
   kl_threshold: 0.008
-  min_lr: 1e-5                   # ALWAYS set both bounds explicitly:
-  max_lr: 1e-3                   # class defaults (1e-6 / 1e-2) are too wide
+  # set both bounds per task; keep the dot: YAML 1.1 reads a bare 1e-5 as a string
+  min_lr: 1.0e-5
+  max_lr: 1.0e-3
 ```
+
+Default `max_lr` changed 1e-2 → 1e-3 in 2.0.0: adaptive configs without an
+explicit `max_lr` now cap the KL-driven raise at 1e-3; set `max_lr: 1.0e-2`
+to restore the old ceiling.
 
 | Value | LR updates | KL input | When |
 |-------|------------|----------|------|
-| `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | rl_games' original adaptive stepping (the old name marks its seniority; rsl-rl adopted the same mechanism) — tracks on-policy KL swings within a rollout. Requires reliable per-minibatch KL estimates: use large minibatches (16k+ on vectorized continuous control). |
+| `per_minibatch` (alias `legacy`, **default**) | after every minibatch | that minibatch's KL | Responds within an optimization pass; noisy estimates can cause frequent rate changes. |
 | `standard` | once per mini-epoch | epoch-mean KL | Smoother; consider when minibatches are small (noisy KL estimates make per-minibatch stepping oscillate between the band edges). |
 
-The practical failure modes to know: `per_minibatch` with *small* minibatches
-rail-slams between `min_lr`/`max_lr` on KL-estimator noise (fix the minibatch
-size, not the schedule); `standard` on tasks with fast on-policy KL swings
-adapts too slowly and can leave measurable reward on the table.
+The cadence trades responsiveness against noise. Neither setting is
+universally better; compare them with the same minibatch geometry and KL
+measurement. `lr_multiplier` (default `1.5`) controls each rate adjustment:
+divide by it above `2 * kl_threshold`, multiply by it below
+`0.5 * kl_threshold`, and otherwise leave the rate unchanged, subject to
+`min_lr` / `max_lr`. A smaller multiplier such as `1.1` changes the rate more
+gradually; it is a tuning choice, not a validated improvement for every task.
 
 **Scope:** `schedule_type` applies to continuous PPO only. Discrete PPO always
 steps its adaptive scheduler once per mini-epoch on the mean KL (i.e.
@@ -70,7 +116,149 @@ per split per mini-epoch; `standard` does one per mini-epoch. On a single
 node the difference is small; at multi-node latencies the extra collectives
 compound — prefer `standard` there unless per-task evidence says otherwise.
 
+### `kl_reference`
+
+Continuous PPO can choose which Gaussian the reference KL compares against.
+The KL direction remains `KL(current || reference)`. This is the scheduler
+signal when `kl_schedule_source: reference` (the default).
+
+| Value | Reference distribution |
+|-------|------------------------|
+| `previous_mini_epoch` (default) | The distribution last evaluated on each row; initially the rollout policy, then refreshed on each optimization pass. Preserves historical behavior. |
+| `rollout` | The fixed policy that collected the batch, throughout all mini-epochs. Measures cumulative drift using the same reference as PPO's likelihood ratio. |
+
+`rollout` can reduce the adaptive learning rate sooner; treat it as an
+explicit training ablation rather than assuming the same learning curve.
+This is a measurement/controller option, not a hard KL limit or early stop.
+The scheduler cannot lower the rate below the configured `min_lr`.
+
+### `kl_schedule_source`
+
+Selects the continuous PPO KL measurement passed to the learning-rate
+scheduler. `schedule_type` still determines when the scheduler changes the
+rate; this option does not change PPO's fixed rollout log-probability
+reference or its loss.
+
+| Value | Scheduler measurement |
+|-------|-----------------------|
+| `reference` (default) | Mean `KL(current || reference)` from the pre-optimizer forward pass, using `kl_reference`. Preserves existing behavior. |
+| `optimizer_step` | Mean `KL(post_step || pre_step)` on the same valid minibatch rows, with the same observation-normalization statistics for both distributions. Measures the change caused by that optimizer step. |
+
+`optimizer_step` requires an extra forward pass without gradients on every
+rank. It supports feedforward continuous PPO; recurrent policies and
+discrete PPO do not support it. It measures the combined effect of all
+losses updating the actor, including a shared auxiliary value loss. It does
+not include observation-statistics changes made before the pre-step forward,
+and does not constrain cumulative drift over a mini-epoch or rollout. The
+measurement arrives after the step and adjusts subsequent updates; there is
+no rollback or hard KL limit.
+
+Using it: the step KL is a different scale from the reference KL, so
+`kl_threshold` must be re-calibrated, not carried over. Read
+`info/scheduler_kl` from a fixed-rate run of the same task and set the target
+so that the dead band (`0.5 .. 2` times the target) contains the healthy
+run's values in every phase; on the WujiHand recipe that is 0.002 (0.002
+before takeoff, 0.003 after). Pair it with `schedule_type: standard`: the
+per-minibatch step KL has a heavy upper tail, and per-minibatch stepping
+brakes on every tail event while nothing ever triggers an increase, so the
+rate ratchets down to `min_lr` (measured on WujiHand: 19.3 vs 20.1 reaches).
+
+The actor's distribution parameters must be deterministic for a matched
+input to isolate optimizer movement. Custom stochastic forwards (for example,
+dropout) need matched randomness; this path does not replay RNG state. An
+extra forward can also consume RNG in models that sample entropy estimates.
+The Wuji Gaussian actor has neither behavior.
+
+Calibrate `kl_threshold` for this measurement from a known working fixed-rate
+run or saved-batch replay. A threshold tuned for rollout-relative or
+previous-pass KL is not interchangeable with a single-step threshold.
+The extra measurement also runs with a fixed learning rate when
+`kl_schedule_source: optimizer_step`, so calibration does not require
+turning on adaptation or `use_diagnostics`.
+`schedule_type: standard` with `lr_multiplier: 1.1` is a candidate for slower
+adaptation, to compare against the fixed-rate baseline after calibration.
+Keep frames, minibatches, mini-epochs, seeds and instrumentation matched;
+include the extra forward's cost in wall-clock comparisons. The shipped
+WujiHand recipe remains fixed-rate.
+
+`info/kl` retains the reference-KL meaning selected by `kl_reference`.
+`info/scheduler_kl` reports the epoch mean of the selected scheduler signal.
+`info/lr_mean`, `info/lr_min` and `info/lr_max` summarize the rates actually
+used for minibatch updates; `info/lr_at_min_fraction` and
+`info/lr_at_max_fraction` show the fractions of updates at the adaptive
+bounds. These distinguish applied rates from the final rate scheduled for
+the next update.
+
+### Central critic and `use_experimental_cv`
+
+With `central_value_config`, continuous PPO obtains rollout values from the
+privileged central critic. By default, `use_experimental_cv: true` also
+trains a value head in the actor model. With a shared actor trunk, this
+auxiliary loss changes the policy outside PPO's surrogate clipping.
+`use_experimental_cv: false` disables that auxiliary loss while retaining
+the central critic. It does not disable value training when no central
+critic is configured.
+
+### Policy diagnostics
+
+`use_diagnostics: true` adds per-mini-epoch metrics under
+`diagnostics/policy/<name>/<mini_epoch>`, in two groups.
+
+In-batch, from the learner's forward pass before the optimizer step:
+`sigma_min`, `sigma_mean`, `sigma_max`, `mu_abs_max`, `advantage_abs_max`,
+`logratio_abs_max` (uses the fixed rollout log probability regardless of
+`kl_reference`), `sigma_score_pos`, `sigma_score_neg`, `sigma_score_mean`
+(the signed log-std score `A * (z^2 - 1)` averaged over samples with positive,
+negative and any advantage; positive means the surrogate pushes the std up on
+those samples) and `tail_frac` (fraction of samples with `max_i |z_i| > 3`,
+`z = (a - mu) / sigma`).
+
+Post-step, from one extra no-grad forward on the same minibatch after
+`optimizer.step()`, on rank 0 only, through the raw module with the
+observation normaliser's statistics frozen: `kl_step` (KL(pre-step ||
+post-step)), `kl_post_ref` (mean KL(post-step || reference), the reference
+being the Gaussian `kl_reference` selects) and `kl_post_ref_max` (its
+per-sample max). Not available for recurrent policies.
+
+All metrics cover valid learner minibatch rows and are local to the writer's
+rank under DDP. Diagnostics add reductions, device synchronizations and, for
+the post-step group, one forward per minibatch, so account for this when
+measuring throughput. They are disabled by default.
+
+## Symmetry (under `config:`)
+
+### `symmetry_loss`
+
+Adds a mirror-consistency loss on the policy mean: the mean on mirrored observations is pulled
+toward the mirrored mean on the original observations, as in rsl-rl's mirror loss. Default: off.
+Applies to: continuous PPO with a feed-forward policy and flat observations.
+
+```yaml
+config:
+  symmetry_loss:
+    coef: 0.5
+    maps: mjlab_microduck.tasks.symmetry:mirror_maps
+```
+
+`maps` names a dict, or a function that returns one, with `obs_perm`, `obs_sign`, `act_perm` and
+`act_sign`. The mirror of an observation is `obs[:, obs_perm] * obs_sign` on the raw layout, and
+likewise for actions. Mirrored observations do not update the observation normalizer. The loss is
+logged as `losses/symmetry_loss`. On several GPUs, set `multi_gpu_grad_sync: 'flat_allreduce'`.
+
 ## Sigma Parametrization (under `network: space: continuous:`)
+
+### `max_sigma`
+
+Optional smooth ceiling on the policy std, applied after any parametrization
+(`x = (sigma - min_sigma) / (max_sigma - min_sigma)`, `sigma = min_sigma + (max_sigma - min_sigma) * x / (1 + x)`).
+Default `0` (off). The squash compresses the whole range, not only the top: with `min_sigma 0.2` and
+`max_sigma 1.0` a raw std of 0.3 becomes 0.29, 0.5 becomes 0.42 and 0.8 becomes 0.54. It is exact only at
+the floor, saturates at `max_sigma`, and keeps a (polynomially decaying) gradient above it. Read, like
+`min_sigma`, by the `actor_critic` and `resnet_actor_critic` builders; `max_sigma <= min_sigma` is
+rejected when the network is built. It bounds the exploration noise only; the policy mean is not
+bounded. Use it when a state-dependent sigma head can extrapolate on rare states: for actions in
+`[-1, 1]` a cap of `1.0` is a natural choice (see the MJLab WujiHand notes). With `min_sigma 0.2`,
+`max_sigma 1.0` and `sigma_init -1.05` the initial std is 0.42 instead of 0.5.
 
 ### `sigma_parametrization`
 
@@ -271,3 +459,41 @@ start damps the first-epoch stat jump but does not change the update scheme
 itself — stats still drift within each epoch (updated per minibatch over the
 same rollout data); collection-time freezing à la VecNormalize would remove
 that drift entirely and remains a possible future change.
+
+## SAC options (under `config:` and `network:`)
+
+All off by default; the default SAC is unchanged. `rl_games/configs/sac_flash_point_mass.yaml`
+combines them (FlashSAC recipe) on a GPU-vectorized test task with two action groups.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `n_step` | `1` | n-step returns, folded at insertion per env. A window stops at the first episode end: a termination does not bootstrap, a time-out bootstraps from the true final obs with `gamma^k` (`k` = rewards summed). A step that both terminates and times out counts as terminated. |
+| `action_groups` | unset | Partition of the action dims, e.g. `{right: ["0:3", 6, 7], left: [...]}` (ints or `"start:stop"`). Falls back to `env_info['action_groups']`. Each group gets an actor tower, a Q twin pair, a reward column and a temperature; the env passes per-group rewards in `infos['reward_heads']` (B, H). Needs the `flash_sac` network. |
+| `target_entropy_sigma` | unset | Target entropy per group `0.5 n ln(2 pi e sigma^2)` instead of `-target_entropy_coef * n`. |
+| `min_alpha` | `0.01`; `0` with `flash_sac` | Floor on the temperature. Default network: in the actor loss. `flash_sac`: in the actor loss and the critic target, and log alpha is clamped at it after every temperature step, so the temperature cannot go below it; off by default there. `0` = no floor. |
+| `normalize_reward` | `False` | Divide rewards (per group) by `max(std(G), max|G| / normalized_return_max)`, `G` the running discounted return per env (reset after the step that ends an episode). |
+| `normalized_return_max` | `5.0` | Largest scaled return; match the critic support. |
+| `held_noise` | `False` | Exploration `tanh(mu + sigma * eps)` with `eps` reused for `n ~ zeta(held_noise_zeta_mu)` on `1..held_noise_max_steps` steps (defaults 2.0, 16), drawn per env; an env starting an episode draws fresh noise. |
+| `lr_schedule` | constant | `cosine`: linear warm-up over `lr_warmup_steps` updates, cosine to `lr_end_factor` (0.5) x LR at `lr_decay_steps` (default: the run's update count from `max_frames` or `max_epochs`). |
+| `lr_per_optimizer_step` | `False` | Index each schedule by its own optimizer's steps: the actor and temperature, stepped every `policy_frequency` updates, then end mid-cosine. |
+| `replay_memory_efficient` | `False` | Store every obs once and read the next obs `n_step` env steps later in the ring; true final obs of time-outs go to a side pool. Same-step autoreset only. |
+| `replay_obs_dtype` | `float32` | Obs storage dtype (`float16`, `bfloat16`); sampled back as float32. The first stored batch prints its round-trip error, with the columns that lose more than 1e-3. |
+| `replay_storage` | `device` | `host`: page-locked host memory read and written by the GPU through a mapped view. |
+| `replay_obs_compactor` | unset | Object or `'module:factory'` (called with `env_info`) with `compact_dim`, `aux_dim`, `compact(obs)` and `expand(compact, aux)`: drops reconstructible obs columns before storage and rebuilds them at sample time. Falls back to `env_info['replay_obs_compactor']`. The aux ints come from the obs dict key `obs_aux` and `infos['final_obs_aux']`. Memory-efficient replay only. |
+| `update_cuda_graph` | `False` | Capture each update (critic step, actor and temperature step, target EMA) once per branch in a CUDA graph and replay it; sampling and the LR schedule stay on the host. `flash_sac` network on CUDA; use with `torch_compile: default` (compile modes with their own CUDA graphs are refused). The first `update_cuda_graph_warmup` (3) updates of each branch run eagerly. With `multi_gpu` the captured update contains the gradient all-reduce, which is only checked between GPUs of one machine: ranks on different machines are refused (`RL_GAMES_ALLOW_MULTI_NODE_CUDA_GRAPH=1` overrides). |
+| `multi_gpu` | `False` | Data-parallel SAC under torchrun: each rank steps its own envs into its own replay and samples its own batch; gradients, batch-norm statistics and reward-scale moments are averaged over the ranks every update, so all ranks hold the same networks. `batch_size`, the UTD ratio, `replay_buffer_size` and `num_warmup_frames` are per rank; frames and `max_frames` count all ranks. To keep a one-GPU recipe's batch and updates per frame on N GPUs, divide `batch_size` and multiply `num_updates_per_step` by N; batch norm then normalizes over each rank's `2 * batch_size / N` rows, not the whole batch. What it buys, measured at tracking size (77.8M-parameter critic, batch 4096): splitting the batch this way gives 1.34x updates/s on 2 GPUs and 1.63x on 4 with `bfloat16` gradient traffic (1.14x / 1.27x with float32); the full one-GPU batch on every rank of 4 GPUs gave no wall-clock gain (6.0 vs 9.0 updates/s, and a 4x batch was worth about 1.5 one-GPU updates at the same learning rate). |
+| `multi_gpu_overlap` | `True`, `False` with `torch_compile` | All-reduce each gradient from a backward hook, overlapping the traffic with the rest of backward; `False`: one flat all-reduce after backward. Under `torch_compile` all gradients arrive at once and the hooks hide nothing. |
+| `multi_gpu_grad_dtype` | `float32` | Precision of the gradient traffic; `bfloat16` halves it. |
+
+Network `flash_sac` (model `soft_actor_critic`): batch norm, unit-norm linear residual blocks and RMS
+norm, re-projected after every optimizer step; an ensemble critic with `2 x groups` members, a
+categorical value head (`critic: num_bins`, `v_min`, `v_max`; `num_bins: 0` = scalar Q with MSE, which bounds `|Q - bias|` by about `sqrt(units)`, so use it with `normalize_reward`), and
+online and target critics run on `[obs; next_obs]` in one batch-norm pass. Keys: `actor: {units,
+blocks}`, `critic: {units, blocks, num_bins, v_min, v_max}`, `expansion`, `bn_momentum`,
+`log_std_bounds`, and optional `obs_window: {size, steps, hidden, latent}`, a Conv1d encoder over the
+last `size` obs columns laid out `(steps, size / steps)`.
+
+Size the categorical support for the entropy term as well as the scaled return: at entropy `H` per group the
+soft return shifts by `gamma^n * H * alpha / (1 - gamma^n)` (`n` = `n_step`). For 28 dims at sigma 0.15 (`H` = -13.4),
+gamma 0.98 and n 5 that is -126 alpha, -1.3 at alpha 0.01. `info/target_edge_low<h>` and `info/target_edge_high<h>`
+log the target mass on the two edge bins.

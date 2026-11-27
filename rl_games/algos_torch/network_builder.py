@@ -29,6 +29,16 @@ def _create_initializer(func, **kwargs):
     return lambda v : func(v, **kwargs)
 
 
+def read_sigma_bounds(space_config):
+    """Optional hard floor / smooth ceiling on the action std (see
+    models.apply_sigma_parametrization). Validated here, at config time."""
+    min_sigma = float(space_config.get('min_sigma', 0.0))
+    max_sigma = float(space_config.get('max_sigma', 0.0))  # 0 = no ceiling
+    if max_sigma > 0 and max_sigma <= min_sigma:
+        raise ValueError(f'max_sigma ({max_sigma}) must exceed min_sigma ({min_sigma})')
+    return min_sigma, max_sigma
+
+
 class NetworkBuilder:
     def __init__(self, **kwargs):
         pass
@@ -116,6 +126,7 @@ class NetworkBuilder:
             for unit in units:
                 layers.append(dense_func(in_size, unit))
                 layers.append(self.activations_factory.create(activation))
+                in_size = unit
 
                 if not need_norm:
                     continue
@@ -125,7 +136,6 @@ class NetworkBuilder:
                     layers.append(torch.nn.LayerNorm(unit))
                 elif norm_func_name == 'batch_norm':
                     layers.append(torch.nn.BatchNorm1d(unit))
-                in_size = unit
 
             return nn.Sequential(*layers)
 
@@ -308,8 +318,7 @@ class A2CBuilder(NetworkBuilder):
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
-                # optional hard floor on the action std (see ModelA2CContinuousLogStd)
-                self.min_sigma = float(self.space_config.get('min_sigma', 0.0))
+                self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
                 # optional clamp on the raw logstd head: with fixed_sigma False the
                 # exp parametrization is unbounded above and can explode; [-5, 2]
                 # mirrors the SAC convention
@@ -735,7 +744,8 @@ class A2CResnetBuilder(NetworkBuilder):
                     rnn_in_size += actions_num
 
                 self.rnn = self._build_rnn(self.rnn_name, rnn_in_size, self.rnn_units, self.rnn_layers)
-                #self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
+                if self.rnn_ln:
+                    self.layer_norm = torch.nn.LayerNorm(self.rnn_units)
 
             mlp_args = {
                 'input_size': mlp_input_size,
@@ -759,6 +769,11 @@ class A2CResnetBuilder(NetworkBuilder):
                 mu_init = self.init_factory.create(**self.space_config['mu_init'])
                 self.sigma_act = self.activations_factory.create(self.space_config['sigma_activation']) 
                 sigma_init = self.init_factory.create(**self.space_config['sigma_init'])
+                self.min_sigma, self.max_sigma = read_sigma_bounds(self.space_config)
+                self.logstd_bounds = self.space_config.get('logstd_bounds', None)
+                self.sigma_parametrization = self.space_config.get('sigma_parametrization', 'exp')
+                if self.sigma_parametrization == 'scalar':
+                    self.sigma_parametrization = 'linear'
 
                 if self.fixed_sigma:
                     self.sigma = nn.Parameter(torch.zeros(actions_num, requires_grad=True, dtype=torch.float32), requires_grad=True)
@@ -789,10 +804,12 @@ class A2CResnetBuilder(NetworkBuilder):
         def forward(self, obs_dict):
             if self.require_rewards or self.require_last_actions:
                 obs = obs_dict['obs']['observation']
-                reward = obs_dict['obs']['reward']
-                last_action = obs_dict['obs']['last_action']
-                if self.is_discrete:
-                    last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
+                if self.require_rewards:
+                    reward = obs_dict['obs']['reward']
+                if self.require_last_actions:
+                    last_action = obs_dict['obs']['last_action']
+                    if self.is_discrete:
+                        last_action = torch.nn.functional.one_hot(last_action.long(), num_classes=self.actions_num)
             else:
                 obs = obs_dict['obs']
             if self.permute_input:

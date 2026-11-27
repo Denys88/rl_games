@@ -32,7 +32,9 @@ class CentralValueTrain(nn.Module):
             config['mini_epochs'], horizon_length * num_actors)
 
         self.ppo_device = ppo_device
-        self.mixed_precision = config.get('mixed_precision', torch_ext.default_mixed_precision())
+        self.amp_dtype = torch_ext.resolve_mixed_precision(config.get('mixed_precision', False), ppo_device)
+        self.mixed_precision = self.amp_dtype is not None
+        self.scaler = torch_ext.grad_scaler(self.amp_dtype)
 
 
         self.num_agents = num_agents
@@ -233,13 +235,18 @@ class CentralValueTrain(nn.Module):
         actions = input_dict.get('actions', None)
 
         obs_batch = self._preproc_obs(obs_batch)
-        res_dict = self.forward({
-            'obs': obs_batch,
-            'actions': actions,
-            'rnn_states': self.rnn_states,
-            'is_train': False
-        })
-        value, self.rnn_states = res_dict['values'], res_dict['rnn_states']
+        with torch_ext.autocast(self.amp_dtype):
+            res_dict = self.forward({
+                'obs': obs_batch,
+                'actions': actions,
+                'rnn_states': self.rnn_states,
+                'is_train': False
+            })
+        value = res_dict['values']
+        # Bootstrap reads the next observation without consuming it in the
+        # rollout's recurrent stream; the next action query will consume it.
+        if input_dict.get('update_rnn_states', True):
+            self.rnn_states = res_dict['rnn_states']
         if self.num_agents > 1:
             value = value.repeat(1, self.num_agents)
             value = value.view(value.size()[0]*self.num_agents, -1)
@@ -258,7 +265,10 @@ class CentralValueTrain(nn.Module):
         returns = returns.view(self.num_actors, self.num_agents, self.horizon_length, self.value_size).transpose(0, 1)
         value_preds = value_preds.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
         returns = returns.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
-        dones = dones.contiguous().view(ma_batch_size, self.value_size)[:batch_size]
+        # dones are per agent row like the tensors above: same env-major -> agent-major
+        # reorder, so that row e keeps the dones of env e
+        dones = dones.view(self.num_actors, self.num_agents, self.horizon_length).transpose(0, 1)
+        dones = dones.contiguous().view(ma_batch_size)[:batch_size]
 
         return value_preds, returns, actions, dones
 
@@ -287,7 +297,7 @@ class CentralValueTrain(nn.Module):
                 break
             for i in range(len(self.dataset)):
                 # Use mixed precision for training
-                with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+                with torch_ext.autocast(self.amp_dtype):
                     loss += self.train_critic(self.dataset[i])
 
         avg_loss = loss / (self.mini_epoch * self.num_minibatches)
@@ -346,7 +356,7 @@ class CentralValueTrain(nn.Module):
         # Efficiently clear gradients
         self.optimizer.zero_grad(set_to_none=True)
 
-        loss.backward()
+        self.scaler.scale(loss).backward()
 
         if self.multi_gpu:
             if self.multi_gpu_grad_sync == 'flat_allreduce':
@@ -357,9 +367,11 @@ class CentralValueTrain(nn.Module):
                     "forward through self.train_model(), or set "
                     "multi_gpu_grad_sync: 'flat_allreduce'")
         if self.truncate_grads:
+            self.scaler.unscale_(self.optimizer)
             clip_grad_norm_(self.model.parameters(), self.grad_norm)
 
-        self.optimizer.step()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
         return loss
 

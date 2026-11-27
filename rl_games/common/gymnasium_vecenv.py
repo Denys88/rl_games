@@ -3,6 +3,7 @@ import gymnasium
 from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation, FlattenObservation
 import numpy as np
+import copy
 
 # Register ALE (Atari) environments if available
 try:
@@ -46,18 +47,25 @@ def wrap_atari(env, frame_stack=4, noop_max=30, frame_skip=4,
     return env
 
 
-def _dicts_to_dict_with_arrays(dicts, squeeze=False):
-    """Convert a list of dicts to a dict of stacked arrays."""
+def _dicts_to_dict_with_arrays(dicts, squeeze=False, concat_func=np.stack):
+    """Combine dictionary array leaves with the supplied batch operation."""
     result = {}
     for key in dicts[0].keys():
         values = [d[key] for d in dicts]
         if isinstance(values[0], dict):
-            result[key] = _dicts_to_dict_with_arrays(values, squeeze)
+            result[key] = _dicts_to_dict_with_arrays(values, squeeze, concat_func)
         else:
-            result[key] = np.stack(values)
+            result[key] = concat_func(values)
             if squeeze:
                 result[key] = result[key].squeeze()
     return result
+
+
+def _concat_observations(observations, concat_func):
+    """Batch array leaves while retaining the observation dictionary structure."""
+    if isinstance(observations[0], dict):
+        return _dicts_to_dict_with_arrays(observations, concat_func=concat_func)
+    return concat_func(observations)
 
 
 class GymnasiumVecEnv(IVecEnv):
@@ -93,6 +101,7 @@ class GymnasiumVecEnv(IVecEnv):
         if env_creator is not None:
             # Custom env creator - use manual vectorization for multi-agent support
             self._use_native_vec = False
+            self._pending_seed = self.seed_value
             self.envs = [env_creator(**dict(self.env_kwargs)) for _ in range(num_actors)]
             sample_env = self.envs[0]
             self.observation_space = sample_env.observation_space
@@ -100,6 +109,7 @@ class GymnasiumVecEnv(IVecEnv):
         else:
             # Standard gymnasium env - use native vectorized env
             self._use_native_vec = True
+            self._pending_seed = None
 
             def make_env(idx):
                 def _init():
@@ -121,11 +131,13 @@ class GymnasiumVecEnv(IVecEnv):
             self.observation_space = single_obs_space
             self.action_space = single_action_space
 
+        self._use_global_observations = self.get_env_info()['use_global_observations']
+
     def step(self, action):
         if self._use_native_vec:
             next_obs, reward, terminated, truncated, info = self.env.step(action)
             is_done = terminated | truncated
-            info['time_outs'] = truncated
+            info['time_outs'] = np.logical_and(truncated, np.logical_not(terminated))
             return next_obs, reward, is_done, info
         else:
             return self._step_manual(action)
@@ -136,6 +148,7 @@ class GymnasiumVecEnv(IVecEnv):
         num_agents = self._get_num_agents(sample_env)
 
         all_obs, all_rewards, all_dones, all_infos = [], [], [], []
+        final_observations = {}
         for i, env in enumerate(self.envs):
             if num_agents == 1:
                 act = actions[i]
@@ -143,14 +156,18 @@ class GymnasiumVecEnv(IVecEnv):
                 act = actions[i * num_agents:(i + 1) * num_agents]
             obs, reward, terminated, truncated, info = env.step(act)
             is_done = terminated | truncated if np.isscalar(terminated) else terminated | truncated
-            if 'time_outs' not in info:
-                info['time_outs'] = truncated
+            # The learner reconstructs termination as done & ~time_outs.
+            # A real terminal state must not bootstrap, even at a time limit.
+            info['time_outs'] = np.logical_and(
+                info.get('time_outs', truncated), np.logical_not(terminated))
 
             if np.isscalar(is_done):
                 episode_done = is_done
             else:
                 episode_done = is_done.all()
             if episode_done:
+                # reset() may mutate the same observation arrays in place.
+                final_observations[i] = copy.deepcopy(obs)
                 obs, _ = env.reset()
 
             all_obs.append(obs)
@@ -160,17 +177,15 @@ class GymnasiumVecEnv(IVecEnv):
 
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
-        # Check if obs are dicts (central_value)
-        use_global_obs = isinstance(all_obs[0], dict) and 'obs' in all_obs[0]
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
-                'obs': concat_func(newobs),
-                'states': np.stack(newstates),
+                'obs': _concat_observations(newobs, concat_func),
+                'states': _concat_observations(newstates, np.stack),
             }
         else:
-            ret_obs = concat_func(all_obs)
+            ret_obs = _concat_observations(all_obs, concat_func)
 
         rewards = concat_func(all_rewards)
         dones = concat_func(all_dones)
@@ -184,14 +199,28 @@ class GymnasiumVecEnv(IVecEnv):
             else:
                 time_outs.extend(to)
         merged_info = {'time_outs': np.array(time_outs)}
+        if final_observations:
+            final_obs = [final_observations.get(i, obs) for i, obs in enumerate(all_obs)]
+            if self._use_global_observations:
+                final_obs = {
+                    'obs': _concat_observations([o['obs'] for o in final_obs], concat_func),
+                    'states': _concat_observations([o['state'] for o in final_obs], np.stack),
+                }
+            else:
+                final_obs = _concat_observations(final_obs, concat_func)
+            merged_info['final_observation'] = final_obs
+            merged_info['_final_observation'] = np.repeat(
+                [i in final_observations for i in range(self.batch_size)], num_agents)
         return ret_obs, rewards, dones, merged_info
 
     def reset(self):
         if self._use_native_vec:
-            obs, info = self.env.reset()
-            return obs
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed}
+            obs, info = self.env.reset(**kwargs)
         else:
-            return self._reset_manual()
+            obs = self._reset_manual()
+        self._pending_seed = None
+        return obs
 
     def _reset_manual(self):
         """Reset all envs manually (for multi-agent / custom envs)."""
@@ -200,30 +229,32 @@ class GymnasiumVecEnv(IVecEnv):
         concat_func = np.concatenate if num_agents > 1 else np.stack
 
         all_obs = []
-        for env in self.envs:
-            obs, info = env.reset()
+        for i, env in enumerate(self.envs):
+            kwargs = {} if self._pending_seed is None else {'seed': self._pending_seed + i}
+            obs, info = env.reset(**kwargs)
             all_obs.append(obs)
 
-        use_global_obs = isinstance(all_obs[0], dict) and 'obs' in all_obs[0]
-        if use_global_obs:
+        if self._use_global_observations:
             newobs = [o['obs'] for o in all_obs]
             newstates = [o['state'] for o in all_obs]
             ret_obs = {
-                'obs': concat_func(newobs),
-                'states': np.stack(newstates),
+                'obs': _concat_observations(newobs, concat_func),
+                'states': _concat_observations(newstates, np.stack),
             }
         else:
-            ret_obs = concat_func(all_obs)
+            ret_obs = _concat_observations(all_obs, concat_func)
 
         return ret_obs
 
     def _get_num_agents(self, env):
+        env = getattr(env, 'unwrapped', env)
         if hasattr(env, 'get_number_of_agents'):
             return env.get_number_of_agents()
         return 1
 
     def seed(self, seed):
         self.seed_value = seed
+        self._pending_seed = seed
 
     def get_number_of_agents(self):
         if not self._use_native_vec and self.envs:
@@ -244,7 +275,7 @@ class GymnasiumVecEnv(IVecEnv):
         # the same step — the done row already carries the post-reset obs.
         info['autoreset_mode'] = 'next_step' if self._use_native_vec else 'same_step'
         if not self._use_native_vec and self.envs:
-            sample_env = self.envs[0]
+            sample_env = getattr(self.envs[0], 'unwrapped', self.envs[0])
             if hasattr(sample_env, 'use_central_value'):
                 info['use_global_observations'] = sample_env.use_central_value
             if hasattr(sample_env, 'value_size'):

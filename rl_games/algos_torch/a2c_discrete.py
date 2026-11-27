@@ -62,7 +62,9 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 'seq_length': self.seq_length,
                 'normalize_value': self.normalize_value,
                 'network': self.central_value_config['network'],
-                'config': {**self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
+                # the critic follows the policy's precision unless its own config sets one
+                'config': {'mixed_precision': self.config.get('mixed_precision', False),
+                           **self.central_value_config, 'multi_gpu_grad_sync': self.multi_gpu_grad_sync},
                 'writter': self.writer,
                 'max_epochs': self.max_epochs,
                 'multi_gpu': self.multi_gpu,
@@ -157,7 +159,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
             if self.zero_rnn_on_done:
                 batch_dict['dones'] = input_dict['dones']
 
-        with torch.amp.autocast('cuda', enabled=self.mixed_precision, dtype=torch.bfloat16):
+        with torch_ext.autocast(self.amp_dtype):
             res_dict = self.train_model()(batch_dict)
             action_log_probs = res_dict['prev_neglogp']
             values = res_dict['values']
@@ -194,7 +196,7 @@ class DiscreteA2CAgent(a2c_common.DiscreteA2CBase):
                 for param in self.model.parameters():
                     param.grad = None
 
-        loss.backward()
+        self.scaler.scale(loss).backward()
         self.trancate_gradients_and_step()
 
         with torch.no_grad():

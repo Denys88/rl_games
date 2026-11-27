@@ -279,6 +279,57 @@ class TestScheduleTypeAlias:
             make_ppo_agent(schedule_type='standard_epoch')
 
 
+class TestYamlSchedulerBounds:
+    # YAML 1.1 reads a bare exponent without a dot as a string: the agent
+    # must cast every scheduler bound, or the first out-of-band KL raises
+    # TypeError inside the scheduler's max()/min()
+
+    def test_adaptive_bounds_from_yaml_exponent_strings(self):
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5\nmax_lr: 1e-3\nkl_threshold: 8e-3\n'
+                             'lr_multiplier: 15e-1')
+        assert all(isinstance(v, str) for v in raw.values()), raw
+        agent, _ = make_ppo_agent(lr_schedule='adaptive', **raw)
+        assert agent.kl_threshold == pytest.approx(8e-3)
+        # kl above the band: halve towards min_lr; below: raise up to max_lr
+        lr, _ = agent.scheduler.update(1e-4, 0.0, 0, 0, kl_dist=0.05)
+        assert lr == pytest.approx(1e-4 / 1.5)
+        lr, _ = agent.scheduler.update(9e-4, 0.0, 0, 0, kl_dist=1e-4)
+        assert lr == pytest.approx(1e-3)
+        lr, _ = agent.scheduler.update(1.2e-5, 0.0, 0, 0, kl_dist=0.05)
+        assert lr == pytest.approx(1e-5)
+
+    def test_train_epoch_with_yaml_exponent_bounds(self):
+        # the per-epoch rate stats compare the applied rates with the bounds too
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5\nmax_lr: 1e-3')
+        agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, **raw)
+        assert (agent.min_lr, agent.max_lr) == (1e-5, 1e-3)
+        _rollout_batch(agent)
+        agent.vec_env.set_train_info = lambda *args: None
+        agent.train_epoch()
+        assert 0.0 <= agent.scheduler_stats['lr_at_min_fraction'] <= 1.0
+        assert 0.0 <= agent.scheduler_stats['lr_at_max_fraction'] <= 1.0
+
+    def test_adaptive_without_max_lr_warns_about_the_new_default(self):
+        with pytest.warns(UserWarning, match='max_lr: 1.0e-2'):
+            agent, _ = make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008)
+        assert agent.max_lr == 1e-3
+
+    def test_explicit_max_lr_or_other_schedule_does_not_warn(self, recwarn):
+        make_ppo_agent(lr_schedule='adaptive', kl_threshold=0.008, max_lr=1e-3)
+        make_ppo_agent(lr_schedule='linear', max_epochs=10)
+        assert not [w for w in recwarn if 'max_lr' in str(w.message)]
+
+    def test_linear_min_lr_from_yaml_exponent_string(self):
+        import yaml
+        raw = yaml.safe_load('min_lr: 1e-5')
+        assert isinstance(raw['min_lr'], str)
+        agent, _ = make_ppo_agent(lr_schedule='linear', max_epochs=10, **raw)
+        lr, _ = agent.scheduler.update(1e-4, 0.0, 10, 0, kl_dist=0.0)
+        assert lr == pytest.approx(1e-5)
+
+
 def test_running_stats_moment_merge_math():
     # the cross-rank merge must equal stats computed on the concatenated data
     torch.manual_seed(3)
