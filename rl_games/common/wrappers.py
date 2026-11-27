@@ -86,7 +86,7 @@ class FireResetEnv(gym.Wrapper):
             _parse_reset_result(self.env.reset(**kwargs))
         obs, _, done, _ = _parse_step_result(self.env.step(2))
         if done:
-            _parse_reset_result(self.env.reset(**kwargs))
+            obs = _parse_reset_result(self.env.reset(**kwargs))
         return obs
 
     def step(self, ac):
