@@ -27,8 +27,8 @@ class NoisyLinear(nn.Linear):
         bias = self.bias
         if bias is not None:
             self.epsilon_bias.normal_()
-            bias = bias + self.sigma_bias * self.epsilon_bias.data
-        return F.linear(input, self.weight + self.sigma_weight * self.epsilon_weight.data, bias)
+            bias = bias + self.sigma_bias * self.epsilon_bias.clone()
+        return F.linear(input, self.weight + self.sigma_weight * self.epsilon_weight.clone(), bias)
 
 
 class NoisyFactorizedLinear(nn.Linear):
