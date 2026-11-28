@@ -1060,7 +1060,8 @@ class SACAgent(BaseAlgorithm):
         if self.is_tensor_obses:
             return self.obs_to_tensors(obs), rewards.to(self._device), dones.to(self._device), infos
         else:
-            return torch.from_numpy(obs).to(self._device), torch.from_numpy(rewards).to(self._device, dtype=torch.float32), torch.from_numpy(dones).to(self._device), infos
+            obs = self.obs_to_tensors(obs) if isinstance(obs, dict) else torch.from_numpy(obs).to(self._device)
+            return obs, torch.from_numpy(rewards).to(self._device, dtype=torch.float32), torch.from_numpy(dones).to(self._device), infos
 
     def env_reset(self):
         with torch.no_grad():
