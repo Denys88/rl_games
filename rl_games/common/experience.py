@@ -322,6 +322,10 @@ class NStepFolder:
         self.pending = collections.deque()
 
     def push(self, step):
+        if self.n_step > 1:
+            # Pending transitions outlive add(); simulators can reuse their input buffers.
+            step = {key: value.clone() if torch.is_tensor(value) else value for key, value in step.items()}
+            step['ends'] = {key: value.clone() for key, value in step['ends'].items()}
         self.pending.append(step)
         if len(self.pending) < self.n_step:
             return None
