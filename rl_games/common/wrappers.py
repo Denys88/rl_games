@@ -311,7 +311,7 @@ class BatchedFrameStack(gym.Wrapper):
                 frames = np.array(self.frames)
                 shape = np.shape(frames)
                 frames = np.transpose(self.frames, (1, 0, 2))
-                frames = np.reshape(self.frames, (shape[1], shape[0] * shape[2]))
+                frames = np.reshape(frames, (shape[1], shape[0] * shape[2]))
             else:
                 frames = np.transpose(self.frames, (1, 0, 2))
         return frames
@@ -372,7 +372,7 @@ class BatchedFrameStackWithStates(gym.Wrapper):
                 obses = np.array(data)
                 shape = np.shape(obses)
                 obses = np.transpose(data, (1, 0, 2))
-                obses = np.reshape(data, (shape[1], shape[0] * shape[2]))
+                obses = np.reshape(obses, (shape[1], shape[0] * shape[2]))
             else:
                 obses = np.transpose(data, (1, 0, 2))
         return obses
