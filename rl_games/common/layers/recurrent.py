@@ -11,6 +11,8 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 def multiply_hidden(h, mask):
+    if h is None:
+        return None  # The RNN initializes a zero state; masking it is a no-op.
     if isinstance(h, torch.Tensor):
         return h * mask
     else:

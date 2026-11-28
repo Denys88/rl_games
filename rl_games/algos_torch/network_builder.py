@@ -401,7 +401,9 @@ class A2CBuilder(NetworkBuilder):
                         dones = dones.reshape(num_seqs, seq_length, -1)
                         dones = dones.transpose(0, 1)
 
-                    if len(states) == 2:
+                    if states is None:
+                        a_states = c_states = None
+                    elif len(states) == 2:
                         a_states = states[0]
                         c_states = states[1]
                     else:
@@ -471,16 +473,9 @@ class A2CBuilder(NetworkBuilder):
                     num_seqs = batch_size // seq_length
                     out = out.reshape(num_seqs, seq_length, -1)
 
-                    # Some export or tracing utilities may call the network with
-                    # ``states`` equal to ``None`` even for RNN models. Guard
-                    # against that case so that auxiliary utilities (e.g. ONNX
-                    # export during training observers) do not crash the whole
-                    # training run. If no RNN state is supplied we simply
-                    # treat it as an empty tuple which will be initialized to
-                    # zeros inside the RNN module.
-                    if states is None:
-                        states = tuple()
-                    elif len(states) == 1:
+                    # None lets PyTorch initialize zero states for the runtime
+                    # batch, device and dtype, including export/tracing calls.
+                    if states is not None and len(states) == 1:
                         states = states[0]
 
                     out = out.transpose(0, 1)
@@ -842,7 +837,7 @@ class A2CResnetBuilder(NetworkBuilder):
                 num_seqs = batch_size // seq_length
                 out = out.reshape(num_seqs, seq_length, -1)
 
-                if len(states) == 1:
+                if states is not None and len(states) == 1:
                     states = states[0]
 
                 out = out.transpose(0, 1)
