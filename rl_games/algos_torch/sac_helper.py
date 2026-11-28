@@ -154,28 +154,47 @@ class ReturnScaler:
         self.count = torch.zeros((), device=device)
 
     @torch.no_grad()
-    def update(self, rewards, done):
-        """rewards (B, H), done (B,) bool."""
+    def update(self, rewards, done, live=None):
+        """rewards (B, H), done (B,) bool; live excludes autoreset filler rows."""
         done = done.bool().view(-1)
         if self.returns is None:
             self.returns = torch.zeros_like(rewards, dtype=torch.float32)
         if self.prev_done is None:
             self.prev_done = torch.zeros_like(done)
         keep = self.gamma * (~self.prev_done).float().unsqueeze(-1)
-        self.returns = keep * self.returns + rewards.float()
-        self.prev_done = done.clone()
-        batch_max = self.returns.abs().amax(dim=0)
-        n = float(self.returns.shape[0])
-        batch_mean = self.returns.mean(dim=0)
-        batch_sq = self.returns.pow(2).mean(dim=0)
+        returns = keep * self.returns + rewards.float()
+        if live is None:
+            self.returns = returns
+            self.prev_done = done.clone()
+            values = self.returns
+        else:
+            live = live.bool().view(-1)
+            self.returns = torch.where(live.unsqueeze(-1), returns, self.returns)
+            self.prev_done = torch.where(live, done, self.prev_done)
+            values = self.returns[live]
+        n = float(values.shape[0])
+        if not n and self.all_reduce is None:
+            return
+        batch_max = values.abs().amax(dim=0) if n else torch.zeros_like(self.abs_max)
+        batch_mean = values.mean(dim=0) if n else torch.zeros_like(self.mean)
+        batch_sq = values.pow(2).mean(dim=0) if n else torch.zeros_like(self.mean)
         if self.all_reduce is not None:
             import torch.distributed as dist
-            world = dist.get_world_size()
-            moments = torch.cat([batch_mean, batch_sq])
-            self.all_reduce(moments)
-            batch_mean, batch_sq = (moments / world).chunk(2)
+            if live is None:
+                world = dist.get_world_size()
+                moments = torch.cat([batch_mean, batch_sq])
+                self.all_reduce(moments)
+                batch_mean, batch_sq = (moments / world).chunk(2)
+                n *= world
+            else:
+                # Ranks can have different numbers of live rows, including zero.
+                moments = torch.cat([batch_mean * n, batch_sq * n, self.count.new_tensor([n])])
+                self.all_reduce(moments)
+                n = float(moments[-1].item())
+                batch_mean, batch_sq = (moments[:-1] / max(n, 1.0)).chunk(2)
             self.all_reduce(batch_max, op=dist.ReduceOp.MAX)
-            n *= world
+            if not n:
+                return
         self.abs_max = torch.maximum(self.abs_max, batch_max)
         # parallel merge of the batch moments, prior count 1e-4
         batch_var = (batch_sq - batch_mean.pow(2)).clamp(min=0.0)

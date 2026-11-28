@@ -1265,7 +1265,8 @@ class SACAgent(BaseAlgorithm):
             self._update_obs_stats(next_obs_processed)
             self.obs = next_obs
             if self.reward_scaler is not None:
-                self.reward_scaler.update(replay_rewards, dones.bool())
+                live = ~self._prev_dones if self.autoreset_mode == 'next_step' else None
+                self.reward_scaler.update(replay_rewards, dones.bool(), live=live)
 
             next_obs_aux = self._obs_aux(next_obs)
             self._store_transitions(obs, action, shaped_rewards, next_obs_processed,
