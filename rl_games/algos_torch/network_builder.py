@@ -99,7 +99,15 @@ class NetworkBuilder:
                 assert(len(input_shape) == 1)
                 return input_shape[0]
             else:
-                return nn.Sequential(*cnn_layers)(torch.rand(1, *(input_shape))).flatten(1).data.size(1)
+                probe = nn.Sequential(*cnn_layers)
+                training_modes = [(module, module.training) for module in probe.modules()]
+                try:
+                    probe.eval()
+                    with torch.no_grad():
+                        return probe(torch.rand(1, *input_shape)).flatten(1).size(1)
+                finally:
+                    for module, training in training_modes:
+                        module.training = training
 
         def _noisy_dense(self, inputs, units):
             return layers.NoisyFactorizedLinear(inputs, units)
