@@ -1229,7 +1229,7 @@ class SACAgent(BaseAlgorithm):
             self.set_eval()
             if random_exploration:
                 # Sample uniformly from the correct action bounds
-                action = torch.rand((self.num_actors, *self.env_info["action_space"].shape), device=self._device)
+                action = torch.rand((self.num_actors * self.num_agents, *self.env_info["action_space"].shape), device=self._device)
                 action = self.action_low + (self.action_high - self.action_low) * action
             else:
                 with torch.no_grad():
