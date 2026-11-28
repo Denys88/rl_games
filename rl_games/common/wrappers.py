@@ -249,14 +249,14 @@ class FrameStack(gym.Wrapper):
                 self.observation_space = spaces.Box(low=0, high=255, shape=(shp[:-1] + (shp[-1] * k,)), dtype=observation_space.dtype)
 
     def reset(self):
-        ob = _parse_reset_result(self.env.reset())
+        ob = np.array(_parse_reset_result(self.env.reset()), copy=True)
         for _ in range(self.k):
             self.frames.append(ob)
         return self._get_ob()
 
     def step(self, action):
         ob, reward, done, info = _parse_step_result(self.env.step(action))
-        self.frames.append(ob)
+        self.frames.append(np.array(ob, copy=True))
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
@@ -292,14 +292,14 @@ class BatchedFrameStack(gym.Wrapper):
                 self.observation_space = spaces.Box(low=0, high=1, shape=(k, shp[0]), dtype=env.observation_space.dtype)
 
     def reset(self):
-        ob = _parse_reset_result(self.env.reset())
+        ob = np.array(_parse_reset_result(self.env.reset()), copy=True)
         for _ in range(self.k):
             self.frames.append(ob)
         return self._get_ob()
 
     def step(self, action):
         ob, reward, done, info = _parse_step_result(self.env.step(action))
-        self.frames.append(ob)
+        self.frames.append(np.array(ob, copy=True))
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
@@ -341,8 +341,8 @@ class BatchedFrameStackWithStates(gym.Wrapper):
 
     def reset(self):
         obs_dict = _parse_reset_result(self.env.reset())
-        ob = obs_dict["obs"]
-        state = obs_dict["state"]
+        ob = np.array(obs_dict["obs"], copy=True)
+        state = np.array(obs_dict["state"], copy=True)
         for _ in range(self.k):
             self.obses.append(ob)
             self.states.append(state)
@@ -352,8 +352,8 @@ class BatchedFrameStackWithStates(gym.Wrapper):
         obs_dict, reward, done, info = _parse_step_result(self.env.step(action))
         ob = obs_dict["obs"]
         state = obs_dict["state"]
-        self.obses.append(ob)
-        self.states.append(state)
+        self.obses.append(np.array(ob, copy=True))
+        self.states.append(np.array(state, copy=True))
         return self._get_ob(), reward, done, info
 
     def _get_ob(self):
@@ -735,3 +735,4 @@ class OldGymWrapper:
             "OldGymWrapper was removed in rl_games 2.0.0. Implement the gymnasium API on the "
             "env side -- reset() -> (obs, info), step() -> (obs, reward, terminated, truncated, "
             "info) -- see the 2.0.0 release notes and docs/MIGRATING_TO_2.0.md.")
+
