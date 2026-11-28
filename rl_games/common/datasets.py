@@ -8,7 +8,7 @@ class PPODataset(Dataset):
     def __init__(self, batch_size, minibatch_size, is_discrete, is_rnn, device, seq_length, permute=False):
         if batch_size % minibatch_size != 0:
             raise ValueError("Batch size must be divisible by minibatch size.")
-        if batch_size % seq_length != 0:
+        if is_rnn and batch_size % seq_length != 0:
             raise ValueError("Batch size must be divisible by sequence length.")
         if is_rnn and minibatch_size % seq_length != 0:
             raise ValueError("Minibatch size must be divisible by sequence length for RNN training.")
